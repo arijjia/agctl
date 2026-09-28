@@ -1,0 +1,8 @@
+dist/
+.build-img/
+web/node_modules/
+*.tsbuildinfo
+.env
+.env.local
+agctl.db*
+secrets.key
