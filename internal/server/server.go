@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -56,25 +57,19 @@ type Server struct {
 	cfg   Config
 
 	provMu sync.Mutex // один provision за раз упрощает порты/гонки
+	tokMu  sync.Mutex // кэш boot-токенов dsh web по воркспейсам
+	tokens map[string]string
 }
 
-// встроенные ассеты для provision (FS-поддеревья).
+// встроенные ассеты для provision (сырые FS; префиксы знает provision).
 var (
 	assetsRepo = assets.RepoTemplate
 	assetsSkel = assets.DshSkel
 )
 
-func mustSub(fsys fs.FS, dir string) fs.FS {
-	sub, err := fs.Sub(fsys, dir)
-	if err != nil {
-		panic(fmt.Sprintf("assets: %s: %v", dir, err))
-	}
-	return sub
-}
-
 // New собирает сервер: docker-рантайм (если доступен), ассеты, auth.
 func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
-	s := &Server{db: db, sec: sec, cfg: cfg}
+	s := &Server{db: db, sec: sec, cfg: cfg, tokens: map[string]string{}}
 	if s.cfg.AutosaveEvery == 0 {
 		s.cfg.AutosaveEvery = 2 * time.Minute
 	}
@@ -288,11 +283,59 @@ func workspaceURL(w store.Workspace) string {
 	return fmt.Sprintf("http://127.0.0.1:%d/", w.HostPort)
 }
 
-func wsJSON(w store.Workspace, owner string) map[string]any {
+var dshTokenRe = regexp.MustCompile(`[?&]token=([A-Za-z0-9_\-]+)`)
+
+// wsToken — boot-токен dsh web воркспейса: из кэша или из журнала контейнера
+// (dsh печатает ссылку с ?token=… при старте). Пусто — если не нашли.
+func (s *Server) wsToken(ctx context.Context, w store.Workspace) string {
+	s.tokMu.Lock()
+	t := s.tokens[w.ID]
+	s.tokMu.Unlock()
+	if t != "" {
+		return t
+	}
+	if w.ContainerID == "" {
+		return ""
+	}
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	logs, err := s.rt.Logs(cctx, w.ContainerID, "80")
+	if err != nil {
+		return ""
+	}
+	if m := dshTokenRe.FindStringSubmatch(logs); m != nil {
+		s.tokMu.Lock()
+		s.tokens[w.ID] = m[1]
+		s.tokMu.Unlock()
+		return m[1]
+	}
+	return ""
+}
+
+// openURL — готовая ссылка «Открыть» (с токеном dsh, если он уже известен).
+func (s *Server) openURL(ctx context.Context, w store.Workspace) string {
+	base := workspaceURL(w)
+	if base == "" {
+		return ""
+	}
+	if tok := s.wsToken(ctx, w); tok != "" {
+		return base + "?token=" + tok
+	}
+	return base
+}
+
+// forgetToken — после рестарта контейнера токен нужно соскрейпить заново.
+func (s *Server) forgetToken(wsID string) {
+	s.tokMu.Lock()
+	delete(s.tokens, wsID)
+	s.tokMu.Unlock()
+}
+
+func (s *Server) wsJSON(ctx context.Context, w store.Workspace, owner string) map[string]any {
 	return map[string]any{
 		"id": w.ID, "name": w.Name, "status": w.Status,
 		"owner": owner, "createdAt": w.CreatedAt, "updatedAt": w.UpdatedAt,
-		"url": workspaceURL(w), "port": w.HostPort, "error": w.Error,
+		"url": s.openURL(ctx, w), "port": w.HostPort, "error": w.Error,
 		"model": w.Model, "baseURL": w.BaseURL,
 	}
 }

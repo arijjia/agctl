@@ -130,7 +130,7 @@ func (s *Server) handleWorkspacesList(w http.ResponseWriter, r *http.Request, id
 		if ws.OwnerID != id.ID {
 			owner = s.db.WorkspaceOwnerLogin(ws.OwnerID)
 		}
-		out = append(out, wsJSON(ws, owner))
+		out = append(out, s.wsJSON(r.Context(), ws, owner))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"workspaces": out})
 }
@@ -145,7 +145,7 @@ func (s *Server) handleWorkspaceGet(w http.ResponseWriter, r *http.Request, id i
 		writeErr(w, http.StatusNotFound, "воркспейс не найден")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"workspace": wsJSON(ws, s.db.WorkspaceOwnerLogin(ws.OwnerID))})
+	writeJSON(w, http.StatusOK, map[string]any{"workspace": s.wsJSON(r.Context(), ws, s.db.WorkspaceOwnerLogin(ws.OwnerID))})
 }
 
 func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, id identity) {
@@ -209,7 +209,7 @@ func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, i
 	// provision идёт в фоне: UI опрашивает статус («колесико»)
 	go s.provisionJob(ws, id.Login, p)
 	ws, _ = s.db.WorkspaceByID(wsID)
-	writeJSON(w, http.StatusAccepted, map[string]any{"workspace": wsJSON(ws, id.Login)})
+	writeJSON(w, http.StatusAccepted, map[string]any{"workspace": s.wsJSON(r.Context(), ws, id.Login)})
 }
 
 // provisionJob — файловая часть + запуск контейнера.
@@ -239,13 +239,23 @@ func (s *Server) provisionJob(ws store.Workspace, ownerLogin string, p provision
 		fail("db", err)
 		return
 	}
+	// токен dsh web печатается в журнал при первом буте — даём ему время появиться
+	deadline := time.Now().Add(45 * time.Second)
+	for time.Now().Before(deadline) {
+		if fresh, err := s.db.WorkspaceByID(ws.ID); err == nil {
+			if s.wsToken(ctx, fresh) != "" {
+				break
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
 	_ = s.db.Audit(ownerLogin, "workspace.running", ws.ID, "port="+strconv.Itoa(res.HostPort))
 }
 
-// доступ к встроенным ассетам без цикла импортов: инициализируются в main.
+// доступ к встроенным ассетам: сырые FS — provision сам знает префиксы.
 var (
-	assetsRepoTemplate = mustSub(assetsRepo, "templates/repo")
-	assetsDshSkel      = mustSub(assetsSkel, "dsh-skel")
+	assetsRepoTemplate = assetsRepo // префикс templates/repo
+	assetsDshSkel      = assetsSkel // префикс dsh-skel
 )
 
 func (s *Server) handleWorkspaceStart(w http.ResponseWriter, r *http.Request, id identity) {
@@ -259,7 +269,7 @@ func (s *Server) handleWorkspaceStart(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 	if ws.Status == "running" {
-		writeJSON(w, http.StatusOK, map[string]any{"workspace": wsJSON(ws, id.Login)})
+		writeJSON(w, http.StatusOK, map[string]any{"workspace": s.wsJSON(r.Context(), ws, id.Login)})
 		return
 	}
 	if ws.Status == "provisioning" {
@@ -276,6 +286,7 @@ func (s *Server) handleWorkspaceStart(w http.ResponseWriter, r *http.Request, id
 		defer s.provMu.Unlock()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
+		s.forgetToken(ws.ID)
 		if ws.ContainerID != "" {
 			// контейнер остался (стоп без удаления) — просто стартуем
 			if err := s.rt.Resume(ctx, ws.ContainerID); err != nil {
@@ -297,12 +308,14 @@ func (s *Server) handleWorkspaceStart(w http.ResponseWriter, r *http.Request, id
 			}
 			_ = s.db.UpdateWorkspaceRuntime(ws.ID, res.ContainerID, res.HostPort, "running")
 		}
+		time.Sleep(3 * time.Second) // ждём печать boot-ссылки dsh
+		_ = s.wsToken(ctx, ws)
 		_ = s.db.Audit(id.Login, "workspace.start", ws.ID, "")
 		// страховочный push перед стартом не нужен, но после старта — да
 		_ = s.autosaveOne(ws)
 	}()
 	ws, _ = s.db.WorkspaceByID(ws.ID)
-	writeJSON(w, http.StatusAccepted, map[string]any{"workspace": wsJSON(ws, id.Login)})
+	writeJSON(w, http.StatusAccepted, map[string]any{"workspace": s.wsJSON(r.Context(), ws, id.Login)})
 }
 
 func (s *Server) handleWorkspaceStop(w http.ResponseWriter, r *http.Request, id identity) {
@@ -329,7 +342,7 @@ func (s *Server) handleWorkspaceStop(w http.ResponseWriter, r *http.Request, id 
 		_ = s.db.Audit(id.Login, "workspace.stop", ws.ID, "")
 	}()
 	ws.Status = "stopping"
-	writeJSON(w, http.StatusAccepted, map[string]any{"workspace": wsJSON(ws, id.Login)})
+	writeJSON(w, http.StatusAccepted, map[string]any{"workspace": s.wsJSON(r.Context(), ws, id.Login)})
 }
 
 func (s *Server) handleWorkspaceDelete(w http.ResponseWriter, r *http.Request, id identity) {
@@ -391,7 +404,7 @@ func (s *Server) handleWorkspaceRedirect(w http.ResponseWriter, r *http.Request,
 		writeErr(w, http.StatusNotFound, "воркспейс не найден")
 		return
 	}
-	url := workspaceURL(ws)
+	url := s.openURL(r.Context(), ws)
 	if url == "" {
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return

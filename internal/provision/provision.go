@@ -116,6 +116,14 @@ func Provision(l Layout, p Provider, templateFS, skelFS fs.FS) error {
 	if err := wt.AddWithOptions(&git.AddOptions{All: true}); err != nil {
 		return fmt.Errorf("provision: git add: %w", err)
 	}
+	// идентичность коммитов агента (иначе git внутри контейнера откажет)
+	if cfg, err := repo.Config(); err == nil {
+		cfg.User.Name = "agent"
+		cfg.User.Email = "agent@workspace.local"
+		if err := repo.Storer.SetConfig(cfg); err != nil {
+			return fmt.Errorf("provision: git config: %w", err)
+		}
+	}
 	sig := signature()
 	if _, err := wt.Commit("init: шаблон рабочего места (AGENTS.md, skills, backlog)",
 		&git.CommitOptions{Author: sig, Committer: sig, AllowEmptyCommits: false}); err != nil {
@@ -226,8 +234,19 @@ func AutosaveOnce(workPath string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("autosave: status: %w", err)
 	}
+	push := func() error {
+		err := r.Push(&git.PushOptions{
+			RemoteName: "origin",
+			RefSpecs:   []config.RefSpec{"refs/heads/main:refs/heads/main"},
+		})
+		if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+			return fmt.Errorf("autosave: push: %w", err)
+		}
+		return nil
+	}
 	if st.IsClean() {
-		return false, nil
+		// коммиты могли сделать агент/человек — доставляем до origin
+		return false, push()
 	}
 	if err := wt.AddWithOptions(&git.AddOptions{All: true}); err != nil {
 		return false, fmt.Errorf("autosave: add: %w", err)
@@ -237,12 +256,5 @@ func AutosaveOnce(workPath string) (bool, error) {
 		&git.CommitOptions{Author: sig, Committer: sig}); err != nil {
 		return false, fmt.Errorf("autosave: commit: %w", err)
 	}
-	err = r.Push(&git.PushOptions{
-		RemoteName: "origin",
-		RefSpecs:   []config.RefSpec{"refs/heads/main:refs/heads/main"},
-	})
-	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
-		return false, fmt.Errorf("autosave: push: %w", err)
-	}
-	return true, nil
+	return true, push()
 }

@@ -90,7 +90,7 @@ func requireHome(dir string) (string, error) {
 func cmdServe(args []string) {
 	fsSet := flag.NewFlagSet("serve", flag.ExitOnError)
 	home := fsSet.String("home", defaultHome(), "каталог данных agctl")
-	addr := fsSet.String("addr", envOr("AGCTL_ADDR", "127.0.0.1:8080"), "адрес UI/API")
+	addr := fsSet.String("addr", envOr("AGCTL_ADDR", "127.0.0.1:8929"), "адрес UI/API")
 	image := fsSet.String("image", "agctl-dsh:0.1.0", "тег образа agctl-dsh")
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
 	maxPerUser := fsSet.Int("max-per-user", 3, "лимит воркспейсов на пользователя")

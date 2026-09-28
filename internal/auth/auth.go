@@ -87,9 +87,9 @@ func newToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// Login проверяет пароль и создаёт сессию. Возвращает cookie.
+// Login проверяет пароль (verify(password, encodedHash)) и создаёт сессию.
 func (s *Service) Login(w http.ResponseWriter, userID int64, passwordHash, password string, verify func(hash, pw string) (bool, error)) error {
-	ok, err := verify(passwordHash, password)
+	ok, err := verify(password, passwordHash)
 	if err != nil || !ok {
 		return fmt.Errorf("auth: неверный логин или пароль")
 	}

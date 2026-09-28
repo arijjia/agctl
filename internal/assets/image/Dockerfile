@@ -12,7 +12,12 @@ RUN apt-get update \
 # git нужен агенту в воркспейсе; npm>=11 ради allow-scripts (нативные депы dsh).
 
 FROM base AS dsh
-RUN npm config set allow-scripts \
+# идентичность git для агента (в любом репо контейнера)
+RUN git config --system user.name "agent" \
+  && git config --system user.email "agent@workspace.local" \
+  && git config --system init.defaultBranch main \
+  && git config --system --add safe.directory '*' \
+  && npm config set allow-scripts \
       @deepseek-ai/dsh-subprocess-local,koffi,node-pty,fsevents,protobufjs,esbuild \
       --location=user \
   && npm install -g --no-audit --no-fund @deepseek-ai/dsh@0.1.7-rc.2 \
