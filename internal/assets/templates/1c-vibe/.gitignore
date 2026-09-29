@@ -1,0 +1,10 @@
+.env
+*.log
+.DS_Store
+node_modules/
+__pycache__/
+.venv/
+*.osmeta
+*.cfl
+*.cfu
+1cv8.usr/

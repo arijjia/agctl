@@ -29,6 +29,49 @@ type Provider struct {
 	APIKey  string // токен — только в .credentials.yaml и env контейнера
 }
 
+// Template — зарегистрированный шаблон репки.
+type Template struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+// Templates — реестр шаблонов (ID = подкаталог в assets templates/<id>).
+var Templates = []Template{
+	{
+		ID:    "base",
+		Title: "Базовое рабочее место",
+		Description: "Агент с правилом частых коммитов, скиллом ведения бэклогов " +
+			"и саморедактируемыми процедурами. Универсальный старт.",
+	},
+	{
+		ID:    "1c-vibe",
+		Title: "1С-разработка (1c-vibe)",
+		Description: "Цикл Jira → git-ветка → правка выгрузки 1С (XML/BSL) → " +
+			"самопроверка → MR через publish.py. Тулзы контура и демо-проект включены.",
+	},
+}
+
+// ValidTemplate — есть ли такой шаблон.
+func ValidTemplate(id string) bool {
+	if id == "" {
+		return true // пусто = base
+	}
+	for _, t := range Templates {
+		if t.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func templatePrefix(name string) string {
+	if name == "" {
+		name = "base"
+	}
+	return "templates/" + name
+}
+
 // Layout — пути воркспейса на диске хоста.
 type Layout struct {
 	Repo    string // $HOME/repos/<owner>/<name>.git — bare origin
@@ -77,11 +120,14 @@ func sanitize(s string) string {
 }
 
 // Provision создаёт всю файловую часть воркспейса:
-// bare-репу из шаблона + рабочий клон + скелет DSH_HOME с токеном.
+// bare-репу из шаблона templateName + рабочий клон + скелет DSH_HOME с токеном.
 // templateFS и skelFS — встроенные ассеты (internal/assets).
-func Provision(l Layout, p Provider, templateFS, skelFS fs.FS) error {
+func Provision(l Layout, p Provider, templateName string, templateFS, skelFS fs.FS) error {
 	if p.BaseURL == "" || p.Model == "" || p.APIKey == "" {
 		return errors.New("provision: не заданы провайдер или токен")
+	}
+	if !ValidTemplate(templateName) {
+		return fmt.Errorf("provision: неизвестный шаблон %q", templateName)
 	}
 	for _, d := range []string{l.Repo, filepath.Dir(l.Work), l.DshHome} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
@@ -106,7 +152,7 @@ func Provision(l Layout, p Provider, templateFS, skelFS fs.FS) error {
 	if err != nil {
 		return fmt.Errorf("provision: work init: %w", err)
 	}
-	if err := CopyFS(templateFS, "templates/repo", l.Work); err != nil {
+	if err := CopyFS(templateFS, templatePrefix(templateName), l.Work); err != nil {
 		return fmt.Errorf("provision: шаблон репы: %w", err)
 	}
 	wt, err := repo.Worktree()

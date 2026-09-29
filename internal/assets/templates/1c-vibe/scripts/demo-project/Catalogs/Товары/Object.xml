@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" uuid="a1b2c3d4-0000-4000-8000-000000000010">
+	<Catalog uuid="a1b2c3d4-0000-4000-8000-000000000010">
+		<InternalInfo>
+			<xr:GeneratedType name="CatalogObject.Товары" category="Object">
+				<xr:TypeId>b0000000-0000-4000-8000-000000000011</xr:TypeId>
+				<xr:ValueId>b0000000-0000-4000-8000-000000000012</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="CatalogRef.Товары" category="Ref">
+				<xr:TypeId>b0000000-0000-4000-8000-000000000013</xr:TypeId>
+				<xr:ValueId>b0000000-0000-4000-8000-000000000014</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="CatalogSelection.Товары" category="Selection">
+				<xr:TypeId>b0000000-0000-4000-8000-000000000015</xr:TypeId>
+				<xr:ValueId>b0000000-0000-4000-8000-000000000016</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="CatalogList.Товары" category="List">
+				<xr:TypeId>b0000000-0000-4000-8000-000000000017</xr:TypeId>
+				<xr:ValueId>b0000000-0000-4000-8000-000000000018</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="CatalogManager.Товары" category="Manager">
+				<xr:TypeId>b0000000-0000-4000-8000-000000000019</xr:TypeId>
+				<xr:ValueId>b0000000-0000-4000-8000-00000000001a</xr:ValueId>
+			</xr:GeneratedType>
+		</InternalInfo>
+		<Properties>
+			<Name>Товары</Name>
+			<Synonym>
+				<v8:item xmlns:v8="urn:1c.ru:v8">
+					<v8:lang>ru</v8:lang>
+					<v8:content>Товары</v8:content>
+				</v8:item>
+			</Synonym>
+			<Comment/>
+			<Hierarchical>false</Hierarchical>
+			<HierarchyType>HierarchyFoldersAndItems</HierarchyType>
+			<LimitLevelCount>false</LimitLevelCount>
+			<LevelCount>2</LevelCount>
+			<FoldersOnTop>true</FoldersOnTop>
+			<UseStandardCommands>true</UseStandardCommands>
+			<Owners/>
+			<SubordinationUse>ToItems</SubordinationUse>
+			<CodeLength>9</CodeLength>
+			<DescriptionLength>100</DescriptionLength>
+			<CodeType>String</CodeType>
+			<CodeAllowedLength>Variable</CodeAllowedLength>
+			<CodeSeries>WholeCatalog</CodeSeries>
+			<CheckUnique>true</CheckUnique>
+			<Autonumbering>true</Autonumbering>
+			<DefaultPresentation>AsDescription</DefaultPresentation>
+			<StandardAttributes>
+				<xr:StandardAttribute name="PredefinedDataName">
+					<xr:LinkByType/>
+					<xr:FillChecking>DontCheck</xr:FillChecking>
+					<xr:ChoiceParameterLinks/>
+				</xr:StandardAttribute>
+				<xr:StandardAttribute name="Parent">
+					<xr:LinkByType/>
+					<xr:FillChecking>DontCheck</xr:FillChecking>
+					<xr:ChoiceParameterLinks/>
+				</xr:StandardAttribute>
+				<xr:StandardAttribute name="Description">
+					<xr:LinkByType/>
+					<xr:FillChecking>ShowError</xr:FillChecking>
+					<xr:ChoiceParameterLinks/>
+				</xr:StandardAttribute>
+				<xr:StandardAttribute name="IsFolder">
+					<xr:LinkByType/>
+					<xr:FillChecking>DontCheck</xr:FillChecking>
+					<xr:ChoiceParameterLinks/>
+				</xr:StandardAttribute>
+				<xr:StandardAttribute name="Ref">
+					<xr:LinkByType/>
+					<xr:FillChecking>DontCheck</xr:FillChecking>
+					<xr:ChoiceParameterLinks/>
+				</xr:StandardAttribute>
+			</StandardAttributes>
+			<Characteristics/>
+			<PredefinedData/>
+			<QuickChoice>true</QuickChoice>
+			<ChoiceMode>BothWays</ChoiceMode>
+			<DefaultListForm/>
+			<DefaultChoiceForm/>
+			<DefaultFolderChoiceForm/>
+			<AuxiliaryListForm/>
+			<AuxiliaryChoiceForm/>
+			<AuxiliaryFolderChoiceForm/>
+			<CreateOnInput>Use</CreateOnInput>
+			<ChoiceDataGetModeOnInputByString>Directly</ChoiceDataGetModeOnInputByString>
+			<ChoiceDataGetModeOnInputDirectly>Directly</ChoiceDataGetModeOnInputDirectly>
+			<DefaultObjectForm/>
+			<DefaultFolderForm/>
+			<DefaultFolderItemForm/>
+			<CodeIteration>0</CodeIteration>
+			<FillCheck>DontCheck</FillCheck>
+			<FoldersAndItemsOnTop>true</FoldersAndItemsOnTop>
+		</Properties>
+		<ChildObjects>
+			<Attribute uuid="a1b2c3d4-0000-4000-8000-000000000021">
+				<Properties>
+					<Name>Комментарий</Name>
+					<Synonym>
+						<v8:item xmlns:v8="urn:1c.ru:v8">
+							<v8:lang>ru</v8:lang>
+							<v8:content>Комментарий</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment/>
+					<Type>
+						<v8:Type xmlns:v8="urn:1c.ru:v8">xs:string</v8:Type>
+						<v8:StringQualifiers xmlns:v8="urn:1c.ru:v8">
+							<v8:Length>0</v8:Length>
+							<v8:AllowedLength>Variable</v8:AllowedLength>
+						</v8:StringQualifiers>
+					</Type>
+					<PasswordMode>false</PasswordMode>
+					<Format/>
+					<EditFormat/>
+					<ToolTip/>
+					<Mask/>
+					<MultiLine>false</MultiLine>
+					<ExtendedEdit>false</ExtendedEdit>
+					<MinValue xsi:type="xs:decimal" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"/>
+					<FillFromFillingValue>false</FillFromFillingValue>
+					<FillValue xsi:type="xs:string" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"/>
+					<FillChecking>DontCheck</FillChecking>
+					<ChoiceParameterLinks/>
+					<QuickChoice>true</QuickChoice>
+					<ChoiceForm/>
+					<LinkByType/>
+					<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>
+					<Use>ForItem</Use>
+					<Indexing>DontIndex</Indexing>
+					<FullTextSearch>Use</FullTextSearch>
+				</Properties>
+			</Attribute>
+		</ChildObjects>
+	</Catalog>
+</MetaDataObject>

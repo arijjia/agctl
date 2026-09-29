@@ -24,7 +24,7 @@ func TestProvisionFull(t *testing.T) {
 	l := Paths(home, "anna", "w-abcd1234ef56", "Моя Работа")
 	p := testProvider()
 
-	if err := Provision(l, p, assets.RepoTemplate, assets.DshSkel); err != nil {
+	if err := Provision(l, p, "base", assets.RepoTemplate, assets.DshSkel); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
 
@@ -123,7 +123,7 @@ func TestProvisionFull(t *testing.T) {
 func TestBacklogFlow(t *testing.T) {
 	home := t.TempDir()
 	l := Paths(home, "anna", "w-abcd1234ef56", "ws")
-	if err := Provision(l, testProvider(), assets.RepoTemplate, assets.DshSkel); err != nil {
+	if err := Provision(l, testProvider(), "base", assets.RepoTemplate, assets.DshSkel); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
 	root := l.Work

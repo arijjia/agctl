@@ -112,6 +112,10 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 
 // ── воркспейсы ──────────────────────────────────────────────────────────────
 
+func (s *Server) handleTemplates(w http.ResponseWriter, r *http.Request, _ identity) {
+	writeJSON(w, http.StatusOK, map[string]any{"templates": provision.Templates})
+}
+
 func (s *Server) handleWorkspacesList(w http.ResponseWriter, r *http.Request, id identity) {
 	var wss []store.Workspace
 	var err error
@@ -150,7 +154,8 @@ func (s *Server) handleWorkspaceGet(w http.ResponseWriter, r *http.Request, id i
 
 func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, id identity) {
 	var req struct {
-		Name string `json:"name"`
+		Name     string `json:"name"`
+		Template string `json:"template"`
 		ProviderReq
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -160,6 +165,10 @@ func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, i
 	req.Name = strings.TrimSpace(req.Name)
 	if len(req.Name) < 2 {
 		writeErr(w, http.StatusBadRequest, "имя воркспейса: минимум 2 символа")
+		return
+	}
+	if !provision.ValidTemplate(req.Template) {
+		writeErr(w, http.StatusBadRequest, "неизвестный шаблон: "+req.Template)
 		return
 	}
 	if err := req.ProviderReq.validate(); err != nil {
@@ -193,8 +202,8 @@ func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, i
 		return
 	}
 	ws := store.Workspace{
-		ID: wsID, OwnerID: id.ID, Name: req.Name, Status: "provisioning",
-		HostPort: port, BaseURL: p.BaseURL, Model: p.Model,
+		ID: wsID, OwnerID: id.ID, Name: req.Name, Template: req.Template,
+		Status: "provisioning", HostPort: port, BaseURL: p.BaseURL, Model: p.Model,
 	}
 	if err := s.db.InsertWorkspace(ws); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -224,7 +233,7 @@ func (s *Server) provisionJob(ws store.Workspace, ownerLogin string, p provision
 		_ = s.db.UpdateWorkspaceStatus(ws.ID, "failed", stage+": "+err.Error())
 		_ = s.db.Audit(ownerLogin, "workspace.fail", ws.ID, stage+": "+err.Error())
 	}
-	if err := provision.Provision(paths, p, assetsRepoTemplate, assetsDshSkel); err != nil {
+	if err := provision.Provision(paths, p, ws.Template, assetsRepoTemplate, assetsDshSkel); err != nil {
 		fail("provision", err)
 		return
 	}

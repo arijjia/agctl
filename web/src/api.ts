@@ -4,9 +4,12 @@ export type Role = "user" | "admin";
 export type User = { login: string; role: Role };
 export type WsStatus = "provisioning" | "running" | "stopped" | "failed" | "removing" | "stopping";
 
+export type RepoTemplate = { id: string; title: string; description: string };
+
 export type Workspace = {
   id: string;
   name: string;
+  template: string;
   status: WsStatus;
   owner: string;
   createdAt: string;
@@ -43,13 +46,14 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 }
 
 export const api = {
+  templates: () => req<{ templates: RepoTemplate[] }>("GET", "/api/templates"),
   register: (login: string, password: string) => req<{ user: User }>("POST", "/api/register", { login, password }),
   login: (login: string, password: string) => req<{ user: User }>("POST", "/api/login", { login, password }),
   logout: () => req<void>("POST", "/api/logout"),
   me: () => req<{ user: User }>("GET", "/api/me"),
   workspaces: () => req<{ workspaces: Workspace[] }>("GET", "/api/workspaces"),
-  create: (name: string, baseURL: string, model: string, apiKey: string) =>
-    req<{ workspace: Workspace }>("POST", "/api/workspaces", { name, baseURL, model, apiKey }),
+  create: (name: string, template: string, baseURL: string, model: string, apiKey: string) =>
+    req<{ workspace: Workspace }>("POST", "/api/workspaces", { name, template, baseURL, model, apiKey }),
   start: (id: string) => req<{ workspace: Workspace }>("POST", `/api/workspaces/${id}/start`),
   stop: (id: string) => req<{ workspace: Workspace }>("POST", `/api/workspaces/${id}/stop`),
   remove: (id: string) => req<void>("DELETE", `/api/workspaces/${id}`),

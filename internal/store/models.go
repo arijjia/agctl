@@ -25,6 +25,7 @@ type Workspace struct {
 	ID          string
 	OwnerID     int64
 	Name        string
+	Template    string // base | 1c-vibe | ...
 	Status      string // provisioning | running | stopped | failed | removing
 	RepoPath    string
 	WorkPath    string
@@ -151,22 +152,22 @@ func (d *DB) DeleteExpiredSessions() error {
 
 // ── workspaces ───────────────────────────────────────────────────────────────
 
-const wsCols = `id, owner_id, name, status, repo_path, work_path, dsh_home,
+const wsCols = `id, owner_id, name, template, status, repo_path, work_path, dsh_home,
 	container_id, host_port, base_url, model, error, created_at, updated_at`
 
 func scanWS(row interface{ Scan(...any) error }) (Workspace, error) {
 	var w Workspace
-	err := row.Scan(&w.ID, &w.OwnerID, &w.Name, &w.Status, &w.RepoPath, &w.WorkPath,
+	err := row.Scan(&w.ID, &w.OwnerID, &w.Name, &w.Template, &w.Status, &w.RepoPath, &w.WorkPath,
 		&w.DshHome, &w.ContainerID, &w.HostPort, &w.BaseURL, &w.Model, &w.Error,
 		&w.CreatedAt, &w.UpdatedAt)
 	return w, err
 }
 
 func (d *DB) InsertWorkspace(w Workspace) error {
-	_, err := d.Exec(`INSERT INTO workspaces(id, owner_id, name, status, repo_path,
+	_, err := d.Exec(`INSERT INTO workspaces(id, owner_id, name, template, status, repo_path,
 		work_path, dsh_home, container_id, host_port, base_url, model, error)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-		w.ID, w.OwnerID, w.Name, w.Status, w.RepoPath, w.WorkPath, w.DshHome,
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		w.ID, w.OwnerID, w.Name, w.Template, w.Status, w.RepoPath, w.WorkPath, w.DshHome,
 		w.ContainerID, w.HostPort, w.BaseURL, w.Model, w.Error)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
@@ -187,7 +188,7 @@ func (d *DB) WorkspacesByOwner(ownerID int64) ([]Workspace, error) {
 }
 
 func (d *DB) WorkspacesAll() ([]Workspace, error) {
-	return d.wsList(`SELECT w.id, w.owner_id, w.name, w.status, w.repo_path, w.work_path,
+	return d.wsList(`SELECT w.id, w.owner_id, w.name, w.template, w.status, w.repo_path, w.work_path,
 		w.dsh_home, w.container_id, w.host_port, w.base_url, w.model, w.error,
 		w.created_at, w.updated_at
 		FROM workspaces w JOIN users u ON u.id = w.owner_id
@@ -226,7 +227,7 @@ func (d *DB) UpdateWorkspaceStatus(id, status, errText string) error {
 
 func (d *DB) UpdateWorkspaceRuntime(id, containerID string, hostPort int, status string) error {
 	_, err := d.Exec(`UPDATE workspaces SET container_id = ?, host_port = ?, status = ?,
-		updated_at = ? WHERE id = ?`, containerID, hostPort, status, now(), id)
+		error = '', updated_at = ? WHERE id = ?`, containerID, hostPort, status, now(), id)
 	return wrap("update ws runtime", err)
 }
 

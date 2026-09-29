@@ -119,6 +119,7 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.handleMe)
+	mux.HandleFunc("GET /api/templates", s.requireUser(s.handleTemplates))
 	mux.HandleFunc("GET /api/workspaces", s.requireUser(s.handleWorkspacesList))
 	mux.HandleFunc("POST /api/workspaces", s.requireUser(s.handleWorkspaceCreate))
 	mux.HandleFunc("GET /api/workspaces/{id}", s.requireUser(s.handleWorkspaceGet))
@@ -203,6 +204,12 @@ func (s *Server) reconcile() {
 	for _, w := range wss {
 		if w.Status != "running" || w.ContainerID == "" {
 			continue
+		}
+		// грэйс-период: свежезапущенные контейнеры ещё грузятся
+		if upd, err := time.Parse("2006-01-02 15:04:05", w.UpdatedAt); err == nil {
+			if time.Since(upd) < 2*time.Minute {
+				continue
+			}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, err := s.rt.Logs(ctx, w.ContainerID, "1")
@@ -336,7 +343,7 @@ func (s *Server) wsJSON(ctx context.Context, w store.Workspace, owner string) ma
 		"id": w.ID, "name": w.Name, "status": w.Status,
 		"owner": owner, "createdAt": w.CreatedAt, "updatedAt": w.UpdatedAt,
 		"url": s.openURL(ctx, w), "port": w.HostPort, "error": w.Error,
-		"model": w.Model, "baseURL": w.BaseURL,
+		"model": w.Model, "baseURL": w.BaseURL, "template": w.Template,
 	}
 }
 

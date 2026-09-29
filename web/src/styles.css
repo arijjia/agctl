@@ -82,7 +82,15 @@ button.danger { color: var(--red); }
 .tabs.left { justify-content: flex-start; margin-bottom: 12px; }
 .tab.active { border-color: var(--accent); color: var(--accent); }
 
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.stack { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+select {
+  background: #0d1117;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
 
 .error {
   background: rgba(248, 81, 73, 0.12);

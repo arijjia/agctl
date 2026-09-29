@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, AuditEvent, AdminUser, User, Workspace, WsStatus } from "./api";
+import { api, AuditEvent, AdminUser, RepoTemplate, User, Workspace, WsStatus } from "./api";
 
 // ── статусы ──────────────────────────────────────────────────────────────────
 
@@ -160,6 +160,8 @@ function WorkspaceCard({
 
 function Cabinet({ user, onLogout, onAdmin }: { user: User; onLogout: () => void; onAdmin: () => void }) {
   const [wss, setWss] = useState<Workspace[]>([]);
+  const [tpls, setTpls] = useState<RepoTemplate[]>([]);
+  const [template, setTemplate] = useState("base");
   const [name, setName] = useState("");
   const [baseURL, setBaseURL] = useState("https://litellm-dev.utmn.ru/v1");
   const [model, setModel] = useState("qwen-3.8-deep");
@@ -167,6 +169,10 @@ function Cabinet({ user, onLogout, onAdmin }: { user: User; onLogout: () => void
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const timer = useRef<number | null>(null);
+
+  useEffect(() => {
+    api.templates().then((r) => setTpls(r.templates)).catch(() => {});
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -198,7 +204,7 @@ function Cabinet({ user, onLogout, onAdmin }: { user: User; onLogout: () => void
     setError("");
     setCreating(true);
     try {
-      await api.create(name, baseURL, model, apiKey);
+      await api.create(name, template, baseURL, model, apiKey);
       setName("");
       setApiKey("");
       await refresh();
@@ -225,11 +231,26 @@ function Cabinet({ user, onLogout, onAdmin }: { user: User; onLogout: () => void
 
       <form className="card create-card" onSubmit={create}>
         <h2>Новое рабочее место</h2>
-        <div className="grid">
+        <div className="stack">
           <label>
             Имя
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="моё-рабочее-место" required minLength={2} />
           </label>
+          <label>
+            Шаблон репозитория
+            <select value={template} onChange={(e) => setTemplate(e.target.value)}>
+              {tpls.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          {tpls.find((t) => t.id === template)?.description && (
+            <p className="muted small" style={{ marginTop: -4 }}>
+              {tpls.find((t) => t.id === template)?.description}
+            </p>
+          )}
           <label>
             Base URL провайдера
             <input value={baseURL} onChange={(e) => setBaseURL(e.target.value)} className="mono" required />

@@ -1,4 +1,4 @@
-dist/
+/dist/
 .build-img/
 web/node_modules/
 *.tsbuildinfo

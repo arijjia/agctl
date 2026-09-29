@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" uuid="a1b2c3d4-0000-4000-8000-000000000001">
+	<Configuration uuid="a1b2c3d4-0000-4000-8000-000000000001">
+		<InternalInfo>
+			<xr:ContainedObject>
+				<xr:ClassInstance>c3e91cef-3f5f-4a4a-8e5f-1f14f4b0b7e1</xr:ClassInstance>
+				<xr:FillFromFillingValue>false</xr:FillFromFillingValue>
+			</xr:ContainedObject>
+			<xr:GeneratedType name="CatalogObject.Товары" category="Object">
+				<xr:TypeId>b0000000-0000-4000-8000-000000000001</xr:TypeId>
+				<xr:ValueId>b0000000-0000-4000-8000-000000000002</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="CatalogRef.Товары" category="Ref">
+				<xr:TypeId>b0000000-0000-4000-8000-000000000003</xr:TypeId>
+				<xr:ValueId>b0000000-0000-4000-8000-000000000004</xr:ValueId>
+			</xr:GeneratedType>
+		</InternalInfo>
+		<Properties>
+			<Name>Демо</Name>
+			<Synonym>
+				<v8:item xmlns:v8="urn:1c.ru:v8">
+					<v8:lang>ru</v8:lang>
+					<v8:content>Демо-конфигурация 1c-vibe</v8:content>
+				</v8:item>
+			</Synonym>
+			<Comment>Синтетическое дерево для демонстрации работы агента. Не является реальной выгрузкой.</Comment>
+			<NamePrefix/>
+			<DefaultLanguage>Language.Русский</DefaultLanguage>
+			<DefaultRole/>
+			<Vendor/>
+			<Version>0.1.0</Version>
+			<UpdateCatalogAddress/>
+			<IncludeHelpInContents>false</IncludeHelpInContents>
+			<UseManagedFormInOrdinaryApplication>true</UseManagedFormInOrdinaryApplication>
+			<UsePlainFormInOrdinaryApplication>false</UsePlainFormInOrdinaryApplication>
+			<CompatibilityMode>8.3.20</CompatibilityMode>
+			<DefaultConstantsForm/>
+			<DefaultReportForm/>
+			<DefaultReportVariantForm/>
+			<DefaultDynamicListSettingsForm/>
+			<ObjectAutonumerationMode>NotAutoFree</ObjectAutonumerationMode>
+			<ModalityUseMode>DontUse</ModalityUseMode>
+			<DataLockingMode>Managed</DataLockingMode>
+		</Properties>
+		<ChildObjects>
+			<Language>Русский</Language>
+			<Catalog>Товары</Catalog>
+		</ChildObjects>
+	</Configuration>
+</MetaDataObject>

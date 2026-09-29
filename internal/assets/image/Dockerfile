@@ -5,11 +5,12 @@
 # Linux-сборка agctl кладётся в контекст сборки файлом ./agctl (make image).
 FROM node:22-bookworm-slim AS base
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3 make g++ ca-certificates curl git \
+  && apt-get install -y --no-install-recommends python3 python3-pytest python3-pip make g++ ca-certificates curl git \
   && rm -rf /var/lib/apt/lists/* \
   && npm install -g npm@12 --no-audit --no-fund \
   && npm --version
-# git нужен агенту в воркспейсе; npm>=11 ради allow-scripts (нативные депы dsh).
+# git нужен агенту в воркспейсе; npm>=11 ради allow-scripts (нативные депы dsh);
+# python3+pytest — тулзы доменных шаблонов (например 1c-vibe).
 
 FROM base AS dsh
 # идентичность git для агента (в любом репо контейнера)
