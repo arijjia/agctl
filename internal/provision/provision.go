@@ -8,6 +8,7 @@ package provision
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -280,7 +281,58 @@ func SeedDshHome(home string, p Provider, skelFS fs.FS) error {
 	if err := CopyFS(skelFS, "dsh-skel", home); err != nil {
 		return fmt.Errorf("provision: скелет dsh-home: %w", err)
 	}
+	if err := seedWorkspaceRegistry(home); err != nil {
+		return err
+	}
 	return RefreshProvider(home, p)
+}
+
+// seedWorkspaceRegistry — предзаписанный реестр воркспейсов dsh: одна запись
+// на /workspace. Без неё dsh при первом буте пытается создать «дефолтный»
+// воркспейс в ~/Documents (xdg-user-dir отсутствует в контейнере) и падает
+// с тостом «Unable to create default workspace», а сайдбар файлов остаётся
+// пустым. Формат — workspace domain v2 (dsh-workspace/lib/types/spec.js).
+func seedWorkspaceRegistry(home string) error {
+	dir := filepath.Join(home, "storages")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("provision: storages: %w", err)
+	}
+	path := filepath.Join(dir, "workspace.json")
+	if _, err := os.Stat(path); err == nil {
+		return nil // уже есть — не трогаем (переживает рестарты)
+	}
+	now := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+	data := fmt.Sprintf(`{
+  "unit": {"name": "workspace", "version": 2},
+  "global": {
+    "initialized": true,
+    "defaultWorkspaceId": "ws-agctl",
+    "workspaceIds": ["ws-agctl"],
+    "archivedSessionIds": [],
+    "pinnedSessionIds": []
+  },
+  "tables": {
+    "workspaces": {
+      "ws-agctl": {
+        "path": "/workspace",
+        "title": "default-workspace",
+        "sessionIds": [],
+        "createdAt": %s,
+        "updatedAt": %s
+      }
+    }
+  }
+}`, jsonStr(now), jsonStr(now))
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		return fmt.Errorf("provision: workspace.json: %w", err)
+	}
+	return nil
+}
+
+// jsonStr — строка в JSON (для workspace.json).
+func jsonStr(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
 // RefreshProvider — перезапись настроек провайдера в существующем DSH_HOME
