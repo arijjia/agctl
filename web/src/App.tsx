@@ -101,6 +101,14 @@ function WorkspaceCard({
     }
   };
 
+  const [details, setDetails] = useState(false);
+  const [prov, setProv] = useState(false);
+  const [pBaseURL, setPBaseURL] = useState("");
+  const [pModels, setPModels] = useState("");
+  const [pKey, setPKey] = useState("");
+  const [provBusy, setProvBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
   const toggleLogs = async () => {
     if (logs !== null) {
       setLogs(null);
@@ -114,6 +122,46 @@ function WorkspaceCard({
     }
   };
 
+  const openProvider = () => {
+    setPBaseURL(ws.baseURL || "");
+    setPModels((ws.models && ws.models.length ? ws.models : [ws.model].filter(Boolean)).join("\n"));
+    setPKey("");
+    setProv(true);
+  };
+
+  const submitProvider = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setProvBusy(true);
+    try {
+      await api.updateProvider(
+        ws.id,
+        pBaseURL.trim(),
+        pModels.split("\n").map((m) => m.trim()).filter(Boolean),
+        pKey,
+      );
+      setProv(false);
+      setPKey("");
+      onChanged();
+    } catch (err: any) {
+      setError(err.message || String(err));
+    } finally {
+      setProvBusy(false);
+    }
+  };
+
+  const copyClone = async () => {
+    try {
+      await navigator.clipboard.writeText(`git clone "${ws.repoPath}"`);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("не удалось скопировать — скопируйте путь вручную");
+    }
+  };
+
+  const modelList = ws.models && ws.models.length ? ws.models : [ws.model].filter(Boolean);
+
   return (
     <div className="card ws-card">
       <div className="ws-head">
@@ -125,6 +173,9 @@ function WorkspaceCard({
         <StatusBadge status={ws.status} />
       </div>
       {ws.error && <div className="error">{ws.error}</div>}
+      <div className="muted small">
+        {ws.template || "base"} · <span className="mono">{modelList.join(", ")}</span>
+      </div>
       <div className="ws-actions">
         {ws.status === "running" && (
           <a className="button primary" href={ws.url} target="_blank" rel="noreferrer">
@@ -150,7 +201,78 @@ function WorkspaceCard({
           </button>
         )}
         <button onClick={toggleLogs}>{logs === null ? "Логи" : "Скрыть логи"}</button>
+        <button onClick={() => setDetails(!details)}>{details ? "Скрыть параметры" : "Параметры"}</button>
+        <button onClick={openProvider}>Настроить модель</button>
       </div>
+      {details && (
+        <div className="ws-details muted small">
+          <div>
+            Base URL: <span className="mono">{ws.baseURL || "—"}</span>
+          </div>
+          <div>
+            Модели: <span className="mono">{modelList.join(", ") || "—"}</span>
+            {ws.model && modelList.length > 1 && (
+              <> · по умолчанию: <span className="mono">{ws.model}</span></>
+            )}
+          </div>
+          <div>
+            Шаблон репки: <span className="mono">{ws.template || "base"}</span>
+          </div>
+          {ws.port > 0 && (
+            <div>
+              Порт UI контейнера: <span className="mono">127.0.0.1:{ws.port}</span> (логи контейнера — кнопка «Логи»)
+            </div>
+          )}
+          {ws.repoPath && (
+            <div className="clone-row">
+              Git origin (внешний клон):{" "}
+              <code className="mono">git clone &quot;{ws.repoPath}&quot;</code>{" "}
+              <button className="small" onClick={copyClone}>
+                {copied ? "скопировано" : "копировать"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      {prov && (
+        <form className="card provider-form" onSubmit={submitProvider}>
+          <h3>Настройки провайдера</h3>
+          <label>
+            Base URL
+            <input value={pBaseURL} onChange={(e) => setPBaseURL(e.target.value)} className="mono" required />
+          </label>
+          <label>
+            Модели (по одной на строку, первая — по умолчанию)
+            <textarea
+              value={pModels}
+              onChange={(e) => setPModels(e.target.value)}
+              className="mono"
+              rows={4}
+              required
+            />
+          </label>
+          <label>
+            Новый API-токен (оставьте пустым, чтобы сохранить текущий)
+            <input
+              type="password"
+              value={pKey}
+              onChange={(e) => setPKey(e.target.value)}
+              placeholder="••••••"
+            />
+          </label>
+          <div className="ws-actions">
+            <button className="primary" disabled={provBusy}>
+              {provBusy ? "применяем…" : "Сохранить"}
+            </button>
+            <button type="button" onClick={() => setProv(false)}>
+              Отмена
+            </button>
+          </div>
+          <p className="muted small">
+            Настройки записываются в рабочее место; запущенный контейнер пересоздаётся автоматически.
+          </p>
+        </form>
+      )}
       {logs !== null && <pre className="logs">{logs}</pre>}
     </div>
   );
@@ -164,7 +286,9 @@ function Cabinet({ user, onLogout, onAdmin }: { user: User; onLogout: () => void
   const [template, setTemplate] = useState("base");
   const [name, setName] = useState("");
   const [baseURL, setBaseURL] = useState("https://litellm-dev.utmn.ru/v1");
-  const [model, setModel] = useState("qwen-3.8-deep");
+  const [models, setModels] = useState(
+    "qwen-3.8-deep\nqwen-3.8-27b\nqwen-3.8-fast\nqwen3.5-9b-q8_0\nqwen3guard",
+  );
   const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
@@ -204,7 +328,13 @@ function Cabinet({ user, onLogout, onAdmin }: { user: User; onLogout: () => void
     setError("");
     setCreating(true);
     try {
-      await api.create(name, template, baseURL, model, apiKey);
+      await api.create(
+        name,
+        template,
+        baseURL,
+        models.split("\n").map((m) => m.trim()).filter(Boolean),
+        apiKey,
+      );
       setName("");
       setApiKey("");
       await refresh();
@@ -256,8 +386,14 @@ function Cabinet({ user, onLogout, onAdmin }: { user: User; onLogout: () => void
             <input value={baseURL} onChange={(e) => setBaseURL(e.target.value)} className="mono" required />
           </label>
           <label>
-            Модель
-            <input value={model} onChange={(e) => setModel(e.target.value)} className="mono" required />
+            Модели (по одной на строку, первая — по умолчанию)
+            <textarea
+              value={models}
+              onChange={(e) => setModels(e.target.value)}
+              className="mono"
+              rows={4}
+              required
+            />
           </label>
           <label>
             API-токен

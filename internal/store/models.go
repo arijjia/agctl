@@ -33,7 +33,8 @@ type Workspace struct {
 	ContainerID string
 	HostPort    int
 	BaseURL     string
-	Model       string
+	Model       string   // модель по умолчанию (legacy-колонка)
+	Models      []string // весь список (колонка models, "\n"-разделитель)
 	Error       string
 	CreatedAt   string
 	UpdatedAt   string
@@ -45,8 +46,34 @@ type Secret struct {
 	UserID     int64
 	BaseURL    string
 	Model      string
+	Models     []string
 	Ciphertext string
 	UpdatedAt  string
+}
+
+// EncodeModels — список моделей в TEXT-колонку.
+func EncodeModels(models []string) string {
+	var clean []string
+	for _, m := range models {
+		if m = strings.TrimSpace(m); m != "" {
+			clean = append(clean, m)
+		}
+	}
+	return strings.Join(clean, "\n")
+}
+
+// DecodeModels — обратно; пусто + fallback = одна модель.
+func DecodeModels(raw, fallback string) []string {
+	var out []string
+	for _, m := range strings.Split(raw, "\n") {
+		if m = strings.TrimSpace(m); m != "" {
+			out = append(out, m)
+		}
+	}
+	if len(out) == 0 && fallback != "" {
+		out = []string{fallback}
+	}
+	return out
 }
 
 // AuditEvent — запись журнала безопасности (РСБ).
@@ -153,22 +180,26 @@ func (d *DB) DeleteExpiredSessions() error {
 // ── workspaces ───────────────────────────────────────────────────────────────
 
 const wsCols = `id, owner_id, name, template, status, repo_path, work_path, dsh_home,
-	container_id, host_port, base_url, model, error, created_at, updated_at`
+	container_id, host_port, base_url, model, models, error, created_at, updated_at`
 
 func scanWS(row interface{ Scan(...any) error }) (Workspace, error) {
 	var w Workspace
+	var modelsRaw string
 	err := row.Scan(&w.ID, &w.OwnerID, &w.Name, &w.Template, &w.Status, &w.RepoPath, &w.WorkPath,
-		&w.DshHome, &w.ContainerID, &w.HostPort, &w.BaseURL, &w.Model, &w.Error,
+		&w.DshHome, &w.ContainerID, &w.HostPort, &w.BaseURL, &w.Model, &modelsRaw, &w.Error,
 		&w.CreatedAt, &w.UpdatedAt)
+	if err == nil {
+		w.Models = DecodeModels(modelsRaw, w.Model)
+	}
 	return w, err
 }
 
 func (d *DB) InsertWorkspace(w Workspace) error {
 	_, err := d.Exec(`INSERT INTO workspaces(id, owner_id, name, template, status, repo_path,
-		work_path, dsh_home, container_id, host_port, base_url, model, error)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		work_path, dsh_home, container_id, host_port, base_url, model, models, error)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		w.ID, w.OwnerID, w.Name, w.Template, w.Status, w.RepoPath, w.WorkPath, w.DshHome,
-		w.ContainerID, w.HostPort, w.BaseURL, w.Model, w.Error)
+		w.ContainerID, w.HostPort, w.BaseURL, w.Model, EncodeModels(w.Models), w.Error)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return fmt.Errorf("store: имя воркспейса занято: %w", err)
@@ -189,7 +220,7 @@ func (d *DB) WorkspacesByOwner(ownerID int64) ([]Workspace, error) {
 
 func (d *DB) WorkspacesAll() ([]Workspace, error) {
 	return d.wsList(`SELECT w.id, w.owner_id, w.name, w.template, w.status, w.repo_path, w.work_path,
-		w.dsh_home, w.container_id, w.host_port, w.base_url, w.model, w.error,
+		w.dsh_home, w.container_id, w.host_port, w.base_url, w.model, w.models, w.error,
 		w.created_at, w.updated_at
 		FROM workspaces w JOIN users u ON u.id = w.owner_id
 		ORDER BY w.created_at DESC`)
@@ -244,22 +275,33 @@ func (d *DB) DeleteWorkspace(id string) error {
 
 // ── secrets (LLM-токены, шифротекст) ────────────────────────────────────────
 
-func (d *DB) SecretUpsert(userID int64, baseURL, model, ciphertext string) error {
-	_, err := d.Exec(`INSERT INTO secrets(user_id, base_url, model, ciphertext, updated_at)
-		VALUES(?,?,?,?,?)
+func (d *DB) SecretUpsert(userID int64, baseURL, model string, models []string, ciphertext string) error {
+	_, err := d.Exec(`INSERT INTO secrets(user_id, base_url, model, models, ciphertext, updated_at)
+		VALUES(?,?,?,?,?,?)
 		ON CONFLICT(user_id) DO UPDATE SET base_url = excluded.base_url,
-		  model = excluded.model, ciphertext = excluded.ciphertext,
-		  updated_at = excluded.updated_at`,
-		userID, baseURL, model, ciphertext, now())
+		  model = excluded.model, models = excluded.models,
+		  ciphertext = excluded.ciphertext, updated_at = excluded.updated_at`,
+		userID, baseURL, model, EncodeModels(models), ciphertext, now())
 	return wrap("secret upsert", err)
 }
 
 func (d *DB) SecretByUser(userID int64) (Secret, error) {
 	var s Secret
-	err := d.QueryRow(`SELECT user_id, base_url, model, ciphertext, updated_at
+	var modelsRaw string
+	err := d.QueryRow(`SELECT user_id, base_url, model, models, ciphertext, updated_at
 		FROM secrets WHERE user_id = ?`, userID).
-		Scan(&s.UserID, &s.BaseURL, &s.Model, &s.Ciphertext, &s.UpdatedAt)
+		Scan(&s.UserID, &s.BaseURL, &s.Model, &modelsRaw, &s.Ciphertext, &s.UpdatedAt)
+	if err == nil {
+		s.Models = DecodeModels(modelsRaw, s.Model)
+	}
 	return s, wrap("secret by user", err)
+}
+
+// UpdateWorkspaceProvider — смена Base URL/моделей воркспейса (ротация).
+func (d *DB) UpdateWorkspaceProvider(id, baseURL, model string, models []string) error {
+	_, err := d.Exec(`UPDATE workspaces SET base_url = ?, model = ?, models = ?,
+		updated_at = ? WHERE id = ?`, baseURL, model, EncodeModels(models), now(), id)
+	return wrap("update ws provider", err)
 }
 
 // ── audit_log (РСБ) ─────────────────────────────────────────────────────────

@@ -89,14 +89,14 @@ func TestWorkspacesCRUD(t *testing.T) {
 func TestSecretsAndAudit(t *testing.T) {
 	db := openTest(t)
 	uid, _ := db.CreateUser("anna", "h", "user")
-	if err := db.SecretUpsert(uid, "https://llm/v1", "m1", "cipher1"); err != nil {
+	if err := db.SecretUpsert(uid, "https://llm/v1", "m1", []string{"m1"}, "cipher1"); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	if err := db.SecretUpsert(uid, "https://llm2/v1", "m2", "cipher2"); err != nil {
+	if err := db.SecretUpsert(uid, "https://llm2/v1", "m2", []string{"m2", "m3"}, "cipher2"); err != nil {
 		t.Fatalf("upsert2: %v", err)
 	}
 	s, err := db.SecretByUser(uid)
-	if err != nil || s.Ciphertext != "cipher2" || s.Model != "m2" {
+	if err != nil || s.Ciphertext != "cipher2" || s.Model != "m2" || len(s.Models) != 2 {
 		t.Fatalf("secret: %+v err=%v", s, err)
 	}
 	_ = db.Audit("anna", "login", "anna", "")

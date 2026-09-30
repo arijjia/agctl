@@ -29,13 +29,13 @@ import (
 
 // Config — параметры сервера.
 type Config struct {
-	Home        string // $AGCTL_HOME
-	Addr        string // слушающий адрес основного UI/API
-	MaxPerUser  int
-	MemoryBytes int64
-	NanoCPUs    int64
-	Image       string
-	BinDir      string
+	Home          string // $AGCTL_HOME
+	Addr          string // слушающий адрес основного UI/API
+	MaxPerUser    int
+	MemoryBytes   int64
+	NanoCPUs      int64
+	Image         string
+	BinDir        string
 	AutosaveEvery time.Duration
 }
 
@@ -127,6 +127,7 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/workspaces/{id}/stop", s.requireUser(s.handleWorkspaceStop))
 	mux.HandleFunc("DELETE /api/workspaces/{id}", s.requireUser(s.handleWorkspaceDelete))
 	mux.HandleFunc("GET /api/workspaces/{id}/logs", s.requireUser(s.handleWorkspaceLogs))
+	mux.HandleFunc("PATCH /api/workspaces/{id}/provider", s.requireUser(s.handleWorkspaceProvider))
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
 	mux.HandleFunc("GET /w/{id}", s.requireUser(s.handleWorkspaceRedirect))
@@ -343,7 +344,8 @@ func (s *Server) wsJSON(ctx context.Context, w store.Workspace, owner string) ma
 		"id": w.ID, "name": w.Name, "status": w.Status,
 		"owner": owner, "createdAt": w.CreatedAt, "updatedAt": w.UpdatedAt,
 		"url": s.openURL(ctx, w), "port": w.HostPort, "error": w.Error,
-		"model": w.Model, "baseURL": w.BaseURL, "template": w.Template,
+		"model": w.Model, "models": w.Models, "baseURL": w.BaseURL, "template": w.Template,
+		"repoPath": w.RepoPath,
 	}
 }
 
@@ -383,31 +385,60 @@ func (s *Server) providerOf(w store.Workspace, ownerID int64, req ProviderReq) (
 		if err != nil {
 			return provision.Provider{}, fmt.Errorf("токен не расшифровывается: %w", err)
 		}
-		base, model := sec.BaseURL, sec.Model
+		base, models := sec.BaseURL, sec.Models
 		if req.BaseURL != "" {
 			base = req.BaseURL
 		}
-		if req.Model != "" {
-			model = req.Model
+		if ms := req.allModels(); len(ms) > 0 {
+			models = ms
 		}
-		return provision.Provider{BaseURL: base, Model: model, APIKey: key}, nil
+		return provision.Provider{BaseURL: base, Model: firstModel(models), Models: models, APIKey: key}, nil
 	}
-	return provision.Provider{BaseURL: req.BaseURL, Model: req.Model, APIKey: req.APIKey}, nil
+	ms := req.allModels()
+	return provision.Provider{BaseURL: req.BaseURL, Model: firstModel(ms), Models: ms, APIKey: req.APIKey}, nil
+}
+
+func firstModel(models []string) string {
+	if len(models) > 0 {
+		return models[0]
+	}
+	return ""
 }
 
 // ProviderReq — форма создания/старта воркспейса.
+// models — список (по одной на строку допускается), model — legacy/первая.
 type ProviderReq struct {
-	BaseURL string `json:"baseURL"`
-	Model   string `json:"model"`
-	APIKey  string `json:"apiKey"`
+	BaseURL string   `json:"baseURL"`
+	Model   string   `json:"model"`
+	Models  []string `json:"models"`
+	APIKey  string   `json:"apiKey"`
+}
+
+// allModels — нормализованный список: models + model, без дублей и пустых.
+func (r ProviderReq) allModels() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(m string) {
+		m = strings.TrimSpace(m)
+		if m == "" || seen[m] {
+			return
+		}
+		seen[m] = true
+		out = append(out, m)
+	}
+	for _, m := range r.Models {
+		add(m)
+	}
+	add(r.Model)
+	return out
 }
 
 func (r ProviderReq) validate() error {
 	if strings.TrimSpace(r.BaseURL) == "" {
 		return errors.New("укажите Base URL провайдера")
 	}
-	if strings.TrimSpace(r.Model) == "" {
-		return errors.New("укажите модель")
+	if len(r.allModels()) == 0 {
+		return errors.New("укажите хотя бы одну модель")
 	}
 	if !strings.Contains(r.BaseURL, "://") {
 		return errors.New("Base URL должен начинаться с http(s)://")
@@ -421,7 +452,7 @@ func (s *Server) saveSecret(userID int64, p provision.Provider) error {
 	if err != nil {
 		return err
 	}
-	return s.db.SecretUpsert(userID, p.BaseURL, p.Model, cipher)
+	return s.db.SecretUpsert(userID, p.BaseURL, p.DefaultModel(), p.AllModels(), cipher)
 }
 
 func atoiDefault(s string, def int) int {

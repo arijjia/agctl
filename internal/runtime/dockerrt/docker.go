@@ -39,9 +39,9 @@ type Config struct {
 
 // Runtime — docker-реализация.
 type Runtime struct {
-	cli      *client.Client
-	cfg      Config
-	imageFS  fs.FS // контекст образа (префикс "image")
+	cli     *client.Client
+	cfg     Config
+	imageFS fs.FS // контекст образа (префикс "image")
 }
 
 // New подключается к Docker (env/дефолтные сокеты). imageFS — контекст
@@ -106,9 +106,9 @@ func (rt *Runtime) EnsureImage(ctx context.Context) error {
 		return err
 	}
 	res, err := rt.cli.ImageBuild(ctx, &buf, client.ImageBuildOptions{
-		Tags:       []string{rt.cfg.Image},
-		Dockerfile: "Dockerfile",
-		Remove:     true,
+		Tags:        []string{rt.cfg.Image},
+		Dockerfile:  "Dockerfile",
+		Remove:      true,
 		ForceRemove: true,
 	})
 	if err != nil {
@@ -236,12 +236,17 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 	}
 	// гонки за порт: docker сам отдаст ошибку, если порт занят.
 	cfg := client.ContainerCreateOptions{
-		Name:       "agctl-" + wsID,
+		Name: "agctl-" + wsID,
 		Config: &container.Config{
 			Image: rt.cfg.Image,
 			Env: []string{
 				"AGCTL_LLM_API_KEY=" + p.APIKey,
 				"AGCTL_WS_ID=" + wsID,
+				// рабочее место агента — /workspace (репка), а не /root;
+				// кэши npm/xdg уводим в tmp, чтобы не мусорить в репке
+				"HOME=/workspace",
+				"NPM_CONFIG_CACHE=/tmp/npm-cache",
+				"XDG_CACHE_HOME=/tmp/cache",
 			},
 			Labels: map[string]string{"agctl.workspace": wsID},
 		},

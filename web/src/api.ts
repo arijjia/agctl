@@ -18,7 +18,10 @@ export type Workspace = {
   port: number;
   error: string;
   model: string;
+  models: string[];
   baseURL: string;
+  template: string;
+  repoPath: string;
 };
 
 export type AuditEvent = { ts: string; actor: string; action: string; target: string; details: string };
@@ -52,8 +55,10 @@ export const api = {
   logout: () => req<void>("POST", "/api/logout"),
   me: () => req<{ user: User }>("GET", "/api/me"),
   workspaces: () => req<{ workspaces: Workspace[] }>("GET", "/api/workspaces"),
-  create: (name: string, template: string, baseURL: string, model: string, apiKey: string) =>
-    req<{ workspace: Workspace }>("POST", "/api/workspaces", { name, template, baseURL, model, apiKey }),
+  create: (name: string, template: string, baseURL: string, models: string[], apiKey: string) =>
+    req<{ workspace: Workspace }>("POST", "/api/workspaces", { name, template, baseURL, models, apiKey }),
+  updateProvider: (id: string, baseURL: string, models: string[], apiKey: string) =>
+    req<{ workspace: Workspace }>(`PATCH`, `/api/workspaces/${id}/provider`, { baseURL, models, apiKey }),
   start: (id: string) => req<{ workspace: Workspace }>("POST", `/api/workspaces/${id}/start`),
   stop: (id: string) => req<{ workspace: Workspace }>("POST", `/api/workspaces/${id}/stop`),
   remove: (id: string) => req<void>("DELETE", `/api/workspaces/${id}`),

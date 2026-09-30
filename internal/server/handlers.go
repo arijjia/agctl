@@ -203,7 +203,8 @@ func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, i
 	}
 	ws := store.Workspace{
 		ID: wsID, OwnerID: id.ID, Name: req.Name, Template: req.Template,
-		Status: "provisioning", HostPort: port, BaseURL: p.BaseURL, Model: p.Model,
+		Status: "provisioning", HostPort: port, BaseURL: p.BaseURL,
+		Model: p.DefaultModel(), Models: p.AllModels(),
 	}
 	if err := s.db.InsertWorkspace(ws); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -400,6 +401,107 @@ func (s *Server) handleWorkspaceLogs(w http.ResponseWriter, r *http.Request, id 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"logs": logs})
+}
+
+// handleWorkspaceProvider — PATCH /api/workspaces/{id}/provider:
+// смена Base URL / моделей / токена без пересоздания.
+// Перезаписывает settings.yaml + .credentials.yaml в DSH_HOME и,
+// если воркспейс запущен, пересоздаёт контейнер (токен — только через env).
+// Токен в ответах API никогда не возвращается.
+func (s *Server) handleWorkspaceProvider(w http.ResponseWriter, r *http.Request, id identity) {
+	ws, err := s.loadWS(r, id)
+	if errors.Is(err, errForbidden) {
+		writeErr(w, http.StatusForbidden, "не ваш воркспейс")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "воркспейс не найден")
+		return
+	}
+	var req ProviderReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "неверный JSON")
+		return
+	}
+	// Пустые поля = оставить текущие значения воркспейса.
+	base := ws.BaseURL
+	if strings.TrimSpace(req.BaseURL) != "" {
+		base = strings.TrimSpace(req.BaseURL)
+		if !strings.Contains(base, "://") {
+			writeErr(w, http.StatusBadRequest, "Base URL должен начинаться с http(s)://")
+			return
+		}
+	}
+	models := req.allModels()
+	if len(models) == 0 {
+		models = ws.Models
+		if len(models) == 0 && ws.Model != "" {
+			models = []string{ws.Model}
+		}
+	}
+	if len(models) == 0 {
+		writeErr(w, http.StatusBadRequest, "укажите хотя бы одну модель")
+		return
+	}
+	key := ""
+	if req.APIKey != "" {
+		key = req.APIKey
+	} else if sec, err := s.db.SecretByUser(ws.OwnerID); err == nil {
+		if k, err := s.sec.Decrypt(sec.Ciphertext); err == nil {
+			key = k
+		}
+	}
+	if key == "" {
+		writeErr(w, http.StatusBadRequest, "нет сохранённого токена — укажите API-токен")
+		return
+	}
+	p := provision.Provider{BaseURL: base, Model: models[0], Models: models, APIKey: key}
+	paths := s.pathsFor(ws, s.db.WorkspaceOwnerLogin(ws.OwnerID))
+	if err := provision.RefreshProvider(paths.DshHome, p); err != nil {
+		writeErr(w, http.StatusInternalServerError, "настройки не записаны: "+err.Error())
+		return
+	}
+	if err := s.db.UpdateWorkspaceProvider(ws.ID, base, models[0], models); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if req.APIKey != "" {
+		if err := s.saveSecret(ws.OwnerID, p); err != nil {
+			writeErr(w, http.StatusInternalServerError, "секрет не сохранён: "+err.Error())
+			return
+		}
+	}
+	_ = s.db.Audit(id.Login, "workspace.provider", ws.ID, "baseURL="+base+" models="+strings.Join(models, ","))
+	if ws.Status == "running" {
+		go s.recreateForProvider(ws.ID, paths, p, id.Login)
+		ws.Status = "provisioning"
+		ws.Error = "применяем новые настройки провайдера…"
+	}
+	ws, _ = s.db.WorkspaceByID(ws.ID)
+	writeJSON(w, http.StatusOK, map[string]any{"workspace": s.wsJSON(r.Context(), ws, id.Login)})
+}
+
+// recreateForProvider — пересоздание контейнера после смены провайдера.
+func (s *Server) recreateForProvider(wsID string, paths provision.Layout, p provision.Provider, actor string) {
+	s.provMu.Lock()
+	defer s.provMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	ws, err := s.db.WorkspaceByID(wsID)
+	if err != nil {
+		return
+	}
+	s.forgetToken(wsID)
+	if ws.ContainerID != "" {
+		_ = s.rt.Remove(ctx, ws.ContainerID)
+	}
+	res, err := s.rt.Start(ctx, paths, wsID, ws.HostPort, p)
+	if err != nil {
+		_ = s.db.UpdateWorkspaceStatus(wsID, "failed", "docker: "+err.Error())
+		return
+	}
+	_ = s.db.UpdateWorkspaceRuntime(wsID, res.ContainerID, res.HostPort, "running")
+	_ = s.db.Audit(actor, "workspace.provider.applied", wsID, "port="+strconv.Itoa(res.HostPort))
 }
 
 // handleWorkspaceRedirect — /w/{id}: авторизованный переход в UI воркспейса.

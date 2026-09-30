@@ -147,3 +147,23 @@ select {
 .table { width: 100%; border-collapse: collapse; }
 .table th, .table td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); }
 .table th { color: var(--muted); font-weight: 500; font-size: 13px; }
+
+.ws-details {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+.clone-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.clone-row code {
+  background: var(--bg, #f6f8fa);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  word-break: break-all;
+}
+button.small { padding: 1px 8px; font-size: 12px; }
+.provider-form { margin-top: 10px; }
+.provider-form textarea { resize: vertical; }

@@ -24,9 +24,56 @@ import (
 
 // Provider — настройки LLM-провайдера воркспейса (из личного кабинета).
 type Provider struct {
-	BaseURL string // например https://litellm-dev.utmn.ru/v1
-	Model   string // например qwen-3.8-deep
-	APIKey  string // токен — только в .credentials.yaml и env контейнера
+	BaseURL string   // например https://litellm-dev.utmn.ru/v1
+	Model   string   // модель по умолчанию (первая из Models)
+	Models  []string // все доступные модели (выпадающий список в dsh)
+	APIKey  string   // токен — только в .credentials.yaml и env контейнера
+}
+
+// DefaultModel — модель по умолчанию: Model, иначе первая из Models.
+func (p Provider) DefaultModel() string {
+	if p.Model != "" {
+		return p.Model
+	}
+	if len(p.Models) > 0 {
+		return p.Models[0]
+	}
+	return ""
+}
+
+// AllModels — полный список моделей (Models, иначе одна Model).
+func (p Provider) AllModels() []string {
+	if len(p.Models) > 0 {
+		return p.Models
+	}
+	if p.Model != "" {
+		return []string{p.Model}
+	}
+	return nil
+}
+
+// ParseModels — разбор списка моделей из формы (по одной на строку,
+// запятые тоже разрешены). Пустые строки и дубликаты отбрасываются.
+func ParseModels(text, fallback string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(m string) {
+		m = strings.TrimSpace(m)
+		if m == "" || seen[m] {
+			return
+		}
+		seen[m] = true
+		out = append(out, m)
+	}
+	for _, line := range strings.Split(text, "\n") {
+		for _, m := range strings.Split(line, ",") {
+			add(m)
+		}
+	}
+	if len(out) == 0 && fallback != "" {
+		add(fallback)
+	}
+	return out
 }
 
 // Template — зарегистрированный шаблон репки.
@@ -123,8 +170,11 @@ func sanitize(s string) string {
 // bare-репу из шаблона templateName + рабочий клон + скелет DSH_HOME с токеном.
 // templateFS и skelFS — встроенные ассеты (internal/assets).
 func Provision(l Layout, p Provider, templateName string, templateFS, skelFS fs.FS) error {
-	if p.BaseURL == "" || p.Model == "" || p.APIKey == "" {
+	if p.BaseURL == "" || p.DefaultModel() == "" || p.APIKey == "" {
 		return errors.New("provision: не заданы провайдер или токен")
+	}
+	if len(p.AllModels()) == 0 {
+		p.Models = []string{p.Model}
 	}
 	if !ValidTemplate(templateName) {
 		return fmt.Errorf("provision: неизвестный шаблон %q", templateName)
@@ -230,23 +280,23 @@ func SeedDshHome(home string, p Provider, skelFS fs.FS) error {
 	if err := CopyFS(skelFS, "dsh-skel", home); err != nil {
 		return fmt.Errorf("provision: скелет dsh-home: %w", err)
 	}
-	settings := fmt.Sprintf(`# Настройки воркспейса agctl: провайдер из личного кабинета.
-llm-pi-ai:
-  providers:
-    agctl:
-      apiKeyEnv: AGCTL_LLM_API_KEY
-      api: openai-completions
-      baseURL: %s
-      models:
-        - id: %s
-          name: %s
-          contextWindow: 262144
-          maxTokens: 65536
-agent-default-model:
-  provider: agctl
-  model: %s
-`, yamlStr(p.BaseURL), yamlStr(p.Model), yamlStr(p.Model), yamlStr(p.Model))
-	if err := os.WriteFile(filepath.Join(home, "settings.yaml"), []byte(settings), 0o644); err != nil {
+	return RefreshProvider(home, p)
+}
+
+// RefreshProvider — перезапись настроек провайдера в существующем DSH_HOME
+// (ротация ключа, смена Base URL/моделей). Сессии и профили не трогает:
+// dsh импортирует свежий settings.yaml при следующем старте.
+func RefreshProvider(home string, p Provider) error {
+	models := p.AllModels()
+	var sb strings.Builder
+	sb.WriteString("# Настройки воркспейса agctl: провайдер из личного кабинета.\nllm-pi-ai:\n  providers:\n    agctl:\n      apiKeyEnv: AGCTL_LLM_API_KEY\n      api: openai-completions\n")
+	sb.WriteString("      baseURL: " + yamlStr(p.BaseURL) + "\n      models:\n")
+	for _, m := range models {
+		sb.WriteString("        - id: " + yamlStr(m) + "\n          name: " + yamlStr(m) +
+			"\n          contextWindow: 262144\n          maxTokens: 65536\n")
+	}
+	sb.WriteString("agent-default-model:\n  provider: agctl\n  model: " + yamlStr(p.DefaultModel()) + "\n")
+	if err := os.WriteFile(filepath.Join(home, "settings.yaml"), []byte(sb.String()), 0o644); err != nil {
 		return fmt.Errorf("provision: settings.yaml: %w", err)
 	}
 	creds := fmt.Sprintf(`version: 1
