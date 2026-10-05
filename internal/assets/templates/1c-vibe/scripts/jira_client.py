@@ -40,9 +40,23 @@ def _base() -> str:
 
 
 def _headers() -> dict:
+    """Basic (JIRA_USER + JIRA_PASSWORD) или Bearer PAT (JIRA_TOKEN).
+
+    Basic удобен для Server/DC, когда PAT ещё не выпущен: логин = короткий
+    доменный, пароль — доменный. Приоритет: Basic, если заданы оба поля.
+    """
+    user = os.environ.get("JIRA_USER", "")
+    password = os.environ.get("JIRA_PASSWORD", "")
+    if user and password:
+        import base64
+        creds = base64.b64encode(f"{user}:{password}".encode("utf-8")).decode("ascii")
+        return {
+            "Authorization": f"Basic {creds}",
+            "Content-Type": "application/json",
+        }
     token = os.environ.get("JIRA_TOKEN")
     if not token:
-        sys.exit("JIRA_TOKEN не задан: заполни mvp/.env (см. .env.example)")
+        sys.exit("не задана авторизация: JIRA_USER+JIRA_PASSWORD или JIRA_TOKEN")
     return {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -126,6 +140,23 @@ def add_comment(key: str, text: str) -> None:
     encoded_key = urllib.parse.quote(key, safe="")
     api("POST", f"{API}/issue/{encoded_key}/comment", {"body": text})
     print(f"Комментарий добавлен к {key}.")
+
+
+def create_issue(project: str, summary: str, description: str,
+                 issue_type: str = "Задача", labels: list[str] | None = None) -> str:
+    """Создать задачу в проекте; вернуть ключ (например INTAIDEV-4)."""
+    fields: dict = {
+        "project": {"key": project},
+        "summary": summary,
+        "description": description,
+        "issuetype": {"name": issue_type},
+    }
+    if labels:
+        fields["labels"] = labels
+    created = api("POST", f"{API}/issue", {"fields": fields})
+    if not isinstance(created, dict) or "key" not in created:
+        sys.exit("Jira вернула неожиданный ответ при создании задачи")
+    return str(created["key"])
 
 
 def main() -> None:

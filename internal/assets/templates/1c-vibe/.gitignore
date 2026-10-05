@@ -8,3 +8,5 @@ __pycache__/
 *.cfl
 *.cfu
 1cv8.usr/
+dump/
+.bsl-ls/
