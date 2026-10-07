@@ -1,12 +1,14 @@
 # agctl — архитектура и роадмап (v1)
 
-> Дата: 2026-09-28. Источники: logs/Первомайская_улица_15.{md,txt},
+> Дата: 2026-09-28 (журнал дописывается). Источники: logs/Первомайская_улица_15.{md,txt},
 > logs/Первомайская_улица_16.{md,txt} (обязательные критерии MVP), обзор
 > 1c-vibe-hq / idp-hq / voproshalych-hq/docs/voproshalych-v3, бест-практисы
 > kb/dsh (формат бэклогов v1, docker-образ dsh из mgmt, night-ops),
 > требования ФСТЭК №117 + Методика 12.04.2026 + 243-ФЗ (таблица 44 пунктов).
 > Статус: **M1 (MVP) реализован и проверен e2e на ноуте 2026-09-28** — см.
 > раздел 13 «Журнал реализации»; код: arijjia/agctl.
+> **Актуальный срез фактов (архитектура + 1С-интеграция, 2026-10-07):**
+> `agctl-hq/docs/agctl-and-1c-vibe.md`.
 
 ## 1. Что такое agctl
 
@@ -96,6 +98,7 @@ flowchart TB
 | Команда | Что делает |
 |---|---|
 | `agctl serve` | поднимает всё: static UI, REST API, прокси, фоновые задачи (autosave, health) |
+| `agctl workspace create` | создание/запуск рабочего места из CLI без ЛК (синхронный аналог веб-кнопки; флаги: --user, --name, --template, --base-url/--model/--api-key, --wait) — с 2026-10-07 |
 | `agctl backlog new/note/start/done/cancel/check/list/top/migrate` | CLI бэклогов, формат v1 (schema 1.0.0) — совместим с gitctl-экосистемой; тот же бинарь лежит в образе контейнера |
 | `agctl migrate` | миграции SQLite (плюс авто-миграция при старте serve) |
 | `agctl version` | версия + digest сборки |
@@ -392,3 +395,20 @@ workflow; замер потребления dsh (п.4 рисков) не дел�
 старте M1.5): спайк cookie-mint RPC вместо скрейпа токена; докер-джоб в CI
 для сборки образа; квота «один provision за раз» → очередь; provider-профили
 (выбор из справочника в ЛК вместо ручного Base URL).
+
+### 2026-10-07 — домен 1c-vibe, CLI-путь, anti-drift, jira-поллер (агент, сессия 1c-vibe)
+
+Коммиты: `70486cc` (синк шаблона 1c-vibe: env.example, demo .gitignore,
+python-гигиена embed), `a157b0e` (`make tpl_check_sync` — анти-дрейф сверка
+донор-репо ↔ шаблон, PASS/FAIL проверены), `704a03a` (`agctl workspace
+create` — CLI-создание места без ЛК, валидации протестированы), `8f615c4`
+(порт UI в комментарии demo.mk), `52c7763` (jira-поллер `agent-run`: миграция
+`004_jira_runs.sql`, store-методы+тест, `internal/server/jirapoll.go`,
+env `AGCTL_JIRA_*`; клиентский `search_issues` — в репо 1c-vibe, шаблон
+синхронизирован). Домен: решение «1c-vibe только через agctl» + legacy-карта
+B1–B3 (в репо 1c-vibe, `docs/agctl-only.md`), B3-хвосты вычищены из
+.env.example/AGENTS.md. Живые пробы по VPN: Jira/GitLab/LiteLLM отвечают,
+цикл INTAIDEV-1 подтверждён артефактами (MR !2 + комментарий). Известные
+долги: инжект промпта в dsh (поллер — скелет), открытый токен в
+`dsh-home/.credentials.yaml`, аудит удаления легаси. Полное фактическое
+описание — `agctl-hq/docs/agctl-and-1c-vibe.md`.
