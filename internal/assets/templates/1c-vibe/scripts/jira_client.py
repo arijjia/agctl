@@ -3,7 +3,8 @@
 
 Умеет:
   get    ISSUE-KEY          — показать постановку задачи;
-  comment ISSUE-KEY "текст" — добавить комментарий.
+  comment ISSUE-KEY "текст" — добавить комментарий;
+  search "JQL"              — найти задачи (ключ, статус, метки).
 
 Аутентификация: Personal Access Token (Jira Server / Data Center),
 заголовок `Authorization: Bearer <JIRA_TOKEN>`.
@@ -159,6 +160,24 @@ def create_issue(project: str, summary: str, description: str,
     return str(created["key"])
 
 
+def search_issues(jql: str, max_results: int = 20) -> list[dict]:
+    """Поиск задач по JQL; вернуть [{key, summary, status, labels}]."""
+    query = urllib.parse.urlencode({"jql": jql, "maxResults": max_results})
+    data = api("GET", f"{API}/search?{query}")
+    if not isinstance(data, dict) or "issues" not in data:
+        sys.exit("Jira вернула неожиданный ответ при поиске задач")
+    out: list[dict] = []
+    for issue in data.get("issues", []):
+        fields = issue.get("fields", {})
+        out.append({
+            "key": issue.get("key", ""),
+            "summary": fields.get("summary", ""),
+            "status": (fields.get("status") or {}).get("name", ""),
+            "labels": list(fields.get("labels") or []),
+        })
+    return out
+
+
 def main() -> None:
     if len(sys.argv) < 3:
         print(__doc__)
@@ -168,6 +187,10 @@ def main() -> None:
         get_issue(key)
     elif cmd == "comment" and len(sys.argv) >= 4:
         add_comment(key, sys.argv[3])
+    elif cmd == "search":
+        for issue in search_issues(key):
+            labels = ",".join(issue["labels"])
+            print(f"{issue['key']} [{issue['status']}] ({labels}): {issue['summary']}")
     else:
         print(__doc__)
         sys.exit(2)

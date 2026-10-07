@@ -332,3 +332,43 @@ func (d *DB) AuditList(limit int) ([]AuditEvent, error) {
 	}
 	return out, rows.Err()
 }
+
+// ── jira_runs: поллер метки agent-run (спайк jira-trigger) ──────────────────
+
+// JiraRunInsert — зафиксировать новую задачу-запуск. Повтор ключа — no-op.
+func (d *DB) JiraRunInsert(jiraKey, workspaceID string) error {
+	_, err := d.Exec(`INSERT OR IGNORE INTO jira_runs(jira_key, workspace_id) VALUES (?, ?)`,
+		jiraKey, workspaceID)
+	return wrap("jira run insert", err)
+}
+
+// JiraRunUpdate — статус/сессия запуска (queued|injected|running|done|failed).
+func (d *DB) JiraRunUpdate(jiraKey, status, session string) error {
+	_, err := d.Exec(`UPDATE jira_runs SET status = ?, session = ?, updated_at = datetime('now') WHERE jira_key = ?`,
+		status, session, jiraKey)
+	return wrap("jira run update", err)
+}
+
+// JiraRunList — все запуски (журнал поллера, свежие сверху).
+func (d *DB) JiraRunList(limit int) ([]map[string]string, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+	rows, err := d.Query(`SELECT jira_key, workspace_id, session, status, created_at, updated_at
+		FROM jira_runs ORDER BY updated_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, wrap("jira run list", err)
+	}
+	defer rows.Close()
+	var out []map[string]string
+	for rows.Next() {
+		m := map[string]string{}
+		var key, ws, sess, st, ca, ua string
+		if err := rows.Scan(&key, &ws, &sess, &st, &ca, &ua); err != nil {
+			return nil, wrap("jira run scan", err)
+		}
+		m["jiraKey"], m["workspaceId"], m["session"], m["status"], m["createdAt"], m["updatedAt"] = key, ws, sess, st, ca, ua
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

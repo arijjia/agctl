@@ -106,3 +106,26 @@ func TestSecretsAndAudit(t *testing.T) {
 		t.Fatalf("audit: %+v err=%v", ev, err)
 	}
 }
+
+func TestJiraRuns(t *testing.T) {
+	db := openTest(t)
+	if err := db.JiraRunInsert("INTAIDEV-9", "w-abc123"); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	// повтор ключа — no-op (поллер идемпотентен)
+	if err := db.JiraRunInsert("INTAIDEV-9", "w-other"); err != nil {
+		t.Fatalf("insert dup: %v", err)
+	}
+	if err := db.JiraRunUpdate("INTAIDEV-9", "injected", "session-1"); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	runs, err := db.JiraRunList(10)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("list: %v runs=%d", err, len(runs))
+	}
+	r := runs[0]
+	if r["jiraKey"] != "INTAIDEV-9" || r["workspaceId"] != "w-abc123" ||
+		r["status"] != "injected" || r["session"] != "session-1" {
+		t.Fatalf("run = %+v", r)
+	}
+}

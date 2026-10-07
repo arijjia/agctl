@@ -139,8 +139,10 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 
 // ── фоновые задачи ──────────────────────────────────────────────────────────
 
-// StartBackground запускает autosave, сверку статусов и чистку сессий.
+// StartBackground запускает autosave, сверку статусов, чистку сессий
+// и jira-поллер (если настроен через AGCTL_JIRA_*).
 func (s *Server) StartBackground(ctx context.Context) {
+	s.StartJiraPoller(ctx)
 	go func() { // autosave: страховочный commit+push по всем running-воркспейсам
 		t := time.NewTicker(s.cfg.AutosaveEvery)
 		defer t.Stop()

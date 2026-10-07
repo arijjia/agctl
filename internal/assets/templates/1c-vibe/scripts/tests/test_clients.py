@@ -8,7 +8,38 @@ MVP_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MVP_DIR))
 
 import gitlab_client
-from jira_client import description_text
+import jira_client
+from jira_client import description_text, search_issues
+
+
+class JiraSearchTest(unittest.TestCase):
+    def test_search_parses_issues(self):
+        payload = (
+            '{"issues": [{"key": "INTAIDEV-9", "fields": {'
+            '"summary": "Демо", "status": {"name": "Открыта"}, '
+            '"labels": ["agent-run"]}}]}'
+        ).encode("utf-8")
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = payload
+        with mock.patch.dict(
+            os.environ,
+            {
+                "JIRA_URL": "https://jira.example",
+                "JIRA_TOKEN": "token",
+                "HTTP_TIMEOUT_SECONDS": "5",
+            },
+            clear=False,
+        ):
+            with mock.patch.object(
+                jira_client.urllib.request, "urlopen", return_value=response
+            ):
+                issues = search_issues("labels = agent-run")
+
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0]["key"], "INTAIDEV-9")
+        self.assertEqual(issues[0]["status"], "Открыта")
+        self.assertEqual(issues[0]["labels"], ["agent-run"])
+        request = response.__enter__.return_value  # не используется далее
 
 
 class JiraDescriptionTest(unittest.TestCase):
