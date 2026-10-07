@@ -6,3 +6,8 @@ web/node_modules/
 .env.local
 agctl.db*
 secrets.key
+
+# python-кэш не должен попадать в go:embed-шаблоны и в git
+__pycache__/
+*.pyc
+.venv/
