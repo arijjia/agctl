@@ -45,6 +45,8 @@ func main() {
 		cmdMigrate(os.Args[2:])
 	case "backlog":
 		os.Exit(backlog.Main(os.Args[2:], os.Stdout, os.Stderr))
+	case "workspace":
+		cmdWorkspace(os.Args[2:])
 	case "version":
 		fmt.Printf("agctl %s (%s/%s %s)\n", version, runtime.GOOS, runtime.GOARCH, runtime.Version())
 	case "help", "-h", "--help":
@@ -63,6 +65,7 @@ func usage() {
   serve [--home DIR] [--addr H:P] [--image T] [--bin-dir D] [--max-per-user N]
   migrate [--home DIR]
   backlog <new|list|top|check|start|done|cancel|note|migrate> [флаги]
+  workspace create --user ЛОГИН --name ИМЯ --template 1c-vibe --base-url URL --model M --api-key KEY
   version
 
 Переменные окружения: AGCTL_HOME (по умолчанию ~/.agctl), AGCTL_ADDR.
@@ -198,4 +201,3 @@ func firstNonEmpty(vals ...string) string {
 	}
 	return ""
 }
-
