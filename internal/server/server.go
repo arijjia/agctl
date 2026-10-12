@@ -313,7 +313,11 @@ func (s *Server) wsToken(ctx context.Context, w store.Workspace) string {
 	if err != nil {
 		return ""
 	}
-	if m := dshTokenRe.FindStringSubmatch(logs); m != nil {
+	// берём ПОСЛЕДНЕЕ совпадение: при docker start того же контейнера dsh
+	// печатает новый boot-токен, а старые строки остаются в журнале выше
+	// (баг-фикс: первый match отдавал устаревший токен → 401 по «Открыть»)
+	if all := dshTokenRe.FindAllStringSubmatch(logs, -1); len(all) > 0 {
+		m := all[len(all)-1]
 		s.tokMu.Lock()
 		s.tokens[w.ID] = m[1]
 		s.tokMu.Unlock()

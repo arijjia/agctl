@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -196,6 +197,14 @@ func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, i
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// файлы удалённых воркспейсов сохраняются на диске (данные дороже места);
+	// повторное имя при живом каталоге — понятная ошибка, а не падение provision
+	paths := provision.Paths(s.cfg.Home, id.Login, wsID, req.Name)
+	if _, err := os.Stat(paths.Repo); err == nil {
+		writeErr(w, http.StatusBadRequest,
+			"репозиторий «"+req.Name+"» уже есть на диске (остался от удалённого рабочего места): выберите другое имя или удалите "+paths.Repo)
+		return
+	}
 	port, err := dockerrt.FreePort()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "нет свободного порта: "+err.Error())
@@ -338,6 +347,7 @@ func (s *Server) handleWorkspaceStop(w http.ResponseWriter, r *http.Request, id 
 		writeErr(w, http.StatusNotFound, "воркспейс не найден")
 		return
 	}
+	ws.Status = "stopping" // до запуска горутины: иначе гонка на чтении ws внутри неё
 	go func() {
 		if ws.ContainerID != "" {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
@@ -351,7 +361,6 @@ func (s *Server) handleWorkspaceStop(w http.ResponseWriter, r *http.Request, id 
 		_ = s.db.UpdateWorkspaceStatus(ws.ID, "stopped", "")
 		_ = s.db.Audit(id.Login, "workspace.stop", ws.ID, "")
 	}()
-	ws.Status = "stopping"
 	writeJSON(w, http.StatusAccepted, map[string]any{"workspace": s.wsJSON(r.Context(), ws, id.Login)})
 }
 

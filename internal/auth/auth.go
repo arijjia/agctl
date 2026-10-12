@@ -28,11 +28,11 @@ const (
 
 // Service — сессии в store через колбэки (чтобы не тянуть store сюда).
 type Service struct {
-	SetSession     func(token string, userID int64, expires time.Time) error
-	SessionUser    func(token string) (int64, string, string, error) // id, login, role
-	DeleteSession  func(token string) error
-	CookieSecure   bool
-	failed         sync.Map // login → счётчик неудач
+	SetSession    func(token string, userID int64, expires time.Time) error
+	SessionUser   func(token string) (int64, string, string, error) // id, login, role
+	DeleteSession func(token string) error
+	CookieSecure  bool
+	failed        sync.Map // login → счётчик неудач
 }
 
 // ErrUnauthorized — нет/просрочена сессия.
@@ -132,7 +132,7 @@ func (s *Service) User(r *http.Request) (int64, string, string, error) {
 // ── rate-limit логина (в памяти, для MVP достаточно) ────────────────────────
 
 type attempt struct {
-	n   int
+	n     int
 	until time.Time
 }
 
