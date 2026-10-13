@@ -1,6 +1,36 @@
 package auth
 
-import "testing"
+import (
+	"net/http/httptest"
+	"testing"
+	"time"
+)
+
+func TestLoginSetsSecureCookieWhenConfigured(t *testing.T) {
+	s := &Service{
+		CookieSecure:  true,
+		SetSession:    func(string, int64, time.Time) error { return nil },
+		DeleteSession: func(string) error { return nil },
+	}
+	rr := httptest.NewRecorder()
+	if err := s.Login(rr, 1, "hash", "pass", func(password, hash string) (bool, error) {
+		return password == "pass" && hash == "hash", nil
+	}); err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	cookies := rr.Result().Cookies()
+	if len(cookies) != 1 || !cookies[0].Secure || !cookies[0].HttpOnly {
+		t.Fatalf("cookie flags: %+v", cookies)
+	}
+	logoutReq := httptest.NewRequest("POST", "/api/logout", nil)
+	logoutReq.AddCookie(cookies[0])
+	logout := httptest.NewRecorder()
+	s.Logout(logout, logoutReq)
+	cleared := logout.Result().Cookies()
+	if len(cleared) != 1 || !cleared[0].Secure || cleared[0].MaxAge != -1 {
+		t.Fatalf("logout cookie flags: %+v", cleared)
+	}
+}
 
 func TestPasswordHashVerify(t *testing.T) {
 	h, err := HashPassword("пароль-123")

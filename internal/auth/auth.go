@@ -117,6 +117,7 @@ func (s *Service) Logout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: "", Path: "/", MaxAge: -1,
 		HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		Secure: s.CookieSecure,
 	})
 }
 

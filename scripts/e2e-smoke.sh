@@ -43,7 +43,7 @@ preflight() {
   command -v go >/dev/null || { echo "нет go" >&2; exit 2; }
   command -v docker >/dev/null || { echo "нет docker" >&2; exit 2; }
   docker version --format '{{.Server.Version}}' >/dev/null || { echo "docker мёртв" >&2; exit 2; }
-  if lsof -nP -iTCP:"$TEST_PORT" -sTCP:LISTEN | grep -q LISTEN; then
+  if ! python3 -c 'import socket,sys; s=socket.socket(); s.bind(("127.0.0.1", int(sys.argv[1]))); s.close()' "$TEST_PORT" >/dev/null 2>&1; then
     echo "порт $TEST_PORT занят — выбери другой TEST_ADDR" >&2; exit 2
   fi
   if [ ! -x "$AGCTL_BIN" ]; then
@@ -56,7 +56,8 @@ preflight() {
 
 start_fake_llm() {
   [ "${FAKE_LLM:-0}" = "1" ] || return 0
-  python3 "$REPO_ROOT/scripts/fake-llm.py" --port "$FAKE_PORT" \
+  FAKE_BIND="${FAKE_LLM_BIND:-127.0.0.1}"
+  python3 "$REPO_ROOT/scripts/fake-llm.py" --port "$FAKE_PORT" --bind "$FAKE_BIND" \
     >"/tmp/agctl-fake-llm-$RUN_ID.log" 2>&1 &
   FAKE_PID=$!
   for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -64,7 +65,7 @@ start_fake_llm() {
     sleep 0.3
   done
   PROVIDER_URL="http://host.docker.internal:$FAKE_PORT/v1"
-  pass "fake-llm: стаб поднят на 127.0.0.1:$FAKE_PORT (модели: stub-model)"
+  pass "fake-llm: стаб поднят на $FAKE_BIND:$FAKE_PORT (модели: stub-model)"
 }
 
 api() { # api <cookies|-> <method> <path> [json]
@@ -146,34 +147,52 @@ if [ -n "${WS_ID:-}" ]; then
   api "$COOKIES_ADMIN" GET "/api/workspaces/$WS_ID" >/dev/null
   WS_URL=$(jsonget "['workspace']['url']")
   case "$WS_URL" in
-    http://127.0.0.1:*) pass "url привязан к loopback" ;;
+    "/w/$WS_ID/") pass "url — same-origin gateway path, без токена" ;;
     "") fail "url пустой" ;;
-    *) fail "url не loopback: $WS_URL" ;;
+    *) fail "неожиданный url рабочего места: $WS_URL" ;;
   esac
 fi
 
-say "Открытие UI воркспейса (цепочка cookie-mint dsh: 303+Set-Cookie → 200)"
+say "Открытие UI воркспейса через шлюз (cookie-mint dsh: 303+Set-Cookie → 200)"
 if [ -n "$WS_URL" ]; then
   JAR="/tmp/agctl-e2e-$RUN_ID-dsh.cookies"
-  code=$(curl -sS -c "$JAR" -b "$JAR" -L -o "/tmp/agctl-e2e-$RUN_ID-dsh.html" -w '%{http_code}' "$WS_URL")
+  cp "$COOKIES_ADMIN" "$JAR"
+  code=$(curl -sS -c "$JAR" -b "$JAR" -L -o "/tmp/agctl-e2e-$RUN_ID-dsh.html" -w '%{http_code}' "$BASE_URL$WS_URL")
   size=$(wc -c < "/tmp/agctl-e2e-$RUN_ID-dsh.html" | tr -d ' ')
   if [ "$code" = 200 ] && [ "$size" -gt 500 ]; then
     grep -q 'dsh-auth-' "$JAR" \
-      && pass "DSH UI 200 (${size}b), cookie dsh-auth-* выдана mint-ом" \
-      || pass "DSH UI 200 (${size}b)"
+      && pass "DSH UI через /w/{id}/: 200 (${size}b), cookie dsh-auth-* выдана" \
+      || pass "DSH UI через /w/{id}/: 200 (${size}b)"
+    if awk -v p="/w/$WS_ID/" '$6 ~ /^dsh-auth-/ && $3 == p {found=1} END {exit !found}' "$JAR"; then
+      pass "DSH cookie path ограничен конкретным workspace"
+    else
+      fail "DSH cookie path не ограничен workspace"
+    fi
+    asset=$(python3 -c 'import re,sys; s=open(sys.argv[1]).read(); m=re.search(r"src=\"\./(assets/[^\"]+\.js)\"", s); print(m.group(1) if m else "")' "/tmp/agctl-e2e-$RUN_ID-dsh.html")
+    if [ -n "$asset" ]; then
+      code=$(curl -sS -b "$JAR" -o "/tmp/agctl-e2e-$RUN_ID-asset.js" -w '%{http_code}' "$BASE_URL$WS_URL$asset")
+      asize=$(wc -c < "/tmp/agctl-e2e-$RUN_ID-asset.js" | tr -d ' ')
+      [ "$code" = 200 ] && [ "$asize" -gt 10000 ] \
+        && pass "DSH JS asset через same-origin gateway: $code (${asize}b)" \
+        || fail "DSH asset: http=$code size=$asize"
+    else
+      fail "не удалось извлечь asset URL из DSH HTML"
+    fi
   else
-    fail "DSH UI: http=$code size=$size"
+    fail "DSH gateway UI: http=$code size=$size"
   fi
 fi
 
-say "Изоляция: чужое место и редирект"
+say "Изоляция: чужое место, redirect-slash, владелец"
 if [ -n "${WS_ID:-}" ]; then
-  code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_USER" "$BASE_URL/w/$WS_ID")
-  [ "$code" = 403 ] && pass "чужой /w/{id} → 403" || fail "чужой /w: $code"
+  code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_USER" "$BASE_URL/w/$WS_ID/")
+  [ "$code" = 403 ] && pass "чужой /w/{id}/ → 403" || fail "чужой /w: $code"
   code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_USER" "$BASE_URL/api/workspaces/$WS_ID")
   case "$code" in 403|404) pass "чужой workspace API → $code" ;; *) fail "чужой API: $code" ;; esac
   code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_ADMIN" "$BASE_URL/w/$WS_ID")
-  [ "$code" = 307 ] && pass "владелец /w/{id} → 307 (Location не печатаем)" || fail "владелец /w: $code"
+  [ "$code" = 308 ] && pass "без слэша → 308 на канонический /w/{id}/" || fail "redirect slash: $code"
+  code=$(curl -sS -b "$JAR" -c "$JAR" -L -o /dev/null -w '%{http_code}' "$BASE_URL$WS_URL")
+  [ "$code" = 200 ] && pass "владелец → gateway → DSH 200" || fail "владелец через gateway: $code"
 fi
 
 say "Docker: порты, лимиты, монтирования"
@@ -225,7 +244,7 @@ if [ -f "$settings" ]; then
 else
   fail "нет settings.yaml(.imported)"
 fi
-perms=$(stat -f '%Lp' "$TEST_HOME/work/$WS_ID/dsh-home/.credentials.yaml" 2>/dev/null)
+perms=$(stat -c '%a' "$TEST_HOME/work/$WS_ID/dsh-home/.credentials.yaml" 2>/dev/null || stat -f '%Lp' "$TEST_HOME/work/$WS_ID/dsh-home/.credentials.yaml" 2>/dev/null)
 [ "$perms" = "600" ] && pass ".credentials.yaml права 600" || fail "creds perms=$perms"
 
 say "CLI бэклога в контейнере"

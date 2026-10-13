@@ -1,7 +1,8 @@
-// Package server — HTTP-сервер agctl: REST API, статика UI, перенаправление
-// в воркспейсы, аудит и фоновые задачи (autosave, сверка статусов, чистка
-// сессий). Воркспейс-UI отдаётся docker'ом на 127.0.0.1:<port>; /w/{id} —
-// авторизованный редирект на этот порт.
+// Package server — HTTP-сервер agctl: REST API, статика UI, аудит и фоновые
+// задачи (autosave, сверка статусов, чистка сессий). Воркспейс-UI доступен
+// через шлюз /w/{id}/ — обратный прокси в контейнер с проверкой сессии agctl
+// на каждом запросе (см. gateway.go); docker по-прежнему публикует порт
+// контейнера только на 127.0.0.1.
 package server
 
 import (
@@ -36,6 +37,7 @@ type Config struct {
 	NanoCPUs      int64
 	Image         string
 	BinDir        string
+	SecureCookies bool // true when agctl is served behind a trusted HTTPS terminator
 	AutosaveEvery time.Duration
 }
 
@@ -98,6 +100,7 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 			return u.ID, u.Login, u.Role, nil
 		},
 		DeleteSession: db.DeleteSession,
+		CookieSecure:  cfg.SecureCookies,
 	}
 	return s, nil
 }
@@ -130,7 +133,8 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("PATCH /api/workspaces/{id}/provider", s.requireUser(s.handleWorkspaceProvider))
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
-	mux.HandleFunc("GET /w/{id}", s.requireUser(s.handleWorkspaceRedirect))
+	mux.HandleFunc("GET /w/{id}", s.requireUser(s.workspaceProxyEntry))
+	mux.HandleFunc("GET /w/{id}/", s.requireUser(s.workspaceProxy))
 
 	// статика SPA
 	mux.Handle("GET /", http.FileServerFS(webFS))
@@ -285,12 +289,14 @@ func (s *Server) logMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// workspaceURL — ссылка на UI воркспейса (docker публикует на loopback).
+// workspaceURL — канонический путь UI воркспейса: тот же origin, что и
+// кабинет (шлюз /w/{id}/ с сессией agctl). Boot-токен dsh в ссылку не
+// попадает: gateway подставляет его серверно при upstream-401 (см. gateway.go).
 func workspaceURL(w store.Workspace) string {
-	if w.Status != "running" || w.HostPort == 0 {
+	if w.Status != "running" {
 		return ""
 	}
-	return fmt.Sprintf("http://127.0.0.1:%d/", w.HostPort)
+	return "/w/" + w.ID + "/"
 }
 
 var dshTokenRe = regexp.MustCompile(`[?&]token=([A-Za-z0-9_\-]+)`)
@@ -326,18 +332,6 @@ func (s *Server) wsToken(ctx context.Context, w store.Workspace) string {
 	return ""
 }
 
-// openURL — готовая ссылка «Открыть» (с токеном dsh, если он уже известен).
-func (s *Server) openURL(ctx context.Context, w store.Workspace) string {
-	base := workspaceURL(w)
-	if base == "" {
-		return ""
-	}
-	if tok := s.wsToken(ctx, w); tok != "" {
-		return base + "?token=" + tok
-	}
-	return base
-}
-
 // forgetToken — после рестарта контейнера токен нужно соскрейпить заново.
 func (s *Server) forgetToken(wsID string) {
 	s.tokMu.Lock()
@@ -349,7 +343,7 @@ func (s *Server) wsJSON(ctx context.Context, w store.Workspace, owner string) ma
 	return map[string]any{
 		"id": w.ID, "name": w.Name, "status": w.Status,
 		"owner": owner, "createdAt": w.CreatedAt, "updatedAt": w.UpdatedAt,
-		"url": s.openURL(ctx, w), "port": w.HostPort, "error": w.Error,
+		"url": workspaceURL(w), "port": w.HostPort, "error": w.Error,
 		"model": w.Model, "models": w.Models, "baseURL": w.BaseURL, "template": w.Template,
 		"repoPath": w.RepoPath,
 	}

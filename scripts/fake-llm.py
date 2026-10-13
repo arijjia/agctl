@@ -82,13 +82,15 @@ def main():
     global ARGS
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, default=18765)
+    p.add_argument("--bind", default="127.0.0.1",
+                   help="адрес прослушивания; по умолчанию только loopback")
     p.add_argument("--reply", default="FAKE-LLM-REPLY: всё работает")
     p.add_argument("--models", default="stub-model",
                    help="запятая-раздёл перечисление id моделей")
     ARGS = p.parse_args()
     ARGS.models = [m.strip() for m in ARGS.models.split(",") if m.strip()]
-    srv = ThreadingHTTPServer(("127.0.0.1", ARGS.port), Handler)
-    sys.stderr.write(f"[fake-llm] listening on 127.0.0.1:{ARGS.port}\n")
+    srv = ThreadingHTTPServer((ARGS.bind, ARGS.port), Handler)
+    sys.stderr.write(f"[fake-llm] listening on {ARGS.bind}:{ARGS.port}\n")
     sys.stderr.flush()
     srv.serve_forever()
 

@@ -513,25 +513,6 @@ func (s *Server) recreateForProvider(wsID string, paths provision.Layout, p prov
 	_ = s.db.Audit(actor, "workspace.provider.applied", wsID, "port="+strconv.Itoa(res.HostPort))
 }
 
-// handleWorkspaceRedirect — /w/{id}: авторизованный переход в UI воркспейса.
-func (s *Server) handleWorkspaceRedirect(w http.ResponseWriter, r *http.Request, id identity) {
-	ws, err := s.loadWS(r, id)
-	if errors.Is(err, errForbidden) {
-		writeErr(w, http.StatusForbidden, "не ваш воркспейс")
-		return
-	}
-	if err != nil {
-		writeErr(w, http.StatusNotFound, "воркспейс не найден")
-		return
-	}
-	url := s.openURL(r.Context(), ws)
-	if url == "" {
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
-		return
-	}
-	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
-}
-
 // ── админка ─────────────────────────────────────────────────────────────────
 
 func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request, _ identity) {

@@ -96,6 +96,7 @@ func cmdServe(args []string) {
 	addr := fsSet.String("addr", envOr("AGCTL_ADDR", "127.0.0.1:8929"), "адрес UI/API")
 	image := fsSet.String("image", "agctl-dsh:0.1.0", "тег образа agctl-dsh")
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
+	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
 	maxPerUser := fsSet.Int("max-per-user", 3, "лимит воркспейсов на пользователя")
 	memGB := fsSet.Float64("mem-gb", 2, "лимит памяти контейнера, ГБ")
 	cpus := fsSet.Float64("cpus", 2, "лимит CPU контейнера")
@@ -118,13 +119,14 @@ func cmdServe(args []string) {
 		log.Fatal(err)
 	}
 	srv, err := server.New(db, sec, server.Config{
-		Home:        absHome,
-		Addr:        *addr,
-		MaxPerUser:  *maxPerUser,
-		MemoryBytes: int64(*memGB * 1024 * 1024 * 1024),
-		NanoCPUs:    int64(*cpus * 1e9),
-		Image:       *image,
-		BinDir:      firstNonEmpty(*binDir, "dist"),
+		Home:          absHome,
+		Addr:          *addr,
+		MaxPerUser:    *maxPerUser,
+		MemoryBytes:   int64(*memGB * 1024 * 1024 * 1024),
+		NanoCPUs:      int64(*cpus * 1e9),
+		Image:         *image,
+		BinDir:        firstNonEmpty(*binDir, "dist"),
+		SecureCookies: *secureCookies,
 	})
 	if err != nil {
 		log.Fatal(err)

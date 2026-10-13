@@ -580,7 +580,8 @@ func TestTemplatesEndpoint(t *testing.T) {
 	}
 }
 
-// TestRedirectRequiresRunning — /w/{id} редиректит только на running-воркспейс.
+// TestEntryRedirectRequiresRunning — /w/{id} ведёт на канонический /w/{id}/
+// (шлюз) и не отвечает для не-running воркспейса.
 func TestRedirectRequiresRunning(t *testing.T) {
 	e := newTestEnv(t, 3)
 	e.register(e.admin, "anna", "secret1")
@@ -591,17 +592,32 @@ func TestRedirectRequiresRunning(t *testing.T) {
 	wsID := wsIDof(t, body)
 	e.waitStatus(wsID, "running")
 
-	req, _ := http.NewRequest("GET", e.api.URL+"/w/"+wsID, nil)
+	req, _ := http.NewRequest("GET", e.api.URL+"/w/"+wsID+"?token=should-not-leak&view=full", nil)
 	resp, err := e.admin.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusTemporaryRedirect {
-		t.Fatalf("/w/{id}: %d, ждали 307", resp.StatusCode)
+	if resp.StatusCode != http.StatusPermanentRedirect {
+		t.Fatalf("/w/{id}: %d, ждали 308", resp.StatusCode)
 	}
-	if loc := resp.Header.Get("Location"); !strings.Contains(loc, "token=fake-boot-token") {
-		t.Fatalf("редирект без boot-токена: %s", loc)
+	if loc := resp.Header.Get("Location"); loc != "/w/"+wsID+"/?view=full" {
+		t.Fatalf("Location %q — токен не должен сохраняться, query view должен остаться", loc)
+	}
+
+	// не-running: останавливаем и ждём 409 от шлюза
+	if code, _ := e.do(e.admin, "POST", "/api/workspaces/"+wsID+"/stop", nil); code != 200 && code != 202 {
+		t.Fatalf("stop: %d", code)
+	}
+	e.waitStatus(wsID, "stopped")
+	req, _ = http.NewRequest("GET", e.api.URL+"/w/"+wsID+"/", nil)
+	resp, err = e.admin.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("/w/{id}/ stopped: %d, ждали 409", resp.StatusCode)
 	}
 }
 
@@ -624,15 +640,14 @@ func TestWsTokenTakesLastMatch(t *testing.T) {
 		"dsh web: http://0.0.0.0:3080/?token=NEW-fresh-token"
 	e.srv.forgetToken(wsID) // сброс кэша — как при start/пересоздании
 
-	req, _ := http.NewRequest("GET", e.api.URL+"/w/"+wsID, nil)
-	resp, err := e.admin.Do(req)
+	// wsToken обязан взять последний токен (шлюз подставит его при mint)
+	ws, err := e.db.WorkspaceByID(wsID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
-	loc := resp.Header.Get("Location")
-	if !strings.Contains(loc, "token=NEW-fresh-token") {
-		t.Fatalf("редирект ведёт по устаревшему токену: %s", loc)
+	tok := e.srv.wsToken(context.Background(), ws)
+	if tok != "NEW-fresh-token" {
+		t.Fatalf("wsToken взял устаревший токен: %q", tok)
 	}
 	// и кэш теперь хранит свежий токен
 	e.srv.tokMu.Lock()
@@ -640,6 +655,10 @@ func TestWsTokenTakesLastMatch(t *testing.T) {
 	e.srv.tokMu.Unlock()
 	if cached != "NEW-fresh-token" {
 		t.Fatalf("в кэше %q, ждали NEW-fresh-token", cached)
+	}
+	// ссылка воркспейса не содержит токена (он не покидает сервер)
+	if u := workspaceURL(ws); strings.Contains(u, "token") || !strings.HasPrefix(u, "/w/") {
+		t.Fatalf("workspaceURL %q — токен не должен попадать в URL", u)
 	}
 }
 
