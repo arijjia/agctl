@@ -1,0 +1,17 @@
+name: dsh-bump
+
+on:
+  schedule:
+    - cron: "23 4 * * 1" # еженедельно по понедельникам
+  workflow_dispatch:
+
+jobs:
+  check-pin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Сверка пина @deepseek-ai/dsh с npm latest
+        run: scripts/dsh-bump.sh --check

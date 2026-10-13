@@ -21,7 +21,7 @@ RUN git config --system user.name "agent" \
   && npm config set allow-scripts \
       @deepseek-ai/dsh-subprocess-local,koffi,node-pty,fsevents,protobufjs,esbuild \
       --location=user \
-  && npm install -g --no-audit --no-fund @deepseek-ai/dsh@0.1.7-rc.2 \
+  && npm install -g --no-audit --no-fund @deepseek-ai/dsh@0.2.0-rc.2 \
   && dsh --version
 ENV PATH="/opt/dsh/bin:${PATH}"
 
