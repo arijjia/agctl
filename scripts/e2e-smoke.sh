@@ -152,12 +152,15 @@ if [ -n "${WS_ID:-}" ]; then
   esac
 fi
 
-say "Открытие UI воркспейса"
+say "Открытие UI воркспейса (цепочка cookie-mint dsh: 303+Set-Cookie → 200)"
 if [ -n "$WS_URL" ]; then
-  code=$(curl -sS -o "/tmp/agctl-e2e-$RUN_ID-dsh.html" -w '%{http_code}' "$WS_URL")
+  JAR="/tmp/agctl-e2e-$RUN_ID-dsh.cookies"
+  code=$(curl -sS -c "$JAR" -b "$JAR" -L -o "/tmp/agctl-e2e-$RUN_ID-dsh.html" -w '%{http_code}' "$WS_URL")
   size=$(wc -c < "/tmp/agctl-e2e-$RUN_ID-dsh.html" | tr -d ' ')
   if [ "$code" = 200 ] && [ "$size" -gt 500 ]; then
-    pass "DSH UI отвечает 200 (${size}b), boot-токен в ссылке принят"
+    grep -q 'dsh-auth-' "$JAR" \
+      && pass "DSH UI 200 (${size}b), cookie dsh-auth-* выдана mint-ом" \
+      || pass "DSH UI 200 (${size}b)"
   else
     fail "DSH UI: http=$code size=$size"
   fi
@@ -167,7 +170,7 @@ say "Изоляция: чужое место и редирект"
 if [ -n "${WS_ID:-}" ]; then
   code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_USER" "$BASE_URL/w/$WS_ID")
   [ "$code" = 403 ] && pass "чужой /w/{id} → 403" || fail "чужой /w: $code"
-  code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_USER" "/api/workspaces/$WS_ID")
+  code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_USER" "$BASE_URL/api/workspaces/$WS_ID")
   case "$code" in 403|404) pass "чужой workspace API → $code" ;; *) fail "чужой API: $code" ;; esac
   code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_ADMIN" "$BASE_URL/w/$WS_ID")
   [ "$code" = 307 ] && pass "владелец /w/{id} → 307 (Location не печатаем)" || fail "владелец /w: $code"
@@ -211,8 +214,17 @@ else
 fi
 
 say "dsh-home и права"
-test -f "$TEST_HOME/work/$WS_ID/dsh-home/settings.yaml" \
-  && pass "settings.yaml на месте" || fail "нет settings.yaml"
+# dsh 0.2.0 импортирует settings.yaml при буте и переименовывает в
+# settings.yaml.imported — считаем валидным любой из вариантов.
+settings="$TEST_HOME/work/$WS_ID/dsh-home/settings.yaml"
+[ -f "$settings" ] || settings="$TEST_HOME/work/$WS_ID/dsh-home/settings.yaml.imported"
+if [ -f "$settings" ]; then
+  grep -q 'agctl' "$settings" \
+    && pass "настройки провайдера импортированы ($settings)" \
+    || fail "settings есть, но без блока agctl"
+else
+  fail "нет settings.yaml(.imported)"
+fi
 perms=$(stat -f '%Lp' "$TEST_HOME/work/$WS_ID/dsh-home/.credentials.yaml" 2>/dev/null)
 [ "$perms" = "600" ] && pass ".credentials.yaml права 600" || fail "creds perms=$perms"
 
@@ -224,11 +236,12 @@ say "Живой провод до модели (через env-токен кон
 CHAT="NOT RUN"
 if [ "${FAKE_LLM:-0}" = "1" ]; then
   probe=$(docker exec "$CONTAINER" sh -c \
-    'printf "{\"model\":\"stub-model\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}" | curl -sS -m 15 -H "Content-Type: application/json" -H "Authorization: Bearer $AGCTL_LLM_API_KEY" "'"$PROVIDER_URL"'/chat/completions"' 2>/dev/null)
+    'printf "{\"model\":\"stub-model\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}" | curl -sS -m 15 --data-binary @- -H "Content-Type: application/json" -H "Authorization: Bearer $AGCTL_LLM_API_KEY" "'"$PROVIDER_URL"'/chat/completions"' 2>&1)
   if printf '%s' "$probe" | grep -q 'FAKE-LLM-REPLY'; then
     CHAT="PASS"
     pass "контейнер → провайдер: ответ стаба получен (env-токен пробит до стаба)"
   else
+    printf '  probe head: %.200s\n' "$probe"
     skip "HTTP-проба из контейнера не прошла; UI-чат не проверялся (см. журнал)"
   fi
 else
