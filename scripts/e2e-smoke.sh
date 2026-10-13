@@ -43,7 +43,7 @@ preflight() {
   command -v go >/dev/null || { echo "нет go" >&2; exit 2; }
   command -v docker >/dev/null || { echo "нет docker" >&2; exit 2; }
   docker version --format '{{.Server.Version}}' >/dev/null || { echo "docker мёртв" >&2; exit 2; }
-  if ! python3 -c 'import socket,sys; s=socket.socket(); s.bind(("127.0.0.1", int(sys.argv[1]))); s.close()' "$TEST_PORT" >/dev/null 2>&1; then
+  if nc -z 127.0.0.1 "$TEST_PORT" 2>/dev/null; then
     echo "порт $TEST_PORT занят — выбери другой TEST_ADDR" >&2; exit 2
   fi
   if [ ! -x "$AGCTL_BIN" ]; then

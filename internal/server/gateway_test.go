@@ -279,6 +279,44 @@ func TestGatewaySecureCookie(t *testing.T) {
 	t.Fatal("mint response has no dsh-auth cookie")
 }
 
+// TestGatewayWarmupPage — браузер получает авто-ретраящую страницу вместо
+// JSON-ошибки, если контейнер ещё греется (upstream недоступен).
+func TestGatewayWarmupPage(t *testing.T) {
+	e := newTestEnv(t, 3)
+	e.register(e.admin, "anna", "secret1")
+	wsID := runningWorkspace(t, e, "gw-warm")
+	// указываем порт, где никто не слушает — имитация прогрева
+	if err := e.db.UpdateWorkspaceRuntime(wsID, "ctr-"+wsID, 1, "running"); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ := http.NewRequest("GET", e.api.URL+"/w/"+wsID+"/", nil)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	resp, err := e.admin.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := readAll(t, resp)
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("warmup: %d, ждали 503", resp.StatusCode)
+	}
+	if !strings.Contains(body, `http-equiv="refresh"`) || !strings.Contains(body, "/w/"+wsID+"/") {
+		t.Fatalf("warmup page without meta refresh: %q", body)
+	}
+
+	// не-браузерный клиент получает JSON-ошибку как раньше
+	req, _ = http.NewRequest("GET", e.api.URL+"/w/"+wsID+"/", nil)
+	resp2, err := e.admin.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	jsonBody := readAll(t, resp2)
+	if resp2.StatusCode != http.StatusBadGateway || !strings.Contains(jsonBody, "недоступен") {
+		t.Fatalf("api client: %d %q", resp2.StatusCode, jsonBody)
+	}
+}
+
 // TestGatewaySSE — поток событий проходит через gateway без потери чанков.
 func TestGatewaySSE(t *testing.T) {
 	upstream, _ := newFakeDsh(t, "boot-sse")

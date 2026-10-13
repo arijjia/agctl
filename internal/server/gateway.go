@@ -14,6 +14,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -108,6 +109,15 @@ func (s *Server) workspaceProxy(w http.ResponseWriter, r *http.Request, id ident
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			log.Printf("[gateway] %s: %v", wsID, err)
+			// Браузеру — страница с авто-ретраем: контейнер после старта
+			// прогревается несколько секунд (dsh-warmup-indicator); API-клиенту — JSON.
+			if strings.Contains(r.Header.Get("Accept"), "text/html") {
+				canonical := prefix + "/"
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = fmt.Fprintf(w, `<!doctype html><meta charset="utf-8"><title>agctl: прогрев</title><meta http-equiv="refresh" content="3"><p style="font-family:system-ui;padding:2rem">Рабочее место запускается… страница обновится автоматически. <a href="%s">Повторить сейчас</a></p>`, canonical)
+				return
+			}
 			writeErr(w, http.StatusBadGateway, "воркспейс недоступен")
 		},
 	}

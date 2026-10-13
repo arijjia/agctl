@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: night-backlog-sweep-2026-10-12
 title: "Ночная смена 2026-10-12: закрыть бэклог agctl волнами с максимальным тестированием"
-status: in-progress
+status: done
 priority: P1
 size: L
 area: meta
@@ -49,3 +49,4 @@ depends: []
 - 2026-10-13: W1: DSH 0.2.0-rc.2 pin, dsh-bump update/check + weekly e2e-gated PR, isolated e2e PASS 35/0 CHAT=PASS. W2: gateway /w/{id} auth, mint, WS/SSE, Secure cookies, e2e 35/0; hq secure-gateway выполнена. Legacy dsh-home 0.1.7→0.2.0 migration ещё не проверена.
 - 2026-10-13: W3: kits v1 (base/1c-vibe), галочки UI, SQLite состав, agctl-kit.json в репе; e2e PASS 38/0. Ветки agent/component-packages; коммиты f67af61/216d5de.
 - 2026-10-13: W1-legacy: миграция dsh-home 0.1.7→0.2.0 проверена на boot/storage-уровне (mint 200, registry/session сохранены); dsh-pin-bump-automation закрыта.
+- 2026-10-13: done — Ночь завершена: W1 (pin 0.2.0-rc.2 + автоматизация PR + legacy boot/storage), W2 (gateway auth/mint/WS/SSE + threat model), W3 (kits v1 + галочки + agctl-kit.json), W4 (замер ёмкости), W5 (design-спеки в hq), P3 (warmup-страница, dockerrt-тесты, решение 403). Открытыми остались карточки с внешними зависимостями: dify-evaluation-repro (нужен экспорт Горохова), knowledge-contract-pilot/knowledge-ux-grants (нужны данные ЦИТ), vkr-mvp-baseline (подписи), agent-workflow-engine (большой спайк), backlog-cyrillic-titles (тулинг gitctl). Ветка agent/component-packages — самая полная.
