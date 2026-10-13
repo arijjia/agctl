@@ -5,13 +5,57 @@ on:
     - cron: "23 4 * * 1" # еженедельно по понедельникам
   workflow_dispatch:
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
-  check-pin:
+  bump:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Сверка пина @deepseek-ai/dsh с npm latest
-        run: scripts/dsh-bump.sh --check
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - name: Обновить pin DSH до latest rc/stable
+        run: scripts/dsh-bump.sh --update
+      - id: diff
+        name: Проверить, изменился ли pin
+        run: |
+          if git diff --quiet -- internal/assets/image/Dockerfile; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.diff.outputs.changed == 'true'
+        name: Go и SPA тесты
+        run: |
+          go vet ./...
+          go test ./...
+          make web_build
+      - if: steps.diff.outputs.changed == 'true'
+        name: Собрать новый образ DSH
+        run: make img_build IMG=agctl-dsh:dsh-bump-e2e
+      - if: steps.diff.outputs.changed == 'true'
+        name: Изолированный e2e со стабом LLM
+        env:
+          TEST_IMAGE: agctl-dsh:dsh-bump-e2e
+          FAKE_LLM: "1"
+          FAKE_LLM_BIND: 0.0.0.0
+          CLEANUP: "1"
+        run: scripts/e2e-smoke.sh
+      - if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ github.token }}
+          branch: bot/dsh-upgrade
+          delete-branch: true
+          title: "chore(image): update pinned DSH version"
+          commit-message: "chore(image): update pinned DSH version"
+          body: |
+            Automated DSH pin refresh from npm `latest` (rc/stable only).
+            Go tests, SPA build, Docker image build, and isolated e2e must pass
+            before this PR is created.
