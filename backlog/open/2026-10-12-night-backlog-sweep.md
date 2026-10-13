@@ -48,3 +48,4 @@ depends: []
   чист на main, посторонних agctl-контейнеров нет, порт 18929 свободен.
 - 2026-10-13: W1: DSH 0.2.0-rc.2 pin, dsh-bump update/check + weekly e2e-gated PR, isolated e2e PASS 35/0 CHAT=PASS. W2: gateway /w/{id} auth, mint, WS/SSE, Secure cookies, e2e 35/0; hq secure-gateway выполнена. Legacy dsh-home 0.1.7→0.2.0 migration ещё не проверена.
 - 2026-10-13: W3: kits v1 (base/1c-vibe), галочки UI, SQLite состав, agctl-kit.json в репе; e2e PASS 38/0. Ветки agent/component-packages; коммиты f67af61/216d5de.
+- 2026-10-13: W1-legacy: миграция dsh-home 0.1.7→0.2.0 проверена на boot/storage-уровне (mint 200, registry/session сохранены); dsh-pin-bump-automation закрыта.

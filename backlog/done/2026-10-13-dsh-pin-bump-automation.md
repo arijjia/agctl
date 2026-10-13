@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: dsh-pin-bump-automation
 title: "Обновить DSH pin и настроить e2e-gated PR для новых версий"
-status: in-progress
+status: done
 priority: P2
 size: M
 area: infra
@@ -53,3 +53,5 @@ e2e на фейковом LLM, затем создаёт PR только при 
   DSH в `settings.yaml.imported`; `scripts/dsh-bump.sh --check|--update` + weekly
   e2e-gated PR workflow добавлены. Legacy upgrade 0.1.7→0.2.0 с историей сессии
   отдельно не проверен; статус оставить in-progress.
+- 2026-10-13: Legacy-проверка: образ 0.1.7-rc.2 собран, e2e создал воркспейс; dsh-home 0.1.7 (settings import, registry v2) поднят контейнером 0.2.0-rc.2 напрямую — boot OK, mint→UI 200 (34846b), workspace.json и файл сессии не тронуты. Оговорка: запись сессии синтетическая (реальная история чатов 0.1.7 требует живой модели) — boot/storage-level совместимость.
+- 2026-10-13: done — Pin 0.2.0-rc.2 + dsh-bump update/check + e2e-gated PR; совместимость старого dsh-home подтверждена на уровне boot/storage. Остаток (реальная история чатов) записан в hq-карточке.
