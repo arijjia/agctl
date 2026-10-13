@@ -32,7 +32,7 @@ jobs:
       - name: build SPA
         working-directory: web
         run: |
-          npm install
+          npm ci
           npm run build
 
   gitleaks:
