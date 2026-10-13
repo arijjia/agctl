@@ -255,6 +255,9 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 				ws.Work + ":/workspace",
 				ws.DshHome + ":/home/dsh",
 			},
+			// host-gateway: из контейнера должен резолвиться
+			// host.docker.internal (корпоративный LLM-шлюз на хосте).
+			ExtraHosts: []string{"host.docker.internal:host-gateway"},
 			PortBindings: network.PortMap{
 				network.MustParsePort("3080/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: fmt.Sprint(hostPort)}},
 			},
