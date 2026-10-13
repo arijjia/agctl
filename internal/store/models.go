@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -25,8 +26,9 @@ type Workspace struct {
 	ID          string
 	OwnerID     int64
 	Name        string
-	Template    string // base | 1c-vibe | ...
-	Status      string // provisioning | running | stopped | failed | removing
+	Template    string   // kit id (legacy column name)
+	Components  []string // выбранный версионированный состав комплекта
+	Status      string   // provisioning | running | stopped | failed | removing
 	RepoPath    string
 	WorkPath    string
 	DshHome     string
@@ -74,6 +76,26 @@ func DecodeModels(raw, fallback string) []string {
 		out = []string{fallback}
 	}
 	return out
+}
+
+// EncodeIDs/DecodeIDs — детерминированное хранение списка component IDs.
+func EncodeIDs(ids []string) string {
+	if len(ids) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(ids)
+	return string(b)
+}
+
+func DecodeIDs(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	var ids []string
+	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
+		return nil
+	}
+	return ids
 }
 
 // AuditEvent — запись журнала безопасности (РСБ).
@@ -180,26 +202,27 @@ func (d *DB) DeleteExpiredSessions() error {
 // ── workspaces ───────────────────────────────────────────────────────────────
 
 const wsCols = `id, owner_id, name, template, status, repo_path, work_path, dsh_home,
-	container_id, host_port, base_url, model, models, error, created_at, updated_at`
+	container_id, host_port, base_url, model, models, components, error, created_at, updated_at`
 
 func scanWS(row interface{ Scan(...any) error }) (Workspace, error) {
 	var w Workspace
-	var modelsRaw string
+	var modelsRaw, componentsRaw string
 	err := row.Scan(&w.ID, &w.OwnerID, &w.Name, &w.Template, &w.Status, &w.RepoPath, &w.WorkPath,
-		&w.DshHome, &w.ContainerID, &w.HostPort, &w.BaseURL, &w.Model, &modelsRaw, &w.Error,
+		&w.DshHome, &w.ContainerID, &w.HostPort, &w.BaseURL, &w.Model, &modelsRaw, &componentsRaw, &w.Error,
 		&w.CreatedAt, &w.UpdatedAt)
 	if err == nil {
 		w.Models = DecodeModels(modelsRaw, w.Model)
+		w.Components = DecodeIDs(componentsRaw)
 	}
 	return w, err
 }
 
 func (d *DB) InsertWorkspace(w Workspace) error {
 	_, err := d.Exec(`INSERT INTO workspaces(id, owner_id, name, template, status, repo_path,
-		work_path, dsh_home, container_id, host_port, base_url, model, models, error)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		work_path, dsh_home, container_id, host_port, base_url, model, models, components, error)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		w.ID, w.OwnerID, w.Name, w.Template, w.Status, w.RepoPath, w.WorkPath, w.DshHome,
-		w.ContainerID, w.HostPort, w.BaseURL, w.Model, EncodeModels(w.Models), w.Error)
+		w.ContainerID, w.HostPort, w.BaseURL, w.Model, EncodeModels(w.Models), EncodeIDs(w.Components), w.Error)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return fmt.Errorf("store: имя воркспейса занято: %w", err)
@@ -220,7 +243,7 @@ func (d *DB) WorkspacesByOwner(ownerID int64) ([]Workspace, error) {
 
 func (d *DB) WorkspacesAll() ([]Workspace, error) {
 	return d.wsList(`SELECT w.id, w.owner_id, w.name, w.template, w.status, w.repo_path, w.work_path,
-		w.dsh_home, w.container_id, w.host_port, w.base_url, w.model, w.models, w.error,
+		w.dsh_home, w.container_id, w.host_port, w.base_url, w.model, w.models, w.components, w.error,
 		w.created_at, w.updated_at
 		FROM workspaces w JOIN users u ON u.id = w.owner_id
 		ORDER BY w.created_at DESC`)

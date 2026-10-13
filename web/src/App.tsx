@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, AuditEvent, AdminUser, RepoTemplate, User, Workspace, WsStatus } from "./api";
+import { api, AuditEvent, AdminUser, Kit, User, Workspace, WsStatus } from "./api";
 
 // ── статусы ──────────────────────────────────────────────────────────────────
 
@@ -174,7 +174,9 @@ function WorkspaceCard({
       </div>
       {ws.error && <div className="error">{ws.error}</div>}
       <div className="muted small">
-        {ws.template || "base"} · <span className="mono">{modelList.join(", ")}</span>
+        Комплект: <span className="mono">{ws.kit || ws.template || "base"}</span>
+        {ws.components?.length > 0 && <> · компоненты: <span className="mono">{ws.components.join(", ")}</span></>}
+        · <span className="mono">{modelList.join(", ")}</span>
       </div>
       <div className="ws-actions">
         {ws.status === "running" && (
@@ -216,7 +218,10 @@ function WorkspaceCard({
             )}
           </div>
           <div>
-            Шаблон репки: <span className="mono">{ws.template || "base"}</span>
+            Стартовый комплект: <span className="mono">{ws.kit || ws.template || "base"}</span>
+          </div>
+          <div>
+            Компоненты: <span className="mono">{ws.components?.join(", ") || "legacy/default"}</span>
           </div>
           {ws.port > 0 && (
             <div>
@@ -282,8 +287,9 @@ function WorkspaceCard({
 
 function Cabinet({ user, onLogout, onAdmin }: { user: User; onLogout: () => void; onAdmin: () => void }) {
   const [wss, setWss] = useState<Workspace[]>([]);
-  const [tpls, setTpls] = useState<RepoTemplate[]>([]);
-  const [template, setTemplate] = useState("base");
+  const [kits, setKits] = useState<Kit[]>([]);
+  const [kitID, setKitID] = useState("base");
+  const [selectedComponents, setSelectedComponents] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [baseURL, setBaseURL] = useState("https://litellm-dev.utmn.ru/v1");
   const [models, setModels] = useState(
@@ -293,9 +299,26 @@ function Cabinet({ user, onLogout, onAdmin }: { user: User; onLogout: () => void
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const timer = useRef<number | null>(null);
+  const selectedKit = kits.find((kit) => kit.id === kitID);
+
+  const chooseKit = (id: string) => {
+    setKitID(id);
+    const kit = kits.find((item) => item.id === id);
+    setSelectedComponents(kit?.defaultComponents ?? []);
+  };
+
+  const toggleComponent = (id: string) => {
+    setSelectedComponents((current) => current.includes(id)
+      ? current.filter((component) => component !== id)
+      : [...current, id]);
+  };
 
   useEffect(() => {
-    api.templates().then((r) => setTpls(r.templates)).catch(() => {});
+    api.kits().then((r) => {
+      setKits(r.kits);
+      const initial = r.kits.find((kit) => kit.id === "base") ?? r.kits[0];
+      setSelectedComponents(initial?.defaultComponents ?? []);
+    }).catch(() => {});
   }, []);
 
   const refresh = useCallback(async () => {
@@ -330,10 +353,11 @@ function Cabinet({ user, onLogout, onAdmin }: { user: User; onLogout: () => void
     try {
       await api.create(
         name,
-        template,
+        kitID,
         baseURL,
         models.split("\n").map((m) => m.trim()).filter(Boolean),
         apiKey,
+        kits.length === 0 ? undefined : selectedComponents,
       );
       setName("");
       setApiKey("");
@@ -367,19 +391,37 @@ function Cabinet({ user, onLogout, onAdmin }: { user: User; onLogout: () => void
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="моё-рабочее-место" required minLength={2} />
           </label>
           <label>
-            Шаблон репозитория
-            <select value={template} onChange={(e) => setTemplate(e.target.value)}>
-              {tpls.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.title}
+            Стартовый комплект
+            <select value={kitID} onChange={(e) => chooseKit(e.target.value)}>
+              {kits.map((kit) => (
+                <option key={kit.id} value={kit.id}>
+                  {kit.title} · v{kit.version}
                 </option>
               ))}
             </select>
           </label>
-          {tpls.find((t) => t.id === template)?.description && (
+          {selectedKit?.description && (
             <p className="muted small" style={{ marginTop: -4 }}>
-              {tpls.find((t) => t.id === template)?.description}
+              {selectedKit.description}
             </p>
+          )}
+          {selectedKit && (
+            <div className="component-picker">
+              <div className="muted small">Компоненты (по умолчанию выбраны все)</div>
+              {selectedKit.components.map((component) => (
+                <label className="component-option" key={component.id}>
+                  <input
+                    type="checkbox"
+                    checked={selectedComponents.includes(component.id)}
+                    onChange={() => toggleComponent(component.id)}
+                  />
+                  <span>
+                    <strong>{component.title}</strong>
+                    <span className="muted small">{component.description}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
           )}
           <label>
             Base URL провайдера

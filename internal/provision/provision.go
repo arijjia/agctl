@@ -100,24 +100,22 @@ var Templates = []Template{
 	},
 }
 
-// ValidTemplate — есть ли такой шаблон.
+// ValidTemplate — legacy-совместимая проверка ID стартового комплекта.
 func ValidTemplate(id string) bool {
 	if id == "" {
 		return true // пусто = base
 	}
-	for _, t := range Templates {
-		if t.ID == id {
-			return true
-		}
-	}
-	return false
+	_, ok := FindKit(id)
+	return ok
 }
 
-func templatePrefix(name string) string {
-	if name == "" {
-		name = "base"
+// Provision сохраняет старый API и разворачивает default-компоненты комплекта.
+func Provision(l Layout, p Provider, templateName string, templateFS, skelFS fs.FS) error {
+	kitID, components, err := NormalizeComponents(templateName, nil)
+	if err != nil {
+		return err
 	}
-	return "templates/" + name
+	return ProvisionWithComponents(l, p, kitID, components, templateFS, skelFS)
 }
 
 // Layout — пути воркспейса на диске хоста.
@@ -167,18 +165,20 @@ func sanitize(s string) string {
 	return out
 }
 
-// Provision создаёт всю файловую часть воркспейса:
-// bare-репу из шаблона templateName + рабочий клон + скелет DSH_HOME с токеном.
-// templateFS и skelFS — встроенные ассеты (internal/assets).
-func Provision(l Layout, p Provider, templateName string, templateFS, skelFS fs.FS) error {
+// ProvisionWithComponents создаёт git-пару и DSH_HOME из выбранного состава.
+func ProvisionWithComponents(l Layout, p Provider, kitID string, components []string, templateFS, skelFS fs.FS) error {
 	if p.BaseURL == "" || p.DefaultModel() == "" || p.APIKey == "" {
 		return errors.New("provision: не заданы провайдер или токен")
 	}
 	if len(p.AllModels()) == 0 {
 		p.Models = []string{p.Model}
 	}
-	if !ValidTemplate(templateName) {
-		return fmt.Errorf("provision: неизвестный шаблон %q", templateName)
+	if !ValidTemplate(kitID) {
+		return fmt.Errorf("provision: неизвестный комплект %q", kitID)
+	}
+	_, normalizedComponents, err := NormalizeComponents(kitID, components)
+	if err != nil {
+		return fmt.Errorf("provision: %w", err)
 	}
 	for _, d := range []string{l.Repo, filepath.Dir(l.Work), l.DshHome} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
@@ -203,8 +203,11 @@ func Provision(l Layout, p Provider, templateName string, templateFS, skelFS fs.
 	if err != nil {
 		return fmt.Errorf("provision: work init: %w", err)
 	}
-	if err := CopyFS(templateFS, templatePrefix(templateName), l.Work); err != nil {
-		return fmt.Errorf("provision: шаблон репы: %w", err)
+	if err := CopySelectedComponents(templateFS, kitID, normalizedComponents, l.Work); err != nil {
+		return fmt.Errorf("provision: компоненты комплекта: %w", err)
+	}
+	if err := WriteKitManifest(l.Work, kitID, normalizedComponents); err != nil {
+		return fmt.Errorf("provision: манифест комплекта: %w", err)
 	}
 	wt, err := repo.Worktree()
 	if err != nil {

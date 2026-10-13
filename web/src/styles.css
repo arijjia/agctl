@@ -51,6 +51,10 @@ a { color: var(--accent); }
 .page { max-width: 860px; margin: 0 auto; padding: 18px; }
 
 label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); }
+.component-picker { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+.component-option { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); cursor: pointer; }
+.component-option input[type="checkbox"] { flex: 0 0 auto; width: 16px; height: 16px; margin: 2px 0 0; padding: 0; }
+.component-option > span { display: flex; flex-direction: column; gap: 3px; }
 input {
   background: #0d1117;
   border: 1px solid var(--border);

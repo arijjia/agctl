@@ -570,7 +570,55 @@ func TestProviderPatch(t *testing.T) {
 	}
 }
 
-// TestTemplatesEndpoint — каталог шаблонов отдаётся авторизованным.
+// TestKitsEndpointAndSelection — версия манифеста и selected components доступны
+// в API/SQLite, а снятая галочка не создаёт файлы компонента.
+func TestKitsEndpointAndSelection(t *testing.T) {
+	e := newTestEnv(t, 3)
+	e.register(e.admin, "anna", "secret1")
+	if code, _ := e.do(&http.Client{}, "GET", "/api/kits", nil); code != http.StatusUnauthorized {
+		t.Fatalf("anonymous /api/kits: %d", code)
+	}
+	code, body := e.do(e.admin, "GET", "/api/kits", nil)
+	if code != http.StatusOK || !strings.Contains(body, `"version":"1.0.0"`) || !strings.Contains(body, "1c-tooling") {
+		t.Fatalf("kits: %d %s", code, body)
+	}
+
+	req := validCreate("components")
+	req["kit"] = "1c-vibe"
+	// Порядок JSON произвольный; сервер нормализует по manifest.
+	req["components"] = []string{"core-instructions", "core-workspace"}
+	code, body = e.do(e.admin, "POST", "/api/workspaces", req)
+	if code != http.StatusAccepted {
+		t.Fatalf("create selected kit: %d %s", code, body)
+	}
+	wsID := wsIDof(t, body)
+	ws := e.waitStatus(wsID, "running")
+	if got := strings.Join(ws.Components, ","); got != "core-workspace,core-instructions" {
+		t.Fatalf("persisted components=%q", got)
+	}
+	if _, err := os.Stat(filepath.Join(ws.WorkPath, "AGENTS.md")); err != nil {
+		t.Fatalf("core instructions missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(ws.WorkPath, "scripts/jira_client.py")); !os.IsNotExist(err) {
+		t.Fatalf("deselected 1C tooling was copied, stat err=%v", err)
+	}
+}
+
+// TestKitRejectsInvalidSelection — сервер запрещает пустой и чужой component ID.
+func TestKitRejectsInvalidSelection(t *testing.T) {
+	e := newTestEnv(t, 3)
+	e.register(e.admin, "anna", "secret1")
+	for _, components := range [][]string{{}, {"not-in-this-kit"}} {
+		req := validCreate("invalid-kit")
+		req["components"] = components
+		code, _ := e.do(e.admin, "POST", "/api/workspaces", req)
+		if code != http.StatusBadRequest {
+			t.Fatalf("components=%v: got %d, want 400", components, code)
+		}
+	}
+}
+
+// TestTemplatesEndpoint — legacy-каталог остаётся доступен старым клиентам.
 func TestTemplatesEndpoint(t *testing.T) {
 	e := newTestEnv(t, 3)
 	e.register(e.admin, "anna", "secret1")

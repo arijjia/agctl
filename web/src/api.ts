@@ -5,11 +5,21 @@ export type User = { login: string; role: Role };
 export type WsStatus = "provisioning" | "running" | "stopped" | "failed" | "removing" | "stopping";
 
 export type RepoTemplate = { id: string; title: string; description: string };
+export type KitComponent = { id: string; title: string; description: string };
+export type Kit = {
+  id: string;
+  title: string;
+  description: string;
+  version: string;
+  defaultComponents: string[];
+  components: KitComponent[];
+};
 
 export type Workspace = {
   id: string;
   name: string;
-  template: string;
+  kit: string;
+  template: string; // legacy alias
   status: WsStatus;
   owner: string;
   createdAt: string;
@@ -20,7 +30,7 @@ export type Workspace = {
   model: string;
   models: string[];
   baseURL: string;
-  template: string;
+  components: string[];
   repoPath: string;
 };
 
@@ -50,13 +60,17 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 export const api = {
   templates: () => req<{ templates: RepoTemplate[] }>("GET", "/api/templates"),
+  kits: () => req<{ kits: Kit[] }>("GET", "/api/kits"),
   register: (login: string, password: string) => req<{ user: User }>("POST", "/api/register", { login, password }),
   login: (login: string, password: string) => req<{ user: User }>("POST", "/api/login", { login, password }),
   logout: () => req<void>("POST", "/api/logout"),
   me: () => req<{ user: User }>("GET", "/api/me"),
   workspaces: () => req<{ workspaces: Workspace[] }>("GET", "/api/workspaces"),
-  create: (name: string, template: string, baseURL: string, models: string[], apiKey: string) =>
-    req<{ workspace: Workspace }>("POST", "/api/workspaces", { name, template, baseURL, models, apiKey }),
+  create: (name: string, kit: string, baseURL: string, models: string[], apiKey: string, components?: string[]) =>
+    req<{ workspace: Workspace }>("POST", "/api/workspaces", {
+      name, kit, baseURL, models, apiKey,
+      ...(components !== undefined ? { components } : {}),
+    }),
   updateProvider: (id: string, baseURL: string, models: string[], apiKey: string) =>
     req<{ workspace: Workspace }>(`PATCH`, `/api/workspaces/${id}/provider`, { baseURL, models, apiKey }),
   start: (id: string) => req<{ workspace: Workspace }>("POST", `/api/workspaces/${id}/start`),

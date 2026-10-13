@@ -122,7 +122,8 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.handleMe)
-	mux.HandleFunc("GET /api/templates", s.requireUser(s.handleTemplates))
+	mux.HandleFunc("GET /api/templates", s.requireUser(s.handleTemplates)) // legacy
+	mux.HandleFunc("GET /api/kits", s.requireUser(s.handleKits))
 	mux.HandleFunc("GET /api/workspaces", s.requireUser(s.handleWorkspacesList))
 	mux.HandleFunc("POST /api/workspaces", s.requireUser(s.handleWorkspaceCreate))
 	mux.HandleFunc("GET /api/workspaces/{id}", s.requireUser(s.handleWorkspaceGet))
@@ -340,11 +341,16 @@ func (s *Server) forgetToken(wsID string) {
 }
 
 func (s *Server) wsJSON(ctx context.Context, w store.Workspace, owner string) map[string]any {
+	components := w.Components
+	if components == nil {
+		components = []string{}
+	}
 	return map[string]any{
 		"id": w.ID, "name": w.Name, "status": w.Status,
 		"owner": owner, "createdAt": w.CreatedAt, "updatedAt": w.UpdatedAt,
 		"url": workspaceURL(w), "port": w.HostPort, "error": w.Error,
-		"model": w.Model, "models": w.Models, "baseURL": w.BaseURL, "template": w.Template,
+		"model": w.Model, "models": w.Models, "baseURL": w.BaseURL,
+		"kit": w.Template, "template": w.Template, "components": components,
 		"repoPath": w.RepoPath,
 	}
 }

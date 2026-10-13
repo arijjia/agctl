@@ -126,9 +126,9 @@ code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_USER" "$BASE_URL/api
 code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_USER" "$BASE_URL/api/admin/audit")
 [ "$code" = 403 ] && pass "не-admin /api/admin/audit → 403" || fail "audit: $code"
 
-say "Создание рабочего места (base, провайдер=$PROVIDER_URL)"
+say "Создание рабочего места (base, выбрана только память/бэклог; провайдер=$PROVIDER_URL)"
 code=$(api "$COOKIES_ADMIN" POST /api/workspaces \
-  "{\"name\":\"e2e-base\",\"template\":\"base\",\"baseURL\":\"$PROVIDER_URL\",\"models\":[\"stub-model\"],\"apiKey\":\"sk-e2e-fake-not-a-secret\"}")
+  "{\"name\":\"e2e-base\",\"kit\":\"base\",\"components\":[\"core-workspace\"],\"baseURL\":\"$PROVIDER_URL\",\"models\":[\"stub-model\"],\"apiKey\":\"sk-e2e-fake-not-a-secret\"}")
 [ "$code" = 202 ] && pass "create → 202 Accepted" || { fail "create: $code"; cat "$LAST"; }
 WS_ID=$(jsonget "['workspace']['id']")
 [ -n "${WS_ID:-}" ] && pass "ws id: получен" || fail "нет id воркспейса"
@@ -146,6 +146,10 @@ WS_URL=""
 if [ -n "${WS_ID:-}" ]; then
   api "$COOKIES_ADMIN" GET "/api/workspaces/$WS_ID" >/dev/null
   WS_URL=$(jsonget "['workspace']['url']")
+  selected=$(jsonget "['workspace']['components']")
+  [ "$selected" = "['core-workspace']" ] \
+    && pass "SQLite/API сохранили выбранный состав: $selected" \
+    || fail "неожиданный состав компонентов: $selected"
   case "$WS_URL" in
     "/w/$WS_ID/") pass "url — same-origin gateway path, без токена" ;;
     "") fail "url пустой" ;;
@@ -212,6 +216,10 @@ git --git-dir="$BARE_PATH" log --oneline --all 2>/dev/null | grep -q 'init:' \
   && pass "bare: стартовый коммит шаблона" || fail "bare пуст/нет init"
 git -C "$WORK_PATH" remote get-url origin >/dev/null 2>&1 \
   && pass "рабочий клон имеет origin" || fail "нет origin"
+test -f "$WORK_PATH/backlog/open/2026-09-28-onboarding.md" \
+  && pass "выбранный core-workspace компонент установил backlog" || fail "core-workspace files missing"
+test ! -f "$WORK_PATH/AGENTS.md" \
+  && pass "снятый core-instructions компонент отсутствует" || fail "deselected instructions were copied"
 printf 'Временная E2E-проверка; не пользовательские данные.\n' > "$WORK_PATH/e2e-proof.md"
 git -C "$WORK_PATH" add e2e-proof.md
 git -C "$WORK_PATH" commit -q -m 'test: e2e persistence check'

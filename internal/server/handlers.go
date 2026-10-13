@@ -117,6 +117,10 @@ func (s *Server) handleTemplates(w http.ResponseWriter, r *http.Request, _ ident
 	writeJSON(w, http.StatusOK, map[string]any{"templates": provision.Templates})
 }
 
+func (s *Server) handleKits(w http.ResponseWriter, r *http.Request, _ identity) {
+	writeJSON(w, http.StatusOK, map[string]any{"kits": provision.Kits})
+}
+
 func (s *Server) handleWorkspacesList(w http.ResponseWriter, r *http.Request, id identity) {
 	var wss []store.Workspace
 	var err error
@@ -155,8 +159,10 @@ func (s *Server) handleWorkspaceGet(w http.ResponseWriter, r *http.Request, id i
 
 func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, id identity) {
 	var req struct {
-		Name     string `json:"name"`
-		Template string `json:"template"`
+		Name       string   `json:"name"`
+		Kit        string   `json:"kit"`
+		Template   string   `json:"template"` // legacy clients
+		Components []string `json:"components"`
 		ProviderReq
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -168,8 +174,13 @@ func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, i
 		writeErr(w, http.StatusBadRequest, "имя воркспейса: минимум 2 символа")
 		return
 	}
-	if !provision.ValidTemplate(req.Template) {
-		writeErr(w, http.StatusBadRequest, "неизвестный шаблон: "+req.Template)
+	requestedKit := req.Kit
+	if requestedKit == "" {
+		requestedKit = req.Template // compatibility with older clients
+	}
+	kitID, components, err := provision.NormalizeComponents(requestedKit, req.Components)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := req.ProviderReq.validate(); err != nil {
@@ -211,7 +222,7 @@ func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, i
 		return
 	}
 	ws := store.Workspace{
-		ID: wsID, OwnerID: id.ID, Name: req.Name, Template: req.Template,
+		ID: wsID, OwnerID: id.ID, Name: req.Name, Template: kitID, Components: components,
 		Status: "provisioning", HostPort: port, BaseURL: p.BaseURL,
 		Model: p.DefaultModel(), Models: p.AllModels(),
 	}
@@ -243,7 +254,7 @@ func (s *Server) provisionJob(ws store.Workspace, ownerLogin string, p provision
 		_ = s.db.UpdateWorkspaceStatus(ws.ID, "failed", stage+": "+err.Error())
 		_ = s.db.Audit(ownerLogin, "workspace.fail", ws.ID, stage+": "+err.Error())
 	}
-	if err := provision.Provision(paths, p, ws.Template, assetsRepoTemplate, assetsDshSkel); err != nil {
+	if err := provision.ProvisionWithComponents(paths, p, ws.Template, ws.Components, assetsRepoTemplate, assetsDshSkel); err != nil {
 		fail("provision", err)
 		return
 	}
