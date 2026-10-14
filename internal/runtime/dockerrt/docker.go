@@ -12,8 +12,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -235,6 +237,15 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		return StartResult{}, err
 	}
 	// гонки за порт: docker сам отдаст ошибку, если порт занят.
+	// Пин корпоративного хоста провайдера: сплит-DNS корпоративного VPN не
+	// виден Docker VM (имя не резолвится ENOTFOUND, хотя IP из контейнера
+	// доступен) — резолвим на хосте и добавляем --add-host на момент создания.
+	extraHosts := []string{"host.docker.internal:host-gateway"}
+	if pin, err := pinnedHost(p.BaseURL, net.LookupIP); err != nil {
+		log.Printf("[dockerrt] %s: %v — контейнер стартует без пина, запросы к LLM могут падать (проверьте VPN)", wsID, err)
+	} else if pin != "" {
+		extraHosts = append(extraHosts, pin)
+	}
 	cfg := client.ContainerCreateOptions{
 		Name: "agctl-" + wsID,
 		Config: &container.Config{
@@ -257,7 +268,7 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 			},
 			// host-gateway: из контейнера должен резолвиться
 			// host.docker.internal (корпоративный LLM-шлюз на хосте).
-			ExtraHosts: []string{"host.docker.internal:host-gateway"},
+			ExtraHosts: extraHosts,
 			PortBindings: network.PortMap{
 				network.MustParsePort("3080/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: fmt.Sprint(hostPort)}},
 			},
@@ -292,14 +303,54 @@ func (rt *Runtime) Resume(ctx context.Context, containerID string) error {
 	return err
 }
 
-// Stop останавливает контейнер воркспейса (данные живут на хосте).
+// Stop останавливает и удаляет контейнер воркспейса: контейнер эфемерен,
+// состояние (репка, дом dsh) живёт на маунтах хоста. Удаление при остановке
+// нужно, чтобы следующий Start пересоздал контейнер с актуальной конфигурацией —
+// пином корпоративного хоста, обновлённым образом или env.
 func (rt *Runtime) Stop(ctx context.Context, containerID string) error {
 	timeout := 10
-	_, err := rt.cli.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: &timeout})
-	if err != nil && isNotFound(err) {
-		return nil
+	if _, err := rt.cli.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: &timeout}); err != nil && !isNotFound(err) {
+		return err
 	}
-	return err
+	if _, err := rt.cli.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{Force: true}); err != nil && !isNotFound(err) {
+		return err
+	}
+	return nil
+}
+
+// pinnedHost — запись "host:ip" для ExtraHosts по baseURL провайдера, либо
+// "" когда пин не нужен: localhost и IP-литералы резолвить не требуется.
+// Сплит-DNS корпоративного VPN не виден Docker VM: имя корпоративного
+// LLM-шлюза внутри контейнера не резолвится (ENOTFOUND), хотя сам IP
+// доступен, — поэтому резолвим на хосте в момент создания контейнера.
+// Из ответов предпочитаем IPv4.
+func pinnedHost(baseURL string, lookup func(string) ([]net.IP, error)) (string, error) {
+	u, err := url.Parse(baseURL)
+	if err != nil || u.Hostname() == "" {
+		return "", nil // нет валидного URL — пинить нечего
+	}
+	host := u.Hostname()
+	if host == "localhost" || net.ParseIP(host) != nil {
+		return "", nil
+	}
+	ips, err := lookup(host)
+	if err != nil {
+		return "", fmt.Errorf("резолв %s: %w", host, err)
+	}
+	pick := ""
+	for _, ip := range ips {
+		if v4 := ip.To4(); v4 != nil {
+			pick = v4.String()
+			break
+		}
+	}
+	if pick == "" && len(ips) > 0 {
+		pick = ips[0].String()
+	}
+	if pick == "" {
+		return "", fmt.Errorf("резолв %s не дал адресов", host)
+	}
+	return host + ":" + pick, nil
 }
 
 // removeByName удаляет контейнер по имени (чистка «хвостов» рестартов).

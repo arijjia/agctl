@@ -320,7 +320,10 @@ func (s *Server) handleWorkspaceStart(w http.ResponseWriter, r *http.Request, id
 		defer cancel()
 		s.forgetToken(ws.ID)
 		if ws.ContainerID != "" {
-			// контейнер остался (стоп без удаления) — просто стартуем
+			// стоп теперь удаляет контейнер (см. dockerrt.Stop); Resume нужен
+			// для контейнеров, переживших падение демона/serve или оставшихся
+			// от старой версии. Resume упал — создаём заново на сохранённом
+			// порту с актуальной конфигурацией (пин хоста провайдера и т.п.)
 			if err := s.rt.Resume(ctx, ws.ContainerID); err != nil {
 				// контейнера нет — создаём заново на сохранённом порту
 				res, err2 := s.rt.Start(ctx, s.pathsFor(ws, id.Login), ws.ID, ws.HostPort, p)

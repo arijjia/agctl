@@ -1,9 +1,44 @@
 package dockerrt
 
 import (
+	"fmt"
 	"net"
 	"testing"
 )
+
+// TestPinnedHost — пин ExtraHosts по baseURL провайдера: корпоративный хост
+// пинится на IPv4 хост-резолва, localhost/IP/пустой URL — не пинятся,
+// ошибка резолва возвращается как ошибка (решение о старте — за Start).
+func TestPinnedHost(t *testing.T) {
+	lookup := func(host string) ([]net.IP, error) {
+		if host == "litellm-dev.utmn.ru" {
+			return []net.IP{net.ParseIP("10.255.254.41"), net.ParseIP("fd00::41")}, nil
+		}
+		return nil, fmt.Errorf("no such host %s", host)
+	}
+	cases := []struct {
+		baseURL string
+		want    string
+		wantErr bool
+	}{
+		{"https://litellm-dev.utmn.ru/v1", "litellm-dev.utmn.ru:10.255.254.41", false},
+		{"http://127.0.0.1:4000/v1", "", false},
+		{"http://localhost:4000/v1", "", false},
+		{"https://10.255.254.41/v1", "", false},
+		{"https://corp.example/v1", "", true},
+		{"", "", false},
+	}
+	for _, c := range cases {
+		got, err := pinnedHost(c.baseURL, lookup)
+		if c.wantErr != (err != nil) {
+			t.Errorf("pinnedHost(%q): err=%v, wantErr=%v", c.baseURL, err, c.wantErr)
+			continue
+		}
+		if !c.wantErr && got != c.want {
+			t.Errorf("pinnedHost(%q) = %q, ждали %q", c.baseURL, got, c.want)
+		}
+	}
+}
 
 // TestFreePort — порт из FreePort можно забиндить (он вернулся освобождённым)
 // и он в валидном диапазоне.
