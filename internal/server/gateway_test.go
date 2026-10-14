@@ -23,7 +23,7 @@ import (
 
 // newFakeDsh — upstream, повторяющий контракт dsh web: без cookie — 401;
 // ?token=<tok> — 303 + Set-Cookie dsh-auth-test=ok (Path=/) + Location "/";
-// с валидной cookie — 200 и тело "upstream:<path>".
+// с валидной cookie и Origin, совпадающим с Host, — 200; несовпадающий Origin — 403.
 func newFakeDsh(t *testing.T, token string) (*httptest.Server, *http.ServeMux) {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -44,6 +44,13 @@ func newFakeDsh(t *testing.T, token string) (*httptest.Server, *http.ServeMux) {
 		for _, c := range r.Cookies() {
 			if c.Name == "dsh-auth-test" && c.Value == "ok" {
 				validCookie = true
+			}
+		}
+		if origin := r.Header.Get("Origin"); origin != "" {
+			parsed, err := url.Parse(origin)
+			if err != nil || !strings.EqualFold(parsed.Host, r.Host) {
+				w.WriteHeader(http.StatusForbidden)
+				return
 			}
 		}
 		if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
@@ -365,14 +372,85 @@ func TestGatewayProxyMethods(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	apiOrigin, err := url.Parse(e.api.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Origin", apiOrigin.Scheme+"://"+apiOrigin.Host)
 	resp, err = e.admin.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
 	body := readAll(t, resp)
+	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "upstream:/api/directoryPicker/list") {
-		t.Fatalf("POST directoryPicker/list: %d %q, запрос должен дойти до upstream", resp.StatusCode, body)
+		t.Fatalf("POST directoryPicker/list: %d %q, запрос должен дойти до upstream с Origin, совпадающим с его Host", resp.StatusCode, body)
+	}
+
+	// Переписывание внутреннего Origin не должно превращать чужой Origin в
+	// same-origin: gateway обязан отклонить его до upstream.
+	req, err = http.NewRequest(http.MethodPost, e.api.URL+"/w/"+wsID+"/api/directoryPicker/list", strings.NewReader(`{"type":"client-request"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://attacker.example")
+	resp, err = e.admin.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-origin POST: %d, ждали 403", resp.StatusCode)
+	}
+
+	// При этом API не становится публичным: без agctl-сессии — 401.
+	anonReq, err := http.NewRequest(http.MethodPost, e.api.URL+"/w/"+wsID+"/api/directoryPicker/list", strings.NewReader(`{"type":"client-request"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	anonReq.Header.Set("Origin", apiOrigin.Scheme+"://"+apiOrigin.Host)
+	anon, err := e.newClient().Do(anonReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anon.Body.Close()
+	if anon.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("анонимный POST directoryPicker/list: %d, ждали 401", anon.StatusCode)
+	}
+}
+
+// TestGatewayManifestPublic — browser manifest fetch may omit auth cookies;
+// only the workspace's public webmanifest bypasses agctl session auth.
+func TestGatewayManifestPublic(t *testing.T) {
+	e := newTestEnv(t, 3)
+	e.register(e.admin, "anna", "secret1")
+	code, body := e.do(e.admin, "POST", "/api/workspaces", validCreate("gw-manifest"))
+	if code != http.StatusAccepted {
+		t.Fatalf("create: %d %s", code, body)
+	}
+	wsID := wsIDof(t, body)
+	e.waitStatus(wsID, "running")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/manifest.webmanifest" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/manifest+json")
+		_, _ = io.WriteString(w, `{"name":"DeepSeek Harness"}`)
+	}))
+	t.Cleanup(upstream.Close)
+	pointUpstream(t, e, wsID, upstream.URL)
+
+	// No agctl cookie: this is how browsers fetch the linked manifest.
+	resp, err := e.newClient().Get(e.api.URL + "/w/" + wsID + "/manifest.webmanifest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	manifest := readAll(t, resp)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(manifest, "DeepSeek Harness") {
+		t.Fatalf("public manifest: %d %q", resp.StatusCode, manifest)
 	}
 }
 
@@ -517,7 +595,7 @@ func TestGatewayWebSocketUpgrade(t *testing.T) {
 	}
 	cookieHeader := strings.Join(cookies, "; ")
 	key := "dGhlIHNhbXBsZSBub25jZQ=="
-	_, _ = fmt.Fprintf(conn, "GET /w/%s/socket HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\nCookie: %s\r\n\r\n", wsID, apiURL.Host, key, cookieHeader)
+	_, _ = fmt.Fprintf(conn, "GET /w/%s/socket HTTP/1.1\r\nHost: %s\r\nOrigin: http://%s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\nCookie: %s\r\n\r\n", wsID, apiURL.Host, apiURL.Host, key, cookieHeader)
 	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: http.MethodGet})
 	if err != nil {
 		t.Fatalf("read upgrade response: %v", err)

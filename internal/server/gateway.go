@@ -1,7 +1,7 @@
 package server
 
-// Обратный прокси воркспейсов: /w/{id}/ → 127.0.0.1:<hostPort>/ с проверкой
-// сессии agctl на каждом запросе (HTTP и WebSocket/SSE — прокси прозрачен).
+// Обратный прокси воркспейсов: /w/{id}/ → 127.0.0.1:<hostPort>; для UI/API
+// и WebSocket/SSE проверяется сессия agctl. Только статический manifest публичен.
 //
 // Boot-токен dsh web в браузер не отдаётся: при upstream-401 транспорт
 // повторяет запрос серверно с ?token=<boot> — у dsh 0.2.0+ это нативный
@@ -22,6 +22,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/arijjia/agctl/internal/store"
 )
 
 // workspaceProxyEntry — GET /w/{id} без слэша: на канонический префикс.
@@ -36,7 +38,6 @@ func (s *Server) workspaceProxyEntry(w http.ResponseWriter, r *http.Request, _ i
 
 // workspaceProxy — /w/{id}/...: авторизованный прокси в контейнер для DSH UI и API.
 func (s *Server) workspaceProxy(w http.ResponseWriter, r *http.Request, id identity) {
-	wsID := r.PathValue("id")
 	ws, err := s.loadWS(r, id)
 	if errors.Is(err, errForbidden) {
 		writeErr(w, http.StatusForbidden, "нет доступа к этому воркспейсу")
@@ -50,11 +51,36 @@ func (s *Server) workspaceProxy(w http.ResponseWriter, r *http.Request, id ident
 		writeErr(w, http.StatusForbidden, "нет доступа к этому воркспейсу")
 		return
 	}
+	s.proxyWorkspace(w, r, ws)
+}
+
+// workspaceManifest — публичный только для чтения webmanifest: браузеры
+// загружают его без auth-cookie. Остальные пути workspace требуют agctl-сессию.
+func (s *Server) workspaceManifest(w http.ResponseWriter, r *http.Request) {
+	ws, err := s.db.WorkspaceByID(r.PathValue("id"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeErr(w, http.StatusNotFound, "воркспейс не найден")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "не удалось прочитать воркспейс")
+		return
+	}
+	s.proxyWorkspace(w, r, ws)
+}
+
+// proxyWorkspace проверяет состояние и проксирует один путь воркспейса.
+func (s *Server) proxyWorkspace(w http.ResponseWriter, r *http.Request, ws store.Workspace) {
 	if ws.Status != "running" || ws.HostPort == 0 {
 		writeErr(w, http.StatusConflict, "воркспейс не запущен (статус: "+ws.Status+")")
 		return
 	}
+	if origin := r.Header.Get("Origin"); origin != "" && !sameOriginAuthority(origin, r.Host) {
+		writeErr(w, http.StatusForbidden, "cross-origin запрос к воркспейсу запрещён")
+		return
+	}
 
+	wsID := ws.ID
 	target := "127.0.0.1:" + strconv.Itoa(ws.HostPort)
 	prefix := "/w/" + wsID
 	proxy := &httputil.ReverseProxy{
@@ -63,6 +89,12 @@ func (s *Server) workspaceProxy(w http.ResponseWriter, r *http.Request, id ident
 			// Host фиксированный: dsh привязывает mint-cookie к authority,
 			// константный хост делает cookie валидной для всех запросов.
 			pr.Out.Host = target
+			// DSH проверяет Host/Origin на каждом API и WebSocket-запросе.
+			// Снаружи Origin обязан совпадать с Host agctl (проверено выше);
+			// внутри переписываем Origin на authority контейнера.
+			if pr.In.Header.Get("Origin") != "" {
+				pr.Out.Header.Set("Origin", pr.Out.URL.Scheme+"://"+target)
+			}
 			pr.Out.URL.Path = strings.TrimPrefix(pr.In.URL.Path, prefix)
 			if !strings.HasPrefix(pr.Out.URL.Path, "/") {
 				pr.Out.URL.Path = "/" + pr.Out.URL.Path
@@ -126,6 +158,35 @@ func (s *Server) workspaceProxy(w http.ResponseWriter, r *http.Request, id ident
 		},
 	}
 	http.StripPrefix(prefix, proxy).ServeHTTP(w, r)
+}
+
+// sameOriginAuthority prevents the gateway from erasing a cross-site Origin
+// before DSH's own Host/Origin fence sees it.
+func sameOriginAuthority(origin, authority string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" || u.User != nil || u.Opaque != "" ||
+		(u.Scheme != "http" && u.Scheme != "https") || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	host, err := url.Parse("//" + authority)
+	if err != nil || host.Host == "" {
+		return false
+	}
+	originPort, hostPort := u.Port(), host.Port()
+	if originPort == "" {
+		originPort = defaultPort(u.Scheme)
+	}
+	if hostPort == "" {
+		hostPort = defaultPort(u.Scheme)
+	}
+	return strings.EqualFold(u.Hostname(), host.Hostname()) && originPort == hostPort
+}
+
+func defaultPort(scheme string) string {
+	if scheme == "https" {
+		return "443"
+	}
+	return "80"
 }
 
 // mintTransport — повторяет запрос с ?token=<boot> при upstream-401

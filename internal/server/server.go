@@ -135,6 +135,9 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
 	mux.HandleFunc("GET /w/{id}", s.requireUser(s.workspaceProxyEntry))
+	// The browser fetches webmanifest without agctl credentials; expose only
+	// this non-sensitive static document publicly for a known workspace.
+	mux.HandleFunc("GET /w/{id}/manifest.webmanifest", s.workspaceManifest)
 	// DSH Web UI uses GET for documents/assets, WebSocket and SSE, and POST
 	// for typed RPCs (/api/*). Both methods must reach the reverse proxy.
 	// Without POST, ServeMux returns 405 before directoryPicker/list can reach dsh.
