@@ -69,9 +69,13 @@ func (s *Server) workspaceProxy(w http.ResponseWriter, r *http.Request, id ident
 			}
 			// Boot-токен принимает только серверный mint transport; не
 			// передаём произвольный ?token= от браузера upstream.
-			q := pr.Out.URL.Query()
-			q.Del("token")
-			pr.Out.URL.RawQuery = q.Encode()
+			// Query пересылаем побайтово: combo-URL плагинов dsh
+			// (/plugins/??модули&rev=…) парсятся upstream как сырая строка
+			// с ведущим литеральным '?'; разбор с повторным кодированием
+			// (Query().Encode()) превращает '?' в %3F, дописывает '=' и
+			// пересортировывает ключи — dsh отвечает 404, и браузер падает
+			// «HTML did not preload …/dsh-client-modules/client.js».
+			pr.Out.URL.RawQuery = stripTokenParam(pr.In.URL.RawQuery)
 		},
 		FlushInterval: -1, // немедленно flush-ить SSE/потоки агента
 		Transport: &mintTransport{
@@ -152,6 +156,23 @@ func (t *mintTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	_, _ = io.Copy(io.Discard, resp.Body)
 	_ = resp.Body.Close()
 	return minted, nil
+}
+
+// stripTokenParam — удаляет параметр token из сырой строки query, сохраняя
+// остальные байты как есть: разбор с повторным кодированием ломает combo-URL
+// dsh (ведущий '?' в query, порядок и экранирование модулей).
+func stripTokenParam(rawQuery string) string {
+	if !strings.Contains(rawQuery, "token=") && !strings.HasSuffix(rawQuery, "&token") && rawQuery != "token" {
+		return rawQuery
+	}
+	kept := make([]string, 0, strings.Count(rawQuery, "&")+1)
+	for _, pair := range strings.Split(rawQuery, "&") {
+		if pair == "token" || strings.HasPrefix(pair, "token=") {
+			continue
+		}
+		kept = append(kept, pair)
+	}
+	return strings.Join(kept, "&")
 }
 
 // rewriteLocation — внутренний Location upstream ведёт на корень ("/") или

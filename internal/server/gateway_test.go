@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -241,6 +242,97 @@ func TestGatewayPathRewrite(t *testing.T) {
 	body := readAll(t, resp2)
 	if !strings.Contains(body, "upstream:/some/deep/path") {
 		t.Fatalf("upstream видит %q, ждали /some/deep/path", body)
+	}
+}
+
+// TestGatewayComboQuery — combo-URL плагинов dsh (`/plugins/??модули&rev=`)
+// доходят до upstream с query побайтово: dsh парсит сырую строку (ведущий
+// литеральный '?'), любое перекодирование/пересортировка даёт upstream-404,
+// и браузер падает «HTML did not preload @deepseek-ai/dsh-client-modules/client.js».
+// Заодно проверяем, что ?token= от браузера по-прежнему вырезается, а прочие
+// параметры остаются нетронутыми.
+func TestGatewayComboQuery(t *testing.T) {
+	const combo = `?@deepseek-ai/dsh-client-modules/client.js&rev=efd1797d4790`
+	var mu sync.Mutex
+	seen := map[string]string{} // path → последний RawQuery
+	mux := http.NewServeMux()
+	authed := func(r *http.Request) bool {
+		for _, c := range r.Cookies() {
+			if c.Name == "dsh-auth-test" && c.Value == "ok" {
+				return true
+			}
+		}
+		return false
+	}
+	mux.HandleFunc("/plugins/", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen["/plugins/"] = r.URL.RawQuery
+		mu.Unlock()
+		if !authed(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		// dsh принимает combo только с точной сырой строкой query
+		if r.URL.RawQuery == combo {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("token") == "boot-combo" {
+			http.SetCookie(w, &http.Cookie{Name: "dsh-auth-test", Value: "ok", Path: "/"})
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+		if authed(r) {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	upstream := httptest.NewServer(mux)
+	t.Cleanup(upstream.Close)
+
+	e := newTestEnv(t, 3)
+	e.register(e.admin, "anna", "secret1")
+	wsID := runningWorkspace(t, e, "gw-combo")
+	pointUpstream(t, e, wsID, upstream.URL)
+	e.rt.logs[wsID] = "dsh web: http://0.0.0.0:3080/?token=boot-combo"
+	e.srv.forgetToken(wsID)
+
+	resp, err := e.admin.Get(e.api.URL + "/w/" + wsID + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("mint: %d, ждали 303", resp.StatusCode)
+	}
+
+	resp2, err := e.admin.Get(e.api.URL + "/w/" + wsID + "/plugins/??@deepseek-ai/dsh-client-modules/client.js&rev=efd1797d4790")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	mu.Lock()
+	got := seen["/plugins/"]
+	mu.Unlock()
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("combo-query: upstream %d, ждали 200; upstream увидел RawQuery %q, ждали %q", resp2.StatusCode, got, combo)
+	}
+
+	// ?token= от браузера вырезается, остальное — без изменений
+	resp3, err := e.admin.Get(e.api.URL + "/w/" + wsID + "/plugins/??x/y&rev=1&token=evil")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp3.Body.Close()
+	mu.Lock()
+	got = seen["/plugins/"]
+	mu.Unlock()
+	if got != `?x/y&rev=1` {
+		t.Fatalf("token не вырезан побайтово: upstream увидел %q", got)
 	}
 }
 
