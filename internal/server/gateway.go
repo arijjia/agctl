@@ -34,7 +34,7 @@ func (s *Server) workspaceProxyEntry(w http.ResponseWriter, r *http.Request, _ i
 	http.Redirect(w, r, target.String(), http.StatusPermanentRedirect)
 }
 
-// workspaceProxy — GET /w/{id}/...: авторизованный прокси в контейнер.
+// workspaceProxy — /w/{id}/...: авторизованный прокси в контейнер для DSH UI и API.
 func (s *Server) workspaceProxy(w http.ResponseWriter, r *http.Request, id identity) {
 	wsID := r.PathValue("id")
 	ws, err := s.loadWS(r, id)

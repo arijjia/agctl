@@ -135,7 +135,11 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
 	mux.HandleFunc("GET /w/{id}", s.requireUser(s.workspaceProxyEntry))
+	// DSH Web UI uses GET for documents/assets, WebSocket and SSE, and POST
+	// for typed RPCs (/api/*). Both methods must reach the reverse proxy.
+	// Without POST, ServeMux returns 405 before directoryPicker/list can reach dsh.
 	mux.HandleFunc("GET /w/{id}/", s.requireUser(s.workspaceProxy))
+	mux.HandleFunc("POST /w/{id}/", s.requireUser(s.workspaceProxy))
 
 	// статика SPA
 	mux.Handle("GET /", http.FileServerFS(webFS))

@@ -336,6 +336,46 @@ func TestGatewayComboQuery(t *testing.T) {
 	}
 }
 
+// TestGatewayProxyMethods — DSH использует POST для RPC (например,
+// /api/directoryPicker/list). Gateway должен проксировать не только GET:
+// иначе Go ServeMux отвечает 405 до ReverseProxy, и dsh-клиент не может
+// перечислить каталоги.
+func TestGatewayProxyMethods(t *testing.T) {
+	upstream, _ := newFakeDsh(t, "boot-methods")
+	e := newTestEnv(t, 3)
+	e.register(e.admin, "anna", "secret1")
+	wsID := runningWorkspace(t, e, "gw-methods")
+	pointUpstream(t, e, wsID, upstream.URL)
+	e.rt.logs[wsID] = "dsh web: http://0.0.0.0:3080/?token=boot-methods"
+	e.srv.forgetToken(wsID)
+
+	// Первый GET минтит DSH-cookie для workspace-префикса.
+	resp, err := e.admin.Get(e.api.URL + "/w/" + wsID + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("mint: %d, ждали 303", resp.StatusCode)
+	}
+
+	// Typed RPC dsh-client-connection отправляет POST на этот endpoint.
+	req, err := http.NewRequest(http.MethodPost, e.api.URL+"/w/"+wsID+"/api/directoryPicker/list", strings.NewReader(`{"type":"client-request"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = e.admin.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body := readAll(t, resp)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "upstream:/api/directoryPicker/list") {
+		t.Fatalf("POST directoryPicker/list: %d %q, запрос должен дойти до upstream", resp.StatusCode, body)
+	}
+}
+
 func websocketAccept(key string) string {
 	sum := sha1.Sum([]byte(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
 	return base64.StdEncoding.EncodeToString(sum[:])
