@@ -396,7 +396,8 @@ func TestWorkspaceLifecycle(t *testing.T) {
 		t.Fatal("ожидали Resume или повторный Start")
 	}
 
-	// delete → записи нет, файлы сохранены
+	// delete → записи нет, данные с диска убраны (решение владельца
+	// 2026-10-14: удаление чистит bare-репку, клон и дом dsh)
 	if code, _ := e.do(e.admin, "DELETE", "/api/workspaces/"+wsID, nil); code != http.StatusAccepted {
 		t.Fatalf("delete: %d", code)
 	}
@@ -410,8 +411,17 @@ func TestWorkspaceLifecycle(t *testing.T) {
 	if _, err := e.db.WorkspaceByID(wsID); err != store.ErrNotFound {
 		t.Fatal("воркспейс не удалён из БД")
 	}
-	if _, err := os.Stat(paths.Repo); err != nil {
-		t.Errorf("bare-репозиторий должен остаться на диске: %v", err)
+	diskDeadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(diskDeadline) {
+		if _, err := os.Stat(paths.Repo); os.IsNotExist(err) {
+			break
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	for _, p := range []string{paths.Repo, paths.Work, paths.DshHome} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("данные воркспейса должны быть удалены с диска: %s (%v)", p, err)
+		}
 	}
 
 	// аудит: ключевые события зафиксированы
@@ -710,9 +720,10 @@ func TestWsTokenTakesLastMatch(t *testing.T) {
 	}
 }
 
-// TestWorkspaceNameReuse — файлы удалённого воркспейса остаются на диске,
-// поэтому повторное создание с тем же именем должно давать понятную ошибку,
-// а не падение provision на «bare init».
+// TestWorkspaceNameReuse — с 2026-10-14 удаление воркспейса чистит диск,
+// поэтому то же имя свободно сразу; отдельный случай — брошенные на диске
+// файлы от воркспейсов, удалённых старой версией: повторное имя даёт
+// понятную ошибку, а не падение provision на «bare init».
 func TestWorkspaceNameReuse(t *testing.T) {
 	e := newTestEnv(t, 5)
 	e.register(e.admin, "anna", "secret1")
@@ -722,18 +733,36 @@ func TestWorkspaceNameReuse(t *testing.T) {
 	}
 	wsID := wsIDof(t, body)
 	e.waitStatus(wsID, "running")
+	paths := provision.Paths(e.home, "anna", wsID, "twice")
 	if code, _ := e.do(e.admin, "DELETE", "/api/workspaces/"+wsID, nil); code != http.StatusAccepted {
 		t.Fatal("delete")
 	}
+	// ждём, пока фоновая уборка уберёт файлы с диска
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, err := e.db.WorkspaceByID(wsID); err == store.ErrNotFound {
+		if _, err := os.Stat(paths.Repo); os.IsNotExist(err) {
 			break
 		}
 		time.Sleep(30 * time.Millisecond)
 	}
+	if _, err := os.Stat(paths.Repo); !os.IsNotExist(err) {
+		t.Fatalf("репка удалённого воркспейса осталась на диске: %v", err)
+	}
+
+	// то же имя теперь свободно
+	code, body = e.do(e.admin, "POST", "/api/workspaces", validCreate("twice"))
+	if code != http.StatusAccepted {
+		t.Fatalf("повторное имя: %d %s, ждали 202", code, body)
+	}
+	e.waitStatus(wsIDof(t, body), "running")
+
+	// страховка для остатков от удаления старой версии: занятая репка — 400
+	leftover := provision.Paths(e.home, "anna", "w-legacy000000", "twice")
+	if err := os.MkdirAll(leftover.Repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	code, body = e.do(e.admin, "POST", "/api/workspaces", validCreate("twice"))
 	if code != 400 || !strings.Contains(body, "уже есть на диске") {
-		t.Fatalf("повторное имя: %d %s, ждали 400 с понятной ошибкой", code, body)
+		t.Fatalf("занятое имя: %d %s, ждали 400 с понятной ошибкой", code, body)
 	}
 }

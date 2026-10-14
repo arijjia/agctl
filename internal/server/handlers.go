@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -208,8 +209,9 @@ func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, i
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	// файлы удалённых воркспейсов сохраняются на диске (данные дороже места);
-	// повторное имя при живом каталоге — понятная ошибка, а не падение provision
+	// имя занято файлами воркспейса, удалённого до 2026-10-14 (тогда удаление
+	// оставляло файлы на диске) — понятная ошибка вместо падения provision
+	// на «bare init»; с 2026-10-14 удаление чистит диск само
 	paths := provision.Paths(s.cfg.Home, id.Login, wsID, req.Name)
 	if _, err := os.Stat(paths.Repo); err == nil {
 		writeErr(w, http.StatusBadRequest,
@@ -392,11 +394,63 @@ func (s *Server) handleWorkspaceDelete(w http.ResponseWriter, r *http.Request, i
 			_ = s.autosaveOne(ws)
 			_ = s.rt.Remove(ctx, ws.ContainerID)
 		}
-		// файлы воркспейса (репка+клон) остаются на диске — данные дороже места
-		_ = s.db.DeleteWorkspace(ws.ID)
-		_ = s.db.Audit(id.Login, "workspace.delete", ws.ID, "файлы на диске сохранены")
+		if err := s.db.DeleteWorkspace(ws.ID); err != nil {
+			log.Printf("[workspace.delete] %s: бд: %v", ws.ID, err)
+		}
+		// решение владельца 2026-10-14: удалённый воркспейс уносит с диска
+		// и свои данные (bare-репка, клон, дом dsh) — прежнее «файлы остаются,
+		// данные дороже места» давало конфликт «уже есть на диске» при
+		// пересоздании воркспейса с тем же именем
+		_ = s.db.Audit(id.Login, "workspace.delete", ws.ID, s.purgeWorkspaceFiles(&ws))
 	}()
 	writeJSON(w, http.StatusAccepted, map[string]any{})
+}
+
+// purgeWorkspaceFiles удаляет артефакты воркспейса с диска хоста и возвращает
+// текст для audit-лога. Каждый путь проверяется: непустой и внутри
+// AGCTL_HOME — случайный путь из БД стереть нельзя. Опустевшие
+// каталоги-обёртки (work/<id>, repos/<owner>) убираются, только если пустые.
+func (s *Server) purgeWorkspaceFiles(ws *store.Workspace) string {
+	home, err := filepath.Abs(s.cfg.Home)
+	if err != nil {
+		home = s.cfg.Home
+	}
+	var failed []string
+	for _, p := range []string{ws.RepoPath, ws.WorkPath, ws.DshHome} {
+		if p == "" {
+			continue
+		}
+		if !pathUnder(home, p) {
+			failed = append(failed, p+" (вне "+home+")")
+			continue
+		}
+		if err := os.RemoveAll(p); err != nil {
+			failed = append(failed, p+": "+err.Error())
+		}
+	}
+	for _, p := range []string{filepath.Dir(ws.WorkPath), filepath.Dir(ws.RepoPath)} {
+		if p != "" && p != "." && pathUnder(home, p) {
+			_ = os.Remove(p) // сработает только на пустом каталоге
+		}
+	}
+	if len(failed) > 0 {
+		log.Printf("[workspace.delete] %s: не всё убрано с диска: %s", ws.ID, strings.Join(failed, "; "))
+		return "удалено с ошибками: " + strings.Join(failed, "; ")
+	}
+	return "удалено вместе с данными на диске"
+}
+
+// pathUnder — путь p лежит внутри каталога home (после нормализации).
+func pathUnder(home, p string) bool {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(home, abs)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func (s *Server) handleWorkspaceLogs(w http.ResponseWriter, r *http.Request, id identity) {
