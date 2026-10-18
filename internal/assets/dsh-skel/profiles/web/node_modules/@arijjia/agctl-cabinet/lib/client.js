@@ -120,6 +120,9 @@ window.__ModuleLoader__.load({
 			const [password, setPassword] = React.useState("");
 			const [name, setName] = React.useState("");
 			const [kit, setKit] = React.useState("base");
+			const [llmBaseURL, setLLMBaseURL] = React.useState("");
+			const [llmModel, setLLMModel] = React.useState("");
+			const [llmAPIKey, setLLMAPIKey] = React.useState("");
 			const [sshPubKey, setSSHPubKey] = React.useState("");
 			const [busy, setBusy] = React.useState(false);
 			const [msg, setMsg] = React.useState("");
@@ -156,7 +159,7 @@ window.__ModuleLoader__.load({
 						setMsg("Сервер отвечает (HTTP " + meRes.status + "): нужна сессия кабинета.");
 						return;
 					}
-					setMe(meRes.data);
+					setMe(meRes.data && meRes.data.user ? meRes.data.user : meRes.data);
 					const wsRes = await api("/api/workspaces");
 					setPlaces(
 						wsRes.ok && wsRes.data && Array.isArray(wsRes.data.workspaces) ? wsRes.data.workspaces : [],
@@ -214,18 +217,30 @@ window.__ModuleLoader__.load({
 					setMsg("Придумай имя рабочего места");
 					return;
 				}
+				if (!llmBaseURL.trim() || !llmModel.trim()) {
+					setMsg("Укажи Base URL и модель LLM-провайдера (токен можно оставить пустым, если он уже сохранён)");
+					return;
+				}
 				setBusy(true);
 				setMsg("Создаю «" + clean + "» (это занимает несколько секунд)…");
 				try {
 					const res = await api("/api/workspaces", {
 						method: "POST",
-						body: JSON.stringify({ name: clean, kit, sshPubKey: sshPubKey.trim() }),
+						body: JSON.stringify({
+							name: clean,
+							kit,
+							baseURL: llmBaseURL.trim(),
+							models: [llmModel.trim()],
+							apiKey: llmAPIKey.trim(),
+							sshPubKey: sshPubKey.trim(),
+						}),
 					});
 					if (!res.ok) {
 						setMsg("Не создалось (HTTP " + res.status + "): " + ((res.data && res.data.error) || ""));
 						return;
 					}
 					setName("");
+					setLLMAPIKey("");
 					setSSHPubKey("");
 					setMsg("Готово: место «" + clean + "» создано.");
 					await load();
@@ -342,6 +357,30 @@ window.__ModuleLoader__.load({
 							),
 							h("button", { style: styles.button, type: "submit", disabled: busy }, "Создать"),
 						),
+						h(
+							"div",
+							{ style: { ...styles.row, marginTop: 10 } },
+							h("input", {
+								style: styles.input,
+								placeholder: "LLM Base URL (например, https://litellm.example/v1)",
+								value: llmBaseURL,
+								onChange: (e) => setLLMBaseURL(e.target.value),
+							}),
+							h("input", {
+								style: styles.input,
+								placeholder: "модель (например, gpt-4.1)",
+								value: llmModel,
+								onChange: (e) => setLLMModel(e.target.value),
+							}),
+						),
+						h("input", {
+							style: { ...styles.input, width: "100%", marginTop: 10 },
+							type: "password",
+							placeholder: "API-токен (не сохраняется в браузере; пусто = использовать сохранённый)",
+							value: llmAPIKey,
+							autoComplete: "new-password",
+							onChange: (e) => setLLMAPIKey(e.target.value),
+						}),
 						h("textarea", {
 							style: { ...styles.input, width: "100%", minHeight: 58, marginTop: 10, resize: "vertical" },
 							placeholder: "SSH public key (необязательно; например, содержимое ~/.ssh/id_ed25519.pub)",
