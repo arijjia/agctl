@@ -27,30 +27,32 @@ import (
 // fakeRuntime — мок docker-рантайма: контейнеры «существуют», логи содержат
 // boot-ссылку dsh с токеном (как печатает реальный контейнер).
 type fakeRuntime struct {
-	started  map[string]int // wsID → сколько раз Start
-	resumed  map[string]int
-	stopped  map[string]int
-	removed  map[string]int
-	logs     map[string]string
-	failNext error // если задано — Start возвращает ошибку
+	started   map[string]int // wsID → сколько раз Start
+	startOpts map[string]dockerrt.StartOpts
+	resumed   map[string]int
+	stopped   map[string]int
+	removed   map[string]int
+	logs      map[string]string
+	failNext  error // если задано — Start возвращает ошибку
 }
 
 func newFakeRuntime() *fakeRuntime {
 	return &fakeRuntime{
-		started: map[string]int{}, resumed: map[string]int{},
+		started: map[string]int{}, startOpts: map[string]dockerrt.StartOpts{}, resumed: map[string]int{},
 		stopped: map[string]int{}, removed: map[string]int{}, logs: map[string]string{},
 	}
 }
 
-func (f *fakeRuntime) Start(ctx context.Context, ws provision.Layout, wsID string, hostPort int, p provision.Provider) (dockerrt.StartResult, error) {
+func (f *fakeRuntime) Start(ctx context.Context, ws provision.Layout, wsID string, opts dockerrt.StartOpts, p provision.Provider) (dockerrt.StartResult, error) {
 	if f.failNext != nil {
 		err := f.failNext
 		f.failNext = nil
 		return dockerrt.StartResult{}, err
 	}
 	f.started[wsID]++
+	f.startOpts[wsID] = opts
 	f.logs[wsID] = fmt.Sprintf("dsh web listening on http://0.0.0.0:3080/?token=fake-boot-token-%s", wsID)
-	return dockerrt.StartResult{ContainerID: "ctr-" + wsID, HostPort: hostPort}, nil
+	return dockerrt.StartResult{ContainerID: "ctr-" + wsID, HostPort: opts.HostPort}, nil
 }
 
 func (f *fakeRuntime) Resume(ctx context.Context, containerID string) error {

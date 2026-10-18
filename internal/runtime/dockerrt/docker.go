@@ -229,10 +229,17 @@ type StartResult struct {
 	HostPort    int
 }
 
-// Start создаёт и запускает контейнер воркспейса:
-// монтирует рабочий клон и DSH_HOME, публикует порт dsh на 127.0.0.1:hostPort,
-// прокидывает LLM-токен через env (секрет не пишется в образ/логи).
-func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, hostPort int, p provision.Provider) (StartResult, error) {
+// StartOpts — параметры публикации контейнера: порт dsh web и, опционально,
+// SSH-канал (ключ передаётся env в контейнер, порт 2222 публикуется на loopback).
+type StartOpts struct {
+	HostPort    int
+	SSHPubKey   string // пусто = sshd не поднимаем
+	SSHHostPort int    // 0 = не публиковать (осмысленно только с SSHPubKey)
+}
+
+// Start создаёт и запускает контейнер воркспейса с заданными портами/ключом.
+// Монтирует рабочий клон и DSH_HOME; LLM-токен передаётся через env.
+func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, opts StartOpts, p provision.Provider) (StartResult, error) {
 	if err := rt.EnsureImage(ctx); err != nil {
 		return StartResult{}, err
 	}
@@ -246,19 +253,27 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 	} else if pin != "" {
 		extraHosts = append(extraHosts, pin)
 	}
+	env := []string{
+		"AGCTL_LLM_API_KEY=" + p.APIKey,
+		"AGCTL_WS_ID=" + wsID,
+		// рабочее место агента — /workspace (репка), а не /root;
+		// кэши npm/xdg уводим в tmp, чтобы не мусорить в репке
+		"HOME=/workspace",
+		"NPM_CONFIG_CACHE=/tmp/npm-cache",
+		"XDG_CACHE_HOME=/tmp/cache",
+	}
+	portBindings := network.PortMap{
+		network.MustParsePort("3080/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: fmt.Sprint(opts.HostPort)}},
+	}
+	if opts.SSHPubKey != "" && opts.SSHHostPort > 0 {
+		env = append(env, "AGCTL_SSH_PUBKEY="+opts.SSHPubKey)
+		portBindings[network.MustParsePort("2222/tcp")] = []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: fmt.Sprint(opts.SSHHostPort)}}
+	}
 	cfg := client.ContainerCreateOptions{
 		Name: "agctl-" + wsID,
 		Config: &container.Config{
-			Image: rt.cfg.Image,
-			Env: []string{
-				"AGCTL_LLM_API_KEY=" + p.APIKey,
-				"AGCTL_WS_ID=" + wsID,
-				// рабочее место агента — /workspace (репка), а не /root;
-				// кэши npm/xdg уводим в tmp, чтобы не мусорить в репке
-				"HOME=/workspace",
-				"NPM_CONFIG_CACHE=/tmp/npm-cache",
-				"XDG_CACHE_HOME=/tmp/cache",
-			},
+			Image:  rt.cfg.Image,
+			Env:    env,
 			Labels: map[string]string{"agctl.workspace": wsID},
 		},
 		HostConfig: &container.HostConfig{
@@ -268,10 +283,8 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 			},
 			// host-gateway: из контейнера должен резолвиться
 			// host.docker.internal (корпоративный LLM-шлюз на хосте).
-			ExtraHosts: extraHosts,
-			PortBindings: network.PortMap{
-				network.MustParsePort("3080/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: fmt.Sprint(hostPort)}},
-			},
+			ExtraHosts:   extraHosts,
+			PortBindings: portBindings,
 			Resources: container.Resources{
 				Memory:   rt.cfg.MemoryBytes,
 				NanoCPUs: rt.cfg.NanoCPUs,
@@ -294,7 +307,7 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		_, _ = rt.cli.ContainerRemove(ctx, res.ID, client.ContainerRemoveOptions{Force: true})
 		return StartResult{}, fmt.Errorf("docker: start: %w", err)
 	}
-	return StartResult{ContainerID: res.ID, HostPort: hostPort}, nil
+	return StartResult{ContainerID: res.ID, HostPort: opts.HostPort}, nil
 }
 
 // Resume запускает существующий (остановленный) контейнер.

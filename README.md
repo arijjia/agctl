@@ -74,11 +74,51 @@ work/<id>/dsh-home        DSH_HOME воркспейса (сессии, кред�
 agctl serve     # UI + API + provision (флаги: --home --addr --image --max-per-user)
 agctl migrate   # накатить миграции SQLite
 agctl backlog <new|list|top|check|start|done|cancel|note|migrate>
+agctl connect --port SSH_PORT [--host HOST] [--identity KEY] [--print]
 agctl version
 ```
 
 `agctl backlog` работает и на хосте, и **внутри контейнера** (бинарь
 вшит в образ) — им агент ведёт задачи воркспейса.
+
+### SSH-канал воркспейса (opt-in)
+
+При создании рабочего места можно передать `sshPubKey` (OpenSSH public key)
+в `POST /api/workspaces`; для существующего — `PATCH /api/workspaces/{id}/ssh`
+с `{ "pubKey": "ssh-ed25519 ..." }`. Публичный ключ хранится в SQLite;
+приватный остаётся у пользователя. Контейнер запускает `sshd` только при
+наличии ключа, парольный вход и forwarding отключены. SSH-порт контейнера
+публикуется Docker **только на 127.0.0.1 хоста** и виден в поле `sshPort`
+ответа workspace. Изменение ключа на работающем месте пересоздаёт контейнер.
+
+Подключиться с самого сервера/хоста:
+
+```sh
+agctl connect --port <sshPort> --identity ~/.ssh/id_ed25519
+```
+
+Для удалённой машины сначала нужен доверенный TCP-путь до хоста (например,
+администраторский SSH-туннель/VPN); `sshPort` намеренно не открыт в LAN или
+Internet. Пример ручного туннеля: `ssh -L 22222:127.0.0.1:<sshPort> user@agctl-host`,
+затем `agctl connect --host 127.0.0.1 --port 22222 --identity KEY`.
+
+Локальную папку можно подключить к той же среде в real time через
+[Mutagen](https://mutagen.io/documentation/synchronization/) (нужен установленный
+[Mutagen CLI](https://mutagen.io/documentation/introduction/installation/)):
+
+```sh
+agctl sync create --name my-workspace --local ./repo \
+  --host 127.0.0.1 --port <sshPort> --user root
+agctl sync list
+agctl sync terminate my-workspace
+```
+
+Создаётся `two-way-safe` сессия (конфликты без потери данных остаются для
+разрешения); VCS-метаданные, `node_modules`, `.env*`, `.credentials.*` и `.ssh`
+исключены по умолчанию. Git остаётся источником истории/review. Для удалённой
+машины сначала подними SSH-туннель, затем укажи его локальные host/port.
+Проверь остальные проектные секреты и при необходимости настрой ignore-правила
+Mutagen до запуска синхронизации.
 
 ## Сборка
 
@@ -89,6 +129,8 @@ agctl version
 | `make img_build` | linux-сборка agctl + docker-образ `agctl-dsh:0.1.0` |
 | `make release_local` | матрица darwin/linux/windows × arm64/amd64 в `dist/` |
 | `make demo` | всё сразу + запуск сервера |
+| `scripts/e2e-cabinet.sh` | полный smoke: образ → workspace → кабинет через шлюз; `IMG=...` для выбранного образа |
+| `scripts/e2e-ssh.sh` | Docker e2e SSH: provision ключа → shell → снятие/ротация; нужен образ с `openssh-server` |
 
 Релизы по тегу — [goreleaser](.goreleaser.yaml) (CI: `.github/workflows/ci.yml`).
 

@@ -5,7 +5,7 @@
 # Linux-сборка agctl кладётся в контекст сборки файлом ./agctl (make image).
 FROM node:22-bookworm-slim AS base
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3 python3-pytest python3-pip make g++ ca-certificates curl git \
+  && apt-get install -y --no-install-recommends python3 python3-pytest python3-pip make g++ ca-certificates curl git openssh-server \
   && rm -rf /var/lib/apt/lists/* \
   && npm install -g npm@12 --no-audit --no-fund \
   && npm --version
@@ -46,5 +46,5 @@ COPY entrypoint.sh /usr/local/bin/agctl-entrypoint
 COPY relay.mjs /usr/local/bin/agctl-relay
 RUN chmod +x /usr/local/bin/agctl /usr/local/bin/agctl-entrypoint /usr/local/bin/agctl-relay && mkdir -p /home/dsh /workspace
 WORKDIR /workspace
-EXPOSE 3080
+EXPOSE 3080 2222
 ENTRYPOINT ["agctl-entrypoint"]

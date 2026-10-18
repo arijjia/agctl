@@ -5,10 +5,10 @@
 // с экспортами inject (имена сервисов для cordis-инъекции) и apply(ctx).
 // Волна 1: панель «Кабинет» в root-scoped sidebar.panellist + страница в
 // keyed slot "main" (тот же id) — паттерн dsh-client-ui-plugin-manager.
-// Волна 2: живой agctl REST — вход, /api/me, список/создание/старт/стоп
-// воркспейсов. База адреса: явный URL (localStorage) либо относительный
-// путь (панель открыта через шлюз agctl /w/<id>/ — same-origin, cookie уже
-// стоит). Сборка не нужна: файл пишется руками в формате хоста.
+// Живой agctl REST — вход, /api/me, список/создание/старт/стоп воркспейсов,
+// optional SSH public key/port. База адреса: явный URL (localStorage) либо
+// относительный путь (панель через шлюз agctl /w/<id>/ — same-origin, cookie
+// уже стоит). Сборка не нужна: файл пишется руками в формате хоста.
 window.__ModuleLoader__.load({
 	id: "@arijjia/agctl-cabinet",
 	factory: (require) => {
@@ -120,6 +120,7 @@ window.__ModuleLoader__.load({
 			const [password, setPassword] = React.useState("");
 			const [name, setName] = React.useState("");
 			const [kit, setKit] = React.useState("base");
+			const [sshPubKey, setSSHPubKey] = React.useState("");
 			const [busy, setBusy] = React.useState(false);
 			const [msg, setMsg] = React.useState("");
 
@@ -218,13 +219,14 @@ window.__ModuleLoader__.load({
 				try {
 					const res = await api("/api/workspaces", {
 						method: "POST",
-						body: JSON.stringify({ name: clean, kit }),
+						body: JSON.stringify({ name: clean, kit, sshPubKey: sshPubKey.trim() }),
 					});
 					if (!res.ok) {
 						setMsg("Не создалось (HTTP " + res.status + "): " + ((res.data && res.data.error) || ""));
 						return;
 					}
 					setName("");
+					setSSHPubKey("");
 					setMsg("Готово: место «" + clean + "» создано.");
 					await load();
 				} catch (err) {
@@ -340,6 +342,13 @@ window.__ModuleLoader__.load({
 							),
 							h("button", { style: styles.button, type: "submit", disabled: busy }, "Создать"),
 						),
+						h("textarea", {
+							style: { ...styles.input, width: "100%", minHeight: 58, marginTop: 10, resize: "vertical" },
+							placeholder: "SSH public key (необязательно; например, содержимое ~/.ssh/id_ed25519.pub)",
+							value: sshPubKey,
+							onChange: (e) => setSSHPubKey(e.target.value),
+						}),
+						h("p", { style: styles.note }, "SSH доступен только по ключу и привязан к 127.0.0.1 сервера; для удалённой машины сначала нужен SSH-туннель до сервера."),
 					),
 				phase === "ready" &&
 					h(
@@ -358,7 +367,8 @@ window.__ModuleLoader__.load({
 									h(
 										"span",
 										{ style: styles.placeMeta },
-										"· " + (ws.status || "?") + (ws.kit ? " · " + ws.kit : ""),
+										"· " + (ws.status || "?") + (ws.kit ? " · " + ws.kit : "") +
+											(ws.sshEnabled && ws.sshPort ? " · SSH :" + ws.sshPort : ""),
 									),
 								),
 								h(
@@ -383,6 +393,7 @@ window.__ModuleLoader__.load({
 											"Старт",
 										),
 								),
+								ws.sshEnabled && ws.sshPort && h("div", { style: { ...styles.note, width: "100%" } }, "SSH (на сервере): agctl connect --host 127.0.0.1 --port " + ws.sshPort),
 							),
 						),
 					),
@@ -390,7 +401,7 @@ window.__ModuleLoader__.load({
 				h(
 					"p",
 					{ style: styles.note },
-					"Ночь 2026-10-18→19, волна 2: живой agctl REST. Удаление мест и провайдеры — пока в кабинете agctl.",
+					"Кабинет agctl: управление местами и SSH-ключом. Удаление мест и настройки провайдера доступны администратору agctl.",
 				),
 			);
 		}

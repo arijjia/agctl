@@ -30,21 +30,21 @@ import (
 
 // Config — параметры сервера.
 type Config struct {
-	Home          string   // $AGCTL_HOME
-	Addr          string   // слушающий адрес основного UI/API
+	Home          string // $AGCTL_HOME
+	Addr          string // слушающий адрес основного UI/API
 	MaxPerUser    int
 	MemoryBytes   int64
 	NanoCPUs      int64
 	Image         string
 	BinDir        string
-	SecureCookies bool     // true when agctl is served behind a trusted HTTPS terminator
+	SecureCookies bool // true when agctl is served behind a trusted HTTPS terminator
 	AutosaveEvery time.Duration
 	CORSOrigins   []string // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
 }
 
 // RuntimeIface — то, что серверу нужно от docker-рантайма (мокается в тестах).
 type RuntimeIface interface {
-	Start(ctx context.Context, ws provision.Layout, wsID string, hostPort int, p provision.Provider) (dockerrt.StartResult, error)
+	Start(ctx context.Context, ws provision.Layout, wsID string, opts dockerrt.StartOpts, p provision.Provider) (dockerrt.StartResult, error)
 	Resume(ctx context.Context, containerID string) error
 	Stop(ctx context.Context, containerID string) error
 	Remove(ctx context.Context, containerID string) error
@@ -133,6 +133,7 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("DELETE /api/workspaces/{id}", s.requireUser(s.handleWorkspaceDelete))
 	mux.HandleFunc("GET /api/workspaces/{id}/logs", s.requireUser(s.handleWorkspaceLogs))
 	mux.HandleFunc("PATCH /api/workspaces/{id}/provider", s.requireUser(s.handleWorkspaceProvider))
+	mux.HandleFunc("PATCH /api/workspaces/{id}/ssh", s.requireUser(s.handleWorkspaceSSH))
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
 	mux.HandleFunc("GET /w/{id}", s.requireUser(s.workspaceProxyEntry))
@@ -389,7 +390,7 @@ func (s *Server) wsJSON(ctx context.Context, w store.Workspace, owner string) ma
 		"url": workspaceURL(w), "port": w.HostPort, "error": w.Error,
 		"model": w.Model, "models": w.Models, "baseURL": w.BaseURL,
 		"kit": w.Template, "template": w.Template, "components": components,
-		"repoPath": w.RepoPath,
+		"repoPath": w.RepoPath, "sshEnabled": w.SSHPubKey != "", "sshPort": w.SSHPort,
 	}
 }
 

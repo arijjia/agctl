@@ -154,7 +154,7 @@ func cmdWorkspaceCreate(args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 	log.Printf("docker: запуск контейнера…")
-	res, err := rt.Start(ctx, paths, ws.ID, ws.HostPort, p)
+	res, err := rt.Start(ctx, paths, ws.ID, dockerrt.StartOpts{HostPort: ws.HostPort}, p)
 	if err != nil {
 		fail("docker", err)
 	}

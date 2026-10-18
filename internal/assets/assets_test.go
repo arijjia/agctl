@@ -20,6 +20,7 @@ func TestCabinetPluginSkeletonInSync(t *testing.T) {
 	files := []string{
 		"package.json",
 		"cordis.patch.yml",
+		"README.md",
 		filepath.Join("lib", "index.js"),
 		filepath.Join("lib", "client.js"),
 	}

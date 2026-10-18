@@ -47,6 +47,10 @@ func main() {
 		os.Exit(backlog.Main(os.Args[2:], os.Stdout, os.Stderr))
 	case "workspace":
 		cmdWorkspace(os.Args[2:])
+	case "connect":
+		cmdConnect(os.Args[2:])
+	case "sync":
+		cmdSync(os.Args[2:])
 	case "version":
 		fmt.Printf("agctl %s (%s/%s %s)\n", version, runtime.GOOS, runtime.GOARCH, runtime.Version())
 	case "help", "-h", "--help":
@@ -66,6 +70,9 @@ func usage() {
   migrate [--home DIR]
   backlog <new|list|top|check|start|done|cancel|note|migrate> [флаги]
   workspace create --user ЛОГИН --name ИМЯ --template 1c-vibe --base-url URL --model M --api-key KEY
+  connect --port SSH_PORT [--host HOST] [--user root] [--identity KEY] [--print]
+  sync create --name NAME --local DIR --host HOST --port SSH_PORT [--user root] [--print]
+  sync list|pause|resume|flush|terminate [Mutagen args]
   version
 
 Переменные окружения: AGCTL_HOME (по умолчанию ~/.agctl), AGCTL_ADDR.

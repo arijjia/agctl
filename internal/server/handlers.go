@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/arijjia/agctl/internal/provision"
 	"github.com/arijjia/agctl/internal/runtime/dockerrt"
 	"github.com/arijjia/agctl/internal/store"
+	"golang.org/x/crypto/ssh"
 )
 
 // ── регистрация / вход ──────────────────────────────────────────────────────
@@ -23,6 +25,21 @@ import (
 type credsReq struct {
 	Login    string `json:"login"`
 	Password string `json:"password"`
+}
+
+func parseSSHPublicKey(raw string) (string, error) {
+	key := strings.TrimSpace(raw)
+	if key == "" {
+		return "", nil
+	}
+	if len(key) > 4096 {
+		return "", errors.New("ключ слишком длинный")
+	}
+	_, _, _, rest, err := ssh.ParseAuthorizedKey([]byte(key))
+	if err != nil || len(strings.TrimSpace(string(rest))) != 0 {
+		return "", errors.New("некорректный публичный SSH-ключ")
+	}
+	return key, nil
 }
 
 func (c credsReq) validate() error {
@@ -164,6 +181,7 @@ func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, i
 		Kit        string   `json:"kit"`
 		Template   string   `json:"template"` // legacy clients
 		Components []string `json:"components"`
+		SSHPubKey  string   `json:"sshPubKey"`
 		ProviderReq
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -187,6 +205,19 @@ func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, i
 	if err := req.ProviderReq.validate(); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	sshPubKey, err := parseSSHPublicKey(req.SSHPubKey)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	sshPort := 0
+	if sshPubKey != "" {
+		sshPort, err = dockerrt.FreePort()
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "нет свободного SSH-порта: "+err.Error())
+			return
+		}
 	}
 	// квота на число воркспейсов
 	own, err := s.db.WorkspacesByOwner(id.ID)
@@ -226,7 +257,7 @@ func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, i
 	ws := store.Workspace{
 		ID: wsID, OwnerID: id.ID, Name: req.Name, Template: kitID, Components: components,
 		Status: "provisioning", HostPort: port, BaseURL: p.BaseURL,
-		Model: p.DefaultModel(), Models: p.AllModels(),
+		Model: p.DefaultModel(), Models: p.AllModels(), SSHPubKey: sshPubKey, SSHPort: sshPort,
 	}
 	if err := s.db.InsertWorkspace(ws); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -262,7 +293,7 @@ func (s *Server) provisionJob(ws store.Workspace, ownerLogin string, p provision
 	}
 	_ = s.db.UpdateWorkspacePaths(ws.ID, paths.Repo, paths.Work, paths.DshHome)
 
-	res, err := s.rt.Start(ctx, paths, ws.ID, ws.HostPort, p)
+	res, err := s.rt.Start(ctx, paths, ws.ID, dockerrt.StartOpts{HostPort: ws.HostPort, SSHPubKey: ws.SSHPubKey, SSHHostPort: sshHostPortFor(ws)}, p)
 	if err != nil {
 		fail("docker", err)
 		return
@@ -326,7 +357,7 @@ func (s *Server) handleWorkspaceStart(w http.ResponseWriter, r *http.Request, id
 			// порту с актуальной конфигурацией (пин хоста провайдера и т.п.)
 			if err := s.rt.Resume(ctx, ws.ContainerID); err != nil {
 				// контейнера нет — создаём заново на сохранённом порту
-				res, err2 := s.rt.Start(ctx, s.pathsFor(ws, id.Login), ws.ID, ws.HostPort, p)
+				res, err2 := s.rt.Start(ctx, s.pathsFor(ws, id.Login), ws.ID, dockerrt.StartOpts{HostPort: ws.HostPort, SSHPubKey: ws.SSHPubKey, SSHHostPort: sshHostPortFor(ws)}, p)
 				if err2 != nil {
 					_ = s.db.UpdateWorkspaceStatus(ws.ID, "failed", "docker: "+err2.Error())
 					return
@@ -336,7 +367,7 @@ func (s *Server) handleWorkspaceStart(w http.ResponseWriter, r *http.Request, id
 				_ = s.db.UpdateWorkspaceStatus(ws.ID, "running", "")
 			}
 		} else {
-			res, err2 := s.rt.Start(ctx, s.pathsFor(ws, s.db.WorkspaceOwnerLogin(ws.OwnerID)), ws.ID, ws.HostPort, p)
+			res, err2 := s.rt.Start(ctx, s.pathsFor(ws, s.db.WorkspaceOwnerLogin(ws.OwnerID)), ws.ID, dockerrt.StartOpts{HostPort: ws.HostPort, SSHPubKey: ws.SSHPubKey, SSHHostPort: sshHostPortFor(ws)}, p)
 			if err2 != nil {
 				_ = s.db.UpdateWorkspaceStatus(ws.ID, "failed", "docker: "+err2.Error())
 				return
@@ -480,11 +511,116 @@ func (s *Server) handleWorkspaceLogs(w http.ResponseWriter, r *http.Request, id 
 	writeJSON(w, http.StatusOK, map[string]any{"logs": logs})
 }
 
-// handleWorkspaceProvider — PATCH /api/workspaces/{id}/provider:
-// смена Base URL / моделей / токена без пересоздания.
-// Перезаписывает settings.yaml + .credentials.yaml в DSH_HOME и,
-// если воркспейс запущен, пересоздаёт контейнер (токен — только через env).
-// Токен в ответах API никогда не возвращается.
+// sshHostPortFor возвращает опубликованный SSH-порт только для включённого
+// SSH-ключа; ноль означает «sshd выключен».
+func sshHostPortFor(ws store.Workspace) int {
+	if ws.SSHPubKey == "" {
+		return 0
+	}
+	return ws.SSHPort
+}
+
+// handleWorkspaceSSH — задать/снять публичный ключ SSH-канала воркспейса
+// (концепция v2 §9.2: «агент живёт на сервере, редактор — локально»).
+// Если место запущено, контейнер пересоздаётся с новым ключом/портом.
+func (s *Server) handleWorkspaceSSH(w http.ResponseWriter, r *http.Request, id identity) {
+	ws, err := s.loadWS(r, id)
+	if errors.Is(err, errForbidden) {
+		writeErr(w, http.StatusForbidden, "не ваш воркспейс")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "воркспейс не найден")
+		return
+	}
+	if ws.Status == "provisioning" {
+		writeErr(w, http.StatusConflict, "место ещё запускается; повтори запрос после статуса running")
+		return
+	}
+	var req struct {
+		PubKey string `json:"pubKey"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "неверный JSON")
+		return
+	}
+	key, err := parseSSHPublicKey(req.PubKey)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	port := ws.SSHPort
+	switch {
+	case key == "":
+		port = 0
+	case port == 0:
+		if port, err = dockerrt.FreePort(); err != nil {
+			writeErr(w, http.StatusInternalServerError, "нет свободного порта: "+err.Error())
+			return
+		}
+	}
+
+	// Для работающего места заранее собираем текущий provider, чтобы при ошибке
+	// не сохранить SSH-ключ, который невозможно применить пересозданием.
+	var provider provision.Provider
+	if ws.Status == "running" {
+		sec, secErr := s.db.SecretByUser(ws.OwnerID)
+		if secErr != nil {
+			writeErr(w, http.StatusConflict, "нет сохранённого LLM-токена для перезапуска места")
+			return
+		}
+		apiKey, decErr := s.sec.Decrypt(sec.Ciphertext)
+		if decErr != nil || apiKey == "" {
+			writeErr(w, http.StatusConflict, "не удалось получить LLM-токен для перезапуска места")
+			return
+		}
+		models := ws.Models
+		if len(models) == 0 && ws.Model != "" {
+			models = []string{ws.Model}
+		}
+		provider = provision.Provider{BaseURL: ws.BaseURL, Model: ws.Model, Models: models, APIKey: apiKey}
+	}
+	if err := s.db.UpdateWorkspaceSSH(ws.ID, key, port); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.db.Audit(id.Login, "workspace.ssh", ws.ID, fmt.Sprintf("key=%d bytes port=%d", len(key), port))
+	if ws.Status == "running" {
+		paths := s.pathsFor(ws, s.db.WorkspaceOwnerLogin(ws.OwnerID))
+		_ = s.db.UpdateWorkspaceStatus(ws.ID, "provisioning", "применяем SSH-настройки и пересоздаём контейнер…")
+		go s.recreateForSSH(ws.ID, paths, provider, id.Login)
+		writeJSON(w, http.StatusAccepted, map[string]any{"sshPort": port, "enabled": key != "", "status": "provisioning"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sshPort": port, "enabled": key != ""})
+}
+
+// recreateForSSH применяет ключ/порт к запущенному контейнеру. SSHPubKey
+// берётся заново из БД, plaintext-ключ в журнал не попадает.
+func (s *Server) recreateForSSH(wsID string, paths provision.Layout, p provision.Provider, actor string) {
+	s.provMu.Lock()
+	defer s.provMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	ws, err := s.db.WorkspaceByID(wsID)
+	if err != nil {
+		return
+	}
+	s.forgetToken(wsID)
+	if ws.ContainerID != "" {
+		_ = s.rt.Remove(ctx, ws.ContainerID)
+	}
+	res, err := s.rt.Start(ctx, paths, wsID, dockerrt.StartOpts{HostPort: ws.HostPort, SSHPubKey: ws.SSHPubKey, SSHHostPort: sshHostPortFor(ws)}, p)
+	if err != nil {
+		_ = s.db.UpdateWorkspaceStatus(wsID, "failed", "docker: "+err.Error())
+		return
+	}
+	_ = s.db.UpdateWorkspaceRuntime(wsID, res.ContainerID, res.HostPort, "running")
+	_ = s.db.Audit(actor, "workspace.ssh.applied", wsID, fmt.Sprintf("sshPort=%d", ws.SSHPort))
+}
+
+// handleWorkspaceProvider — PATCH /api/workspaces/{id}/provider: смена Base URL,
+// моделей и токена. Токен возвращается в env контейнера, но никогда в API.
 func (s *Server) handleWorkspaceProvider(w http.ResponseWriter, r *http.Request, id identity) {
 	ws, err := s.loadWS(r, id)
 	if errors.Is(err, errForbidden) {
@@ -572,7 +708,7 @@ func (s *Server) recreateForProvider(wsID string, paths provision.Layout, p prov
 	if ws.ContainerID != "" {
 		_ = s.rt.Remove(ctx, ws.ContainerID)
 	}
-	res, err := s.rt.Start(ctx, paths, wsID, ws.HostPort, p)
+	res, err := s.rt.Start(ctx, paths, wsID, dockerrt.StartOpts{HostPort: ws.HostPort, SSHPubKey: ws.SSHPubKey, SSHHostPort: sshHostPortFor(ws)}, p)
 	if err != nil {
 		_ = s.db.UpdateWorkspaceStatus(wsID, "failed", "docker: "+err.Error())
 		return

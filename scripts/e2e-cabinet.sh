@@ -21,9 +21,11 @@ ADDR="127.0.0.1:18931"
 B="http://$ADDR"
 IMG="${IMG:-agctl-dsh:0.2.0-night1}"
 BIN="${BIN:-/tmp/agctl-cabinet-e2e-bin}"
-NIGHT_LOG="/tmp/agctl-cabinet-e2e-night.log"
+NIGHT_HOME="$TEST_HOME/dsh-home"
+NIGHT_PORT="${E2E_NIGHT_PORT:-3556}"
+NIGHT_LOG="$TEST_HOME/night-profile.log"
 
-PASS=0; FAIL=0
+PASS=0; FAIL=0; WSID=""
 pass() { PASS=$((PASS+1)); echo "  ok: $1"; }
 fail() { FAIL=$((FAIL+1)); echo "  FAIL: $1"; }
 
@@ -32,9 +34,22 @@ go build -o "$BIN" ./cmd/agctl || { echo "go build не удался" >&2; exit 
 
 AGCTL_PID=""; FAKE_PID=""
 cleanup() {
+  if [ -n "$WSID" ] && [ -f "$TEST_HOME/jar" ]; then
+    curl -s -b "$TEST_HOME/jar" -X DELETE "$B/api/workspaces/$WSID" -o /dev/null 2>/dev/null || true
+    for i in $(seq 1 30); do
+      [ -z "$(docker ps -aq --filter "label=agctl.workspace=$WSID" 2>/dev/null)" ] && break
+      sleep 1
+    done
+    if [ -n "$(docker ps -aq --filter "label=agctl.workspace=$WSID" 2>/dev/null)" ]; then
+      echo "cleanup: fallback remove own container agctl-$WSID" >&2
+      docker rm -f "agctl-$WSID" >/dev/null 2>&1 || true
+    fi
+  fi
   [ -n "$AGCTL_PID" ] && kill "$AGCTL_PID" >/dev/null 2>&1 || true
   [ -n "$FAKE_PID" ] && kill "$FAKE_PID" >/dev/null 2>&1 || true
-  [ -f /tmp/agctl-night-dsh-home/web-3555.pid ] && kill "$(cat /tmp/agctl-night-dsh-home/web-3555.pid)" >/dev/null 2>&1 || true
+  if [ -f "$NIGHT_HOME/web-$NIGHT_PORT.pid" ]; then
+    kill "$(cat "$NIGHT_HOME/web-$NIGHT_PORT.pid")" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT INT TERM
 
@@ -72,6 +87,10 @@ print((w['id'] + ' ' + w['status']) if w else '')")
     *running*)
       pass "воркспейс создан и running ($WS)"
       WSID="${WS%% *}"
+      SSHSTATE=$(curl -s -b "$TEST_HOME/jar" "$B/api/workspaces/$WSID" | python3 -c "import json,sys; w=json.load(sys.stdin)['workspace']; print(w.get('sshEnabled'), w.get('sshPort'))")
+      [ "$SSHSTATE" = "False 0" ] && pass "без ключа SSH отключён по умолчанию" || fail "SSH должен быть выключен без ключа, got '$SSHSTATE'"
+      BOUND=$(docker port "agctl-$WSID" 2222/tcp 2>/dev/null || true)
+      [ -z "$BOUND" ] && pass "без ключа контейнерный порт 2222 не опубликован" || fail "SSH-порт открыт без ключа: $BOUND"
       html=$(curl -s -b "$TEST_HOME/jar" -L "$B/w/$WSID/")
       echo "$html" | grep -q 'agctl-cabinet' \
         && pass "шлюз /w/<id>: boot graph содержит @arijjia/agctl-cabinet" \
@@ -81,21 +100,18 @@ print((w['id'] + ' ' + w['status']) if w else '')")
       fail "воркспейс не поднялся: '$WS' (лог: $TEST_HOME/serve.log)"
       ;;
   esac
-  [ -n "$WSID" ] && curl -s -b "$TEST_HOME/jar" -X DELETE "$B/api/workspaces/$WSID" -o /dev/null
-  kill "$AGCTL_PID" 2>/dev/null; AGCTL_PID=""
-  kill "$FAKE_PID" 2>/dev/null; FAKE_PID=""
 else
   echo "== секция A пропущена (--skip-docker) =="
 fi
 
 # ── Секция B: изолированный dsh web с панелью (night-profile) ──────────────
-scripts/night-profile.sh >"$NIGHT_LOG" 2>&1 || fail "night-profile не поднялся"
-if [ -f /tmp/agctl-night-dsh-home/web-3555.log ]; then
-  T=$(grep -o 'token=[A-Za-z0-9_-]*' /tmp/agctl-night-dsh-home/web-3555.log | head -1 | cut -d= -f2)
-  curl -s -c /tmp/agctl-cabinet-e2e-jar "http://127.0.0.1:3555/?token=$T" -o /dev/null
-  curl -s -b /tmp/agctl-cabinet-e2e-jar "http://127.0.0.1:3555/" -o /tmp/agctl-cabinet-e2e-page.html
-  grep -q 'agctl-cabinet' /tmp/agctl-cabinet-e2e-page.html \
-    && pass "night-profile: панель в boot graph прямого dsh web" \
+DSH_HOME_TEST="$NIGHT_HOME" PORT="$NIGHT_PORT" scripts/night-profile.sh >"$NIGHT_LOG" 2>&1 || fail "night-profile не поднялся"
+if [ -f "$NIGHT_HOME/web-$NIGHT_PORT.log" ]; then
+  T=$(grep -o 'token=[A-Za-z0-9_-]*' "$NIGHT_HOME/web-$NIGHT_PORT.log" | head -1 | cut -d= -f2)
+  curl -s -c "$TEST_HOME/night-jar" "http://127.0.0.1:$NIGHT_PORT/?token=$T" -o /dev/null
+  curl -s -b "$TEST_HOME/night-jar" "http://127.0.0.1:$NIGHT_PORT/" -o "$TEST_HOME/night-page.html"
+  grep -q 'agctl-cabinet' "$TEST_HOME/night-page.html" \
+    && pass "night-profile: панель в boot graph прямого dsh web (:${NIGHT_PORT})" \
     || fail "night-profile: панели нет в boot graph"
 else
   fail "night-profile: нет лога веба"
