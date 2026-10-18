@@ -30,15 +30,16 @@ import (
 
 // Config — параметры сервера.
 type Config struct {
-	Home          string // $AGCTL_HOME
-	Addr          string // слушающий адрес основного UI/API
+	Home          string   // $AGCTL_HOME
+	Addr          string   // слушающий адрес основного UI/API
 	MaxPerUser    int
 	MemoryBytes   int64
 	NanoCPUs      int64
 	Image         string
 	BinDir        string
-	SecureCookies bool // true when agctl is served behind a trusted HTTPS terminator
+	SecureCookies bool     // true when agctl is served behind a trusted HTTPS terminator
 	AutosaveEvery time.Duration
+	CORSOrigins   []string // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
 }
 
 // RuntimeIface — то, что серверу нужно от docker-рантайма (мокается в тестах).
@@ -146,7 +147,37 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 
 	// статика SPA
 	mux.Handle("GET /", http.FileServerFS(webFS))
+	if len(s.cfg.CORSOrigins) > 0 {
+		return s.logMiddleware(s.corsMiddleware(mux))
+	}
 	return s.logMiddleware(mux)
+}
+
+// corsMiddleware — точный allow-list origins для /api (кабинет-плагин dsh web
+// ходит с другого порта/домена). По умолчанию список пуст и middleware не
+// ставится: никакого wildcard с credentials никогда не отдаём.
+func (s *Server) corsMiddleware(next http.Handler) http.Handler {
+	allowed := make(map[string]bool, len(s.cfg.CORSOrigins))
+	for _, o := range s.cfg.CORSOrigins {
+		allowed[strings.TrimRight(o, "/")] = true
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" && allowed[strings.TrimRight(origin, "/")] {
+			h := w.Header()
+			h.Set("Access-Control-Allow-Origin", origin)
+			h.Set("Access-Control-Allow-Credentials", "true")
+			h.Add("Vary", "Origin")
+			if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+				h.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+				h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+				h.Set("Access-Control-Max-Age", "86400")
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // ── фоновые задачи ──────────────────────────────────────────────────────────

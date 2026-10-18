@@ -1,7 +1,7 @@
 {
   "name": "@arijjia/agctl-cabinet",
   "description": "agctl cabinet panel for dsh web: connection state, workspace list (night 2026-10-18 wave 1)",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

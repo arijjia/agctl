@@ -97,6 +97,7 @@ func cmdServe(args []string) {
 	image := fsSet.String("image", "agctl-dsh:0.1.0", "тег образа agctl-dsh")
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
+	corsOrigins := fsSet.String("cors-origin", envOr("AGCTL_CORS_ORIGINS", ""), "точные origins через запятую, которым разрешён кросс-доменный /api (кабинет-плагин dsh web); пусто = CORS выключен")
 	maxPerUser := fsSet.Int("max-per-user", 3, "лимит воркспейсов на пользователя")
 	memGB := fsSet.Float64("mem-gb", 2, "лимит памяти контейнера, ГБ")
 	cpus := fsSet.Float64("cpus", 2, "лимит CPU контейнера")
@@ -127,6 +128,7 @@ func cmdServe(args []string) {
 		Image:         *image,
 		BinDir:        firstNonEmpty(*binDir, "dist"),
 		SecureCookies: *secureCookies,
+		CORSOrigins:   splitCSV(*corsOrigins),
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -202,4 +204,14 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+func splitCSV(s string) []string {
+	out := make([]string, 0, 4)
+	for _, part := range strings.Split(s, ",") {
+		if v := strings.TrimSpace(part); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }

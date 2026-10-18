@@ -4,9 +4,11 @@
 // window.__ModuleLoader__.load({ id, factory(require) -> module.exports })
 // с экспортами inject (имена сервисов для cordis-инъекции) и apply(ctx).
 // Волна 1: панель «Кабинет» в root-scoped sidebar.panellist + страница в
-// keyed slot "main" (тот же id) — ровно как в dsh-client-ui-plugin-manager.
-// Данные пока заглушка; живой провод к agctl REST — волна 2 (эпик
-// night-dsh-plugins). Сборка не нужна: файл пишется руками в формате хоста.
+// keyed slot "main" (тот же id) — паттерн dsh-client-ui-plugin-manager.
+// Волна 2: живой agctl REST — вход, /api/me, список/создание/старт/стоп
+// воркспейсов. База адреса: явный URL (localStorage) либо относительный
+// путь (панель открыта через шлюз agctl /w/<id>/ — same-origin, cookie уже
+// стоит). Сборка не нужна: файл пишется руками в формате хоста.
 window.__ModuleLoader__.load({
 	id: "@arijjia/agctl-cabinet",
 	factory: (require) => {
@@ -17,6 +19,7 @@ window.__ModuleLoader__.load({
 		const h = React.createElement;
 
 		const PANEL_ID = "agctl-cabinet";
+		const URL_KEY = "agctl-cabinet.url";
 
 		function CabinetIcon() {
 			return h(
@@ -58,12 +61,13 @@ window.__ModuleLoader__.load({
 				borderRadius: 10,
 				padding: "14px 16px",
 				marginBottom: 16,
-				maxWidth: 560,
+				maxWidth: 620,
 			},
 			cardTitle: { margin: "0 0 10px", fontSize: 14, fontWeight: 600 },
-			row: { display: "flex", gap: 8, alignItems: "center" },
+			row: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" },
 			input: {
 				flex: 1,
+				minWidth: 160,
 				boxSizing: "border-box",
 				padding: "6px 10px",
 				fontSize: 13,
@@ -85,55 +89,223 @@ window.__ModuleLoader__.load({
 				display: "flex",
 				justifyContent: "space-between",
 				alignItems: "center",
-				gap: 12,
+				gap: 10,
 				padding: "10px 12px",
 				border: "1px solid var(--dsw-alias-border-l1, #ddd)",
 				borderRadius: 10,
 				marginBottom: 8,
-				maxWidth: 560,
+				maxWidth: 620,
+				flexWrap: "wrap",
 			},
 			placeName: { fontSize: 13, fontWeight: 600 },
-			placeStatus: { fontSize: 12, color: "var(--dsw-alias-label-tertiary, #888)" },
+			placeMeta: { fontSize: 12, color: "var(--dsw-alias-label-tertiary, #888)" },
 			note: { fontSize: 12, color: "var(--dsw-alias-label-tertiary, #888)", marginTop: 14 },
+			status: { fontSize: 12, marginTop: 8, whiteSpace: "pre-wrap" },
+			mini: { padding: "3px 8px", fontSize: 12 },
 		};
 
 		function CabinetPage() {
-			const [url, setUrl] = React.useState("");
-			const [status, setStatus] = React.useState({ state: "idle" });
-
-			const check = async () => {
-				const base = url.trim().replace(/\/+$/, "");
-				if (!base) {
-					setStatus({ state: "error", text: "Укажи адрес agctl-сервера" });
-					return;
-				}
-				setStatus({ state: "checking", text: "Проверяю…" });
+			const [url, setUrl] = React.useState(() => {
 				try {
-					const res = await fetch(base + "/api/me", {
-						credentials: "include",
-						headers: { Accept: "application/json" },
-					});
-					if (res.ok) {
-						const me = await res.json().catch(() => null);
-						setStatus({
-							state: "ok",
-							text: "Подключено: " + (me && me.login ? me.login : "ok"),
-						});
-					} else if (res.status === 401 || res.status === 403) {
-						setStatus({ state: "warn", text: "Сервер отвечает, но сессии нет — войди в кабинет agctl" });
-					} else {
-						setStatus({ state: "warn", text: "Сервер отвечает: HTTP " + res.status });
-					}
+					return localStorage.getItem(URL_KEY) || "";
 				} catch (e) {
-					setStatus({ state: "error", text: "Не отвечает: " + String((e && e.message) || e) });
+					return "";
+				}
+			});
+			const [phase, setPhase] = React.useState("connecting"); // connecting | login | ready
+			const [me, setMe] = React.useState(null);
+			const [places, setPlaces] = React.useState([]);
+			const [kits, setKits] = React.useState(["base"]);
+			const [login, setLogin] = React.useState("");
+			const [password, setPassword] = React.useState("");
+			const [name, setName] = React.useState("");
+			const [kit, setKit] = React.useState("base");
+			const [busy, setBusy] = React.useState(false);
+			const [msg, setMsg] = React.useState("");
+
+			const base = () => url.trim().replace(/\/+$/, "");
+
+			const api = async (path, opts) => {
+				const res = await fetch(base() + path, {
+					credentials: "include",
+					headers: Object.assign(
+						{ Accept: "application/json" },
+						opts && opts.body ? { "Content-Type": "application/json" } : {},
+					),
+					method: (opts && opts.method) || "GET",
+					body: opts && opts.body,
+				});
+				const text = await res.text();
+				let data = null;
+				try {
+					data = text ? JSON.parse(text) : null;
+				} catch (e) {
+					data = null;
+				}
+				return { ok: res.ok, status: res.status, data };
+			};
+
+			const load = async () => {
+				setBusy(true);
+				try {
+					const meRes = await api("/api/me");
+					if (!meRes.ok) {
+						setMe(null);
+						setPhase(meRes.status === 401 || meRes.status === 403 ? "login" : "connecting");
+						setMsg("Сервер отвечает (HTTP " + meRes.status + "): нужна сессия кабинета.");
+						return;
+					}
+					setMe(meRes.data);
+					const wsRes = await api("/api/workspaces");
+					setPlaces(
+						wsRes.ok && wsRes.data && Array.isArray(wsRes.data.workspaces) ? wsRes.data.workspaces : [],
+					);
+					const kitRes = await api("/api/kits");
+					if (kitRes.ok && kitRes.data) {
+						const list = Array.isArray(kitRes.data.kits) ? kitRes.data.kits : [];
+						const names = list
+							.map((k) => (typeof k === "string" ? k : k && (k.id || k.name)))
+							.filter(Boolean);
+						if (names.length) setKits(names);
+					}
+					setPhase("ready");
+					setMsg("");
+				} catch (e) {
+					setPhase("connecting");
+					setMsg("Не отвечает: " + String((e && e.message) || e));
+				} finally {
+					setBusy(false);
 				}
 			};
 
-			const places = [
-				{ name: "demo-1c", status: "заглушка — волна 2 подключит agctl REST" },
-				{ name: "ivanova-lms", status: "заглушка" },
-				{ name: "cit-dev", status: "заглушка" },
-			];
+			React.useEffect(() => {
+				load();
+			}, []);
+
+			const doLogin = async (e) => {
+				e.preventDefault();
+				setBusy(true);
+				setMsg("Вхожу…");
+				try {
+					const res = await api("/api/login", {
+						method: "POST",
+						body: JSON.stringify({ login, password }),
+					});
+					if (!res.ok) {
+						setMsg(
+							"Вход не удался (HTTP " + res.status + "): " + ((res.data && res.data.error) || "проверь логин/пароль"),
+						);
+						return;
+					}
+					setPassword("");
+					await load();
+				} catch (err) {
+					setMsg("Вход не удался: " + String((err && err.message) || err));
+				} finally {
+					setBusy(false);
+				}
+			};
+
+			const doCreate = async (e) => {
+				e.preventDefault();
+				const clean = name.trim();
+				if (!clean) {
+					setMsg("Придумай имя рабочего места");
+					return;
+				}
+				setBusy(true);
+				setMsg("Создаю «" + clean + "» (это занимает несколько секунд)…");
+				try {
+					const res = await api("/api/workspaces", {
+						method: "POST",
+						body: JSON.stringify({ name: clean, kit }),
+					});
+					if (!res.ok) {
+						setMsg("Не создалось (HTTP " + res.status + "): " + ((res.data && res.data.error) || ""));
+						return;
+					}
+					setName("");
+					setMsg("Готово: место «" + clean + "» создано.");
+					await load();
+				} catch (err) {
+					setMsg("Не создалось: " + String((err && err.message) || err));
+				} finally {
+					setBusy(false);
+				}
+			};
+
+			const act = (ws, action) => async () => {
+				setBusy(true);
+				setMsg((action === "start" ? "Запускаю" : "Останавливаю") + " «" + ws.name + "»…");
+				try {
+					const res = await api("/api/workspaces/" + ws.id + "/" + action, { method: "POST" });
+					setMsg(res.ok ? "Готово." : "HTTP " + res.status + ": " + ((res.data && res.data.error) || ""));
+					await load();
+				} finally {
+					setBusy(false);
+				}
+			};
+
+			const saveUrl = (v) => {
+				setUrl(v);
+				try {
+					localStorage.setItem(URL_KEY, v.trim());
+				} catch (e) {}
+			};
+
+			const conn = h(
+				"div",
+				{ style: styles.card },
+				h("h2", { style: styles.cardTitle }, "Подключение к agctl"),
+				h(
+					"div",
+					{ style: styles.row },
+					h("input", {
+						style: styles.input,
+						placeholder: "https://agctl.example.org (пусто = тот же origin)",
+						value: url,
+						onChange: (e) => saveUrl(e.target.value),
+						onKeyDown: (e) => {
+							if (e.key === "Enter") load();
+						},
+					}),
+					h("button", { style: styles.button, onClick: load, disabled: busy }, "Обновить"),
+				),
+				msg && h("p", { style: styles.status }, msg),
+			);
+
+			if (phase === "login") {
+				return h(
+					"div",
+					{ style: styles.wrap },
+					h("h1", { style: styles.title }, "Кабинет agctl"),
+					h("p", { style: styles.subtitle }, "Войди, чтобы видеть свои рабочие места с агентами."),
+					conn,
+					h(
+						"form",
+						{ style: styles.card, onSubmit: doLogin },
+						h("h2", { style: styles.cardTitle }, "Вход"),
+						h(
+							"div",
+							{ style: styles.row },
+							h("input", {
+								style: styles.input,
+								placeholder: "логин",
+								value: login,
+								onChange: (e) => setLogin(e.target.value),
+							}),
+							h("input", {
+								style: styles.input,
+								type: "password",
+								placeholder: "пароль",
+								value: password,
+								onChange: (e) => setPassword(e.target.value),
+							}),
+							h("button", { style: styles.button, type: "submit", disabled: busy }, "Войти"),
+						),
+					),
+				);
+			}
 
 			return h(
 				"div",
@@ -142,46 +314,83 @@ window.__ModuleLoader__.load({
 				h(
 					"p",
 					{ style: styles.subtitle },
-					"Рабочие места с агентами DeepSeek Harness. Дефолтный чат этой среды — базовый уровень платформы (Tier 0).",
+					(me
+						? "Вошёл как " + me.login + (me.role === "admin" ? " (admin)" : "") + ". "
+						: "") + "Дефолтный чат этой среды — базовый уровень платформы (Tier 0).",
 				),
-				h(
-					"div",
-					{ style: styles.card },
-					h("h2", { style: styles.cardTitle }, "Подключение к agctl"),
+				conn,
+				phase === "ready" &&
 					h(
-						"div",
-						{ style: styles.row },
-						h("input", {
-							style: styles.input,
-							placeholder: "https://agctl.example.org (или http://127.0.0.1:8929)",
-							value: url,
-							onChange: (e) => setUrl(e.target.value),
-							onKeyDown: (e) => {
-								if (e.key === "Enter") check();
-							},
-						}),
-						h("button", { style: styles.button, onClick: check }, "Проверить"),
-					),
-					status.state !== "idle" &&
+						"form",
+						{ style: styles.card, onSubmit: doCreate },
+						h("h2", { style: styles.cardTitle }, "Новое рабочее место"),
 						h(
-							"p",
-							{ style: { ...styles.note, marginTop: 10 } },
-							(status.state === "ok" ? "✓ " : status.state === "error" ? "✗ " : "… ") + status.text,
+							"div",
+							{ style: styles.row },
+							h("input", {
+								style: styles.input,
+								placeholder: "имя (например, demo-1c)",
+								value: name,
+								onChange: (e) => setName(e.target.value),
+							}),
+							h(
+								"select",
+								{ style: { ...styles.input, maxWidth: 140 }, value: kit, onChange: (e) => setKit(e.target.value) },
+								kits.map((k) => h("option", { value: k, key: k }, k)),
+							),
+							h("button", { style: styles.button, type: "submit", disabled: busy }, "Создать"),
 						),
-				),
-				h("h2", { style: styles.cardTitle }, "Рабочие места"),
-				places.map((p) =>
+					),
+				phase === "ready" &&
 					h(
 						"div",
-						{ style: styles.place, key: p.name },
-						h("span", { style: styles.placeName }, p.name),
-						h("span", { style: styles.placeStatus }, p.status),
+						null,
+						h("h2", { style: styles.cardTitle }, "Рабочие места"),
+						places.length === 0 && h("p", { style: styles.note }, "Пока пусто — создай первое место."),
+						places.map((ws) =>
+							h(
+								"div",
+								{ style: styles.place, key: ws.id },
+								h(
+									"span",
+									null,
+									h("span", { style: styles.placeName }, ws.name + " "),
+									h(
+										"span",
+										{ style: styles.placeMeta },
+										"· " + (ws.status || "?") + (ws.kit ? " · " + ws.kit : ""),
+									),
+								),
+								h(
+									"span",
+									{ style: styles.row },
+									ws.url &&
+										h(
+											"a",
+											{ href: ws.url, target: "_blank", style: { ...styles.button, textDecoration: "none" } },
+											"Открыть",
+										),
+									ws.status === "running" &&
+										h(
+											"button",
+											{ style: { ...styles.button, ...styles.mini }, onClick: act(ws, "stop"), disabled: busy },
+											"Стоп",
+										),
+									ws.status !== "running" &&
+										h(
+											"button",
+											{ style: { ...styles.button, ...styles.mini }, onClick: act(ws, "start"), disabled: busy },
+											"Старт",
+										),
+								),
+							),
+						),
 					),
-				),
+				phase === "connecting" && h("p", { style: styles.note }, "Подключаюсь к agctl…"),
 				h(
 					"p",
 					{ style: styles.note },
-					"Волна 1 эпика night-dsh-plugins: панель и экран-каркас. Список и создание мест — живой agctl REST (волна 2).",
+					"Ночь 2026-10-18→19, волна 2: живой agctl REST. Удаление мест и провайдеры — пока в кабинете agctl.",
 				),
 			);
 		}
