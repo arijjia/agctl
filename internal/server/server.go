@@ -40,10 +40,11 @@ type Config struct {
 	BinDir          string
 	SecureCookies   bool // true when agctl is served behind a trusted HTTPS terminator
 	AutosaveEvery   time.Duration
-	CORSOrigins     []string      // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
-	Tier0           bool          // корень платформы ведёт в персональный чат (/chat/)
-	ChatTTL         time.Duration // простой чат-контейнера до сна (по умолчанию 15 мин)
-	RequireApproval bool          // создание dev-мест только через заявку с апрувом админа
+	CORSOrigins     []string           // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
+	Tier0           bool               // корень платформы ведёт в персональный чат (/chat/)
+	ChatTTL         time.Duration      // простой чат-контейнера до сна (по умолчанию 15 мин)
+	RequireApproval bool               // создание dev-мест только через заявку с апрувом админа
+	DefaultLLM      provision.Provider // платформенный провайдер чата по умолчанию (корп. LiteLLM); личный секрет пользователя его перекрывает
 }
 
 // RuntimeIface — то, что серверу нужно от docker-рантайма (мокается в тестах).

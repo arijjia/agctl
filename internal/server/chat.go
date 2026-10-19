@@ -45,22 +45,22 @@ func (s *Server) chatRuntimeID(userID int64) string {
 
 func chatStorageID(userID int64) string { return "u" + strconv.FormatInt(userID, 10) }
 
-// userProvider — LLM-провайдер из личного секрета пользователя. Нет секрета —
-// dsh покажет свой модал «Add an API key» (ключ сохранится в dsh-home юзера).
+// userProvider — LLM-провайдер для личного чата: личный секрет пользователя,
+// иначе платформенный провайдер по умолчанию (корпоративный LiteLLM); только
+// если не задан ни один — dsh покажет свой модал «Add an API key».
 func (s *Server) userProvider(userID int64) provision.Provider {
 	sec, err := s.db.SecretByUser(userID)
-	if err != nil {
-		return provision.Provider{}
+	if err == nil {
+		key, decErr := s.sec.Decrypt(sec.Ciphertext)
+		if decErr == nil && key != "" {
+			models := sec.Models
+			if len(models) == 0 {
+				models = []string{sec.Model}
+			}
+			return provision.Provider{BaseURL: sec.BaseURL, Model: sec.Model, Models: models, APIKey: key}
+		}
 	}
-	key, err := s.sec.Decrypt(sec.Ciphertext)
-	if err != nil || key == "" {
-		return provision.Provider{}
-	}
-	models := sec.Models
-	if len(models) == 0 {
-		models = []string{sec.Model}
-	}
-	return provision.Provider{BaseURL: sec.BaseURL, Model: sec.Model, Models: models, APIKey: key}
+	return s.cfg.DefaultLLM
 }
 
 // ensureChat asks the runtime provider to ensure the user's stable Chat runtime

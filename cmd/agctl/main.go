@@ -118,7 +118,23 @@ func cmdServe(args []string) {
 	maxPerUser := fsSet.Int("max-per-user", 3, "лимит воркспейсов на пользователя")
 	memGB := fsSet.Float64("mem-gb", 2, "лимит памяти контейнера, ГБ")
 	cpus := fsSet.Float64("cpus", 2, "лимит CPU контейнера")
+	// Платформенный LLM по умолчанию для режима Chat: пользователь без личного
+	// секрета сразу получает корпоративные модели (без модала dsh про API key).
+	llmBaseURL := fsSet.String("llm-base-url", envOr("AGCTL_LLM_BASE_URL", ""), "базовый URL OpenAI-совместимого провайдера чата по умолчанию")
+	llmModel := fsSet.String("llm-model", envOr("AGCTL_LLM_MODEL", ""), "модель чата по умолчанию (из списка llm-models)")
+	llmModels := fsSet.String("llm-models", envOr("AGCTL_LLM_MODELS", ""), "список моделей чата через запятую")
+	llmAPIKey := fsSet.String("llm-api-key", envOr("AGCTL_LLM_API_KEY", ""), "ключ провайдера чата (предпочтительно через env AGCTL_LLM_API_KEY)")
 	_ = fsSet.Parse(args)
+
+	defaultLLM := provision.Provider{
+		BaseURL: *llmBaseURL,
+		Model:   *llmModel,
+		Models:  splitCSV(*llmModels),
+		APIKey:  *llmAPIKey,
+	}
+	if defaultLLM.Model == "" && len(defaultLLM.Models) > 0 {
+		defaultLLM.Model = defaultLLM.Models[0]
+	}
 
 	absHome, err := requireHome(*home)
 	if err != nil {
@@ -149,7 +165,11 @@ func cmdServe(args []string) {
 		Tier0:           *tier0,
 		RequireApproval: *requireApproval,
 		ChatTTL:         time.Duration(*chatTTLMin) * time.Minute,
+		DefaultLLM:      defaultLLM,
 	})
+	if defaultLLM.BaseURL != "" {
+		log.Printf("llm: платформенный провайдер чата по умолчанию %s (моделей: %d, ключ %s)", defaultLLM.BaseURL, len(defaultLLM.AllModels()), keyState(defaultLLM.APIKey))
+	}
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -303,4 +323,12 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
+}
+
+// keyState — состояние секрета для логов: только факт наличия, не значение.
+func keyState(secret string) string {
+	if secret == "" {
+		return "не задан"
+	}
+	return "задан"
 }

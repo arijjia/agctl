@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/arijjia/agctl/internal/provision"
 )
 
 func TestEnsureChatIsPerUserAndReusesRuntime(t *testing.T) {
@@ -66,6 +68,47 @@ func TestReaperStopsIdleChatButKeepsPersistentVolume(t *testing.T) {
 		if _, err := os.Stat(dir); err != nil {
 			t.Fatalf("persistent volume path %s was removed: %v", dir, err)
 		}
+	}
+}
+
+func TestChatUsesPlatformDefaultProviderWhenNoPersonalSecret(t *testing.T) {
+	e := newTestEnv(t, 3)
+	e.srv.cfg.DefaultLLM = provision.Provider{
+		BaseURL: "https://llm.example.invalid/v1", Model: "qwen-3.8-fast",
+		Models: []string{"qwen-3.8-fast", "qwen-3.8-27b"}, APIKey: "platform-key-xyz",
+	}
+	if _, err := e.srv.ensureChat(606); err != nil {
+		t.Fatal(err)
+	}
+	got := e.rt.chatSpecs[e.srv.chatRuntimeID(606)].Provider
+	if got.BaseURL != e.srv.cfg.DefaultLLM.BaseURL || got.APIKey != "platform-key-xyz" || len(got.Models) != 2 {
+		t.Fatalf("chat provider = %+v, want platform default", got)
+	}
+	if got.Model != "qwen-3.8-fast" {
+		t.Fatalf("default model = %q, want qwen-3.8-fast", got.Model)
+	}
+}
+
+func TestPersonalSecretOverridesPlatformDefault(t *testing.T) {
+	e := newTestEnv(t, 3)
+	e.srv.cfg.DefaultLLM = provision.Provider{BaseURL: "https://corp.example.invalid/v1", Model: "corp-model", APIKey: "corp-key"}
+	cipher, err := e.srv.sec.Encrypt("personal-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	uid, err := e.srv.db.CreateUser("provider-user", "h", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.srv.db.SecretUpsert(uid, "https://personal.example.invalid/v1", "my-model", []string{"my-model"}, cipher); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.srv.ensureChat(uid); err != nil {
+		t.Fatal(err)
+	}
+	got := e.rt.chatSpecs[e.srv.chatRuntimeID(uid)].Provider
+	if got.BaseURL != "https://personal.example.invalid/v1" || got.APIKey != "personal-key" || got.Model != "my-model" {
+		t.Fatalf("chat provider = %+v, want personal secret to win", got)
 	}
 }
 

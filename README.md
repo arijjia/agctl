@@ -127,6 +127,9 @@ agctl version
 | `--require-approval` | новые dev-workspaces создаются заявкой, до admin approve контейнер не выдаётся |
 | `--secure-cookies` | флаг Secure у cookies (за HTTPS-ingress) |
 | `--cors-origin LIST` | точные origins для панели Кабинета, через запятую; пусто = CORS выключен |
+| `--llm-base-url URL` | OpenAI-совместимый провайдер чата по умолчанию (напр. корпоративный LiteLLM) |
+| `--llm-models LIST` | модели чата по умолчанию через запятую; `--llm-model M` — какая из них основная |
+| `--llm-api-key KEY` | ключ провайдера (лучше через env `AGCTL_LLM_API_KEY`); личный секрет пользователя перекрывает платформенный |
 
 `agctl backlog` работает и на хосте, и **внутри контейнера** (бинар
 вшит в образ) — им агент ведёт задачи воркспейса.
