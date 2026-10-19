@@ -30,17 +30,19 @@ import (
 
 // Config — параметры сервера.
 type Config struct {
-	Home          string // $AGCTL_HOME
-	Addr          string // слушающий адрес основного UI/API
-	MaxPerUser    int
-	MemoryBytes   int64
-	NanoCPUs      int64
-	Image         string
-	BinDir        string
-	SecureCookies bool // true when agctl is served behind a trusted HTTPS terminator
-	AutosaveEvery time.Duration
-	CORSOrigins   []string // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
-	Tier0         bool     // поднимать общий чат (Tier 0) и отдавать корень платформы в него
+	Home            string // $AGCTL_HOME
+	Addr            string // слушающий адрес основного UI/API
+	MaxPerUser      int
+	MemoryBytes     int64
+	NanoCPUs        int64
+	Image           string
+	BinDir          string
+	SecureCookies   bool // true when agctl is served behind a trusted HTTPS terminator
+	AutosaveEvery   time.Duration
+	CORSOrigins     []string      // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
+	Tier0           bool          // корень платформы ведёт в персональный чат (/chat/)
+	ChatTTL         time.Duration // простой чат-контейнера до сна (по умолчанию 15 мин)
+	RequireApproval bool          // создание dev-мест только через заявку с апрувом админа
 }
 
 // RuntimeIface — то, что серверу нужно от docker-рантайма (мокается в тестах).
@@ -64,14 +66,11 @@ type Server struct {
 	tokMu  sync.Mutex // кэш boot-токенов dsh web по воркспейсам
 	tokens map[string]string
 
-	tier0Mu sync.Mutex // общий чат (Tier 0): один инстанс на платформу
-	tier0   tier0State // порт/контейнер общего чата
-}
+	chatMu    sync.Mutex             // персональные чаты (режим 1): ленивые рантаймы
+	chats     map[int64]*chatRuntime // userID → живой чат-контейнер
+	chatLocks map[int64]*sync.Mutex  // сериализация первого старта per-user
+	requestMu sync.Mutex             // не допускать двойной approve одной заявки
 
-// tier0State — живой общий чат (Tier 0).
-type tier0State struct {
-	port        int    // опубликованный на 127.0.0.1 порт dsh web
-	containerID string // для чтения boot-токена из логов
 }
 
 // встроенные ассеты для provision (сырые FS; префиксы знает provision).
@@ -82,9 +81,12 @@ var (
 
 // New собирает сервер: docker-рантайм (если доступен), ассеты, auth.
 func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
-	s := &Server{db: db, sec: sec, cfg: cfg, tokens: map[string]string{}}
+	s := &Server{db: db, sec: sec, cfg: cfg, tokens: map[string]string{}, chats: map[int64]*chatRuntime{}, chatLocks: map[int64]*sync.Mutex{}}
 	if s.cfg.AutosaveEvery == 0 {
 		s.cfg.AutosaveEvery = 2 * time.Minute
+	}
+	if s.cfg.ChatTTL <= 0 {
+		s.cfg.ChatTTL = 15 * time.Minute
 	}
 	if s.cfg.MaxPerUser <= 0 {
 		s.cfg.MaxPerUser = 3
@@ -116,8 +118,21 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 	return s, nil
 }
 
-// Close освобождает рантайм.
+// Close освобождает живые ленивые chat-контейнеры (тома не удаляются), затем
+// закрывает Docker runtime. Dev-workspaces остаются под управлением владельца.
 func (s *Server) Close() {
+	s.chatMu.Lock()
+	containers := make([]string, 0, len(s.chats))
+	for _, chat := range s.chats {
+		containers = append(containers, chat.containerID)
+	}
+	s.chats = map[int64]*chatRuntime{}
+	s.chatMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	for _, id := range containers {
+		_ = s.rt.Stop(ctx, id)
+	}
 	if c, ok := s.rt.(interface{ Close() error }); ok {
 		_ = c.Close()
 	}
@@ -144,6 +159,11 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/workspaces/{id}/logs", s.requireUser(s.handleWorkspaceLogs))
 	mux.HandleFunc("PATCH /api/workspaces/{id}/provider", s.requireUser(s.handleWorkspaceProvider))
 	mux.HandleFunc("PATCH /api/workspaces/{id}/ssh", s.requireUser(s.handleWorkspaceSSH))
+	mux.HandleFunc("GET /api/config", s.handleConfig)
+	mux.HandleFunc("POST /api/workspace-requests", s.requireUser(s.handleWorkspaceRequestCreate))
+	mux.HandleFunc("GET /api/workspace-requests", s.requireUser(s.handleWorkspaceRequestsList))
+	mux.HandleFunc("POST /api/workspace-requests/{id}/approve", s.requireAdmin(s.handleWorkspaceRequestDecision(true)))
+	mux.HandleFunc("POST /api/workspace-requests/{id}/reject", s.requireAdmin(s.handleWorkspaceRequestDecision(false)))
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
 	mux.HandleFunc("GET /w/{id}", s.requireUser(s.workspaceProxyEntry))
@@ -168,15 +188,15 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	return s.logMiddleware(mux)
 }
 
-// registerTier0Routes — маршруты общего чата (Tier 0). Корень платформы:
-// залогинен → /chat/ (dsh), нет → /app/ (SPA-логин). SPA переезжает на /app/.
+// registerTier0Routes — маршруты режима 1 «Чат». Корень платформы:
+// залогинен → /chat/ (личный dsh), нет → /app/ (SPA-логин). SPA на /app/.
 func (s *Server) registerTier0Routes(mux *http.ServeMux, webFS fs.FS) {
 	mux.HandleFunc("GET /{$}", s.rootEntry)
 	mux.HandleFunc("GET /chat", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/chat/", http.StatusTemporaryRedirect)
 	})
-	mux.HandleFunc("GET /chat/", s.requireUser(s.tier0Proxy))
-	mux.HandleFunc("POST /chat/", s.requireUser(s.tier0Proxy))
+	mux.HandleFunc("GET /chat/", s.requireUser(s.chatProxy))
+	mux.HandleFunc("POST /chat/", s.requireUser(s.chatProxy))
 	mux.HandleFunc("GET /app", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/app/", http.StatusPermanentRedirect)
 	})
@@ -216,6 +236,19 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 // и jira-поллер (если настроен через AGCTL_JIRA_*).
 func (s *Server) StartBackground(ctx context.Context) {
 	s.StartJiraPoller(ctx)
+	// рипер персональных чатов: усыпляем контейнеры по простою (том живёт)
+	go func() {
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s.reapIdleChats()
+			}
+		}
+	}()
 	go func() { // autosave: страховочный commit+push по всем running-воркспейсам
 		t := time.NewTicker(s.cfg.AutosaveEvery)
 		defer t.Stop()

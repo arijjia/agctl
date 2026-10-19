@@ -17,9 +17,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/arijjia/agctl/internal/backlog"
@@ -104,6 +106,8 @@ func cmdServe(args []string) {
 	image := fsSet.String("image", "agctl-dsh:0.2.0", "тег образа agctl-dsh")
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
+	requireApproval := fsSet.Bool("require-approval", false, "создание dev-мест только через заявку с апрувом администратора")
+	chatTTLMin := fsSet.Int("chat-ttl-min", 15, "минуты простоя чат-контейнера до сна (том пользователя сохраняется)")
 	corsOrigins := fsSet.String("cors-origin", envOr("AGCTL_CORS_ORIGINS", ""), "точные origins через запятую, которым разрешён кросс-доменный /api (кабинет-плагин dsh web); пусто = CORS выключен")
 	tier0 := fsSet.Bool("tier0", true, "поднимать общий чат (Tier 0) и отдавать корень платформы в него")
 	maxPerUser := fsSet.Int("max-per-user", 3, "лимит воркспейсов на пользователя")
@@ -128,16 +132,18 @@ func cmdServe(args []string) {
 		log.Fatal(err)
 	}
 	srv, err := server.New(db, sec, server.Config{
-		Home:          absHome,
-		Addr:          *addr,
-		MaxPerUser:    *maxPerUser,
-		MemoryBytes:   int64(*memGB * 1024 * 1024 * 1024),
-		NanoCPUs:      int64(*cpus * 1e9),
-		Image:         *image,
-		BinDir:        firstNonEmpty(*binDir, "dist"),
-		SecureCookies: *secureCookies,
-		CORSOrigins:   splitCSV(*corsOrigins),
-		Tier0:         *tier0,
+		Home:            absHome,
+		Addr:            *addr,
+		MaxPerUser:      *maxPerUser,
+		MemoryBytes:     int64(*memGB * 1024 * 1024 * 1024),
+		NanoCPUs:        int64(*cpus * 1e9),
+		Image:           *image,
+		BinDir:          firstNonEmpty(*binDir, "dist"),
+		SecureCookies:   *secureCookies,
+		CORSOrigins:     splitCSV(*corsOrigins),
+		Tier0:           *tier0,
+		RequireApproval: *requireApproval,
+		ChatTTL:         time.Duration(*chatTTLMin) * time.Minute,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -148,20 +154,30 @@ func cmdServe(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ctx, stop := context.WithCancel(context.Background())
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	srv.StartBackground(ctx)
-	go srv.EnsureTier0(ctx)
 
 	httpSrv := &http.Server{
 		Addr:              *addr,
 		Handler:           srv.Routes(webFS),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	shutdownDone := make(chan struct{})
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = httpSrv.Shutdown(shutdownCtx)
+		close(shutdownDone)
+	}()
 	log.Printf("agctl serve: home=%s addr=http://%s (UI и API)", absHome, *addr)
 	log.Printf("docker: %s", dockerStatus())
-	if err := httpSrv.ListenAndServe(); err != nil && !strings.Contains(err.Error(), "Server closed") {
+	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
+	}
+	if ctx.Err() != nil {
+		<-shutdownDone
 	}
 }
 

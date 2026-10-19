@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 
-const required = ['DSH_URL', 'AGCTL_URL', 'E2E_LOGIN', 'E2E_PASSWORD', 'E2E_LLM_BASE_URL'];
+const required = ['PLATFORM_URL', 'E2E_LOGIN', 'E2E_PASSWORD', 'E2E_LLM_BASE_URL'];
 for (const name of required) {
   if (!process.env[name]) throw new Error(`missing environment variable ${name}`);
 }
@@ -11,57 +11,69 @@ const pageErrors = [];
 page.on('pageerror', (error) => pageErrors.push(error.message));
 
 try {
-  await page.goto(process.env.DSH_URL, { waitUntil: 'domcontentloaded' });
+  // The real product entry: auth SPA -> root redirect -> DSH chat. This is the
+  // behavior the owner asked for, not direct navigation to a workspace URL.
+  await page.goto(process.env.PLATFORM_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Регистрация' }).waitFor({ state: 'visible', timeout: 15000 });
+  await page.getByRole('button', { name: 'Регистрация' }).click();
+  await page.getByLabel('Логин').fill(process.env.E2E_LOGIN);
+  await page.getByLabel('Пароль').fill(process.env.E2E_PASSWORD);
+  await page.getByRole('button', { name: 'Создать аккаунт' }).click();
+  await page.waitForURL((url) => url.pathname === '/chat/', { timeout: 15000 });
+  console.log('PASS: registration on platform root redirects straight to /chat/');
 
-  // dsh shows the API-key modal on every fresh boot until a key is saved;
-  // saving a dummy key (this instance talks to the fake LLM only) closes it
-  // for good. Configure later would reopen it on the next interaction. On
-  // repeat runs the modal may already be dismissed — both steps are optional.
-  const continueButton = page.getByRole('button', { name: 'Continue' });
-  if (await continueButton.count()) {
-    await continueButton.dispatchEvent('click');
+  // The per-user DSH runtime is created lazily on first chat request. Retry the
+  // gateway while the container and dsh web finish booting.
+  const cabinetEntry = page.getByText('Кабинет', { exact: true }).first();
+  let dshReady = false;
+  for (let i = 0; i < 35; i++) {
+    if (await cabinetEntry.isVisible().catch(() => false)) {
+      dshReady = true;
+      break;
+    }
+    await page.goto(`${process.env.PLATFORM_URL.replace(/\/$/, '')}/chat/`, { waitUntil: 'domcontentloaded' }).catch(() => {});
+    await page.waitForTimeout(500);
   }
+  if (!dshReady) throw new Error('personal DSH chat did not become ready at /chat/');
+
+  // DSH first-run dialogs are local to the persistent user dsh-home. Save a
+  // fake key for this isolated test server, or continue if already configured.
+  const continueButton = page.getByRole('button', { name: 'Continue' });
+  if (await continueButton.count()) await continueButton.dispatchEvent('click');
   const apiKeyInput = page.getByPlaceholder('Enter your API key');
   try {
-    await apiKeyInput.waitFor({ state: 'visible', timeout: 5000 });
+    await apiKeyInput.waitFor({ state: 'visible', timeout: 2500 });
     await apiKeyInput.fill('sk-playwright-dummy-key');
     await page.getByRole('button', { name: 'Save and continue' }).dispatchEvent('click');
-    await page.getByRole('button', { name: 'Configure later' }).waitFor({ state: 'hidden', timeout: 15000 });
+    await page.getByRole('button', { name: 'Configure later' }).waitFor({ state: 'hidden', timeout: 10000 });
   } catch {
-    // already configured on a previous run — nothing to dismiss
+    // Existing isolated test dsh-home may already have dismissed the dialog.
   }
 
-  const cabinetEntry = page.getByText('Кабинет', { exact: true }).first();
-  await cabinetEntry.waitFor({ state: 'visible', timeout: 30000 });
   await cabinetEntry.click();
   await page.getByRole('heading', { name: 'Кабинет agctl' }).waitFor({ state: 'visible' });
-  console.log('PASS: plugin panel registered and opens in dsh sidebar');
-
-  await page.getByPlaceholder('https://agctl.example.org (пусто = тот же origin)').fill(process.env.AGCTL_URL);
-  await page.getByRole('button', { name: 'Обновить' }).click();
-  await page.getByRole('heading', { name: 'Вход' }).waitFor({ state: 'visible' });
-  await page.getByPlaceholder('логин').fill(process.env.E2E_LOGIN);
-  await page.getByPlaceholder('пароль').fill(process.env.E2E_PASSWORD);
-  await page.getByRole('button', { name: 'Войти' }).click();
   await page.getByText(`Вошёл как ${process.env.E2E_LOGIN}`, { exact: false }).waitFor({ state: 'visible', timeout: 15000 });
-  console.log('PASS: browser login crosses CORS boundary and receives agctl session');
+  console.log('PASS: cabinet plugin opens and reuses the agctl session same-origin');
 
   await page.getByPlaceholder('имя (например, demo-1c)').fill('playwright-ui-workspace');
   await page.getByPlaceholder('LLM Base URL (например, https://litellm.example/v1)').fill(process.env.E2E_LLM_BASE_URL);
   await page.getByPlaceholder('модель (например, gpt-4.1)').fill('stub-model');
   await page.getByPlaceholder('API-токен (не сохраняется в браузере; пусто = использовать сохранённый)').fill('sk-playwright-e2e-not-a-secret');
-  await page.getByRole('button', { name: 'Создать' }).click();
-  await page.getByText('playwright-ui-workspace', { exact: true }).waitFor({ state: 'visible', timeout: 30000 });
-  console.log('PASS: browser creates a workspace through the cabinet UI');
+  await page.getByPlaceholder('SSH public key (необязательно; например, содержимое ~/.ssh/id_ed25519.pub)').fill('');
+  await page.getByRole('button', { name: 'Запросить' }).click();
+
+  const adminSection = page.locator('section').filter({ hasText: 'Заявки на апрув (администратор)' });
+  await adminSection.getByText('playwright-ui-workspace', { exact: false }).waitFor({ state: 'visible', timeout: 15000 });
+  await adminSection.getByRole('button', { name: 'Одобрить' }).click();
+  console.log('PASS: server workspace request appears and admin approves it in the plugin');
+
+  await page.getByText('playwright-ui-workspace', { exact: false }).last().waitFor({ state: 'visible', timeout: 30000 });
+  console.log('PASS: approved dev workspace appears alongside the default chat');
 
   if (pageErrors.length) throw new Error(`browser page errors: ${pageErrors.join('; ')}`);
-  if (process.env.E2E_SCREENSHOT) {
-    await page.screenshot({ path: process.env.E2E_SCREENSHOT, fullPage: true });
-  }
+  if (process.env.E2E_SCREENSHOT) await page.screenshot({ path: process.env.E2E_SCREENSHOT, fullPage: true });
 } catch (error) {
-  if (process.env.E2E_SCREENSHOT) {
-    await page.screenshot({ path: process.env.E2E_SCREENSHOT, fullPage: true }).catch(() => {});
-  }
+  if (process.env.E2E_SCREENSHOT) await page.screenshot({ path: process.env.E2E_SCREENSHOT, fullPage: true }).catch(() => {});
   throw error;
 } finally {
   await browser.close();

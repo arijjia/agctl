@@ -406,3 +406,99 @@ func (d *DB) JiraRunList(limit int) ([]map[string]string, error) {
 	}
 	return out, rows.Err()
 }
+
+// WorkspaceRequest — заявка на серверное рабочее место (требует апрув
+// администратора). Payload — зашифрованный JSON провайдера; расшифровывает
+// только платформа в момент approve.
+type WorkspaceRequest struct {
+	ID          string
+	UserID      int64
+	Name        string
+	Kit         string
+	Components  []string
+	Payload     string // ciphertext
+	SSHPubKey   string
+	Status      string // pending | approved | rejected
+	DecidedBy   string
+	DecidedAt   string
+	Reason      string
+	WorkspaceID string
+	CreatedAt   string
+	UpdatedAt   string
+	Login       string // login, заполняется при join
+}
+
+func scanWSReq(row interface{ Scan(...any) error }) (WorkspaceRequest, error) {
+	var r WorkspaceRequest
+	var componentsRaw string
+	err := row.Scan(&r.ID, &r.UserID, &r.Name, &r.Kit, &componentsRaw, &r.Payload,
+		&r.SSHPubKey, &r.Status, &r.DecidedBy, &r.DecidedAt, &r.Reason,
+		&r.WorkspaceID, &r.CreatedAt, &r.UpdatedAt)
+	if err == nil {
+		r.Components = DecodeIDs(componentsRaw)
+	}
+	return r, err
+}
+
+func (d *DB) InsertWorkspaceRequest(r WorkspaceRequest) error {
+	_, err := d.Exec(`INSERT INTO workspace_requests(id, user_id, name, kit, components,
+		payload, ssh_pub_key, status, decided_by, decided_at, reason, workspace_id,
+		created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		r.ID, r.UserID, r.Name, r.Kit, EncodeIDs(r.Components), r.Payload,
+		r.SSHPubKey, r.Status, r.DecidedBy, r.DecidedAt, r.Reason,
+		r.WorkspaceID, r.CreatedAt, r.UpdatedAt)
+	return wrap("insert workspace request", err)
+}
+
+const wsReqCols = `r.id, r.user_id, r.name, r.kit, r.components, r.payload,
+	r.ssh_pub_key, r.status, r.decided_by, r.decided_at, r.reason,
+	r.workspace_id, r.created_at, r.updated_at`
+
+func (d *DB) WorkspaceRequestByID(id string) (WorkspaceRequest, error) {
+	r, err := scanWSReq(d.QueryRow(`SELECT `+wsReqCols+` FROM workspace_requests r WHERE r.id = ?`, id))
+	return r, wrap("workspace request by id", err)
+}
+
+func (d *DB) WorkspaceRequestsByUser(userID int64) ([]WorkspaceRequest, error) {
+	rows, err := d.Query(`SELECT `+wsReqCols+`, u.login FROM workspace_requests r
+		JOIN users u ON u.id = r.user_id WHERE r.user_id = ? ORDER BY r.created_at DESC`, userID)
+	if err != nil {
+		return nil, wrap("ws requests by user", err)
+	}
+	defer rows.Close()
+	return d.wsReqList(rows)
+}
+
+func (d *DB) WorkspaceRequestsAll() ([]WorkspaceRequest, error) {
+	rows, err := d.Query(`SELECT ` + wsReqCols + `, u.login FROM workspace_requests r
+		JOIN users u ON u.id = r.user_id ORDER BY r.created_at DESC`)
+	if err != nil {
+		return nil, wrap("ws requests all", err)
+	}
+	defer rows.Close()
+	return d.wsReqList(rows)
+}
+
+func (d *DB) wsReqList(rows *sql.Rows) ([]WorkspaceRequest, error) {
+	var out []WorkspaceRequest
+	for rows.Next() {
+		var r WorkspaceRequest
+		var componentsRaw, login string
+		if err := rows.Scan(&r.ID, &r.UserID, &r.Name, &r.Kit, &componentsRaw, &r.Payload,
+			&r.SSHPubKey, &r.Status, &r.DecidedBy, &r.DecidedAt, &r.Reason,
+			&r.WorkspaceID, &r.CreatedAt, &r.UpdatedAt, &login); err != nil {
+			return nil, wrap("ws requests scan", err)
+		}
+		r.Components = DecodeIDs(componentsRaw)
+		r.Login = login
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) UpdateWorkspaceRequestStatus(id, status, decidedBy, reason, workspaceID string) error {
+	_, err := d.Exec(`UPDATE workspace_requests SET status = ?, decided_by = ?,
+		decided_at = ?, reason = ?, workspace_id = ?, updated_at = ? WHERE id = ?`,
+		status, decidedBy, now(), reason, workspaceID, now(), id)
+	return wrap("update ws request status", err)
+}

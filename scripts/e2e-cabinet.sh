@@ -45,8 +45,21 @@ cleanup() {
       docker rm -f "agctl-$WSID" >/dev/null 2>&1 || true
     fi
   fi
-  [ -n "$AGCTL_PID" ] && kill "$AGCTL_PID" >/dev/null 2>&1 || true
+  if [ -n "$AGCTL_PID" ]; then
+    kill "$AGCTL_PID" >/dev/null 2>&1 || true
+    wait "$AGCTL_PID" 2>/dev/null || true
+    AGCTL_PID=""
+  fi
   [ -n "$FAKE_PID" ] && kill "$FAKE_PID" >/dev/null 2>&1 || true
+  # Also remove only chat containers whose persistent mounts belong to this TEST_HOME.
+  if [ "$SKIP_DOCKER" != "--skip-docker" ]; then
+    for cid in $(docker ps -aq --filter label=agctl.workspace 2>/dev/null); do
+      mounts=$(docker inspect --format '{{range .Mounts}}{{.Source}};{{end}}' "$cid" 2>/dev/null || true)
+      case "$mounts" in
+        "$TEST_HOME/chats/"*) docker rm -f "$cid" >/dev/null 2>&1 || true;;
+      esac
+    done
+  fi
   if [ -f "$NIGHT_HOME/web-$NIGHT_PORT.pid" ]; then
     kill "$(cat "$NIGHT_HOME/web-$NIGHT_PORT.pid")" >/dev/null 2>&1 || true
   fi
@@ -117,24 +130,58 @@ else
   fail "night-profile: нет лога веба"
 fi
 
-# ── Секция C: общий чат Tier 0 (корень платформы → dsh) ────────────────────
-# serve поднимается с --tier0 (дефолт): залогинен → /chat/ (dsh web с панелью
-# Кабинет), не залогинен → /app/ (SPA-логин).
+# ── Секция C: multi-user Tier 0 (общий домен → личные dsh runtime) ──────────
+# Корень без сессии ведёт на login; после сессии — в /chat/. Два пользователя
+# должны получить разные dsh containers + разные постоянные DSH_HOME volumes.
 if [ "$SKIP_DOCKER" != "--skip-docker" ]; then
-  nohup "$BIN" serve --home "$TEST_HOME" --addr 127.0.0.1:18935 --image "$IMG" \
-    >> "$TEST_HOME/serve.log" 2>&1 &
-  AGCTL_PID=$!
-  for i in $(seq 1 15); do sleep 1; curl -s -o /dev/null "$B/api/me" && break; done
-  curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' -o /dev/null "$B/" | grep -q '/app/' \
+  code=$(curl -s -o /dev/null -w '%{http_code}' -D "$TEST_HOME/root.headers" "$B/")
+  grep -qi '^Location: /app/' "$TEST_HOME/root.headers" \
     && pass "корень без сессии → /app/ (SPA-логин)" \
-    || fail "корень без сессии не ведёт на /app/"
-  sleep 7  # EnsureTier0 поднимает общий чат асинхронно
-  T0HTML=$(curl -s -b "$TEST_HOME/jar" -L "$B/../chat/" 2>/dev/null || curl -s -b "$TEST_HOME/jar" -L "http://127.0.0.1:18935/chat/")
-  echo "$T0HTML" | grep -q 'agctl-cabinet' \
-    && pass "Tier 0: /chat/ открывает dsh web с панелью Кабинет" \
-    || fail "Tier 0: /chat/ без панели (прогрев? проверь serve.log)"
-  kill "$AGCTL_PID" 2>/dev/null; AGCTL_PID=""
-  docker rm -f agctl-tier0 >/dev/null 2>&1 || true
+    || fail "корень без сессии не ведёт на /app/ (HTTP $code)"
+
+  check_chat() {
+    local label="$1" jar="$2" out="$3" code=""
+    for i in $(seq 1 35); do
+      code=$(curl -s -b "$jar" -c "$jar" -L -o "$out" -w '%{http_code}' "$B/" || true)
+      if [ "$code" = "200" ] && grep -q 'agctl-cabinet' "$out"; then
+        pass "$label: login → root → /chat/ → dsh + Кабинет (HTTP 200)"
+        return 0
+      fi
+      sleep 1
+    done
+    fail "$label: root/chat не прогрелся (HTTP $code); log=$TEST_HOME/serve.log"
+    return 1
+  }
+
+  check_chat "admin user" "$TEST_HOME/jar" "$TEST_HOME/chat-user1.html"
+  grep -q 'dsh-auth-' "$TEST_HOME/jar" && grep -q '/chat/' "$TEST_HOME/jar" \
+    && pass "DSH auth cookie path-scoped to /chat/" \
+    || fail "DSH cookie не ограничена путём /chat/"
+
+  curl -s -c "$TEST_HOME/user2.jar" -H 'Content-Type: application/json' \
+    -d '{"login":"cabinet-student","password":"student-pass-1"}' \
+    "$B/api/register" -o /dev/null
+  check_chat "second user" "$TEST_HOME/user2.jar" "$TEST_HOME/chat-user2.html"
+
+  python3 - "$TEST_HOME" <<'PY'
+import json, pathlib, subprocess, sys
+root = pathlib.Path(sys.argv[1]).resolve()
+found = {}
+ids = subprocess.check_output(["docker", "ps", "-aq", "--filter", "label=agctl.workspace"], text=True).splitlines()
+for cid in ids:
+    data = json.loads(subprocess.check_output(["docker", "inspect", cid], text=True))[0]
+    for mount in data.get("Mounts", []):
+        source = pathlib.Path(mount.get("Source", "")).resolve()
+        for uid in (1, 2):
+            expected = root / "chats" / f"u{uid}" / "dsh-home"
+            if source == expected:
+                found[uid] = (data.get("Id"), str(source))
+if set(found) != {1, 2} or found[1][0] == found[2][0] or found[1][1] == found[2][1]:
+    print("FAIL: per-user chat runtimes/volumes not isolated:", found)
+    sys.exit(1)
+print("  ok: two users → distinct DSH containers and persistent DSH_HOME volumes")
+PY
+  [ $? -eq 0 ] && pass "per-user chat runtimes are isolated" || fail "per-user chat isolation check failed"
 fi
 
 echo "== итог: PASS=$PASS FAIL=$FAIL =="

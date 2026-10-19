@@ -595,6 +595,9 @@ export default function App() {
         onDone={(u) => {
           setUser(u);
           setView("main");
+          // The platform root is the Tier-0 chat after authentication.
+          // /app remains the explicit control-plane/admin surface.
+          window.location.replace("/");
         }}
       />
     );

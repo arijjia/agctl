@@ -176,6 +176,10 @@ func (s *Server) handleWorkspaceGet(w http.ResponseWriter, r *http.Request, id i
 }
 
 func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, id identity) {
+	if s.cfg.RequireApproval {
+		writeErr(w, http.StatusForbidden, "включён режим апрува: создайте заявку через /api/workspace-requests")
+		return
+	}
 	var req struct {
 		Name       string   `json:"name"`
 		Kit        string   `json:"kit"`
@@ -772,4 +776,282 @@ func (s *Server) autosaveOne(ws store.Workspace) error {
 		log.Printf("[autosave] %s: финальный push выполнен", ws.ID)
 	}
 	return nil
+}
+
+// ── заявки на рабочие места (режим «Разработка», require-approval) ─────────
+
+type wsRequestOut struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Kit       string `json:"kit"`
+	Status    string `json:"status"`
+	Reason    string `json:"reason"`
+	Login     string `json:"login"`
+	CreatedAt string `json:"createdAt"`
+}
+
+func wsReqJSON(r store.WorkspaceRequest) wsRequestOut {
+	return wsRequestOut{ID: r.ID, Name: r.Name, Kit: r.Kit, Status: r.Status,
+		Reason: r.Reason, Login: r.Login, CreatedAt: r.CreatedAt}
+}
+
+// handleConfig — публичные для авторизованного клиента флаги платформы
+// (панель Кабинета подстраивает форму создания места).
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"requireApproval": s.cfg.RequireApproval,
+		"tier0":           s.cfg.Tier0,
+	})
+}
+
+// handleWorkspaceRequestCreate — POST /api/workspace-requests.
+func (s *Server) handleWorkspaceRequestCreate(w http.ResponseWriter, r *http.Request, id identity) {
+	if !s.cfg.RequireApproval {
+		writeErr(w, http.StatusNotImplemented, "апрув-режим выключен: создавайте места напрямую")
+		return
+	}
+	var req struct {
+		Name       string   `json:"name"`
+		Kit        string   `json:"kit"`
+		Template   string   `json:"template"`
+		Components []string `json:"components"`
+		ProviderReq
+		SSHPubKey string `json:"sshPubKey"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "неверный JSON")
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Kit == "" {
+		req.Kit = req.Template
+	}
+	if len(req.Name) < 2 {
+		writeErr(w, http.StatusBadRequest, "имя воркспейса: минимум 2 символа")
+		return
+	}
+	kitID, components, err := provision.NormalizeComponents(req.Kit, req.Components)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := req.ProviderReq.validate(); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if _, err := s.providerOf(store.Workspace{}, id.ID, req.ProviderReq); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	sshPubKey, err := parseSSHPublicKey(req.SSHPubKey)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	own, err := s.db.WorkspacesByOwner(id.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if len(own) >= s.cfg.MaxPerUser {
+		writeErr(w, http.StatusBadRequest, "достигнут лимит воркспейсов ("+strconv.Itoa(s.cfg.MaxPerUser)+")")
+		return
+	}
+	pending, err := s.db.WorkspaceRequestsByUser(id.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	pendingCount := 0
+	for _, request := range pending {
+		if request.Status == "pending" {
+			pendingCount++
+		}
+	}
+	if pendingCount >= s.cfg.MaxPerUser {
+		writeErr(w, http.StatusBadRequest, "достигнут лимит ожидающих заявок ("+strconv.Itoa(s.cfg.MaxPerUser)+")")
+		return
+	}
+	// дубликаты имён не проверяем заранее: при approve имя могло освободиться;
+	// конфликт всплывёт там с понятной ошибкой, заявка вернётся в pending.
+
+	payloadPlain := map[string]any{
+		"baseURL": req.BaseURL, "model": req.Model, "models": req.allModels(),
+		"apiKey": req.APIKey,
+	}
+	blob, err := json.Marshal(payloadPlain)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "не удалось сериализовать заявку: "+err.Error())
+		return
+	}
+	cipher, err := s.sec.Encrypt(string(blob))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "не удалось зашифровать заявку: "+err.Error())
+		return
+	}
+	reqID, err := provision.NewID()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	nowS := time.Now().UTC().Format("2006-01-02 15:04:05")
+	wr := store.WorkspaceRequest{
+		ID: reqID, UserID: id.ID, Name: req.Name, Kit: kitID, Components: components,
+		Payload: cipher, SSHPubKey: sshPubKey, Status: "pending", CreatedAt: nowS, UpdatedAt: nowS,
+	}
+	if err := s.db.InsertWorkspaceRequest(wr); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	_ = s.db.Audit(id.Login, "workspace.request", reqID, "name="+req.Name)
+	writeJSON(w, http.StatusAccepted, map[string]any{"request": wsReqJSON(wr)})
+}
+
+// handleWorkspaceRequestsList — GET /api/workspace-requests:
+// пользователь видит свои, админ — все.
+func (s *Server) handleWorkspaceRequestsList(w http.ResponseWriter, r *http.Request, id identity) {
+	var list []store.WorkspaceRequest
+	var err error
+	if id.Role == "admin" {
+		list, err = s.db.WorkspaceRequestsAll()
+	} else {
+		list, err = s.db.WorkspaceRequestsByUser(id.ID)
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]wsRequestOut, 0, len(list))
+	for _, r := range list {
+		out = append(out, wsReqJSON(r))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"requests": out})
+}
+
+// handleWorkspaceRequestDecision — POST /api/workspace-requests/{id}/approve|reject (админ).
+func (s *Server) handleWorkspaceRequestDecision(approve bool) func(http.ResponseWriter, *http.Request, identity) {
+	return func(w http.ResponseWriter, r *http.Request, id identity) {
+		if id.Role != "admin" {
+			writeErr(w, http.StatusForbidden, "только администратор")
+			return
+		}
+		s.requestMu.Lock()
+		defer s.requestMu.Unlock()
+		reqID := r.PathValue("id")
+		wr, err := s.db.WorkspaceRequestByID(reqID)
+		if errors.Is(err, store.ErrNotFound) {
+			writeErr(w, http.StatusNotFound, "заявка не найдена")
+			return
+		}
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if wr.Status != "pending" {
+			writeErr(w, http.StatusConflict, "заявка уже обработана: "+wr.Status)
+			return
+		}
+		var body struct {
+			Reason string `json:"reason"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+
+		if !approve {
+			if err := s.db.UpdateWorkspaceRequestStatus(reqID, "rejected", id.Login, strings.TrimSpace(body.Reason), ""); err != nil {
+				writeErr(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			_ = s.db.Audit(id.Login, "workspace.request.reject", reqID, body.Reason)
+			writeJSON(w, http.StatusOK, map[string]any{"status": "rejected"})
+			return
+		}
+
+		// Перед approve повторно проверяем квоту: пользователь мог создать
+		// другие места, пока заявка ждала решения.
+		own, err := s.db.WorkspacesByOwner(wr.UserID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if len(own) >= s.cfg.MaxPerUser {
+			writeErr(w, http.StatusConflict, "у владельца заявки уже достигнут лимит воркспейсов")
+			return
+		}
+
+		// approve: расшифровываем провайдера и запускаем provision владельцу.
+		plain, err := s.sec.Decrypt(wr.Payload)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "payload не расшифрован: "+err.Error())
+			return
+		}
+		var provReq ProviderReq
+		if err := json.Unmarshal([]byte(plain), &provReq); err != nil {
+			writeErr(w, http.StatusInternalServerError, "payload повреждён: "+err.Error())
+			return
+		}
+		if err := provReq.validate(); err != nil {
+			writeErr(w, http.StatusConflict, "провайдер в заявке больше не валиден: "+err.Error())
+			return
+		}
+		provider, err := s.providerOf(store.Workspace{}, wr.UserID, provReq)
+		if err != nil {
+			writeErr(w, http.StatusConflict, err.Error())
+			return
+		}
+		wsID, err := provision.NewID()
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		login := s.db.WorkspaceOwnerLogin(wr.UserID)
+		if login == "" {
+			writeErr(w, http.StatusConflict, "владелец заявки не найден")
+			return
+		}
+		paths := provision.Paths(s.cfg.Home, login, wsID, wr.Name)
+		if _, err := os.Stat(paths.Repo); err == nil {
+			writeErr(w, http.StatusConflict,
+				"репозиторий «"+wr.Name+"» уже есть на диске: выберите другое имя или удалите "+paths.Repo)
+			return
+		}
+		port, err := dockerrt.FreePort()
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "нет свободного порта: "+err.Error())
+			return
+		}
+		ws := store.Workspace{
+			ID: wsID, OwnerID: wr.UserID, Name: wr.Name, Template: wr.Kit, Components: wr.Components,
+			Status: "provisioning", HostPort: port, BaseURL: provider.BaseURL,
+			Model: provider.DefaultModel(), Models: provider.AllModels(),
+			SSHPubKey: wr.SSHPubKey,
+		}
+		sshPort := 0
+		if ws.SSHPubKey != "" {
+			if sshPort, err = dockerrt.FreePort(); err != nil {
+				writeErr(w, http.StatusInternalServerError, "нет свободного SSH-порта: "+err.Error())
+				return
+			}
+			ws.SSHPort = sshPort
+		}
+		if err := s.db.InsertWorkspace(ws); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := s.saveSecret(wr.UserID, provider); err != nil {
+			_ = s.db.UpdateWorkspaceStatus(wsID, "failed", "секрет не сохранён: "+err.Error())
+			writeErr(w, http.StatusInternalServerError, "секрет не сохранён: "+err.Error())
+			return
+		}
+		if err := s.db.UpdateWorkspaceRequestStatus(reqID, "approved", id.Login, "", wsID); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		wr.Status, wr.DecidedBy, wr.WorkspaceID, wr.Login = "approved", id.Login, wsID, login
+		_ = s.db.Audit(id.Login, "workspace.request.approve", reqID, "name="+wr.Name+" user="+login)
+		go s.provisionJob(ws, login, provider)
+		wsFresh, _ := s.db.WorkspaceByID(wsID)
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"request": wsReqJSON(wr), "workspace": s.wsJSON(r.Context(), wsFresh, login),
+		})
+	}
 }

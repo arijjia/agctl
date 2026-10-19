@@ -126,6 +126,9 @@ window.__ModuleLoader__.load({
 			const [sshPubKey, setSSHPubKey] = React.useState("");
 			const [busy, setBusy] = React.useState(false);
 			const [msg, setMsg] = React.useState("");
+			const [cfg, setCfg] = React.useState({ requireApproval: false });
+			const [myRequests, setMyRequests] = React.useState([]);
+			const [adminRequests, setAdminRequests] = React.useState([]);
 
 			const base = () => url.trim().replace(/\/+$/, "");
 
@@ -159,7 +162,8 @@ window.__ModuleLoader__.load({
 						setMsg("Сервер отвечает (HTTP " + meRes.status + "): нужна сессия кабинета.");
 						return;
 					}
-					setMe(meRes.data && meRes.data.user ? meRes.data.user : meRes.data);
+					const currentUser = meRes.data && meRes.data.user ? meRes.data.user : meRes.data;
+					setMe(currentUser);
 					const wsRes = await api("/api/workspaces");
 					setPlaces(
 						wsRes.ok && wsRes.data && Array.isArray(wsRes.data.workspaces) ? wsRes.data.workspaces : [],
@@ -171,6 +175,17 @@ window.__ModuleLoader__.load({
 							.map((k) => (typeof k === "string" ? k : k && (k.id || k.name)))
 							.filter(Boolean);
 						if (names.length) setKits(names);
+					}
+					const cfgRes = await api("/api/config");
+					if (cfgRes.ok && cfgRes.data) setCfg(cfgRes.data);
+					const reqRes = await api("/api/workspace-requests");
+					if (reqRes.ok && reqRes.data && Array.isArray(reqRes.data.requests)) {
+						const requestList = reqRes.data.requests;
+						setAdminRequests(currentUser.role === "admin" ? requestList.filter((r) => r.status === "pending") : []);
+						setMyRequests(currentUser.role === "admin" ? requestList.filter((r) => r.login === currentUser.login) : requestList);
+					} else {
+						setAdminRequests([]);
+						setMyRequests([]);
 					}
 					setPhase("ready");
 					setMsg("");
@@ -221,19 +236,25 @@ window.__ModuleLoader__.load({
 					setMsg("Укажи Base URL и модель LLM-провайдера (токен можно оставить пустым, если он уже сохранён)");
 					return;
 				}
+				const payload = {
+					name: clean,
+					kit,
+					baseURL: llmBaseURL.trim(),
+					models: [llmModel.trim()],
+					apiKey: llmAPIKey.trim(),
+					sshPubKey: sshPubKey.trim(),
+				};
+				const endpoint = cfg.requireApproval ? "/api/workspace-requests" : "/api/workspaces";
 				setBusy(true);
-				setMsg("Создаю «" + clean + "» (это занимает несколько секунд)…");
+				setMsg(
+					cfg.requireApproval
+						? "Отправляю заявку «" + clean + "» администратору…"
+						: "Создаю «" + clean + "» (это занимает несколько секунд)…",
+				);
 				try {
-					const res = await api("/api/workspaces", {
+					const res = await api(endpoint, {
 						method: "POST",
-						body: JSON.stringify({
-							name: clean,
-							kit,
-							baseURL: llmBaseURL.trim(),
-							models: [llmModel.trim()],
-							apiKey: llmAPIKey.trim(),
-							sshPubKey: sshPubKey.trim(),
-						}),
+						body: JSON.stringify(payload),
 					});
 					if (!res.ok) {
 						setMsg("Не создалось (HTTP " + res.status + "): " + ((res.data && res.data.error) || ""));
@@ -242,10 +263,35 @@ window.__ModuleLoader__.load({
 					setName("");
 					setLLMAPIKey("");
 					setSSHPubKey("");
-					setMsg("Готово: место «" + clean + "» создано.");
+					setMsg(
+						cfg.requireApproval
+							? "Заявка «" + clean + "» отправлена администратору — статус появится в «Мои заявки»."
+							: "Готово: место «" + clean + "» создано.",
+					);
 					await load();
 				} catch (err) {
 					setMsg("Не создалось: " + String((err && err.message) || err));
+				} finally {
+					setBusy(false);
+				}
+			};
+
+			const decideRequest = (request, decision) => async () => {
+				setBusy(true);
+				setMsg((decision === "approve" ? "Одобряю" : "Отклоняю") + " заявку «" + request.name + "»…");
+				try {
+					const res = await api("/api/workspace-requests/" + request.id + "/" + decision, {
+						method: "POST",
+						body: JSON.stringify(decision === "reject" ? { reason: "Отклонено администратором" } : {}),
+					});
+					if (!res.ok) {
+						setMsg("Решение не сохранено (HTTP " + res.status + "): " + ((res.data && res.data.error) || ""));
+						return;
+					}
+					setMsg(decision === "approve" ? "Заявка одобрена, workspace создаётся." : "Заявка отклонена.");
+					await load();
+				} catch (err) {
+					setMsg("Ошибка решения: " + String((err && err.message) || err));
 				} finally {
 					setBusy(false);
 				}
@@ -355,7 +401,7 @@ window.__ModuleLoader__.load({
 								{ style: { ...styles.input, maxWidth: 140 }, value: kit, onChange: (e) => setKit(e.target.value) },
 								kits.map((k) => h("option", { value: k, key: k }, k)),
 							),
-							h("button", { style: styles.button, type: "submit", disabled: busy }, "Создать"),
+							h("button", { style: styles.button, type: "submit", disabled: busy }, cfg.requireApproval ? "Запросить" : "Создать"),
 						),
 						h(
 							"div",
@@ -393,6 +439,56 @@ window.__ModuleLoader__.load({
 					h(
 						"div",
 						null,
+						me && me.role === "admin" && cfg.requireApproval &&
+							h(
+								"section",
+								null,
+								h("h2", { style: styles.cardTitle }, "Заявки на апрув (администратор)"),
+								adminRequests.length === 0 && h("p", { style: styles.note }, "Нет ожидающих заявок."),
+								adminRequests.map((r) =>
+									h(
+										"div",
+										{ style: styles.place, key: r.id },
+										h(
+											"span",
+											null,
+											h("span", { style: styles.placeName }, r.name + " "),
+											h("span", { style: styles.placeMeta }, "· " + r.login + " · " + r.kit),
+										),
+										h(
+											"span",
+											{ style: styles.row },
+											h("button", { style: { ...styles.button, ...styles.mini }, onClick: decideRequest(r, "approve"), disabled: busy }, "Одобрить"),
+											h("button", { style: { ...styles.button, ...styles.mini }, onClick: decideRequest(r, "reject"), disabled: busy }, "Отклонить"),
+										),
+									),
+								),
+							),
+						),
+						h("h2", { style: styles.cardTitle }, "Мои заявки"),
+						myRequests.length === 0
+							? h("p", { style: styles.note }, "Заявок нет.")
+							: myRequests.map((r) =>
+									h(
+										"div",
+										{ style: styles.place, key: r.id },
+										h(
+											"span",
+											null,
+											h("span", { style: styles.placeName }, r.name + " "),
+											h("span", { style: styles.placeMeta }, "· " + r.status + (r.reason ? " · " + r.reason : "")),
+										),
+									),
+								),
+						h("h2", { style: styles.cardTitle }, "Локальный бэкенд (beta, бесплатно)"),
+						h(
+							"div",
+							{ style: styles.card },
+							h("p", { style: styles.note }, "Fallback-подрежим: запусти dsh локально — ресурсы сервера не тратятся, но его UI тоже откроется локально. Целевой вариант «UI на сервере + backend локально» требует bridge и ещё разрабатывается."),
+							h("pre", { style: { ...styles.note, background: "var(--dsw-specific-menu, #222)", padding: 8, borderRadius: 8, overflowX: "auto" } },
+								"npm install -g @deepseek-ai/dsh\ndsh web --port 3080 --no-open"),
+							h("p", { style: styles.note }, "Открой http://localhost:3080. Режим «фронт на сервере + локальный бэк» — в разработке."),
+						),
 						h("h2", { style: styles.cardTitle }, "Рабочие места"),
 						places.length === 0 && h("p", { style: styles.note }, "Пока пусто — создай первое место."),
 						places.map((ws) =>
@@ -432,10 +528,11 @@ window.__ModuleLoader__.load({
 											"Старт",
 										),
 								),
-								ws.sshEnabled && ws.sshPort && h("div", { style: { ...styles.note, width: "100%" } }, "SSH (на сервере): agctl connect --host 127.0.0.1 --port " + ws.sshPort),
+								ws.sshEnabled && ws.sshPort && h("div", { style: { ...styles.note, width: "100%" } },
+									"SSH (на сервере): agctl connect --host 127.0.0.1 --port " + ws.sshPort +
+									"  ·  IDE: VS Code → Remote-SSH к этому хосту/порту"),
 							),
 						),
-					),
 				phase === "connecting" && h("p", { style: styles.note }, "Подключаюсь к agctl…"),
 				h(
 					"p",
