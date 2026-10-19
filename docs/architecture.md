@@ -68,13 +68,18 @@
 ### 1.2 Выбранная архитектура режима 1
 
 - **Персистентность = том, песочница = контейнер** (формула владельца):
-  - `dsh-home/<user>/` — том: сессии чатов, файлы, credentials. Живёт всегда,
-    переживает убийство контейнера. Это и есть «хранение файлов, привязанных
-    к сессиям».
-  - Контейнер dsh web — **убиваемая песочница**: лениво поднимается при
-    входе/сообщении, останавливается по простою (TTL ~10–15 мин, настраивается).
-- **Изоляция**: контейнер на пользователя → чужие сессии/файлы недоступны
-  физически (паттерн «среда на пользователя», концепция §4.1).
+  - `chats/u<userID>/dsh-home/` и `chats/u<userID>/work/` — персональные тома;
+    остаются на диске после остановки/удаления контейнера.
+  - Контейнер dsh web — **убиваемая песочница**: создаётся при первом
+    обращении к `/chat/`, останавливается reaper-ом после 15 минут idle
+    (флаг `--chat-ttl-min`), затем пересоздаётся при следующем входе.
+- **Изоляция**: контейнер и DSH_HOME отдельны на пользователя; случайный
+  Docker container name включает hash `$AGCTL_HOME` + user ID, поэтому разные
+  развёртывания на одном Docker daemon не конфликтуют.
+- **Граница текущей реализации**: DSH_HOME/файлы персистентны per-user; пока
+  нет отдельного sandbox root на каждую беседу одного пользователя. Если
+  пользователь должен видеть строго только файлы текущей сессии, требуется
+  sessionId → directory mapping/file-tool scope (R1.3).
 - **LLM-доступ**: per-user credentials из секретов платформы; если не задан —
   dsh показывает свой модал «Add an API key» (уже работает: пустой ключ
   больше не пишется в `.credentials.yaml` — фикс от 2026-10-19).
@@ -89,9 +94,9 @@
 
 | Шаг | Что | Оценка |
 |---|---|---|
-| R1.1 ✅ | MVP: общий чат-контейнер, `/chat/` после логина, панель «Кабинет» в нём (ограничение: сессии общие — честно помечено как демо-фаза) | сделано 2026-10-19 |
-| R1.2 | Per-user ленивые чаты: модель `ChatWorkspace` (owner, том, порт, статус), ensure-on-request, TTL-сон, `/chat/` → свой контейнер | **M–L** |
-| R1.3 | Квоты/политики (лимит сообщений, размер тома), prewarm-пул на массовых стартах | **M** |
+| R1.1 ✅ | Корень после login → `/chat/`; без cookie → `/app/`; default dsh UI + Cabinet plugin | done |
+| R1.2 ✅ | Per-user lazy dsh runtimes, persistent user DSH_HOME/work volumes, ensure-on-request, 15-min TTL reaper, shutdown cleanup | done; `/chat/` больше не общий контейнер |
+| R1.3 | Жёсткая привязка файлов к `sessionId`, квоты томов/сообщений, prewarm-pool | **M** |
 
 ### 1.4 Что видит пользователь: один домен, разные runtime
 
@@ -198,10 +203,12 @@ DSH backend» потребует outbound bridge (см. §2.2).
 
 ### 2.1 Подрежим «бэк и фронт на сервере» — с апрувом администратора
 
-- Создание места → **заявка** (`WorkspaceRequest`: кто, имя, комплект,
-  статус pending) → админ апрувит (список заявок в плагине для роли admin
-  или в `/app/`) → provision. Место без апрува не поднимается.
-- Оценка: **M** (таблица в SQLite + заявочный флоу в плагине).
+- Реализовано: флаг `--require-approval` включает заявку (шифрованный provider
+  payload); пользователь видит статус, admin видит очередь в plugin «Кабинет»
+  и может approve/reject; approve запускает provision. Квота проверяется при
+  отправке и повторно при approve.
+- Для локального ноутбучного `make demo` флаг выключен; для серверного
+  deployment включать после настройки TLS, quotas и admin role.
 
 ### 2.2 Подрежим «бэк локально, фронт на сервере» — бесплатный, без апрува
 
@@ -260,16 +267,16 @@ frontend тоже локален — нельзя выдавать его за �
 
 | Блок | Оценка | Статус |
 |---|---|---|
-| R1.1 общий чат MVP (`/chat/`, панель, credentials-фикс) | S | ✅ код готов, верифицирован smoke |
-| R1.2 per-user ленивые чаты (том+TTL) | M–L | план |
-| R1.3 квоты/prewarm | M | план |
-| R2.1 заявки+апрув серверных мест | M | план |
-| R2.2-1 локальный бэк: команда запуска из плагина | S | план |
-| R2.2-2 локальный бэк: ws-мост «фронт на сервере» | L | следующая волна |
-| R2.3 IDE-подсказки в панели | S | план |
+| R1.1 ✅ | Корень после login → `/chat/`; без cookie → `/app/`; default dsh UI + Cabinet plugin | done |
+| R1.2 ✅ | Per-user lazy dsh runtimes, per-user DSH_HOME/work volumes, ensure-on-request, TTL reaper, active-stream guard, graceful shutdown | done |
+| R1.3 | Каталоги/ACL файлов на каждую chat session (сейчас store per-user); quotas томов/сообщений, prewarm-pool | **M** |
+| R2.1 ✅ | Заявка на server workspace + admin approve/reject (`--require-approval`), browser flow root→chat→request→approve | done |
+| R2.2 fallback | Команда запуска dsh локально (frontend тоже локальный; fallback, не целевой server-front режим) | prototype |
+| R2.2 target | Connector + outbound WebSocket bridge: server frontend, local DSH backend | **L** |
+| R2.3 ✅ | SSH key input + connect/sync/IDE hints в панели | prototype done; CI/polish follow-up |
 | Регламент обновления dsh (bump+e2e) | S | ✅ тулинг есть |
 
-Проверки: `scripts/e2e-cabinet.sh` (вкл. секцию общего чата), `scripts/e2e-ssh.sh`,
-`tests/e2e-ui` (Playwright), `go test ./...`.
+Проверки: `scripts/e2e-cabinet.sh` (две per-user сессии), `scripts/e2e-ssh.sh`,
+`scripts/e2e-cabinet-playwright.sh` (root → chat → approval UI), `go test -race ./...`.
 
 Оценка ресурсов при разном числе пользователей — `docs/capacity.md`.
