@@ -2,13 +2,13 @@
 schema: 1.0.0
 id: night-dsh-plugins
 title: "Ночь 2026-10-18→19: dsh-плагины — дефолтный чат Tier 0 + кабинет agctl как плагин харнеса"
-status: in-progress
+status: done
 priority: P1
 size: L
 area: plugin
 repo: arijjia/agctl
 created: 2026-10-18
-updated: 2026-10-18
+updated: 2026-10-19
 tags: ["night-shift", "concept-v2"]
 depends: []
 ---
@@ -80,3 +80,4 @@ depends: []
 - 2026-10-18: Утро 00:59: карточки cabinet-plugin-in-image и cabinet-panel-e2e ЗАКРЫТЫ (e2e 4/4). Стартую agctl-ssh-channel (каркас SSH-канала).
 - 2026-10-18: Карточка agctl-ssh-channel ЗАКРЫТА; commit 923583f. SSH: key-only opt-in, 127.0.0.1 port, ,  Mutagen bootstrap; e2e SSH PASS=7/7, кабинет PASS=6/6, go vet + go test -race зелёные. Три владельческих кандидата из этой ночи закрыты (cabinet plugin in image, panel e2e, SSH connect/sync).
 - 2026-10-18: CORRECTION to prior journal line: shell expanded inline backticks. Final state: all three requested cards closed; SSH feature commit 923583f, journal/card close commit 770cd5e. SSH e2e PASS=7/7, cabinet e2e PASS=6/6, go vet and full go test -race PASS. Mutagen sync command/endpoint verified in print mode; actual sync remains unverified because Mutagen CLI is not installed. SSH key-only, port 2222 loopback-only; default workspaces have no SSH port.
+- 2026-10-19: done — Влито в main (merge 23f3a99, main = agctl v2). Волны 1-3 + документация v2 + Playwright/Docker e2e. Основные коммиты: 6b899db..e8f3c84 (ветка), 27d2972 (docs), 646949b (node_modules вне git), 23f3a99 (merge). Ветка agent/night-2026-10-18-dsh-plugins удалена локально (содержимое в main); origin-ветка не пушена — решение владельца.
