@@ -159,3 +159,5 @@
 
 Проверки: `scripts/e2e-cabinet.sh` (вкл. секцию общего чата), `scripts/e2e-ssh.sh`,
 `tests/e2e-ui` (Playwright), `go test ./...`.
+
+Оценка ресурсов при разном числе пользователей — `docs/capacity.md`.

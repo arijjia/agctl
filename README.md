@@ -188,7 +188,8 @@ Mutagen до запуска синхронизации.
   воркспейсов на пользователя.
 
 Подробная модель шлюза и остаточные риски — [docs/secure-gateway.md](docs/secure-gateway.md).
-Архитектура v2 и дорожная карта — [docs/architecture.md](docs/architecture.md).
+Архитектура v2 (два режима) — [docs/architecture.md](docs/architecture.md).
+Оценка ресурсов по числу пользователей — [docs/capacity.md](docs/capacity.md).
 Стратегия (уровни платформы, теория сред) — штаб `agctl-hq/docs/agctl-platform-concept-v2.md`.
 
 ## Ограничения MVP (честно)
