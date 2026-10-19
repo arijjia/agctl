@@ -222,10 +222,10 @@ IMG=agctl-dsh:0.2.0 scripts/e2e-cabinet-playwright.sh
 
 ## Ограничения MVP (честно)
 
-- Режим 1 теперь использует **персональный lazy dsh runtime на пользователя**;
-  DSH_HOME/файлы сохраняются на томе при остановке контейнера. Файлы пока
-  принадлежат user workspace; строгая маршрутизация отдельной файловой
-  директории на каждый chat session — следующий шаг.
+- Режим 1 использует **персональный lazy dsh runtime на пользователя**;
+  DSH_HOME и work volume переживают остановку контейнера. Новые Session
+  получают скрытый cwd `/workspace/.sessions/<sessionId>`; это файловая
+  привязка, но не security boundary между сессиями одного пользователя.
 - В режиме 2 серверный workspace может быть закрыт через `--require-approval`;
   без флага демо создаёт место напрямую.
 - «Локальный backend + frontend на сервере» пока не реализован end-to-end.
@@ -237,7 +237,14 @@ IMG=agctl-dsh:0.2.0 scripts/e2e-cabinet-playwright.sh
   на agctl и `--secure-cookies`. Сам agctl TLS не терминирует; доступ
   локальных процессов к loopback-портам остаётся residual risk.
 - SSH-порт также loopback-only: для удалённой машины нужен доверенный
-  туннель/VPN. k3s вместо Docker — следующий этап (RuntimeIface уже есть).
+  туннель/VPN.
+- **Это ещё не Kubernetes-native runtime**: ChatProvider контракт уже отделяет
+  endpoint/StorageID (Docker loopback сейчас, Service DNS + PVC для K8s позже),
+  но реализован только Docker adapter и `server.New` hardcodes его. Workspace
+  RuntimeIface всё ещё содержит Docker HostPort/host-path assumptions; нет
+  K8s runtime selector, Pod/Service/PVC controller, distributed runtime leases
+  или multi-replica DB. До этого этапа продукт запускать как single-control-plane
+  Docker deployment, не как K8s-native.
 - Автосохранение git выполняет agctl каждые 2 минуты и при остановке: агент
   коммитит часто, agctl доставляет до bare-origin.
 

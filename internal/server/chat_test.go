@@ -24,23 +24,23 @@ func TestEnsureChatIsPerUserAndReusesRuntime(t *testing.T) {
 	if one != again {
 		t.Fatal("same user should reuse one live chat runtime")
 	}
-	if one.containerID == two.containerID || one.port == two.port {
-		t.Fatalf("users share runtime unexpectedly: one=%+v two=%+v", one, two)
+	if one.handle.RuntimeID == two.handle.RuntimeID || one.handle.Endpoint == two.handle.Endpoint {
+		t.Fatalf("users share runtime unexpectedly: one=%+v two=%+v", one.handle, two.handle)
 	}
-	home1, _ := e.srv.userChatDirs(101)
-	home2, _ := e.srv.userChatDirs(202)
+	home1 := filepath.Join(e.home, "chats", "u101", "dsh-home")
+	home2 := filepath.Join(e.home, "chats", "u202", "dsh-home")
 	if home1 == home2 {
 		t.Fatalf("users share persistent DSH_HOME: %s", home1)
 	}
 	otherDeployment := &Server{cfg: Config{Home: t.TempDir()}}
 	if e.srv.chatRuntimeID(101) == otherDeployment.chatRuntimeID(101) {
-		t.Fatal("separate agctl homes must not collide in Docker container names")
+		t.Fatal("separate agctl homes must not collide in runtime ids")
 	}
 	if _, err := os.Stat(filepath.Join(home1, "profiles", "web", "package.json")); err != nil {
 		t.Fatalf("user volume not seeded: %v", err)
 	}
-	if e.rt.started[e.srv.chatRuntimeID(101)] != 1 || e.rt.started[e.srv.chatRuntimeID(202)] != 1 {
-		t.Fatalf("start counts: %+v", e.rt.started)
+	if e.rt.chatStarts[e.srv.chatRuntimeID(101)] != 1 || e.rt.chatStarts[e.srv.chatRuntimeID(202)] != 1 {
+		t.Fatalf("chat start counts: %+v", e.rt.chatStarts)
 	}
 }
 
@@ -51,14 +51,15 @@ func TestReaperStopsIdleChatButKeepsPersistentVolume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	home, work := e.srv.userChatDirs(303)
+	base := filepath.Join(e.home, "chats", "u303")
+	home, work := filepath.Join(base, "dsh-home"), filepath.Join(base, "work")
 	chat.lastSeen = time.Now().Add(-2 * time.Second)
 	e.srv.reapIdleChats()
 	if e.srv.chats[303] != nil {
 		t.Fatal("idle runtime remains registered")
 	}
-	if e.rt.stopped[chat.containerID] != 1 {
-		t.Fatalf("container stop count = %d, want 1", e.rt.stopped[chat.containerID])
+	if e.rt.chatStops[chat.handle.RuntimeID] != 1 {
+		t.Fatalf("chat stop count = %d, want 1", e.rt.chatStops[chat.handle.RuntimeID])
 	}
 	for _, dir := range []string{home, work} {
 		if _, err := os.Stat(dir); err != nil {
@@ -77,7 +78,7 @@ func TestReaperDoesNotStopActiveChat(t *testing.T) {
 	chat.lastSeen = time.Now().Add(-time.Hour)
 	chat.active = 1
 	e.srv.reapIdleChats()
-	if e.srv.chats[404] == nil || e.rt.stopped[chat.containerID] != 0 {
+	if e.srv.chats[404] == nil || e.rt.chatStops[chat.handle.RuntimeID] != 0 {
 		t.Fatal("reaper stopped an active chat request")
 	}
 }

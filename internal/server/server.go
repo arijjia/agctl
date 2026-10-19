@@ -23,6 +23,7 @@ import (
 	"github.com/arijjia/agctl/internal/assets"
 	"github.com/arijjia/agctl/internal/auth"
 	"github.com/arijjia/agctl/internal/provision"
+	agctlrt "github.com/arijjia/agctl/internal/runtime"
 	"github.com/arijjia/agctl/internal/runtime/dockerrt"
 	"github.com/arijjia/agctl/internal/secrets"
 	"github.com/arijjia/agctl/internal/store"
@@ -66,10 +67,11 @@ type Server struct {
 	tokMu  sync.Mutex // кэш boot-токенов dsh web по воркспейсам
 	tokens map[string]string
 
-	chatMu    sync.Mutex             // персональные чаты (режим 1): ленивые рантаймы
-	chats     map[int64]*chatRuntime // userID → живой чат-контейнер
-	chatLocks map[int64]*sync.Mutex  // сериализация первого старта per-user
-	requestMu sync.Mutex             // не допускать двойной approve одной заявки
+	chatMu       sync.Mutex             // персональные чаты (режим 1): ленивые рантаймы
+	chats        map[int64]*chatRuntime // userID → живой runtime handle
+	chatLocks    map[int64]*sync.Mutex  // сериализация первого старта per-user
+	chatProvider agctlrt.ChatProvider   // Docker now; K8s adapter can return a Service DNS endpoint
+	requestMu    sync.Mutex             // не допускать двойной approve одной заявки
 
 }
 
@@ -96,11 +98,14 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 		MemoryBytes: cfg.MemoryBytes,
 		NanoCPUs:    cfg.NanoCPUs,
 		BinDir:      cfg.BinDir,
+		Home:        cfg.Home,
+		DshSkel:     assetsSkel,
 	}, assets.Image)
 	if err != nil {
 		return nil, err
 	}
 	s.rt = rt
+	s.chatProvider = rt
 	s.authN = &auth.Service{
 		SetSession: func(token string, userID int64, exp time.Time) error {
 			return db.CreateSession(token, userID, exp)
@@ -122,16 +127,19 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 // закрывает Docker runtime. Dev-workspaces остаются под управлением владельца.
 func (s *Server) Close() {
 	s.chatMu.Lock()
-	containers := make([]string, 0, len(s.chats))
+	handles := make([]agctlrt.ChatHandle, 0, len(s.chats))
 	for _, chat := range s.chats {
-		containers = append(containers, chat.containerID)
+		handles = append(handles, chat.handle)
 	}
 	s.chats = map[int64]*chatRuntime{}
 	s.chatMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	for _, id := range containers {
-		_ = s.rt.Stop(ctx, id)
+	for _, handle := range handles {
+		s.forgetToken(chatTokenCacheKey(handle))
+		if s.chatProvider != nil {
+			_ = s.chatProvider.StopChat(ctx, handle)
+		}
 	}
 	if c, ok := s.rt.(interface{ Close() error }); ok {
 		_ = c.Close()
@@ -403,31 +411,47 @@ func workspaceURL(w store.Workspace) string {
 
 var dshTokenRe = regexp.MustCompile(`[?&]token=([A-Za-z0-9_\-]+)`)
 
-// wsToken — boot-токен dsh web воркспейса: из кэша или из журнала контейнера
-// (dsh печатает ссылку с ?token=… при старте). Пусто — если не нашли.
+// wsToken — boot-токен dev-workspace: из кэша или из runtime-логов.
 func (s *Server) wsToken(ctx context.Context, w store.Workspace) string {
+	return s.cachedBootToken(ctx, w.ID, func(cctx context.Context) (string, error) {
+		if w.ContainerID == "" {
+			return "", nil
+		}
+		return s.rt.Logs(cctx, w.ContainerID, "80")
+	})
+}
+
+// chatToken uses the same DSH boot-token exchange for any runtime provider;
+// the per-instance key prevents a slept/recreated pod/container from reusing
+// an earlier generation's token.
+func (s *Server) chatToken(ctx context.Context, handle agctlrt.ChatHandle) string {
+	if s.chatProvider == nil || handle.InstanceID == "" {
+		return ""
+	}
+	return s.cachedBootToken(ctx, chatTokenCacheKey(handle), func(cctx context.Context) (string, error) {
+		return s.chatProvider.LogsChat(cctx, handle, "80")
+	})
+}
+
+func (s *Server) cachedBootToken(ctx context.Context, key string, load func(context.Context) (string, error)) string {
 	s.tokMu.Lock()
-	t := s.tokens[w.ID]
+	t := s.tokens[key]
 	s.tokMu.Unlock()
 	if t != "" {
 		return t
 	}
-	if w.ContainerID == "" {
-		return ""
-	}
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	logs, err := s.rt.Logs(cctx, w.ContainerID, "80")
+	logs, err := load(cctx)
 	if err != nil {
 		return ""
 	}
-	// берём ПОСЛЕДНЕЕ совпадение: при docker start того же контейнера dsh
-	// печатает новый boot-токен, а старые строки остаются в журнале выше
-	// (баг-фикс: первый match отдавал устаревший токен → 401 по «Открыть»)
+	// берём ПОСЛЕДНЕЕ совпадение: повторный start может оставить старые
+	// startup lines выше нового boot token.
 	if all := dshTokenRe.FindAllStringSubmatch(logs, -1); len(all) > 0 {
 		m := all[len(all)-1]
 		s.tokMu.Lock()
-		s.tokens[w.ID] = m[1]
+		s.tokens[key] = m[1]
 		s.tokMu.Unlock()
 		return m[1]
 	}

@@ -37,6 +37,8 @@ type Config struct {
 	MemoryBytes int64  // лимит памяти контейнера
 	NanoCPUs    int64  // лимит CPU
 	BinDir      string // каталог с linux-сборками agctl (dist/)
+	Home        string // local Docker adapter storage root; K8s adapters use PVCs instead
+	DshSkel     fs.FS  // embedded DSH home seed for lazy Chat runtimes
 }
 
 // Runtime — docker-реализация.

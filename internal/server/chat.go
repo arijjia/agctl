@@ -1,11 +1,8 @@
 package server
 
-// chat.go — режим 1 «Чат»: ленивый персональный dsh-рантайм на пользователя.
-//
-// Персистентность = том dsh-home пользователя (сессии, файлы, credentials);
-// контейнер — убиваемая песочница: лениво поднимается при обращении к /chat/,
-// останавливается и удаляется по простою (ChatTTL). После удаления том
-// остаётся — новый контейнер продолжает с теми же сессиями.
+// chat.go — режим 1 «Чат»: lazy per-user runtime behind the agctl gateway.
+// The server depends on runtime.ChatProvider, not Docker ports or host mounts;
+// Docker is one adapter and a Kubernetes adapter can return Service DNS + PVC.
 
 import (
 	"context"
@@ -15,7 +12,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -23,37 +19,31 @@ import (
 	"time"
 
 	"github.com/arijjia/agctl/internal/provision"
-	"github.com/arijjia/agctl/internal/runtime/dockerrt"
-	"github.com/arijjia/agctl/internal/store"
+	agctlrt "github.com/arijjia/agctl/internal/runtime"
 )
 
 const chatNamePrefix = "chat"
 
-// chatRuntime — живой персональный чат-контейнер пользователя.
+// chatRuntime — живой персональный чат runtime пользователя.
 type chatRuntime struct {
-	port        int
-	containerID string
-	lastSeen    time.Time
-	active      int // streaming HTTP/WS requests; reaper must not stop active sessions
+	handle   agctlrt.ChatHandle
+	lastSeen time.Time
+	active   int // streaming HTTP/WS requests; reaper must not stop active sessions
 }
 
-// shouldSleepChat — решение рипера: контейнер простаивал дольше TTL.
+// shouldSleepChat — решение рипера: runtime простаивал дольше TTL.
 func shouldSleepChat(lastSeen, now time.Time, ttl time.Duration) bool {
 	return now.Sub(lastSeen) >= ttl
 }
 
-// userChatDirs — персистентные пути пользователя (том).
-func (s *Server) userChatDirs(userID int64) (dshHome, work string) {
-	base := filepath.Join(s.cfg.Home, "chats", "u"+strconv.FormatInt(userID, 10))
-	return filepath.Join(base, "dsh-home"), filepath.Join(base, "work")
-}
-
-// chatRuntimeID namespaces Docker container names by agctl home, so multiple
-// isolated agctl deployments can safely share one Docker daemon.
+// chatRuntimeID namespaces resource names by agctl home, so deployments sharing
+// a Docker daemon or Kubernetes namespace do not collide.
 func (s *Server) chatRuntimeID(userID int64) string {
 	sum := sha256.Sum256([]byte(filepath.Clean(s.cfg.Home)))
 	return fmt.Sprintf("%s-%x-u%d", chatNamePrefix, sum[:4], userID)
 }
+
+func chatStorageID(userID int64) string { return "u" + strconv.FormatInt(userID, 10) }
 
 // userProvider — LLM-провайдер из личного секрета пользователя. Нет секрета —
 // dsh покажет свой модал «Add an API key» (ключ сохранится в dsh-home юзера).
@@ -73,8 +63,8 @@ func (s *Server) userProvider(userID int64) provision.Provider {
 	return provision.Provider{BaseURL: sec.BaseURL, Model: sec.Model, Models: models, APIKey: key}
 }
 
-// ensureChat поднимает (или возвращает живой) персональный чат-контейнер.
-// Первый старт сериализован per-user, разные пользователи стартуют параллельно.
+// ensureChat asks the runtime provider to ensure the user's stable Chat runtime
+// is running. First-start locking is per user; different users start in parallel.
 func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 	s.chatMu.Lock()
 	if s.chats == nil {
@@ -104,63 +94,58 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 		return rt, nil
 	}
 	s.chatMu.Unlock()
+	if s.chatProvider == nil {
+		return nil, fmt.Errorf("chat runtime provider is not configured")
+	}
 
-	dshHome, work := s.userChatDirs(userID)
-	for _, dir := range []string{dshHome, work} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, err
-		}
-	}
-	provider := s.userProvider(userID)
-	if _, err := os.Stat(filepath.Join(dshHome, "profiles", "web", "package.json")); err != nil {
-		if err := provision.SeedDshHome(dshHome, provider, assetsDshSkel); err != nil {
-			return nil, err
-		}
-	}
-	port, err := dockerrt.FreePort()
-	if err != nil {
-		return nil, err
-	}
-	layout := provision.Layout{Work: work, DshHome: dshHome, ChatSessionScoped: true}
-	name := s.chatRuntimeID(userID)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
-	res, err := s.rt.Start(ctx, layout, name, dockerrt.StartOpts{HostPort: port}, provider)
+	spec := agctlrt.ChatSpec{
+		RuntimeID: s.chatRuntimeID(userID), StorageID: chatStorageID(userID),
+		UserID: userID, Provider: s.userProvider(userID), SessionScope: true,
+	}
+	handle, err := s.chatProvider.EnsureChat(ctx, spec)
 	if err != nil {
 		return nil, err
 	}
-	rt := &chatRuntime{port: port, containerID: res.ContainerID, lastSeen: time.Now()}
+	if handle.RuntimeID == "" || handle.Endpoint == "" {
+		return nil, fmt.Errorf("chat runtime provider returned an incomplete handle")
+	}
+	rt := &chatRuntime{handle: handle, lastSeen: time.Now()}
 	s.chatMu.Lock()
 	s.chats[userID] = rt
 	s.chatMu.Unlock()
-	log.Printf("[chat] пользователь %d: личный чат поднят на 127.0.0.1:%d", userID, port)
+	log.Printf("[chat] пользователь %d: личный runtime поднят (%s)", userID, handle.Endpoint)
 	return rt, nil
 }
 
-// reapIdleChats останавливает и удаляет контейнеры чатов, простаивавшие дольше
-// TTL. Тома dsh-home остаются — следующий запрос поднимает контейнер заново
-// с теми же сессиями (warm start ~2 с).
+// reapIdleChats stops per-user compute after the idle TTL. The ChatProvider
+// contract requires persistent StorageID data to survive StopChat.
 func (s *Server) reapIdleChats() {
 	now := time.Now()
-	var expired []int64
-	var containers []string
+	type expiredChat struct {
+		userID int64
+		handle agctlrt.ChatHandle
+	}
+	var expired []expiredChat
 	s.chatMu.Lock()
 	for uid, rt := range s.chats {
 		if rt.active == 0 && shouldSleepChat(rt.lastSeen, now, s.cfg.ChatTTL) {
-			expired = append(expired, uid)
-			containers = append(containers, rt.containerID)
+			expired = append(expired, expiredChat{userID: uid, handle: rt.handle})
 			delete(s.chats, uid)
 		}
 	}
 	s.chatMu.Unlock()
-	for i, uid := range expired {
+	for _, item := range expired {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		if err := s.rt.Stop(ctx, containers[i]); err != nil {
-			log.Printf("[chat] reaper: stop user %d: %v", uid, err)
-		} else {
-			log.Printf("[chat] reaper: пользователь %d уснул (контейнер удалён, том сохранён)", uid)
-		}
+		s.forgetToken(chatTokenCacheKey(item.handle))
+		err := s.chatProvider.StopChat(ctx, item.handle)
 		cancel()
+		if err != nil {
+			log.Printf("[chat] reaper: stop user %d: %v", item.userID, err)
+		} else {
+			log.Printf("[chat] reaper: пользователь %d уснул (runtime удалён, volume сохранён)", item.userID)
+		}
 	}
 }
 
@@ -179,8 +164,8 @@ func (s *Server) appEntry(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/app/", http.StatusPermanentRedirect)
 }
 
-// chatProxy — шлюз персонального чата: ensure рантайма, затем тот же
-// mint/cookie-паттерн, что и /w/{id}/.
+// chatProxy — gateway for the authenticated user's runtime. Endpoint is
+// provider-owned (loopback for Docker; internal Service DNS for Kubernetes).
 func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) {
 	rt, err := s.ensureChat(id.ID)
 	if err != nil {
@@ -210,14 +195,19 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 		return
 	}
 
-	target := "127.0.0.1:" + strconv.Itoa(rt.port)
+	target, err := url.Parse(rt.handle.Endpoint)
+	if err != nil || target.Scheme == "" || target.Host == "" {
+		writeErr(w, http.StatusBadGateway, "chat runtime endpoint is invalid")
+		return
+	}
+	authority := target.Host
 	const prefix = "/chat"
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(&url.URL{Scheme: "http", Host: target})
-			pr.Out.Host = target
+			pr.SetURL(target)
+			pr.Out.Host = authority
 			if pr.In.Header.Get("Origin") != "" {
-				pr.Out.Header.Set("Origin", pr.Out.URL.Scheme+"://"+target)
+				pr.Out.Header.Set("Origin", pr.Out.URL.Scheme+"://"+authority)
 			}
 			pr.Out.URL.Path = strings.TrimPrefix(pr.In.URL.Path, prefix)
 			if !strings.HasPrefix(pr.Out.URL.Path, "/") {
@@ -227,14 +217,12 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 		},
 		FlushInterval: -1,
 		Transport: &mintTransport{
-			base: proxyTransport,
-			token: func() string {
-				return s.wsToken(r.Context(), store.Workspace{ID: s.chatRuntimeID(id.ID), ContainerID: rt.containerID})
-			},
+			base:  proxyTransport,
+			token: func() string { return s.chatToken(r.Context(), rt.handle) },
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			if loc := resp.Header.Get("Location"); loc != "" {
-				resp.Header.Set("Location", rewriteLocation(loc, prefix, target))
+				resp.Header.Set("Location", rewriteLocation(loc, prefix, authority))
 			}
 			// dsh-auth cookie ограничивается /chat/, чтобы не пересылаться
 			// на кабинет API и dev-workspaces /w/<id>/.
@@ -267,4 +255,8 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 		},
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+func chatTokenCacheKey(handle agctlrt.ChatHandle) string {
+	return "chat/" + handle.RuntimeID + "/" + handle.InstanceID
 }

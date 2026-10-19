@@ -17,6 +17,7 @@ import (
 
 	"github.com/arijjia/agctl/internal/auth"
 	"github.com/arijjia/agctl/internal/provision"
+	agctlrt "github.com/arijjia/agctl/internal/runtime"
 	"github.com/arijjia/agctl/internal/runtime/dockerrt"
 	"github.com/arijjia/agctl/internal/secrets"
 	"github.com/arijjia/agctl/internal/store"
@@ -27,19 +28,24 @@ import (
 // fakeRuntime — мок docker-рантайма: контейнеры «существуют», логи содержат
 // boot-ссылку dsh с токеном (как печатает реальный контейнер).
 type fakeRuntime struct {
-	started   map[string]int // wsID → сколько раз Start
-	startOpts map[string]dockerrt.StartOpts
-	resumed   map[string]int
-	stopped   map[string]int
-	removed   map[string]int
-	logs      map[string]string
-	failNext  error // если задано — Start возвращает ошибку
+	started    map[string]int // wsID → сколько раз Start
+	startOpts  map[string]dockerrt.StartOpts
+	resumed    map[string]int
+	stopped    map[string]int
+	removed    map[string]int
+	logs       map[string]string
+	chatStarts map[string]int
+	chatStops  map[string]int
+	chatSpecs  map[string]agctlrt.ChatSpec
+	chatHome   string
+	failNext   error // если задано — Start возвращает ошибку
 }
 
 func newFakeRuntime() *fakeRuntime {
 	return &fakeRuntime{
 		started: map[string]int{}, startOpts: map[string]dockerrt.StartOpts{}, resumed: map[string]int{},
 		stopped: map[string]int{}, removed: map[string]int{}, logs: map[string]string{},
+		chatStarts: map[string]int{}, chatStops: map[string]int{}, chatSpecs: map[string]agctlrt.ChatSpec{},
 	}
 }
 
@@ -75,6 +81,36 @@ func (f *fakeRuntime) Logs(ctx context.Context, containerID, tailN string) (stri
 	return f.logs[strings.TrimPrefix(containerID, "ctr-")], nil
 }
 
+func (f *fakeRuntime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctlrt.ChatHandle, error) {
+	f.chatStarts[spec.RuntimeID]++
+	f.chatSpecs[spec.RuntimeID] = spec
+	base := filepath.Join(f.chatHome, "chats", spec.StorageID)
+	dshHome, work := filepath.Join(base, "dsh-home"), filepath.Join(base, "work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		return agctlrt.ChatHandle{}, err
+	}
+	if _, err := os.Stat(filepath.Join(dshHome, "profiles", "web", "package.json")); err != nil {
+		if err := provision.SeedDshHome(dshHome, spec.Provider, assetsDshSkel); err != nil {
+			return agctlrt.ChatHandle{}, err
+		}
+	}
+	instanceID := "chat-ctr-" + spec.RuntimeID
+	f.logs[instanceID] = "dsh web listening on http://127.0.0.1/?token=fake-chat-" + spec.RuntimeID
+	return agctlrt.ChatHandle{
+		RuntimeID: spec.RuntimeID, InstanceID: instanceID,
+		Endpoint: fmt.Sprintf("http://127.0.0.1:%d", 40000+spec.UserID),
+	}, nil
+}
+
+func (f *fakeRuntime) StopChat(ctx context.Context, handle agctlrt.ChatHandle) error {
+	f.chatStops[handle.RuntimeID]++
+	return nil
+}
+
+func (f *fakeRuntime) LogsChat(ctx context.Context, handle agctlrt.ChatHandle, tail string) (string, error) {
+	return f.logs[handle.InstanceID], nil
+}
+
 // testEnv — сервер на временных каталогах + httptest.
 type testEnv struct {
 	t     *testing.T
@@ -102,8 +138,9 @@ func newTestEnv(t *testing.T, maxPerUser int) *testEnv {
 		t.Fatalf("secrets: %v", err)
 	}
 	rt := newFakeRuntime()
+	rt.chatHome = home
 	s := &Server{
-		db: db, sec: sec, rt: rt,
+		db: db, sec: sec, rt: rt, chatProvider: rt,
 		cfg:    Config{Home: home, Addr: "test", MaxPerUser: maxPerUser, AutosaveEvery: time.Hour},
 		tokens: map[string]string{},
 	}

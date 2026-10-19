@@ -306,3 +306,53 @@ e2e. Нынешний fallback в панели запускает локальн
 `scripts/e2e-cabinet-playwright.sh` (root → chat → approval UI), `go test -race ./...`.
 
 Оценка ресурсов при разном числе пользователей — `docs/capacity.md`.
+
+## 5. Kubernetes compatibility: target vs current implementation
+
+**Вердикт:** per-user lazy DSH runtime — подход, совместимый с Kubernetes;
+текущий код — пока Docker implementation, не Kubernetes-native deployment.
+Chat API/gateway уже отделён контрактом `ChatProvider`: `ChatSpec` несёт
+стабильные `RuntimeID`/`StorageID`, а `ChatHandle.Endpoint` — внутренний HTTP
+origin. Gateway проксирует на `Endpoint`, не знает контейнерный ID/порт.
+Docker adapter преобразует StorageID в локальные bind paths и loopback port;
+K8s adapter сможет вернуть Pod/Service DNS + PVC. Но `server.New` сейчас
+сам создаёт `dockerrt.Runtime` и назначает его provider-ом; runtime selector,
+Kubernetes client/config и K8s adapter **не реализованы**.
+
+### Целевой K8s lifecycle режима «Чат»
+
+1. Один Pod с `dsh web` на активного пользователя (или Sandbox CR, владеющий
+   этим Pod). Agctl выдаёт/находит runtime по `userID`, ждёт readiness, затем
+   проксирует `/chat/` на **ClusterIP Service/DNS**. Никаких `hostPort`, node IP
+   или прямых портов в браузере.
+2. Постоянный PVC на пользователя (`StorageID`), с подкаталогами DSH_HOME,
+   workspace и `.sessions/<sessionId>`. Idle TTL удаляет/останавливает **Pod**,
+   сохраняя PVC; следующий запрос пересоздаёт compute и монтирует тот же claim.
+   Удаление PVC — отдельная retention/deletion операция, не действие reaper.
+3. Образ DSH закреплён digest/tag; `RuntimeClassName` (`gvisor`/`kata`) —
+   опциональный режим после установки и проверки handler на узлах. Одного поля
+   `runtimeClassName` недостаточно: Kubernetes не устанавливает runtime на
+   ноды. Добавить requests/limits, non-root, seccomp, drop capabilities,
+   read-only root FS где возможно, NetworkPolicy и ограниченный ServiceAccount.
+4. На первом этапе допустим один agctl control-plane replica с persistent DB;
+   для нескольких replicas нужны общая PostgreSQL и distributed runtime
+   leases/locks. Текущие SQLite + in-memory active/TTL map не дают HA и не
+   должны масштабироваться простым увеличением replicas.
+5. R2 server dev-workspaces также требуют K8s адаптера: отдельные PVC для repo
+   и DSH_HOME, Git bare storage/service и service-DNS gateway. Их текущие
+   Docker `HostPort`/host bind mounts не переносятся напрямую.
+
+KEDA — autoscaler workload replicas, не per-user sandbox/controller; одной
+`Deployment replicas: 0` недостаточно, чтобы создавать адресный Pod/PVC на
+каждого пользователя. Рассмотреть собственный controller/CRD или
+[Kubernetes Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox);
+прототип управления userID→Pod/Service/PVC и конкурентного ensure ещё не
+реализован. StatefulSet тоже возможен, но отдельный StatefulSet на каждого
+пользователя — не выбранный пока вариант.
+
+Проверенные официальные примитивы: [StatefulSet и PVC lifecycle](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/),
+[сохранение volumes после удаления Pod/StatefulSet](https://kubernetes.io/docs/tasks/run-application/delete-stateful-set/),
+[RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/),
+[KEDA scale to zero](https://keda.sh/docs/latest/concepts/).
+Таблица ресурсов в `docs/capacity.md` измерена на Docker/M4; K8s scheduler,
+PVC attach и gVisor/Kata overhead там **не учтены**.
