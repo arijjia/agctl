@@ -11,3 +11,6 @@ secrets.key
 __pycache__/
 *.pyc
 .venv/
+
+# browser-e2e зависимости ставятся локально (playwright + chromium)
+tests/e2e-ui/node_modules/
