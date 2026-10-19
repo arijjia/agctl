@@ -12,7 +12,11 @@ SQLite, DeepSeek Harness в контейнере воркспейса. Публ�
 - Один коммит = одна задача; формат истории — как в соседних репо.
 - Секреты (LLM-токены, ключи) никогда не попадают в код, тесты, логи и образы;
   CI-гард gitleaks. Тестовые прогоны — только в изолированном `$TEST_HOME`
-  с уникальным тегом образа (см. `agctl-hq/docs/agctl-mvp-e2e-test-guide.md`).
+  с уникальным тегом образа; Docker e2e — `scripts/e2e-cabinet.sh`,
+  `scripts/e2e-ssh.sh`; браузерный — `tests/e2e-ui` (Playwright).
+- Архитектура и роадмап — `docs/architecture.md`; стратегия — штаб
+  (`agctl-hq/docs/agctl-platform-concept-v2.md`,
+  `agctl-hq/docs/agctl-sandbox-and-runtime-theory.md`).
 - Перед финалом: `go vet ./... && go test ./...`, SPA собирается
   (`make web_build`), при изменении образа — `make img_build` и e2e-смоук.
 - Тулинг бэклога — `gitctl backlog ...`; карточки задач — `backlog/open/`.
