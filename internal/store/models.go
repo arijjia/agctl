@@ -38,6 +38,8 @@ type Workspace struct {
 	Model       string   // модель по умолчанию (legacy-колонка)
 	Models      []string // весь список (колонка models, "\n"-разделитель)
 	Error       string
+	SSHPubKey   string // публичный ключ для контейнерного sshd (пусто = sshd выключен)
+	SSHPort     int    // опубликованный на 127.0.0.1 порт sshd (0 = не опубликован)
 	CreatedAt   string
 	UpdatedAt   string
 	Owner       string // login, заполняется при join
@@ -202,14 +204,15 @@ func (d *DB) DeleteExpiredSessions() error {
 // ── workspaces ───────────────────────────────────────────────────────────────
 
 const wsCols = `id, owner_id, name, template, status, repo_path, work_path, dsh_home,
-	container_id, host_port, base_url, model, models, components, error, created_at, updated_at`
+	container_id, host_port, base_url, model, models, components, error, created_at, updated_at,
+	ssh_pub_key, ssh_port`
 
 func scanWS(row interface{ Scan(...any) error }) (Workspace, error) {
 	var w Workspace
 	var modelsRaw, componentsRaw string
 	err := row.Scan(&w.ID, &w.OwnerID, &w.Name, &w.Template, &w.Status, &w.RepoPath, &w.WorkPath,
 		&w.DshHome, &w.ContainerID, &w.HostPort, &w.BaseURL, &w.Model, &modelsRaw, &componentsRaw, &w.Error,
-		&w.CreatedAt, &w.UpdatedAt)
+		&w.CreatedAt, &w.UpdatedAt, &w.SSHPubKey, &w.SSHPort)
 	if err == nil {
 		w.Models = DecodeModels(modelsRaw, w.Model)
 		w.Components = DecodeIDs(componentsRaw)
@@ -219,10 +222,11 @@ func scanWS(row interface{ Scan(...any) error }) (Workspace, error) {
 
 func (d *DB) InsertWorkspace(w Workspace) error {
 	_, err := d.Exec(`INSERT INTO workspaces(id, owner_id, name, template, status, repo_path,
-		work_path, dsh_home, container_id, host_port, base_url, model, models, components, error)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		work_path, dsh_home, container_id, host_port, base_url, model, models, components, error, ssh_pub_key, ssh_port)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		w.ID, w.OwnerID, w.Name, w.Template, w.Status, w.RepoPath, w.WorkPath, w.DshHome,
-		w.ContainerID, w.HostPort, w.BaseURL, w.Model, EncodeModels(w.Models), EncodeIDs(w.Components), w.Error)
+		w.ContainerID, w.HostPort, w.BaseURL, w.Model, EncodeModels(w.Models), EncodeIDs(w.Components), w.Error,
+		w.SSHPubKey, w.SSHPort)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return fmt.Errorf("store: имя воркспейса занято: %w", err)
@@ -244,7 +248,7 @@ func (d *DB) WorkspacesByOwner(ownerID int64) ([]Workspace, error) {
 func (d *DB) WorkspacesAll() ([]Workspace, error) {
 	return d.wsList(`SELECT w.id, w.owner_id, w.name, w.template, w.status, w.repo_path, w.work_path,
 		w.dsh_home, w.container_id, w.host_port, w.base_url, w.model, w.models, w.components, w.error,
-		w.created_at, w.updated_at
+		w.created_at, w.updated_at, w.ssh_pub_key, w.ssh_port
 		FROM workspaces w JOIN users u ON u.id = w.owner_id
 		ORDER BY w.created_at DESC`)
 }
@@ -289,6 +293,13 @@ func (d *DB) UpdateWorkspacePaths(id, repoPath, workPath, dshHome string) error 
 	_, err := d.Exec(`UPDATE workspaces SET repo_path = ?, work_path = ?, dsh_home = ?,
 		updated_at = ? WHERE id = ?`, repoPath, workPath, dshHome, now(), id)
 	return wrap("update ws paths", err)
+}
+
+// UpdateWorkspaceSSH — ключ и опубликованный порт sshd (пустой ключ = выключен).
+func (d *DB) UpdateWorkspaceSSH(id, pubKey string, port int) error {
+	_, err := d.Exec(`UPDATE workspaces SET ssh_pub_key = ?, ssh_port = ?, updated_at = ? WHERE id = ?`,
+		pubKey, port, now(), id)
+	return wrap("update ws ssh", err)
 }
 
 func (d *DB) DeleteWorkspace(id string) error {

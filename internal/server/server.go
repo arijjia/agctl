@@ -39,11 +39,12 @@ type Config struct {
 	BinDir        string
 	SecureCookies bool // true when agctl is served behind a trusted HTTPS terminator
 	AutosaveEvery time.Duration
+	CORSOrigins   []string // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
 }
 
 // RuntimeIface — то, что серверу нужно от docker-рантайма (мокается в тестах).
 type RuntimeIface interface {
-	Start(ctx context.Context, ws provision.Layout, wsID string, hostPort int, p provision.Provider) (dockerrt.StartResult, error)
+	Start(ctx context.Context, ws provision.Layout, wsID string, opts dockerrt.StartOpts, p provision.Provider) (dockerrt.StartResult, error)
 	Resume(ctx context.Context, containerID string) error
 	Stop(ctx context.Context, containerID string) error
 	Remove(ctx context.Context, containerID string) error
@@ -132,6 +133,7 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("DELETE /api/workspaces/{id}", s.requireUser(s.handleWorkspaceDelete))
 	mux.HandleFunc("GET /api/workspaces/{id}/logs", s.requireUser(s.handleWorkspaceLogs))
 	mux.HandleFunc("PATCH /api/workspaces/{id}/provider", s.requireUser(s.handleWorkspaceProvider))
+	mux.HandleFunc("PATCH /api/workspaces/{id}/ssh", s.requireUser(s.handleWorkspaceSSH))
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
 	mux.HandleFunc("GET /w/{id}", s.requireUser(s.workspaceProxyEntry))
@@ -146,7 +148,37 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 
 	// статика SPA
 	mux.Handle("GET /", http.FileServerFS(webFS))
+	if len(s.cfg.CORSOrigins) > 0 {
+		return s.logMiddleware(s.corsMiddleware(mux))
+	}
 	return s.logMiddleware(mux)
+}
+
+// corsMiddleware — точный allow-list origins для /api (кабинет-плагин dsh web
+// ходит с другого порта/домена). По умолчанию список пуст и middleware не
+// ставится: никакого wildcard с credentials никогда не отдаём.
+func (s *Server) corsMiddleware(next http.Handler) http.Handler {
+	allowed := make(map[string]bool, len(s.cfg.CORSOrigins))
+	for _, o := range s.cfg.CORSOrigins {
+		allowed[strings.TrimRight(o, "/")] = true
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" && allowed[strings.TrimRight(origin, "/")] {
+			h := w.Header()
+			h.Set("Access-Control-Allow-Origin", origin)
+			h.Set("Access-Control-Allow-Credentials", "true")
+			h.Add("Vary", "Origin")
+			if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+				h.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+				h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+				h.Set("Access-Control-Max-Age", "86400")
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // ── фоновые задачи ──────────────────────────────────────────────────────────
@@ -358,7 +390,7 @@ func (s *Server) wsJSON(ctx context.Context, w store.Workspace, owner string) ma
 		"url": workspaceURL(w), "port": w.HostPort, "error": w.Error,
 		"model": w.Model, "models": w.Models, "baseURL": w.BaseURL,
 		"kit": w.Template, "template": w.Template, "components": components,
-		"repoPath": w.RepoPath,
+		"repoPath": w.RepoPath, "sshEnabled": w.SSHPubKey != "", "sshPort": w.SSHPort,
 	}
 }
 

@@ -1,0 +1,3 @@
+- insert:
+    - id: agctl-cabinet
+      name: '@arijjia/agctl-cabinet'
