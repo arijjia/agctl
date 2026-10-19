@@ -1,3 +1,4 @@
-# Дом-слой чистого образа agctl-dsh: пустой патч (первый boot доскаффолдит dsh).
-# Модели/креды/пресеты — пишет agctl в volume DSH_HOME при создании воркспейса.
+# Дом-слой чистого образа agctl-dsh: пустой patch; профильные Host plugins
+# регистрируются в profiles/web/cordis.patch.yml.
+# Модели/креды/пресеты пишет agctl в volume DSH_HOME.
 []

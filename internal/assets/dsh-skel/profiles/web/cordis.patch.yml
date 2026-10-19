@@ -1,0 +1,8 @@
+# Seed the ordinary model default plus the agctl per-session Host plugin.
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: agctl
+    model: ""
+- id: agctl-chat-session-files
+  name: "@arijjia/agctl-chat-session-files"

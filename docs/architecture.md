@@ -76,10 +76,14 @@
 - **Изоляция**: контейнер и DSH_HOME отдельны на пользователя; случайный
   Docker container name включает hash `$AGCTL_HOME` + user ID, поэтому разные
   развёртывания на одном Docker daemon не конфликтуют.
-- **Граница текущей реализации**: DSH_HOME/файлы персистентны per-user; пока
-  нет отдельного sandbox root на каждую беседу одного пользователя. Если
-  пользователь должен видеть строго только файлы текущей сессии, требуется
-  sessionId → directory mapping/file-tool scope (R1.3).
+- **Файлы per-session**: Host-плагин оборачивает создание новой DSH-сессии и
+  назначает ей `cwd=/workspace/.sessions/<sessionId>` до сохранения Session;
+  папка и header cwd живут на per-user work volume и восстанавливаются после
+  сна контейнера. e2e создаёт сессию через публичный `/chat/api/session/create`
+  и проверяет реальный путь.
+- **Граница безопасности**: разные пользователи разделены контейнерами и
+  томами. Папки разных сессий одного пользователя — организация/привязка
+  артефактов, не security boundary: его shell может перейти в соседнюю папку.
 - **LLM-доступ**: per-user credentials из секретов платформы; если не задан —
   dsh показывает свой модал «Add an API key» (уже работает: пустой ключ
   больше не пишется в `.credentials.yaml` — фикс от 2026-10-19).
@@ -96,7 +100,7 @@
 |---|---|---|
 | R1.1 ✅ | Корень после login → `/chat/`; без cookie → `/app/`; default dsh UI + Cabinet plugin | done |
 | R1.2 ✅ | Per-user lazy dsh runtimes, persistent user DSH_HOME/work volumes, ensure-on-request, 15-min TTL reaper, shutdown cleanup | done; `/chat/` больше не общий контейнер |
-| R1.3 | Жёсткая привязка файлов к `sessionId`, квоты томов/сообщений, prewarm-pool | **M** |
+| R1.3 partial ✅ | Hidden per-session cwd folders implemented; quotas/retention/prewarm and naming the DSH `Ungrouped` session list remain | **M** |
 
 ### 1.4 Что видит пользователь: один домен, разные runtime
 
@@ -135,14 +139,16 @@ workspace. Сейчас dsh web сам раздаёт frontend bundle из runti
                          хранится на диске/PV/S3 независимо от контейнера
 ```
 
-В режиме 1 корневая модель — per-user store, а внутри него — каталог на
-каждую DSH-сессию для её артефактов (`sessions/<sessionId>/files`). Контейнер
-на старте получает этот store как workspace mount; для строгой привязки файлов
-к сессии DSH-плагин/файловый API должен выбирать соответствующий каталог.
-**Нельзя считать это уже реализованным**: нынешний DSH workspace может быть
-общим для сессий одного runtime; per-session filesystem routing — отдельная
-часть R1.2. Убийство контейнера не удаляет том, а новая сессия получает новый
-пустой каталог, если продуктовая политика не переиспользует старый.
+В режиме 1 per-user `work` volume смонтирован как `/workspace`. При вызове
+`session.create` Host-плагин присваивает новому Session header `cwd` в
+`/workspace/.sessions/<sessionId>` до создания Agent. Файлы и вложения, которые
+агент сохраняет относительно текущего cwd, переживают удаление контейнера;
+новая сессия получает новый пустой каталог. Все сессии остаются в одном DSH
+runtime и видны в истории. Поскольку DSH 0.2.0-rc.2 запрещает одновременно
+передать `workspaceId` и индивидуальный `cwd`, plugin снимает Workspace
+association: интерфейс пока показывает такие беседы в `Ungrouped`, а не внутри
+папки Chat. Это UX-полировка; файловая привязка уже работает, но каталоги не
+являются security boundary между сессиями того же пользователя.
 
 ### 1.6 Почему lazy-контейнер, а не только файловые ACL
 
@@ -221,21 +227,41 @@ DSH backend» потребует outbound bridge (см. §2.2).
 **не выполняет требование «front на сервере, backend локально»**. Чтобы
 сохранить центральный dsh UI и локально исполнять задачи, нужен мост:
 
-1. Локальный connector запускает dsh runtime/SDK и сам открывает исходящий
-   TLS/WebSocket канал к agctl (никаких входящих портов на ноутбуке).
-2. Сервер аутентифицирует connector, связывает его с пользователем и
-   краткоживущим workspace/session ID.
-3. Браузерный dsh UI на серверном домене маршрутизирует RPC/stream события
-   в этот канал; локальный connector исполняет файловые/терминальные действия
-   на разрешённой локальной папке.
-4. После logout/revoke канал закрывается; секреты и политика tool grants
-   остаются привязаны к user/session.
+### Проверенные ограничения DSH и мост без форка
 
-Это **не готовая возможность DSH**, а отдельный сетевой адаптер/bridge;
-сначала нужен прототип wire-контракта и threat model. Оценка: **L**. Более
-простой fallback (S): кнопка в кабинете генерирует команду запуска локального
-`dsh web`; браузер открывает localhost. Он бесплатен по серверным CPU, но
-frontend тоже локален — нельзя выдавать его за целевой server-front режим.
+По DSH `0.2.1-alpha.2` Client connection package и `0.2.0-rc.2` image contract:
+
+- dsh web — это Host + web UI; browser Remote-unary использует HTTP, события —
+  `/api/remote.mux` WebSocket. Browser Host trust сверяет `Host` и `Origin`
+  и блокирует `sec-fetch-site: cross-site`; прямой запрос страницы платформы
+  на `http://localhost:<порт>` локального DSH не станет рабочим решением.
+- SDK profile — отдельный stdio JSON-RPC runtime с узким набором методов
+  (`initialize`, prompt/wait, cwd и события), не полный wire-контракт DSH web UI.
+  Перейти на SDK и сохранить целый штатный интерфейс без собственной UI-работы
+  нельзя.
+- Источники upstream:
+  [browser connection/trust](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/connection/README.md),
+  [public URL/trusted host](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/public-deployments.md),
+  [SDK protocol](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/sdk/protocol/README.md).
+
+**Рекомендуемый прототип без форка** — local connector запускает полный `dsh web`
+на loopback и инициирует исходящий TLS/WebSocket control-tunnel к agctl;
+платформа выдаёт одноразовый scoped token, проверяет user/session, затем
+проксирует HTTP + SSE/WebSocket через tunnel к локальному DSH. Upstream к DSH
+gateway получает переписанные `Host`/`Origin` локального listener; браузер
+видит только origin платформы, на ноутбуке нет входящего порта. Контейнер и
+серверный compute не нужны; LLM/API расход остаётся. Это proxy-carrier,
+не переписывание DSH backend. Нужно отдельно проверить multiplexing, upgrade,
+reconnect, revoke и обратную совместимость после `dsh-bump`.
+
+Если «frontend на сервере» означает, что сами static assets обязаны
+физически отдаваться сервером (не через proxied local dsh web), потребуется
+ещё decouple DSH client bundle и подключить его к тому же carrier — отдельная
+последующая волна.
+
+Это **не готовая возможность DSH**, а отдельная задача **L** с threat model и
+e2e. Нынешний fallback в панели запускает локальный `dsh web`, поэтому UI
+тоже локальный; он не выдаётся за целевой server-origin режим.
 
 ### 2.3 UX-петля разработчика (подрежим «на сервере»)
 
@@ -269,7 +295,7 @@ frontend тоже локален — нельзя выдавать его за �
 |---|---|---|
 | R1.1 ✅ | Корень после login → `/chat/`; без cookie → `/app/`; default dsh UI + Cabinet plugin | done |
 | R1.2 ✅ | Per-user lazy dsh runtimes, per-user DSH_HOME/work volumes, ensure-on-request, TTL reaper, active-stream guard, graceful shutdown | done |
-| R1.3 | Каталоги/ACL файлов на каждую chat session (сейчас store per-user); quotas томов/сообщений, prewarm-pool | **M** |
+| R1.3 partial ✅ | Hidden persistent cwd per Session implemented; quotas/retention/prewarm and replacing the DSH `Ungrouped` display remain | **M** |
 | R2.1 ✅ | Заявка на server workspace + admin approve/reject (`--require-approval`), browser flow root→chat→request→approve | done |
 | R2.2 fallback | Команда запуска dsh локально (frontend тоже локальный; fallback, не целевой server-front режим) | prototype |
 | R2.2 target | Connector + outbound WebSocket bridge: server frontend, local DSH backend | **L** |

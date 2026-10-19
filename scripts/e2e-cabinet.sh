@@ -163,6 +163,35 @@ if [ "$SKIP_DOCKER" != "--skip-docker" ]; then
     "$B/api/register" -o /dev/null
   check_chat "second user" "$TEST_HOME/user2.jar" "$TEST_HOME/chat-user2.html"
 
+  # Exercise the public DSH Remote API through the same /chat gateway. A first
+  # session.create allocates a hidden persistent cwd before returning.
+  CREATE_ARGS='{"request":{"workspaceId":"ws-agctl"}}'
+  CREATE_BODY=$(python3 - "session/create" "$CREATE_ARGS" <<'PY'
+import json, sys, uuid
+print(json.dumps({"type":"client-request", "rpcId":str(uuid.uuid4()), "method":sys.argv[1], "payload":{"args":json.loads(sys.argv[2])}}))
+PY
+)
+  CREATE_RESP=$(curl -s -b "$TEST_HOME/jar" -c "$TEST_HOME/jar" -H 'Content-Type: application/json' \
+    -d "$CREATE_BODY" "$B/chat/api/session/create")
+  SESSION_ID=$(printf '%s' "$CREATE_RESP" | python3 -c "import json,sys; d=json.load(sys.stdin); r=d.get('result',{}); v=r.get('value',{}) if isinstance(r,dict) else {}; print(v.get('sessionId',''))" 2>/dev/null || true)
+  if [ -z "$SESSION_ID" ]; then
+    fail "session.create via /chat gateway did not return Session id: $CREATE_RESP"
+  else
+    LIST_ARGS='{"_request":{}}'
+    LIST_BODY=$(python3 - "session/list" "$LIST_ARGS" <<'PY'
+import json, sys, uuid
+print(json.dumps({"type":"client-request", "rpcId":str(uuid.uuid4()), "method":sys.argv[1], "payload":{"args":json.loads(sys.argv[2])}}))
+PY
+)
+    LIST_RESP=$(curl -s -b "$TEST_HOME/jar" -c "$TEST_HOME/jar" -H 'Content-Type: application/json' \
+      -d "$LIST_BODY" "$B/chat/api/session/list")
+    SESSION_CWD=$(printf '%s' "$LIST_RESP" | python3 -c "import json,sys; d=json.load(sys.stdin); r=d.get('result',{}); v=r.get('value',{}) if isinstance(r,dict) else {}; print(next((x.get('cwd','') for x in v.get('items',[]) if x.get('sessionId')=='$SESSION_ID'),''))" 2>/dev/null || true)
+    SESS_DIR="$TEST_HOME/chats/u1/work/.sessions/$SESSION_ID"
+    [ "$SESSION_CWD" = "/workspace/.sessions/$SESSION_ID" ] && [ -f "$SESS_DIR/.agctl-session-workdir" ] \
+      && pass "DSH Session $SESSION_ID is born with a hidden persistent cwd" \
+      || fail "session cwd not scoped: cwd='$SESSION_CWD' dir='$SESS_DIR' response='$LIST_RESP'"
+  fi
+
   python3 - "$TEST_HOME" <<'PY'
 import json, pathlib, subprocess, sys
 root = pathlib.Path(sys.argv[1]).resolve()
@@ -175,11 +204,13 @@ for cid in ids:
         for uid in (1, 2):
             expected = root / "chats" / f"u{uid}" / "dsh-home"
             if source == expected:
-                found[uid] = (data.get("Id"), str(source))
-if set(found) != {1, 2} or found[1][0] == found[2][0] or found[1][1] == found[2][1]:
-    print("FAIL: per-user chat runtimes/volumes not isolated:", found)
+                env = set(data.get("Config", {}).get("Env", []))
+                scoped = "AGCTL_CHAT_SESSION_ROOT=/workspace/.sessions" in env
+                found[uid] = (data.get("Id"), str(source), scoped)
+if set(found) != {1, 2} or found[1][0] == found[2][0] or found[1][1] == found[2][1] or not found[1][2] or not found[2][2]:
+    print("FAIL: per-user chat runtimes/volumes/session-scope env not isolated:", found)
     sys.exit(1)
-print("  ok: two users → distinct DSH containers and persistent DSH_HOME volumes")
+print("  ok: two users → distinct containers/DSH_HOME volumes; chat-only session-scope env is set")
 PY
   [ $? -eq 0 ] && pass "per-user chat runtimes are isolated" || fail "per-user chat isolation check failed"
 fi

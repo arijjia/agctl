@@ -121,7 +121,7 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 	if err != nil {
 		return nil, err
 	}
-	layout := provision.Layout{Work: work, DshHome: dshHome}
+	layout := provision.Layout{Work: work, DshHome: dshHome, ChatSessionScoped: true}
 	name := s.chatRuntimeID(userID)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()

@@ -7,7 +7,8 @@
       "bundles": [
         "@deepseek-ai/dsh-base",
         "@deepseek-ai/dsh-web-app",
-        "@arijjia/agctl-cabinet"
+        "@arijjia/agctl-cabinet",
+        "@arijjia/agctl-chat-session-files"
       ],
       "patchReload": "startup"
     }

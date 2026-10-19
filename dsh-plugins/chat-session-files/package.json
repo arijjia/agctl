@@ -1,0 +1,22 @@
+{
+  "name": "@arijjia/agctl-chat-session-files",
+  "description": "Assign a persistent hidden working directory to each default-chat DSH session",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./path": "./lib/path.js"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
