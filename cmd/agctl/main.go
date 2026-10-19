@@ -101,7 +101,7 @@ func cmdServe(args []string) {
 	fsSet := flag.NewFlagSet("serve", flag.ExitOnError)
 	home := fsSet.String("home", defaultHome(), "каталог данных agctl")
 	addr := fsSet.String("addr", envOr("AGCTL_ADDR", "127.0.0.1:8929"), "адрес UI/API")
-	image := fsSet.String("image", "agctl-dsh:0.1.0", "тег образа agctl-dsh")
+	image := fsSet.String("image", "agctl-dsh:0.2.0", "тег образа agctl-dsh")
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
 	corsOrigins := fsSet.String("cors-origin", envOr("AGCTL_CORS_ORIGINS", ""), "точные origins через запятую, которым разрешён кросс-доменный /api (кабинет-плагин dsh web); пусто = CORS выключен")
