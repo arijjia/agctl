@@ -93,6 +93,103 @@
 | R1.2 | Per-user ленивые чаты: модель `ChatWorkspace` (owner, том, порт, статус), ensure-on-request, TTL-сон, `/chat/` → свой контейнер | **M–L** |
 | R1.3 | Квоты/политики (лимит сообщений, размер тома), prewarm-пул на массовых стартах | **M** |
 
+### 1.4 Что видит пользователь: один домен, разные runtime
+
+**Домен — общая точка входа, не один общий backend и не контейнер в браузере.**
+После входа браузер остаётся на одном домене платформы; agctl по сессии
+пользователя маршрутизирует пути:
+
+```text
+GET /             → без сессии: /app/ (вход); с сессией: /chat/ (dsh UI)
+/chat/*           → dsh runtime режима 1 (цель: личный контейнер текущего пользователя)
+/w/<workspaceId>/*→ контейнер выбранного dev-workspace, с проверкой owner/admin
+/api/*            → control-plane agctl (пользователи, места, права, аудит)
+```
+
+Пользователь **видит интерфейс DSH в браузере**, а не контейнер. Один и тот же
+код/версия dsh-клиента показывается всем, но запросы `/chat/*` проксируются к
+личному backend-runtime, выбранному по auth-cookie; `/w/<id>/` — к конкретному
+workspace. Сейчас dsh web сам раздаёт frontend bundle из runtime-процесса,
+поэтому это «один UX/домен и одинаковые assets», а не обязательно один
+физический процесс frontend на сервере. Позже можно отделить и кешировать
+статический shell, не меняя маршрутизацию API.
+
+Несколько dev-workspaces одного пользователя — отдельные URL на том же домене
+(`/w/<id>/`): можно держать их в разных вкладках, переключать из «Кабинета»;
+дефолтный чат `/chat/` остаётся точкой возврата. Никаких контейнерных IP
+пользователь не видит.
+
+### 1.5 Что «умирает» и что остаётся
+
+Контейнер — это **процессы и временная ОС-среда**, не хранилище истины:
+
+```text
+Контейнер/DSH runtime: dsh web, процессы, tmp, установленные временно пакеты
+                         ↑ attach на время активности; stop/remove безопасен
+Персистентный volume:   DSH_HOME + файлы/артефакты пользователя
+                         хранится на диске/PV/S3 независимо от контейнера
+```
+
+В режиме 1 корневая модель — per-user store, а внутри него — каталог на
+каждую DSH-сессию для её артефактов (`sessions/<sessionId>/files`). Контейнер
+на старте получает этот store как workspace mount; для строгой привязки файлов
+к сессии DSH-плагин/файловый API должен выбирать соответствующий каталог.
+**Нельзя считать это уже реализованным**: нынешний DSH workspace может быть
+общим для сессий одного runtime; per-session filesystem routing — отдельная
+часть R1.2. Убийство контейнера не удаляет том, а новая сессия получает новый
+пустой каталог, если продуктовая политика не переиспользует старый.
+
+### 1.6 Почему lazy-контейнер, а не только файловые ACL
+
+| Модель | Сильная сторона | Ограничение | Где использовать |
+|---|---|---|---|
+| ACL/папки в одном обычном серверном процессе | минимальный расход, как DB/chat backend | dsh tools/shell могут исполняться с одним OS identity; промпт-инъекция или ошибка path-check открывает чужие файлы | данные чата/RAG без произвольного shell |
+| Browser WASM (Pyodide-класс) | per-browser песочница, почти ноль server RAM | Python-подмножество, нет shell/системных бинарей; IndexedDB привязан к браузеру и может очищаться | простые преобразования, не полный DSH |
+| Эфемерный `dsh headless` на задачу + session volume | ~200 МБ/~0,5 с на задачу по нашему замеру; runtime можно уничтожить | без собственного UI dsh web; нужен общий frontend/orchestrator, queue, файловый API и возврат артефактов | следующий шаг для очень высокой плотности Tier 0 |
+| **dsh web container на пользователя, scale-to-zero** | полный штатный DSH UI/tools; kernel/FS/credentials разделены между пользователями | ~125 МБ на активный container; нужны TTL, volume, quotas и scheduler | **рекомендуемый production path режима 1** |
+| Один DSH container на всех | простейший прототип | общие DSH-сессии, DSH_HOME, процессы, credentials и filesystem — нет multi-user security boundary | только локальное демо/доверенная группа, не production |
+
+«Простая песочница, поднялась/умерла» — технически возможна, но надо
+различать два решения: (a) browser WASM (среда прямо в браузере пользователя,
+не DSH shell); (b) server task sandbox, где shared chat frontend вызывает
+`dsh headless` job и монтирует session store. Чтобы сохранить **штатный DSH web
+интерфейс** и одновременно не форкать dsh, самый прямой путь — lazy-container
+на пользователя; task-level sandbox остаётся оптимизацией R1.2/R1.3, а не
+условием первого релиза.
+
+### 1.7 Как это отличается от Open WebUI
+
+- **Open WebUI multi-user**: один web service обслуживает пользователей;
+  чаты, роли, группы, knowledge/file metadata хранятся с application-level
+  ownership/permissions. Это не означает OS-container на каждого — для обычного
+  чата backend не исполняет произвольный shell пользователя.
+- Встроенный Code Interpreter может работать через **Pyodide в браузере**:
+  по документации Open WebUI это безопасная WASM-среда с ограничениями (Python,
+  без shell); filesystem persistence на reload зависит от IndexedDB-настройки
+  и привязана к browser profile. Для полного shell они отделяют **Open Terminal**.
+- Open WebUI отдельно предупреждает: один shared Open Terminal container не
+  является границей изоляции — общие shell/filesystem/network; для недоверенных
+  multi-user случаев рекомендуются per-user containers через их Terminals /
+  Kubernetes backend.
+
+Отсюда «как ChatGPT/Open WebUI» не означает «один контейнер dsh на всех»:
+можно иметь общий web shell/control plane и общий model API, но исполнительный
+runtime обязан быть per-user либо per-task. Источники upstream:
+[Open WebUI scaling](https://github.com/open-webui/docs/blob/main/docs/getting-started/advanced-topics/scaling.md),
+[Code Execution/Pyodide](https://github.com/open-webui/docs/blob/main/docs/features/chat-conversations/chat-features/code-execution/index.md),
+[Open Terminal multi-user warning](https://github.com/open-webui/docs/blob/main/docs/features/open-terminal/advanced/multi-user.md).
+
+### 1.8 Несколько режимов и контейнеров на одном домене
+
+Пользовательский маршрут не переопределяется выбором backend. Sidebar «Кабинет»
+создаёт dev-workspace; agctl возвращает id/URL, и plugin открывает `/w/<id>/`.
+Владелец может иметь одновременно `/chat/`, `/w/A/`, `/w/B/` — это разные
+браузерные вкладки/sessions за одним origin, а не один контейнер или один
+workspace. Корневой `/` всегда возвращает в чат. Серверный workspace (2a)
+появляется в списке только после admin approval; локальный backend (2b) не
+требует ресурсов сервера и не апрувится, но настоящий «server frontend → local
+DSH backend» потребует outbound bridge (см. §2.2).
+
 ## 2. Режим 2 — разработка (плагин «Кабинет» в dsh)
 
 Вход — панель «Кабинет» в сайдбаре dsh (уже сеется в каждый dsh-home из
