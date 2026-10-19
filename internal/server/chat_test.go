@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -65,6 +66,21 @@ func TestReaperStopsIdleChatButKeepsPersistentVolume(t *testing.T) {
 		if _, err := os.Stat(dir); err != nil {
 			t.Fatalf("persistent volume path %s was removed: %v", dir, err)
 		}
+	}
+}
+
+func TestChatTokenRefreshesAfterPodOrContainerRestart(t *testing.T) {
+	e := newTestEnv(t, 3)
+	chat, err := e.srv.ensureChat(505)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := e.srv.chatToken(context.Background(), chat.handle); got != "fake-chat-"+chat.handle.RuntimeID {
+		t.Fatalf("initial boot token = %q", got)
+	}
+	e.rt.logs[chat.handle.InstanceID] = "dsh web listening on http://127.0.0.1/?token=refreshed-token"
+	if got := e.srv.chatToken(context.Background(), chat.handle); got != "refreshed-token" {
+		t.Fatalf("boot token after restart = %q, want refreshed token", got)
 	}
 }
 

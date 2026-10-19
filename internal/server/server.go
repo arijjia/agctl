@@ -81,18 +81,9 @@ var (
 	assetsSkel = assets.DshSkel
 )
 
-// New собирает сервер: docker-рантайм (если доступен), ассеты, auth.
+// New builds the development default (Docker for both workspace and Chat
+// runtimes). Kubernetes deployments should inject their runtime providers.
 func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
-	s := &Server{db: db, sec: sec, cfg: cfg, tokens: map[string]string{}, chats: map[int64]*chatRuntime{}, chatLocks: map[int64]*sync.Mutex{}}
-	if s.cfg.AutosaveEvery == 0 {
-		s.cfg.AutosaveEvery = 2 * time.Minute
-	}
-	if s.cfg.ChatTTL <= 0 {
-		s.cfg.ChatTTL = 15 * time.Minute
-	}
-	if s.cfg.MaxPerUser <= 0 {
-		s.cfg.MaxPerUser = 3
-	}
 	rt, err := dockerrt.New(dockerrt.Config{
 		Image:       cfg.Image,
 		MemoryBytes: cfg.MemoryBytes,
@@ -104,8 +95,29 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.rt = rt
-	s.chatProvider = rt
+	return NewWithRuntimeProviders(db, sec, cfg, rt, rt)
+}
+
+// NewWithRuntimeProviders is the injection point for orchestrated deployments.
+// ChatProvider is endpoint/storage-neutral; the workspace RuntimeIface still
+// needs a Kubernetes adapter before Mode 2 can run without Docker.
+func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, workspaceRuntime RuntimeIface, chatProvider agctlrt.ChatProvider) (*Server, error) {
+	if db == nil || sec == nil || workspaceRuntime == nil || chatProvider == nil {
+		return nil, fmt.Errorf("server: db, secrets and both runtime providers are required")
+	}
+	s := &Server{
+		db: db, sec: sec, cfg: cfg, rt: workspaceRuntime, chatProvider: chatProvider,
+		tokens: map[string]string{}, chats: map[int64]*chatRuntime{}, chatLocks: map[int64]*sync.Mutex{},
+	}
+	if s.cfg.AutosaveEvery == 0 {
+		s.cfg.AutosaveEvery = 2 * time.Minute
+	}
+	if s.cfg.ChatTTL <= 0 {
+		s.cfg.ChatTTL = 15 * time.Minute
+	}
+	if s.cfg.MaxPerUser <= 0 {
+		s.cfg.MaxPerUser = 3
+	}
 	s.authN = &auth.Service{
 		SetSession: func(token string, userID int64, exp time.Time) error {
 			return db.CreateSession(token, userID, exp)
@@ -428,7 +440,11 @@ func (s *Server) chatToken(ctx context.Context, handle agctlrt.ChatHandle) strin
 	if s.chatProvider == nil || handle.InstanceID == "" {
 		return ""
 	}
-	return s.cachedBootToken(ctx, chatTokenCacheKey(handle), func(cctx context.Context) (string, error) {
+	key := chatTokenCacheKey(handle)
+	// A Kubernetes Pod may restart its container without changing its Pod UID.
+	// Refresh logs on upstream 401 so a new DSH boot token replaces the cached one.
+	s.forgetToken(key)
+	return s.cachedBootToken(ctx, key, func(cctx context.Context) (string, error) {
 		return s.chatProvider.LogsChat(cctx, handle, "80")
 	})
 }

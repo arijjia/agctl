@@ -309,31 +309,41 @@ e2e. Нынешний fallback в панели запускает локальн
 
 ## 5. Kubernetes compatibility: target vs current implementation
 
-**Вердикт:** per-user lazy DSH runtime — подход, совместимый с Kubernetes;
-текущий код — пока Docker implementation, не Kubernetes-native deployment.
-Chat API/gateway уже отделён контрактом `ChatProvider`: `ChatSpec` несёт
-стабильные `RuntimeID`/`StorageID`, а `ChatHandle.Endpoint` — внутренний HTTP
-origin. Gateway проксирует на `Endpoint`, не знает контейнерный ID/порт.
-Docker adapter преобразует StorageID в локальные bind paths и loopback port;
-K8s adapter сможет вернуть Pod/Service DNS + PVC. Но `server.New` сейчас
-сам создаёт `dockerrt.Runtime` и назначает его provider-ом; runtime selector,
-Kubernetes client/config и K8s adapter **не реализованы**.
+**Вердикт:** per-user lazy DSH runtime совместим с Kubernetes как модель,
+но текущий продукт ещё не K8s-native. Chat API/gateway отделён контрактом
+`ChatProvider`: `ChatSpec` несёт стабильные `RuntimeID`/`StorageID`, а
+`ChatHandle.Endpoint` — внутренний HTTP origin. Gateway проксирует на `Endpoint`,
+не знает контейнерный ID/порт.
+
+Добавлен prototype `internal/runtime/k8srt`: он создаёт Pod + ClusterIP
+Service + per-user PVC, задаёт `RuntimeClassName`, requests/limits, non-root,
+seccomp, отключает service-account token; idle stop удаляет Pod/Service,
+оставляя PVC. Provider seeding выполняет init-container через `agctl init-chat-home`.
+Fake-client tests проверяют resource shape и сохранение PVC. Но `server.New`
+по-прежнему выбирает Docker по умолчанию; `cmd serve` пока не умеет выбрать
+K8s provider, а live-cluster smoke не запускался. Поэтому этот prototype не
+является готовым K8s deployment.
 
 ### Целевой K8s lifecycle режима «Чат»
 
 1. Один Pod с `dsh web` на активного пользователя (или Sandbox CR, владеющий
-   этим Pod). Agctl выдаёт/находит runtime по `userID`, ждёт readiness, затем
-   проксирует `/chat/` на **ClusterIP Service/DNS**. Никаких `hostPort`, node IP
-   или прямых портов в браузере.
+   этим Pod). Agctl выдаёт/находит runtime по `userID` и проксирует `/chat/` на
+   **ClusterIP Service/DNS**. K8s prototype возвращает endpoint сразу после
+   создания Pod; до readiness клиент увидит страницу прогрева/retry. Никаких
+   `hostPort`, node IP или прямых портов в браузере.
 2. Постоянный PVC на пользователя (`StorageID`), с подкаталогами DSH_HOME,
    workspace и `.sessions/<sessionId>`. Idle TTL удаляет/останавливает **Pod**,
    сохраняя PVC; следующий запрос пересоздаёт compute и монтирует тот же claim.
    Удаление PVC — отдельная retention/deletion операция, не действие reaper.
-3. Образ DSH закреплён digest/tag; `RuntimeClassName` (`gvisor`/`kata`) —
-   опциональный режим после установки и проверки handler на узлах. Одного поля
-   `runtimeClassName` недостаточно: Kubernetes не устанавливает runtime на
-   ноды. Добавить requests/limits, non-root, seccomp, drop capabilities,
-   read-only root FS где возможно, NetworkPolicy и ограниченный ServiceAccount.
+3. Образ DSH должен быть опубликован в registry, доступном кластеру, и закреплён
+   digest/tag; `RuntimeClassName` (`gvisor`/`kata`) — опциональный режим после
+   установки и проверки handler на узлах. K8s prototype уже задаёт
+   requests/limits, non-root, seccomp, drop capabilities, выключает automount
+   service-account token и ограничивает ingress NetworkPolicy (same-namespace,
+   только relay-порт); egress остаётся открытым под user-configured LLM base
+   URLs — residual. API key создаётся как K8s Secret, но init записывает его и
+   в DSH_HOME PVC; нужны encryption-at-rest для Secret и PVC и RBAC smoke, без
+   этого deployment нельзя считать hardened.
 4. На первом этапе допустим один agctl control-plane replica с persistent DB;
    для нескольких replicas нужны общая PostgreSQL и distributed runtime
    leases/locks. Текущие SQLite + in-memory active/TTL map не дают HA и не
@@ -344,11 +354,12 @@ Kubernetes client/config и K8s adapter **не реализованы**.
 
 KEDA — autoscaler workload replicas, не per-user sandbox/controller; одной
 `Deployment replicas: 0` недостаточно, чтобы создавать адресный Pod/PVC на
-каждого пользователя. Рассмотреть собственный controller/CRD или
-[Kubernetes Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox);
-прототип управления userID→Pod/Service/PVC и конкурентного ensure ещё не
-реализован. StatefulSet тоже возможен, но отдельный StatefulSet на каждого
-пользователя — не выбранный пока вариант.
+каждого пользователя. K8s ChatProvider prototype уже делает базовый
+userID→Pod/Service/PVC ensure; controller/CRD, распределённые leases,
+reconnect/recovery и live-cluster проверки ещё не реализованы. Рассмотреть
+собственный controller/CRD или [Kubernetes Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox).
+StatefulSet тоже возможен, но отдельный StatefulSet на каждого пользователя —
+не выбранный пока вариант.
 
 Проверенные официальные примитивы: [StatefulSet и PVC lifecycle](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/),
 [сохранение volumes после удаления Pod/StatefulSet](https://kubernetes.io/docs/tasks/run-application/delete-stateful-set/),

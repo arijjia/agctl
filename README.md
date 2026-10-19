@@ -238,13 +238,15 @@ IMG=agctl-dsh:0.2.0 scripts/e2e-cabinet-playwright.sh
   локальных процессов к loopback-портам остаётся residual risk.
 - SSH-порт также loopback-only: для удалённой машины нужен доверенный
   туннель/VPN.
-- **Это ещё не Kubernetes-native runtime**: ChatProvider контракт уже отделяет
-  endpoint/StorageID (Docker loopback сейчас, Service DNS + PVC для K8s позже),
-  но реализован только Docker adapter и `server.New` hardcodes его. Workspace
-  RuntimeIface всё ещё содержит Docker HostPort/host-path assumptions; нет
-  K8s runtime selector, Pod/Service/PVC controller, distributed runtime leases
-  или multi-replica DB. До этого этапа продукт запускать как single-control-plane
-  Docker deployment, не как K8s-native.
+- **Это ещё не Kubernetes-native deployment**: ChatProvider отделяет
+  endpoint/StorageID; prototype `internal/runtime/k8srt` создаёт Pod/Service/PVC
+  и прошёл fake-client tests (Pod non-root/seccomp, ClusterIP без hostPort,
+  ingress NetworkPolicy, PVC переживает stop); `server.New`/`cmd serve` пока
+  выбирают Docker, а live-cluster smoke не запускался. Workspace RuntimeIface всё ещё содержит
+  Docker HostPort/host-path assumptions; нет K8s runtime selector/controller,
+  distributed runtime leases или multi-replica DB. До этого этапа запускать как
+  single-control-plane Docker deployment, не как production K8s. Для K8s также
+  нужны NetworkPolicy, RBAC и encryption-at-rest для Secret/PVC.
 - Автосохранение git выполняет agctl каждые 2 минуты и при остановке: агент
   коммитит часто, agctl доставляет до bare-origin.
 

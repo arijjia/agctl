@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -24,7 +25,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/arijjia/agctl/internal/assets"
 	"github.com/arijjia/agctl/internal/backlog"
+	"github.com/arijjia/agctl/internal/provision"
 	"github.com/arijjia/agctl/internal/secrets"
 	"github.com/arijjia/agctl/internal/server"
 	"github.com/arijjia/agctl/internal/store"
@@ -45,6 +48,8 @@ func main() {
 		cmdServe(os.Args[2:])
 	case "migrate":
 		cmdMigrate(os.Args[2:])
+	case "init-chat-home": // внутренний initContainer helper для K8s Chat PVC
+		cmdInitChatHome(os.Args[2:])
 	case "backlog":
 		os.Exit(backlog.Main(os.Args[2:], os.Stdout, os.Stderr))
 	case "workspace":
@@ -195,6 +200,64 @@ func cmdMigrate(args []string) {
 	}
 	defer db.Close()
 	fmt.Println("migrate: схема актуальна:", filepath.Join(absHome, "agctl.db"))
+}
+
+// cmdInitChatHome seeds/refreshes the DSH_HOME PVC from a Kubernetes init
+// container. Provider data arrives only through env/Secret, never CLI args.
+func cmdInitChatHome(args []string) {
+	fsSet := flag.NewFlagSet("init-chat-home", flag.ExitOnError)
+	home := fsSet.String("home", os.Getenv("DSH_HOME"), "каталог DSH_HOME на PVC")
+	refresh := fsSet.Bool("refresh-provider", os.Getenv("AGCTL_REFRESH_PROVIDER") == "1", "обновить настройки провайдера")
+	_ = fsSet.Parse(args)
+	if *home == "" {
+		log.Fatal("init-chat-home: требуется --home или DSH_HOME")
+	}
+	models := []string{}
+	if raw := os.Getenv("AGCTL_LLM_MODELS"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &models); err != nil {
+			log.Fatalf("init-chat-home: AGCTL_LLM_MODELS: %v", err)
+		}
+	}
+	provider := provision.Provider{
+		BaseURL: os.Getenv("AGCTL_LLM_BASE_URL"),
+		Model:   os.Getenv("AGCTL_LLM_MODEL"),
+		Models:  models,
+		APIKey:  os.Getenv("AGCTL_LLM_API_KEY"),
+	}
+	seeded, refreshed, err := initChatHome(*home, provider, *refresh, assets.DshSkel)
+	if err != nil {
+		log.Fatal(err)
+	}
+	switch {
+	case seeded:
+		fmt.Println("init-chat-home: seeded")
+	case refreshed:
+		fmt.Println("init-chat-home: provider refreshed")
+	default:
+		fmt.Println("init-chat-home: existing home preserved")
+	}
+}
+
+func initChatHome(home string, provider provision.Provider, refresh bool, skel fs.FS) (seeded, refreshed bool, err error) {
+	if home == "" {
+		return false, false, fmt.Errorf("init-chat-home: home is empty")
+	}
+	profile := filepath.Join(home, "profiles", "web", "package.json")
+	if _, statErr := os.Stat(profile); os.IsNotExist(statErr) {
+		if err := provision.SeedDshHome(home, provider, skel); err != nil {
+			return false, false, err
+		}
+		return true, false, nil
+	} else if statErr != nil {
+		return false, false, statErr
+	}
+	if refresh {
+		if err := provision.RefreshProvider(home, provider); err != nil {
+			return false, false, err
+		}
+		return false, true, nil
+	}
+	return false, false, nil
 }
 
 func dockerStatus() string {

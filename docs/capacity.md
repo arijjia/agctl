@@ -97,6 +97,7 @@ dev-места = 5 % пользователей, из них ⅓ живые од
 верифицирован живым прогоном — при пилоте повторить `capacity-bench*.sh` на
 целевом железе. Таблица k3s — целевой sizing, не результат кластерного теста;
 Kubernetes scheduler/PVC attach и RuntimeClass gVisor/Kata overhead не измерены.
-В коде пока только Docker runtime adapter; K8s Pods/Services/PVC controller —
-отдельная незакрытая задача. Пиковые сценарии («пара одновременно») покрывать
-prewarm (R1.3).
+Есть K8s ChatProvider prototype с Pod/Service/PVC и fake-client tests, но он
+не подключён к `cmd serve` и не проверен на живом кластере; Dev-workspace adapter,
+NetworkPolicy, PVC retention/encryption и cluster sizing остаются открытыми.
+Пиковые сценарии («пара одновременно») покрывать prewarm (R1.3).

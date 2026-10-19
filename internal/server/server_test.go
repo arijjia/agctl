@@ -15,7 +15,6 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/arijjia/agctl/internal/auth"
 	"github.com/arijjia/agctl/internal/provision"
 	agctlrt "github.com/arijjia/agctl/internal/runtime"
 	"github.com/arijjia/agctl/internal/runtime/dockerrt"
@@ -139,21 +138,9 @@ func newTestEnv(t *testing.T, maxPerUser int) *testEnv {
 	}
 	rt := newFakeRuntime()
 	rt.chatHome = home
-	s := &Server{
-		db: db, sec: sec, rt: rt, chatProvider: rt,
-		cfg:    Config{Home: home, Addr: "test", MaxPerUser: maxPerUser, AutosaveEvery: time.Hour},
-		tokens: map[string]string{},
-	}
-	s.authN = &auth.Service{
-		SetSession: db.CreateSession,
-		SessionUser: func(token string) (int64, string, string, error) {
-			u, err := db.SessionUser(token)
-			if err != nil {
-				return 0, "", "", err
-			}
-			return u.ID, u.Login, u.Role, nil
-		},
-		DeleteSession: db.DeleteSession,
+	s, err := NewWithRuntimeProviders(db, sec, Config{Home: home, Addr: "test", MaxPerUser: maxPerUser, AutosaveEvery: time.Hour}, rt, rt)
+	if err != nil {
+		t.Fatalf("server runtime injection: %v", err)
 	}
 	// минимальный веб-корень для статики SPA
 	webFS := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<!doctype html><title>agctl</title>")}}
