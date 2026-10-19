@@ -105,6 +105,7 @@ func cmdServe(args []string) {
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
 	corsOrigins := fsSet.String("cors-origin", envOr("AGCTL_CORS_ORIGINS", ""), "точные origins через запятую, которым разрешён кросс-доменный /api (кабинет-плагин dsh web); пусто = CORS выключен")
+	tier0 := fsSet.Bool("tier0", true, "поднимать общий чат (Tier 0) и отдавать корень платформы в него")
 	maxPerUser := fsSet.Int("max-per-user", 3, "лимит воркспейсов на пользователя")
 	memGB := fsSet.Float64("mem-gb", 2, "лимит памяти контейнера, ГБ")
 	cpus := fsSet.Float64("cpus", 2, "лимит CPU контейнера")
@@ -136,6 +137,7 @@ func cmdServe(args []string) {
 		BinDir:        firstNonEmpty(*binDir, "dist"),
 		SecureCookies: *secureCookies,
 		CORSOrigins:   splitCSV(*corsOrigins),
+		Tier0:         *tier0,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -149,6 +151,7 @@ func cmdServe(args []string) {
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
 	srv.StartBackground(ctx)
+	go srv.EnsureTier0(ctx)
 
 	httpSrv := &http.Server{
 		Addr:              *addr,

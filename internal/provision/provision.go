@@ -354,10 +354,16 @@ func RefreshProvider(home string, p Provider) error {
 	if err := os.WriteFile(filepath.Join(home, "settings.yaml"), []byte(sb.String()), 0o644); err != nil {
 		return fmt.Errorf("provision: settings.yaml: %w", err)
 	}
-	creds := fmt.Sprintf(`version: 1
+	// Пустой токен — не пишем ключ вовсе: dsh-credentials-local падает на
+	// пустом значении («remove the key instead») и показывает свой модал
+	// ввода API-ключа (паттерн общего чата Tier 0).
+	creds := "version: 1\nrefs: {}\n"
+	if p.APIKey != "" {
+		creds = fmt.Sprintf(`version: 1
 refs:
   AGCTL_LLM_API_KEY: %s
 `, yamlStr(p.APIKey))
+	}
 	if err := os.WriteFile(filepath.Join(home, ".credentials.yaml"), []byte(creds), 0o600); err != nil {
 		return fmt.Errorf("provision: .credentials.yaml: %w", err)
 	}

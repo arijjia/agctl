@@ -117,5 +117,25 @@ else
   fail "night-profile: нет лога веба"
 fi
 
+# ── Секция C: общий чат Tier 0 (корень платформы → dsh) ────────────────────
+# serve поднимается с --tier0 (дефолт): залогинен → /chat/ (dsh web с панелью
+# Кабинет), не залогинен → /app/ (SPA-логин).
+if [ "$SKIP_DOCKER" != "--skip-docker" ]; then
+  nohup "$BIN" serve --home "$TEST_HOME" --addr 127.0.0.1:18935 --image "$IMG" \
+    >> "$TEST_HOME/serve.log" 2>&1 &
+  AGCTL_PID=$!
+  for i in $(seq 1 15); do sleep 1; curl -s -o /dev/null "$B/api/me" && break; done
+  curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' -o /dev/null "$B/" | grep -q '/app/' \
+    && pass "корень без сессии → /app/ (SPA-логин)" \
+    || fail "корень без сессии не ведёт на /app/"
+  sleep 7  # EnsureTier0 поднимает общий чат асинхронно
+  T0HTML=$(curl -s -b "$TEST_HOME/jar" -L "$B/../chat/" 2>/dev/null || curl -s -b "$TEST_HOME/jar" -L "http://127.0.0.1:18935/chat/")
+  echo "$T0HTML" | grep -q 'agctl-cabinet' \
+    && pass "Tier 0: /chat/ открывает dsh web с панелью Кабинет" \
+    || fail "Tier 0: /chat/ без панели (прогрев? проверь serve.log)"
+  kill "$AGCTL_PID" 2>/dev/null; AGCTL_PID=""
+  docker rm -f agctl-tier0 >/dev/null 2>&1 || true
+fi
+
 echo "== итог: PASS=$PASS FAIL=$FAIL =="
 [ "$FAIL" -eq 0 ]

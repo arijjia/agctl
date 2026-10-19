@@ -40,6 +40,7 @@ type Config struct {
 	SecureCookies bool // true when agctl is served behind a trusted HTTPS terminator
 	AutosaveEvery time.Duration
 	CORSOrigins   []string // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
+	Tier0         bool     // поднимать общий чат (Tier 0) и отдавать корень платформы в него
 }
 
 // RuntimeIface — то, что серверу нужно от docker-рантайма (мокается в тестах).
@@ -62,6 +63,15 @@ type Server struct {
 	provMu sync.Mutex // один provision за раз упрощает порты/гонки
 	tokMu  sync.Mutex // кэш boot-токенов dsh web по воркспейсам
 	tokens map[string]string
+
+	tier0Mu sync.Mutex // общий чат (Tier 0): один инстанс на платформу
+	tier0   tier0State // порт/контейнер общего чата
+}
+
+// tier0State — живой общий чат (Tier 0).
+type tier0State struct {
+	port        int    // опубликованный на 127.0.0.1 порт dsh web
+	containerID string // для чтения boot-токена из логов
 }
 
 // встроенные ассеты для provision (сырые FS; префиксы знает provision).
@@ -147,11 +157,30 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /w/{id}/", s.requireUser(s.workspaceProxy))
 
 	// статика SPA
+	if s.cfg.Tier0 {
+		// SPA живёт на /app/, корень платформы — общий чат (Tier 0).
+		s.registerTier0Routes(mux, webFS)
+	}
 	mux.Handle("GET /", http.FileServerFS(webFS))
 	if len(s.cfg.CORSOrigins) > 0 {
 		return s.logMiddleware(s.corsMiddleware(mux))
 	}
 	return s.logMiddleware(mux)
+}
+
+// registerTier0Routes — маршруты общего чата (Tier 0). Корень платформы:
+// залогинен → /chat/ (dsh), нет → /app/ (SPA-логин). SPA переезжает на /app/.
+func (s *Server) registerTier0Routes(mux *http.ServeMux, webFS fs.FS) {
+	mux.HandleFunc("GET /{$}", s.rootEntry)
+	mux.HandleFunc("GET /chat", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/chat/", http.StatusTemporaryRedirect)
+	})
+	mux.HandleFunc("GET /chat/", s.requireUser(s.tier0Proxy))
+	mux.HandleFunc("POST /chat/", s.requireUser(s.tier0Proxy))
+	mux.HandleFunc("GET /app", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/app/", http.StatusPermanentRedirect)
+	})
+	mux.Handle("GET /app/", http.StripPrefix("/app", http.FileServerFS(webFS)))
 }
 
 // corsMiddleware — точный allow-list origins для /api (кабинет-плагин dsh web

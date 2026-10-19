@@ -156,3 +156,17 @@ func TestBacklogFlow(t *testing.T) {
 }
 
 // object нужен только для подсчёта коммитов в тесте.
+
+func TestRefreshProviderEmptyKeyOmitsRef(t *testing.T) {
+	home := t.TempDir()
+	if err := RefreshProvider(home, Provider{}); err != nil {
+		t.Fatal(err)
+	}
+	creds, err := os.ReadFile(filepath.Join(home, ".credentials.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(creds), "AGCTL_LLM_API_KEY") {
+		t.Fatalf("пустой ключ не должен попадать в credentials: %s", creds)
+	}
+}
