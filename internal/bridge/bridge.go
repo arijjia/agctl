@@ -79,7 +79,7 @@ func (m *Manager) IssueGrant(userID int64, ttl time.Duration) (string, error) {
 	m.mu.Lock()
 	issuedAt := m.now()
 	for existingHash, existing := range m.grants {
-		if !issuedAt.Before(existing.expiresAt) {
+		if existing.userID == userID || !issuedAt.Before(existing.expiresAt) {
 			delete(m.grants, existingHash)
 		}
 	}
@@ -196,6 +196,14 @@ func Connect(ctx context.Context, endpoint, grantToken, localAddr string) error 
 		}
 		go relayStream(ctx, stream, localAddr)
 	}
+}
+
+// Connected reports whether the user has an active connector session.
+func (m *Manager) Connected(userID int64) bool {
+	m.mu.RLock()
+	p := m.peers[userID]
+	m.mu.RUnlock()
+	return p != nil && !p.session.IsClosed()
 }
 
 // WaitConnected is useful to avoid racing an inbound browser request against

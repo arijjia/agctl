@@ -125,6 +125,7 @@ agctl version
 | `--tier0=false` | отключить корневой маршрут в личный чат (для админ-only стенда) |
 | `--require-approval` | новые dev-workspaces создаются заявкой, до admin approve контейнер не выдаётся |
 | `--secure-cookies` | флаг Secure у cookies (за HTTPS-ingress) |
+| `--experimental-local-bridge` | experimental pairing API локального connector (требует `--secure-cookies` и доверенного TLS ingress); tunnel proxy в `/chat`/`/w` пока не смонтирован |
 | `--cors-origin LIST` | точные origins для панели Кабинета, через запятую; пусто = CORS выключен |
 | `--llm-base-url URL` | OpenAI-совместимый провайдер чата по умолчанию (напр. корпоративный LiteLLM) |
 | `--llm-models LIST` | модели чата по умолчанию через запятую; `--llm-model M` — какая из них основная |
@@ -232,9 +233,11 @@ IMG=agctl-dsh:0.2.0 scripts/e2e-cabinet-playwright.sh
   без флага демо создаёт место напрямую.
 - «Локальный backend + frontend на сервере» пока не реализован end-to-end.
   Панель показывает fallback-команду, которая запускает локальный dsh web
-  вместе с его UI. `internal/bridge` содержит только изолированный in-memory
-  transport spike (grant + WSS/yamux + fake HTTP/SSE/WS tests): он не подключён
-  к `cmd serve`, Cabinet или DSH, поэтому не является рабочей функцией.
+  вместе с его UI. `internal/bridge` содержит изолированный transport spike
+  и opt-in pairing API (`--experimental-local-bridge`, требует secure TLS):
+  grant/status/revoke + bearer-connector handshake протестированы, но tunnel
+  proxy не смонтирован в `/chat`/`/w`, reconnect и DSH boot-token flow не
+  сделаны — рабочим режимом это пока не является.
 - DSH UI проходит через same-origin gateway; Docker web/SSH порты привязаны
   к `127.0.0.1:<порт>`. Для удалённого браузера нужен доверенный TLS ingress
   на agctl и `--secure-cookies`. Сам agctl TLS не терминирует; доступ

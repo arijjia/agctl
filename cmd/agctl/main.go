@@ -111,6 +111,7 @@ func cmdServe(args []string) {
 	image := fsSet.String("image", "agctl-dsh:0.2.0", "тег образа agctl-dsh")
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
+	experimentalLocalBridge := fsSet.Bool("experimental-local-bridge", false, "experimental local connector pairing API (requires trusted TLS ingress and --secure-cookies)")
 	requireApproval := fsSet.Bool("require-approval", false, "создание dev-мест только через заявку с апрувом администратора")
 	chatTTLMin := fsSet.Int("chat-ttl-min", 15, "минуты простоя чат-контейнера до сна (том пользователя сохраняется)")
 	corsOrigins := fsSet.String("cors-origin", envOr("AGCTL_CORS_ORIGINS", ""), "точные origins через запятую, которым разрешён кросс-доменный /api (кабинет-плагин dsh web); пусто = CORS выключен")
@@ -125,6 +126,9 @@ func cmdServe(args []string) {
 	llmModels := fsSet.String("llm-models", envOr("AGCTL_LLM_MODELS", ""), "список моделей чата через запятую")
 	llmAPIKey := fsSet.String("llm-api-key", envOr("AGCTL_LLM_API_KEY", ""), "ключ провайдера чата (предпочтительно через env AGCTL_LLM_API_KEY)")
 	_ = fsSet.Parse(args)
+	if *experimentalLocalBridge && !*secureCookies {
+		log.Fatal("--experimental-local-bridge requires --secure-cookies behind a trusted TLS ingress")
+	}
 
 	defaultLLM := provision.Provider{
 		BaseURL: *llmBaseURL,
@@ -153,19 +157,20 @@ func cmdServe(args []string) {
 		log.Fatal(err)
 	}
 	srv, err := server.New(db, sec, server.Config{
-		Home:            absHome,
-		Addr:            *addr,
-		MaxPerUser:      *maxPerUser,
-		MemoryBytes:     int64(*memGB * 1024 * 1024 * 1024),
-		NanoCPUs:        int64(*cpus * 1e9),
-		Image:           *image,
-		BinDir:          firstNonEmpty(*binDir, "dist"),
-		SecureCookies:   *secureCookies,
-		CORSOrigins:     splitCSV(*corsOrigins),
-		Tier0:           *tier0,
-		RequireApproval: *requireApproval,
-		ChatTTL:         time.Duration(*chatTTLMin) * time.Minute,
-		DefaultLLM:      defaultLLM,
+		Home:                    absHome,
+		Addr:                    *addr,
+		MaxPerUser:              *maxPerUser,
+		MemoryBytes:             int64(*memGB * 1024 * 1024 * 1024),
+		NanoCPUs:                int64(*cpus * 1e9),
+		Image:                   *image,
+		BinDir:                  firstNonEmpty(*binDir, "dist"),
+		SecureCookies:           *secureCookies,
+		ExperimentalLocalBridge: *experimentalLocalBridge,
+		CORSOrigins:             splitCSV(*corsOrigins),
+		Tier0:                   *tier0,
+		RequireApproval:         *requireApproval,
+		ChatTTL:                 time.Duration(*chatTTLMin) * time.Minute,
+		DefaultLLM:              defaultLLM,
 	})
 	if defaultLLM.BaseURL != "" {
 		log.Printf("llm: платформенный провайдер чата по умолчанию %s (моделей: %d, ключ %s)", defaultLLM.BaseURL, len(defaultLLM.AllModels()), keyState(defaultLLM.APIKey))

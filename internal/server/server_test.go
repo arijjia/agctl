@@ -128,6 +128,11 @@ type testEnv struct {
 }
 
 func newTestEnv(t *testing.T, maxPerUser int) *testEnv {
+	return newTestEnvWith(t, maxPerUser, nil)
+}
+
+// newTestEnvWith позволяет тестам включать experimental-флаги конфигурации.
+func newTestEnvWith(t *testing.T, maxPerUser int, tune func(*Config)) *testEnv {
 	t.Helper()
 	home := t.TempDir()
 	db, err := store.Open(filepath.Join(home, "test.db"))
@@ -144,7 +149,11 @@ func newTestEnv(t *testing.T, maxPerUser int) *testEnv {
 	}
 	rt := newFakeRuntime()
 	rt.chatHome = home
-	s, err := NewWithRuntimeProviders(db, sec, Config{Home: home, Addr: "test", MaxPerUser: maxPerUser, AutosaveEvery: time.Hour}, rt, rt)
+	cfg := Config{Home: home, Addr: "test", MaxPerUser: maxPerUser, AutosaveEvery: time.Hour}
+	if tune != nil {
+		tune(&cfg)
+	}
+	s, err := NewWithRuntimeProviders(db, sec, cfg, rt, rt)
 	if err != nil {
 		t.Fatalf("server runtime injection: %v", err)
 	}

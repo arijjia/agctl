@@ -22,6 +22,7 @@ import (
 
 	"github.com/arijjia/agctl/internal/assets"
 	"github.com/arijjia/agctl/internal/auth"
+	"github.com/arijjia/agctl/internal/bridge"
 	"github.com/arijjia/agctl/internal/provision"
 	agctlrt "github.com/arijjia/agctl/internal/runtime"
 	"github.com/arijjia/agctl/internal/runtime/dockerrt"
@@ -31,20 +32,21 @@ import (
 
 // Config — параметры сервера.
 type Config struct {
-	Home            string // $AGCTL_HOME
-	Addr            string // слушающий адрес основного UI/API
-	MaxPerUser      int
-	MemoryBytes     int64
-	NanoCPUs        int64
-	Image           string
-	BinDir          string
-	SecureCookies   bool // true when agctl is served behind a trusted HTTPS terminator
-	AutosaveEvery   time.Duration
-	CORSOrigins     []string           // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
-	Tier0           bool               // корень платформы ведёт в персональный чат (/chat/)
-	ChatTTL         time.Duration      // простой чат-контейнера до сна (по умолчанию 15 мин)
-	RequireApproval bool               // создание dev-мест только через заявку с апрувом админа
-	DefaultLLM      provision.Provider // платформенный провайдер чата по умолчанию (корп. LiteLLM); личный секрет пользователя его перекрывает
+	Home                    string // $AGCTL_HOME
+	Addr                    string // слушающий адрес основного UI/API
+	MaxPerUser              int
+	MemoryBytes             int64
+	NanoCPUs                int64
+	Image                   string
+	BinDir                  string
+	SecureCookies           bool // true when agctl is served behind a trusted HTTPS terminator
+	AutosaveEvery           time.Duration
+	CORSOrigins             []string           // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
+	Tier0                   bool               // корень платформы ведёт в персональный чат (/chat/)
+	ChatTTL                 time.Duration      // простой чат-контейнера до сна (по умолчанию 15 мин)
+	RequireApproval         bool               // создание dev-мест только через заявку с апрувом админа
+	ExperimentalLocalBridge bool               // opt-in pairing/status/revoke API for local connector
+	DefaultLLM              provision.Provider // платформенный провайдер чата по умолчанию (корп. LiteLLM); личный секрет пользователя его перекрывает
 }
 
 // RuntimeIface — то, что серверу нужно от docker-рантайма (мокается в тестах).
@@ -72,6 +74,7 @@ type Server struct {
 	chats        map[int64]*chatRuntime // userID → живой runtime handle
 	chatLocks    map[int64]*sync.Mutex  // сериализация первого старта per-user
 	chatProvider agctlrt.ChatProvider   // Docker now; K8s adapter can return a Service DNS endpoint
+	localBridge  *bridge.Manager        // experimental outbound local-backend connector, opt-in routes only
 	requestMu    sync.Mutex             // не допускать двойной approve одной заявки
 
 }
@@ -108,7 +111,8 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 	}
 	s := &Server{
 		db: db, sec: sec, cfg: cfg, rt: workspaceRuntime, chatProvider: chatProvider,
-		tokens: map[string]string{}, chats: map[int64]*chatRuntime{}, chatLocks: map[int64]*sync.Mutex{},
+		localBridge: bridge.NewManager(),
+		tokens:      map[string]string{}, chats: map[int64]*chatRuntime{}, chatLocks: map[int64]*sync.Mutex{},
 	}
 	if s.cfg.AutosaveEvery == 0 {
 		s.cfg.AutosaveEvery = 2 * time.Minute
@@ -139,6 +143,9 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 // Close освобождает живые ленивые chat-контейнеры (тома не удаляются), затем
 // закрывает Docker runtime. Dev-workspaces остаются под управлением владельца.
 func (s *Server) Close() {
+	if s.localBridge != nil {
+		s.localBridge.Close()
+	}
 	s.chatMu.Lock()
 	handles := make([]agctlrt.ChatHandle, 0, len(s.chats))
 	for _, chat := range s.chats {
@@ -187,6 +194,20 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/workspace-requests/{id}/reject", s.requireAdmin(s.handleWorkspaceRequestDecision(false)))
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
+	// Experimental local-connector control plane. Routes register so the
+	// flag-off answer is an honest 404 (not a confusing 405/SPA page); every
+	// handler re-checks the flag. The tunnel proxy itself is still not mounted
+	// into /chat or /w until the DSH boot-token/cookie flow is complete.
+	mux.HandleFunc("POST /api/local-backend/grant", s.requireUser(s.handleLocalBackendGrant))
+	mux.HandleFunc("GET /api/local-backend/status", s.requireUser(s.handleLocalBackendStatus))
+	mux.HandleFunc("DELETE /api/local-backend", s.requireUser(s.handleLocalBackendRevoke))
+	mux.Handle("GET /api/local-backend/connect", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.localBridgeEnabled() {
+			http.NotFound(w, r)
+			return
+		}
+		s.localBridge.ConnectorHandler().ServeHTTP(w, r)
+	}))
 	mux.HandleFunc("GET /w/{id}", s.requireUser(s.workspaceProxyEntry))
 	// The browser fetches webmanifest without agctl credentials; expose only
 	// this non-sensitive static document publicly for a known workspace.
