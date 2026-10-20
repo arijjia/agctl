@@ -3,7 +3,9 @@ module github.com/arijjia/agctl
 go 1.27.1
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/go-git/go-git/v5 v5.19.2
+	github.com/hashicorp/yamux v0.1.2
 	github.com/moby/moby/api v1.56.0
 	github.com/moby/moby/client v0.6.0
 	golang.org/x/crypto v0.57.0

@@ -232,8 +232,9 @@ IMG=agctl-dsh:0.2.0 scripts/e2e-cabinet-playwright.sh
   без флага демо создаёт место напрямую.
 - «Локальный backend + frontend на сервере» пока не реализован end-to-end.
   Панель показывает fallback-команду, которая запускает локальный dsh web
-  вместе с его UI; целевой server-frontend/local-runtime требует outbound
-  connector/WebSocket bridge.
+  вместе с его UI. `internal/bridge` содержит только изолированный in-memory
+  transport spike (grant + WSS/yamux + fake HTTP/SSE/WS tests): он не подключён
+  к `cmd serve`, Cabinet или DSH, поэтому не является рабочей функцией.
 - DSH UI проходит через same-origin gateway; Docker web/SSH порты привязаны
   к `127.0.0.1:<порт>`. Для удалённого браузера нужен доверенный TLS ingress
   на agctl и `--secure-cookies`. Сам agctl TLS не терминирует; доступ

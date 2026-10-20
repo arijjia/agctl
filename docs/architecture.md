@@ -259,6 +259,13 @@ gateway получает переписанные `Host`/`Origin` локальн
 не переписывание DSH backend. Нужно отдельно проверить multiplexing, upgrade,
 reconnect, revoke и обратную совместимость после `dsh-bump`.
 
+**Текущий кодовый статус:** `internal/bridge` теперь содержит только
+изолированный transport spike: in-memory single-use grant, outbound WebSocket
++ yamux streams к loopback fake DSH, owner-keyed proxy с HTTP/SSE/WS и фильтрацией
+`agctl_*` cookies. Fake e2e проходит. Пакет не подключён к server routes,
+`cmd serve`, CLI или Cabinet; нет persistence/reconnect, DSH boot-token/cookie
+mint и pinned-image DSH test. Это доказательство carrier-пути, не local mode.
+
 Если «frontend на сервере» означает, что сами static assets обязаны
 физически отдаваться сервером (не через proxied local dsh web), потребуется
 ещё decouple DSH client bundle и подключить его к тому же carrier — отдельная
