@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +28,13 @@ import (
 
 const maxGrantTTL = 5 * time.Minute
 
+// helloFrame is the connector's first control message: it announces the
+// loopback authority of the local DSH web endpoint so the server-side proxy
+// can rewrite Host/Origin and DSH can bind its cookies to a stable authority.
+type helloFrame struct {
+	LocalAuthority string `json:"localAuthority"`
+}
+
 var (
 	ErrInvalidGrant = errors.New("bridge: invalid, expired, or already-used grant")
 	ErrNoConnector  = errors.New("bridge: no active connector for user")
@@ -40,7 +48,8 @@ type grant struct {
 }
 
 type peer struct {
-	session *yamux.Session
+	session   *yamux.Session
+	authority string // loopback authority of the connector's local DSH web
 }
 
 // Manager owns ephemeral pairing grants and active connector sessions. It is
@@ -140,7 +149,18 @@ func (m *Manager) ConnectorHandler() http.Handler {
 		if err != nil {
 			return
 		}
-		p := &peer{session: session}
+		// The connector must announce its local DSH authority before the peer
+		// becomes usable; without it the proxy could not rewrite Host/Origin.
+		control, err := session.Accept()
+		if err != nil {
+			return
+		}
+		authority, err := readHello(control)
+		if err != nil {
+			_ = control.Close()
+			return
+		}
+		p := &peer{session: session, authority: authority}
 		old := m.register(userID, p)
 		if old != nil {
 			_ = old.session.Close()
@@ -176,6 +196,19 @@ func Connect(ctx context.Context, endpoint, grantToken, localAddr string) error 
 		return fmt.Errorf("bridge: start multiplexed session: %w", err)
 	}
 	defer session.Close()
+
+	// Announce the local DSH authority on the control stream before serving
+	// any relayed traffic, so the server can register a usable peer.
+	control, err := session.Open()
+	if err != nil {
+		return fmt.Errorf("bridge: open control stream: %w", err)
+	}
+	if err := writeHello(control, localAddr); err != nil {
+		_ = control.Close()
+		return fmt.Errorf("bridge: announce local authority: %w", err)
+	}
+	// Keep the control stream open for the lifetime of the session; yamux has
+	// no half-close, and closing it would tear down the whole session.
 
 	stopOnCancel := make(chan struct{})
 	defer close(stopOnCancel)
@@ -229,11 +262,12 @@ func (m *Manager) WaitConnected(ctx context.Context, userID int64) error {
 	}
 }
 
-// ProxyHandler returns an authenticated-caller-only HTTP/SSE/WebSocket proxy.
-// The eventual server route must wrap it in requireUser and pass the user ID
-// derived from that session; the browser cannot choose this identity.
-func (m *Manager) ProxyHandler(userID int64, localAuthority string) http.Handler {
-	if userID <= 0 || !isLoopbackAuthority(localAuthority) {
+// ProxyHandler returns an authenticated-caller-only HTTP/SSE/WebSocket proxy to
+// the connector's announced local DSH authority. The server route must wrap it
+// in requireUser and pass the user ID derived from that session; the browser
+// cannot choose this identity.
+func (m *Manager) ProxyHandler(userID int64) http.Handler {
+	if userID <= 0 {
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, "local backend unavailable", http.StatusBadGateway)
 		})
@@ -249,9 +283,15 @@ func (m *Manager) ProxyHandler(userID int64, localAuthority string) http.Handler
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
 			stripPlatformCookies(pr.Out)
-			pr.Out.Host = localAuthority
+			authority, ok := m.BackendAuthority(userID)
+			if !ok {
+				// Missing authority yields a dial error handled by ErrorHandler.
+				pr.Out.URL.Host = "bridge.invalid"
+				return
+			}
+			pr.Out.Host = authority
 			if pr.In.Header.Get("Origin") != "" {
-				pr.Out.Header.Set("Origin", "http://"+localAuthority)
+				pr.Out.Header.Set("Origin", "http://"+authority)
 			}
 		},
 		Transport:     transport,
@@ -261,6 +301,17 @@ func (m *Manager) ProxyHandler(userID int64, localAuthority string) http.Handler
 		},
 	}
 	return proxy
+}
+
+// BackendAuthority returns the connector-announced loopback authority.
+func (m *Manager) BackendAuthority(userID int64) (string, bool) {
+	m.mu.RLock()
+	p := m.peers[userID]
+	m.mu.RUnlock()
+	if p == nil || p.session.IsClosed() || p.authority == "" {
+		return "", false
+	}
+	return p.authority, true
 }
 
 func stripPlatformCookies(req *http.Request) {
@@ -386,6 +437,35 @@ func bearerToken(header string) string {
 		return ""
 	}
 	return strings.TrimSpace(strings.TrimPrefix(header, prefix))
+}
+
+// readHello reads the connector's control-frame announcement with a deadline.
+func readHello(control net.Conn) (string, error) {
+	if err := control.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return "", fmt.Errorf("bridge: control deadline: %w", err)
+	}
+	var hello helloFrame
+	if err := json.NewDecoder(io.LimitReader(control, 4<<10)).Decode(&hello); err != nil {
+		return "", fmt.Errorf("bridge: decode hello: %w", err)
+	}
+	if !isLoopbackAuthority(hello.LocalAuthority) {
+		return "", ErrBadLocalAddr
+	}
+	return hello.LocalAuthority, nil
+}
+
+func writeHello(control net.Conn, localAddr string) error {
+	if err := control.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return fmt.Errorf("bridge: control deadline: %w", err)
+	}
+	payload, err := json.Marshal(helloFrame{LocalAuthority: localAddr})
+	if err != nil {
+		return err
+	}
+	if _, err := control.Write(append(payload, '\n')); err != nil {
+		return err
+	}
+	return control.SetWriteDeadline(time.Time{})
 }
 
 func validateConnectorURL(raw string) error {

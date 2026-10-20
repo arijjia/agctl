@@ -109,7 +109,7 @@ func TestOutboundTunnelProxiesHTTPAndSSEForBoundUser(t *testing.T) {
 	if err := manager.WaitConnected(waitCtx, 17); err != nil {
 		t.Fatalf("connector did not establish its outbound session: %v", err)
 	}
-	proxyServer := httptest.NewServer(manager.ProxyHandler(17, localAuthority))
+	proxyServer := httptest.NewServer(manager.ProxyHandler(17))
 	defer proxyServer.Close()
 
 	request, err := http.NewRequest(http.MethodPost, proxyServer.URL+"/echo?q=1", strings.NewReader("payload"))
@@ -145,7 +145,7 @@ func TestOutboundTunnelProxiesHTTPAndSSEForBoundUser(t *testing.T) {
 		t.Fatalf("SSE tunnel response status=%d body=%q", events.StatusCode, eventBody)
 	}
 
-	wrongUserProxy := httptest.NewServer(manager.ProxyHandler(18, localAuthority))
+	wrongUserProxy := httptest.NewServer(manager.ProxyHandler(18))
 	defer wrongUserProxy.Close()
 	wrongResponse, err := wrongUserProxy.Client().Get(wrongUserProxy.URL + "/echo")
 	if err != nil {
@@ -208,7 +208,7 @@ func TestOutboundTunnelPreservesWebSocketUpgrade(t *testing.T) {
 	if err := manager.WaitConnected(waitCtx, 25); err != nil {
 		t.Fatalf("connector did not establish its outbound session: %v", err)
 	}
-	proxyServer := httptest.NewServer(manager.ProxyHandler(25, localAuthority))
+	proxyServer := httptest.NewServer(manager.ProxyHandler(25))
 	defer proxyServer.Close()
 
 	headers := make(http.Header)

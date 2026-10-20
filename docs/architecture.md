@@ -259,16 +259,16 @@ gateway получает переписанные `Host`/`Origin` локальн
 не переписывание DSH backend. Нужно отдельно проверить multiplexing, upgrade,
 reconnect, revoke и обратную совместимость после `dsh-bump`.
 
-**Текущий кодовый статус:** `internal/bridge` — изолированный transport spike:
-in-memory single-use grant, outbound WebSocket + yamux streams к loopback fake
-DSH, owner-keyed proxy с HTTP/SSE/WS и фильтрацией `agctl_*` cookies. Serve
-принимает `--experimental-local-bridge` (только вместе с `--secure-cookies`):
-открывает pairing API `POST /api/local-backend/grant`, `GET …/status`,
-`DELETE …` и bearer-connector handshake `GET /api/local-backend/connect`
-(выключенный флаг отвечает 404 на всех маршрутах). Tunnel proxy в `/chat`/`/w`
-по-прежнему не смонтирован; нет persistence/reconnect, DSH boot-token/cookie
-mint и pinned-image DSH test. Это подключённый к serve carrier-контур pairing,
-не local mode.
+**Текущий кодовый статус:** `internal/bridge` — transport spike: in-memory
+single-use grant, outbound WebSocket + yamux, control-frame «hello» с
+loopback authority локального DSH, owner-keyed proxy с HTTP/SSE/WS и
+фильтрацией `agctl_*` cookies. Serve с `--experimental-local-bridge` (только
+вместе с `--secure-cookies`) открывает pairing API `POST /api/local-backend/grant`,
+`GET …/status`, `DELETE …`, bearer handshake `GET /api/local-backend/connect`
+и UI-proxy `GET|POST /api/local-backend/ui/…` (флаг-off даёт 404 на всех).
+Осталось для рабочего режима: boot-token/cookie mint поверх туннеля (иначе
+реальный локальный DSH отвечает 401), reconnect/heartbeat политика, CLI-процесс
+коннектора, Cabinet UX и pinned-DSH e2e. Это experimental контур, не local mode.
 
 Если «frontend на сервере» означает, что сами static assets обязаны
 физически отдаваться сервером (не через proxied local dsh web), потребуется

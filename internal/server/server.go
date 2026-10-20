@@ -196,8 +196,9 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
 	// Experimental local-connector control plane. Routes register so the
 	// flag-off answer is an honest 404 (not a confusing 405/SPA page); every
-	// handler re-checks the flag. The tunnel proxy itself is still not mounted
-	// into /chat or /w until the DSH boot-token/cookie flow is complete.
+	// handler re-checks the flag. The UI proxy below forwards to the local DSH
+	// announced by the connector, but real DSH still rejects the first request
+	// until boot-token/cookie mint works over the tunnel.
 	mux.HandleFunc("POST /api/local-backend/grant", s.requireUser(s.handleLocalBackendGrant))
 	mux.HandleFunc("GET /api/local-backend/status", s.requireUser(s.handleLocalBackendStatus))
 	mux.HandleFunc("DELETE /api/local-backend", s.requireUser(s.handleLocalBackendRevoke))
@@ -208,6 +209,15 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 		}
 		s.localBridge.ConnectorHandler().ServeHTTP(w, r)
 	}))
+	localUI := s.requireUser(func(w http.ResponseWriter, r *http.Request, id identity) {
+		if !s.localBridgeEnabled() {
+			writeErr(w, http.StatusNotFound, "локальный connector не включён")
+			return
+		}
+		s.localBridge.ProxyHandler(id.ID).ServeHTTP(w, r)
+	})
+	mux.Handle("GET /api/local-backend/ui/", http.StripPrefix("/api/local-backend/ui", localUI))
+	mux.Handle("POST /api/local-backend/ui/", http.StripPrefix("/api/local-backend/ui", localUI))
 	mux.HandleFunc("GET /w/{id}", s.requireUser(s.workspaceProxyEntry))
 	// The browser fetches webmanifest without agctl credentials; expose only
 	// this non-sensitive static document publicly for a known workspace.
