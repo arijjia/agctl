@@ -90,6 +90,12 @@ try {
   await page.getByText(`Вошёл как ${process.env.E2E_LOGIN}`, { exact: false }).waitFor({ state: 'visible', timeout: 15000 });
   console.log('PASS: cabinet plugin opens and reuses the agctl session same-origin');
 
+  // Local backend card renders the honest fallback when the experimental
+  // bridge flag is off on this test server.
+  await page.getByRole('heading', { name: 'Локальный бэкенд (experimental)' }).waitFor({ state: 'visible', timeout: 10000 });
+  await page.getByText('не включён --experimental-local-bridge', { exact: false }).waitFor({ state: 'visible', timeout: 10000 });
+  console.log('PASS: local backend card shows flag-off fallback');
+
   await page.getByPlaceholder('имя (например, demo-1c)').fill('playwright-ui-workspace');
   await page.getByPlaceholder('LLM Base URL (например, https://litellm.example/v1)').fill(process.env.E2E_LLM_BASE_URL);
   await page.getByPlaceholder('модель (например, gpt-4.1)').fill('stub-model');

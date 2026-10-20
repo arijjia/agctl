@@ -129,6 +129,9 @@ window.__ModuleLoader__.load({
 			const [cfg, setCfg] = React.useState({ requireApproval: false });
 			const [myRequests, setMyRequests] = React.useState([]);
 			const [adminRequests, setAdminRequests] = React.useState([]);
+			const [localEnabled, setLocalEnabled] = React.useState(null); // null = unknown
+			const [localConnected, setLocalConnected] = React.useState(false);
+			const [localGrant, setLocalGrant] = React.useState(null);
 
 			const base = () => url.trim().replace(/\/+$/, "");
 
@@ -187,6 +190,15 @@ window.__ModuleLoader__.load({
 						setAdminRequests([]);
 						setMyRequests([]);
 					}
+					const localRes = await api("/api/local-backend/status");
+					if (localRes.ok && localRes.data) {
+						setLocalEnabled(true);
+						setLocalConnected(!!localRes.data.connected);
+					} else {
+						// Flag off (404): the experimental connector is not configured.
+						setLocalEnabled(false);
+						setLocalConnected(false);
+					}
 					setPhase("ready");
 					setMsg("");
 				} catch (e) {
@@ -200,6 +212,34 @@ window.__ModuleLoader__.load({
 			React.useEffect(() => {
 				load();
 			}, []);
+
+			const issueLocalGrant = async () => {
+				setBusy(true);
+				try {
+					const res = await api("/api/local-backend/grant", { method: "POST" });
+					if (res.ok && res.data && res.data.grant) {
+						setLocalGrant(res.data);
+						setMsg("");
+					} else {
+						setMsg("Не удалось создать pairing grant (HTTP " + res.status + ").");
+					}
+				} finally {
+					setBusy(false);
+				}
+			};
+
+			const revokeLocalBackend = async () => {
+				setBusy(true);
+				try {
+					await api("/api/local-backend", { method: "DELETE" });
+					setLocalGrant(null);
+					const res = await api("/api/local-backend/status");
+					if (res.ok && res.data) setLocalConnected(!!res.data.connected);
+					setMsg("Локальный коннектор отключён.");
+				} finally {
+					setBusy(false);
+				}
+			};
 
 			const doLogin = async (e) => {
 				e.preventDefault();
@@ -480,14 +520,27 @@ window.__ModuleLoader__.load({
 										),
 									),
 								),
-						h("h2", { style: styles.cardTitle }, "Локальный бэкенд (beta, бесплатно)"),
+						h("h2", { style: styles.cardTitle }, "Локальный бэкенд (experimental)"),
 						h(
 							"div",
 							{ style: styles.card },
-							h("p", { style: styles.note }, "Fallback-подрежим: запусти dsh локально — ресурсы сервера не тратятся, но его UI тоже откроется локально. Целевой вариант «UI на сервере + backend локально» требует bridge и ещё разрабатывается."),
-							h("pre", { style: { ...styles.note, background: "var(--dsw-specific-menu, #222)", padding: 8, borderRadius: 8, overflowX: "auto" } },
-								"npm install -g @deepseek-ai/dsh\ndsh web --port 3080 --no-open"),
-							h("p", { style: styles.note }, "Открой http://localhost:3080. Режим «фронт на сервере + локальный бэк» — в разработке."),
+							localEnabled === false &&
+								h("p", { style: styles.note }, "На сервере не включён --experimental-local-bridge. Fallback: запусти dsh локально (`dsh web --port 3080 --no-open`) — UI откроется тоже локально."),
+							localEnabled !== false && [
+								h("p", { style: styles.note },
+									localConnected
+										? "Локальный коннектор подключён: твой dsh работает у тебя, UI — здесь."
+										: "Коннектор не подключён. Получи команду и запусти её на своём компьютере."),
+								!localConnected &&
+									h("button", { style: { ...styles.button, ...styles.mini }, onClick: issueLocalGrant, disabled: busy }, "Получить команду подключения"),
+								localConnected &&
+									h("button", { style: { ...styles.button, ...styles.mini }, onClick: revokeLocalBackend, disabled: busy }, "Отключить"),
+								localGrant &&
+									h("pre", { style: { ...styles.note, background: "var(--dsw-specific-menu, #222)", padding: 8, borderRadius: 8, overflowX: "auto" } },
+										"agctl local connect --server " + base() + " --grant " + localGrant.grant + " --launch-dsh"),
+								localGrant &&
+									h("p", { style: styles.note }, "Команда одноразовая и действует " + (localGrant.expiresInSeconds || 120) + " с; запусти её в терминале своего компьютера. Токен больше нигде не показывается."),
+							],
 						),
 						h("h2", { style: styles.cardTitle }, "Рабочие места"),
 						places.length === 0 && h("p", { style: styles.note }, "Пока пусто — создай первое место."),
