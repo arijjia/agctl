@@ -36,6 +36,12 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 			return agctlrt.ChatHandle{}, err
 		}
 	}
+	// Идемпотентная перезапись настроек провайдера на каждом ленивом старте:
+	// DSH_HOME мог быть засеян до появления платформенного провайдера, а
+	// личный секрет пользователя мог смениться между снами контейнера.
+	if err := provision.RefreshProvider(dshHome, spec.Provider); err != nil {
+		return agctlrt.ChatHandle{}, err
+	}
 	port, err := FreePort()
 	if err != nil {
 		return agctlrt.ChatHandle{}, err

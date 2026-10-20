@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,6 +110,28 @@ func TestPersonalSecretOverridesPlatformDefault(t *testing.T) {
 	got := e.rt.chatSpecs[e.srv.chatRuntimeID(uid)].Provider
 	if got.BaseURL != "https://personal.example.invalid/v1" || got.APIKey != "personal-key" || got.Model != "my-model" {
 		t.Fatalf("chat provider = %+v, want personal secret to win", got)
+	}
+}
+
+func TestChatEnsureRefreshesProviderOnRestartedRuntimeHome(t *testing.T) {
+	e := newTestEnv(t, 3)
+	// DSH_HOME, засеянный старой версией agctl без платформенного провайдера.
+	home := filepath.Join(e.home, "chats", "u707", "dsh-home")
+	if err := provision.SeedDshHome(home, provision.Provider{}, assetsDshSkel); err != nil {
+		t.Fatal(err)
+	}
+	e.srv.cfg.DefaultLLM = provision.Provider{
+		BaseURL: "https://corp.example.invalid/v1", Model: "qwen-3.8-fast", APIKey: "corp-key",
+	}
+	if _, err := e.srv.ensureChat(707); err != nil {
+		t.Fatal(err)
+	}
+	creds, err := os.ReadFile(filepath.Join(home, ".credentials.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(creds), "AGCTL_LLM_API_KEY: ") {
+		t.Fatalf("restarted home was not refreshed with platform provider: %s", creds)
 	}
 }
 
