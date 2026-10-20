@@ -31,8 +31,11 @@ const maxGrantTTL = 5 * time.Minute
 // helloFrame is the connector's first control message: it announces the
 // loopback authority of the local DSH web endpoint so the server-side proxy
 // can rewrite Host/Origin and DSH can bind its cookies to a stable authority.
+// DshToken, when present, carries the local DSH boot token for the server-side
+// 401 mint retry; later lines on the control stream may refresh it.
 type helloFrame struct {
 	LocalAuthority string `json:"localAuthority"`
+	DSHToken       string `json:"dshToken,omitempty"`
 }
 
 var (
@@ -50,6 +53,21 @@ type grant struct {
 type peer struct {
 	session   *yamux.Session
 	authority string // loopback authority of the connector's local DSH web
+
+	tokMu    sync.Mutex
+	dshToken string // local DSH boot token for the 401 mint retry
+}
+
+func (p *peer) setToken(token string) {
+	p.tokMu.Lock()
+	p.dshToken = token
+	p.tokMu.Unlock()
+}
+
+func (p *peer) token() string {
+	p.tokMu.Lock()
+	defer p.tokMu.Unlock()
+	return p.dshToken
 }
 
 // Manager owns ephemeral pairing grants and active connector sessions. It is
@@ -155,12 +173,15 @@ func (m *Manager) ConnectorHandler() http.Handler {
 		if err != nil {
 			return
 		}
-		authority, err := readHello(control)
+		authority, helloToken, err := readHello(control)
 		if err != nil {
 			_ = control.Close()
 			return
 		}
 		p := &peer{session: session, authority: authority}
+		if helloToken != "" {
+			p.setToken(helloToken)
+		}
 		old := m.register(userID, p)
 		if old != nil {
 			_ = old.session.Close()
@@ -169,14 +190,28 @@ func (m *Manager) ConnectorHandler() http.Handler {
 			m.unregister(userID, p)
 			_ = session.Close()
 		}()
+		// Later control lines refresh the local DSH boot token (e.g. after the
+		// user restarts their local DSH and reconnects through the CLI).
+		go pumpControl(p, control)
 		<-session.CloseChan()
 	})
 }
 
+// ConnectorOptions tunes the outbound connector. The zero value is valid.
+type ConnectorOptions struct {
+	// LocalAddr is the loopback authority ("127.0.0.1:3080") of the local DSH
+	// web endpoint that relayed streams are connected to.
+	LocalAddr string
+	// DSHBootTokens, when set, streams locally discovered DSH boot tokens
+	// (e.g. scraped from local dsh web logs). Each value is forwarded to the
+	// server over the authenticated control stream only — never in URLs or logs.
+	DSHBootTokens <-chan string
+}
+
 // Connect dials the agctl connector endpoint and serves its multiplexed streams
 // by connecting each one to a local loopback DSH web endpoint.
-func Connect(ctx context.Context, endpoint, grantToken, localAddr string) error {
-	if !isLoopbackAuthority(localAddr) {
+func Connect(ctx context.Context, endpoint, grantToken string, opts ConnectorOptions) error {
+	if !isLoopbackAuthority(opts.LocalAddr) {
 		return ErrBadLocalAddr
 	}
 	if err := validateConnectorURL(endpoint); err != nil {
@@ -203,12 +238,16 @@ func Connect(ctx context.Context, endpoint, grantToken, localAddr string) error 
 	if err != nil {
 		return fmt.Errorf("bridge: open control stream: %w", err)
 	}
-	if err := writeHello(control, localAddr); err != nil {
+	if err := writeHello(control, opts.LocalAddr); err != nil {
 		_ = control.Close()
 		return fmt.Errorf("bridge: announce local authority: %w", err)
 	}
 	// Keep the control stream open for the lifetime of the session; yamux has
 	// no half-close, and closing it would tear down the whole session.
+
+	if opts.DSHBootTokens != nil {
+		go forwardTokens(ctx, control, opts.DSHBootTokens)
+	}
 
 	stopOnCancel := make(chan struct{})
 	defer close(stopOnCancel)
@@ -227,7 +266,7 @@ func Connect(ctx context.Context, endpoint, grantToken, localAddr string) error 
 			}
 			return fmt.Errorf("bridge: accept stream: %w", err)
 		}
-		go relayStream(ctx, stream, localAddr)
+		go relayStream(ctx, stream, opts.LocalAddr)
 	}
 }
 
@@ -273,16 +312,19 @@ func (m *Manager) ProxyHandler(userID int64) http.Handler {
 		})
 	}
 	target := &url.URL{Scheme: "http", Host: "bridge.invalid"}
-	transport := &http.Transport{
+	transport := &dshMintTransport{base: &http.Transport{
 		DisableKeepAlives: true,
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return m.openStream(userID)
 		},
-	}
+	}, token: func() string { return m.DSHToken(userID) }}
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
 			stripPlatformCookies(pr.Out)
+			// Boot-токен добавляет только mint-retry сервер↔локальный DSH;
+			// посторонний ?token= из браузера не проходит.
+			pr.Out.URL.RawQuery = stripTokenParam(pr.In.URL.RawQuery)
 			authority, ok := m.BackendAuthority(userID)
 			if !ok {
 				// Missing authority yields a dial error handled by ErrorHandler.
@@ -303,6 +345,49 @@ func (m *Manager) ProxyHandler(userID int64) http.Handler {
 	return proxy
 }
 
+// dshMintTransport mirrors the managed-runtime mint: on upstream 401 it retries
+// once server↔local-DSH with the connector-reported boot token.
+type dshMintTransport struct {
+	base  http.RoundTripper
+	token func() string
+}
+
+func (t *dshMintTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err != nil || resp.StatusCode != http.StatusUnauthorized {
+		return resp, err
+	}
+	tok := t.token()
+	if tok == "" {
+		return resp, nil
+	}
+	retry := req.Clone(req.Context())
+	query := retry.URL.Query()
+	query.Set("token", tok)
+	retry.URL.RawQuery = query.Encode()
+	minted, err := t.base.RoundTrip(retry)
+	if err != nil {
+		return resp, nil // keep the original 401 with its body
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	return minted, nil
+}
+
+func stripTokenParam(rawQuery string) string {
+	if !strings.Contains(rawQuery, "token=") && !strings.HasSuffix(rawQuery, "&token") && rawQuery != "token" {
+		return rawQuery
+	}
+	kept := make([]string, 0, strings.Count(rawQuery, "&")+1)
+	for _, pair := range strings.Split(rawQuery, "&") {
+		if pair == "token" || strings.HasPrefix(pair, "token=") {
+			continue
+		}
+		kept = append(kept, pair)
+	}
+	return strings.Join(kept, "&")
+}
+
 // BackendAuthority returns the connector-announced loopback authority.
 func (m *Manager) BackendAuthority(userID int64) (string, bool) {
 	m.mu.RLock()
@@ -312,6 +397,17 @@ func (m *Manager) BackendAuthority(userID int64) (string, bool) {
 		return "", false
 	}
 	return p.authority, true
+}
+
+// DSHToken returns the connector-reported local DSH boot token, if any.
+func (m *Manager) DSHToken(userID int64) string {
+	m.mu.RLock()
+	p := m.peers[userID]
+	m.mu.RUnlock()
+	if p == nil {
+		return ""
+	}
+	return p.token()
 }
 
 func stripPlatformCookies(req *http.Request) {
@@ -440,18 +536,33 @@ func bearerToken(header string) string {
 }
 
 // readHello reads the connector's control-frame announcement with a deadline.
-func readHello(control net.Conn) (string, error) {
+func readHello(control net.Conn) (authority, dshToken string, err error) {
 	if err := control.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
-		return "", fmt.Errorf("bridge: control deadline: %w", err)
+		return "", "", fmt.Errorf("bridge: control deadline: %w", err)
 	}
 	var hello helloFrame
 	if err := json.NewDecoder(io.LimitReader(control, 4<<10)).Decode(&hello); err != nil {
-		return "", fmt.Errorf("bridge: decode hello: %w", err)
+		return "", "", fmt.Errorf("bridge: decode hello: %w", err)
 	}
 	if !isLoopbackAuthority(hello.LocalAuthority) {
-		return "", ErrBadLocalAddr
+		return "", "", ErrBadLocalAddr
 	}
-	return hello.LocalAuthority, nil
+	return hello.LocalAuthority, hello.DSHToken, nil
+}
+
+// pumpControl consumes later control lines; only DSH boot-token refreshes are
+// defined today. It stops when the connector closes the stream or the session.
+func pumpControl(p *peer, control net.Conn) {
+	decoder := json.NewDecoder(io.LimitReader(control, 4<<10))
+	for {
+		var line helloFrame
+		if err := decoder.Decode(&line); err != nil {
+			return
+		}
+		if line.DSHToken != "" {
+			p.setToken(line.DSHToken)
+		}
+	}
 }
 
 func writeHello(control net.Conn, localAddr string) error {
@@ -466,6 +577,30 @@ func writeHello(control net.Conn, localAddr string) error {
 		return err
 	}
 	return control.SetWriteDeadline(time.Time{})
+}
+
+// forwardTokens relays connector-side boot-token discoveries to the server.
+func forwardTokens(ctx context.Context, control net.Conn, tokens <-chan string) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case token, ok := <-tokens:
+			if !ok {
+				return
+			}
+			if err := control.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				return
+			}
+			payload, err := json.Marshal(helloFrame{DSHToken: token})
+			if err != nil {
+				return
+			}
+			if _, err := control.Write(append(payload, '\n')); err != nil {
+				return
+			}
+		}
+	}
 }
 
 func validateConnectorURL(raw string) error {

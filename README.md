@@ -125,7 +125,7 @@ agctl version
 | `--tier0=false` | отключить корневой маршрут в личный чат (для админ-only стенда) |
 | `--require-approval` | новые dev-workspaces создаются заявкой, до admin approve контейнер не выдаётся |
 | `--secure-cookies` | флаг Secure у cookies (за HTTPS-ingress) |
-| `--experimental-local-bridge` | experimental pairing API + UI-proxy локального connector (требует `--secure-cookies` и доверенного TLS ingress); реальный DSH на ноутбуке ещё отклонит первый запрос без boot-token mint |
+| `--experimental-local-bridge` | experimental pairing API + UI-proxy локального connector (требует `--secure-cookies` и доверенного TLS ingress); mint boot-токена поверх туннеля работает, если connector сообщил токен; CLI-процесса коннектора пока нет |
 | `--cors-origin LIST` | точные origins для панели Кабинета, через запятую; пусто = CORS выключен |
 | `--llm-base-url URL` | OpenAI-совместимый провайдер чата по умолчанию (напр. корпоративный LiteLLM) |
 | `--llm-models LIST` | модели чата по умолчанию через запятую; `--llm-model M` — какая из них основная |
@@ -234,11 +234,12 @@ IMG=agctl-dsh:0.2.0 scripts/e2e-cabinet-playwright.sh
 - «Локальный backend + frontend на сервере» пока не реализован end-to-end.
   Панель показывает fallback-команду, которая запускает локальный dsh web
   вместе с его UI. `internal/bridge` + `--experimental-local-bridge` дают
-  pairing API (grant/status/revoke + bearer-connector) и experimental
-  UI-proxy `/api/local-backend/ui/…` до connector-объявленного loopback DSH
-  с фильтрацией `agctl_*` cookies. Но boot-token/cookie mint поверх туннеля
-  не сделан — реальный локальный DSH ответит 401 на первый запрос; reconnect,
-  CLI-процесс и Cabinet UX отсутствуют, так что рабочим режимом это не является.
+  pairing API, experimental UI-proxy `/api/local-backend/ui/…` и mint
+  boot-токена поверх туннеля: коннектор доставляет токен локального dsh
+  контрол-стримом (hello + обновления), proxy ретраит 401 сервер↔локальный
+  DSH и фильтрует `agctl_*` cookies. Осталось до режима: CLI-процесс
+  коннектора (чтение логов локального dsh), reconnect/heartbeat-политика,
+  Cabinet UX и pinned-DSH e2e.
 - DSH UI проходит через same-origin gateway; Docker web/SSH порты привязаны
   к `127.0.0.1:<порт>`. Для удалённого браузера нужен доверенный TLS ingress
   на agctl и `--secure-cookies`. Сам agctl TLS не терминирует; доступ

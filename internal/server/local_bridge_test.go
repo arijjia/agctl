@@ -74,7 +74,7 @@ func TestLocalBridgeGrantStatusRevokeLifecycle(t *testing.T) {
 	go func() {
 		connectorDone <- bridge.Connect(connectorCtx,
 			"ws"+strings.TrimPrefix(e.api.URL, "http")+granted.ConnectPath,
-			granted.Grant, strings.TrimPrefix(fakeLocal.URL, "http://"))
+			granted.Grant, bridge.ConnectorOptions{LocalAddr: strings.TrimPrefix(fakeLocal.URL, "http://")})
 	}()
 
 	// Status flips to connected for this user's session once the grant is
@@ -184,7 +184,7 @@ func TestLocalBridgeUIProxyRoutesToConnectorAnnouncedBackend(t *testing.T) {
 	go func() {
 		connectorDone <- bridge.Connect(connectorCtx,
 			"ws"+strings.TrimPrefix(e.api.URL, "http")+granted.ConnectPath,
-			granted.Grant, localAuthority)
+			granted.Grant, bridge.ConnectorOptions{LocalAddr: localAuthority})
 	}()
 	defer func() {
 		cancel()

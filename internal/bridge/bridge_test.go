@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -102,7 +103,9 @@ func TestOutboundTunnelProxiesHTTPAndSSEForBoundUser(t *testing.T) {
 	connectorCtx, cancelConnector := context.WithCancel(context.Background())
 	defer cancelConnector()
 	connectorDone := make(chan error, 1)
-	go func() { connectorDone <- Connect(connectorCtx, endpoint, grant, localAuthority) }()
+	go func() {
+		connectorDone <- Connect(connectorCtx, endpoint, grant, ConnectorOptions{LocalAddr: localAuthority})
+	}()
 
 	waitCtx, cancelWait := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelWait()
@@ -167,6 +170,102 @@ func TestOutboundTunnelProxiesHTTPAndSSEForBoundUser(t *testing.T) {
 	}
 }
 
+func TestOutboundTunnelMintsDSHBootTokenAndAcceptsRefresh(t *testing.T) {
+	var mu sync.Mutex
+	seenTokens := make([]string, 0, 4) // token param of each upstream hit
+	valid := "boot-secret-1"
+	var localAuthority string
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seenTokens = append(seenTokens, r.URL.Query().Get("token"))
+		current := valid
+		mu.Unlock()
+		if r.URL.Query().Get("token") != current {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Location", "/")
+		w.WriteHeader(http.StatusSeeOther)
+	}))
+	defer local.Close()
+	localAuthority = strings.TrimPrefix(local.URL, "http://")
+
+	manager := NewManager()
+	defer manager.Close()
+	connectorServer := httptest.NewServer(manager.ConnectorHandler())
+	defer connectorServer.Close()
+	endpoint := "ws" + strings.TrimPrefix(connectorServer.URL, "http") + "/connect"
+	grant, err := manager.IssueGrant(31, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tokenUpdates := make(chan string, 1)
+	connectorCtx, cancelConnector := context.WithCancel(context.Background())
+	defer cancelConnector()
+	connectorDone := make(chan error, 1)
+	go func() {
+		connectorDone <- Connect(connectorCtx, endpoint, grant, ConnectorOptions{
+			LocalAddr:     localAuthority,
+			DSHBootTokens: tokenUpdates,
+		})
+	}()
+	// hello frame announces the current boot token.
+	tokenUpdates <- "boot-secret-1"
+
+	waitCtx, cancelWait := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelWait()
+	if err := manager.WaitConnected(waitCtx, 31); err != nil {
+		t.Fatalf("connector did not establish its outbound session: %v", err)
+	}
+	proxyServer := httptest.NewServer(manager.ProxyHandler(31))
+	defer proxyServer.Close()
+	proxyServer.Client().CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	// Mint retry must use the connector-announced token server-side only.
+	response, err := proxyServer.Client().Get(proxyServer.URL + "/?also=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	mu.Lock()
+	firstSeen := append([]string(nil), seenTokens...)
+	mu.Unlock()
+	if response.StatusCode != http.StatusSeeOther || len(firstSeen) != 2 || firstSeen[0] != "" || firstSeen[1] != "boot-secret-1" {
+		t.Fatalf("mint via hello: status=%d seen=%v; want 303 [\"\", boot-secret-1]", response.StatusCode, firstSeen)
+	}
+	if got := response.Header.Get("Location"); got != "/" {
+		t.Fatalf("minted Location=%q, want /", got)
+	}
+
+	// A refreshed boot token (local DSH restart) replaces the stored one.
+	mu.Lock()
+	valid = "boot-secret-2"
+	mu.Unlock()
+	tokenUpdates <- "boot-secret-2"
+	time.Sleep(200 * time.Millisecond) // control-stream delivery
+	response2, err := proxyServer.Client().Get(proxyServer.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response2.Body.Close()
+	mu.Lock()
+	latest := seenTokens[len(seenTokens)-1]
+	mu.Unlock()
+	if response2.StatusCode != http.StatusSeeOther || latest != "boot-secret-2" {
+		t.Fatalf("mint via refresh: status=%d latest token=%q; want 303 boot-secret-2", response2.StatusCode, latest)
+	}
+
+	manager.Revoke(31)
+	select {
+	case <-connectorDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("revoking connector did not close its outbound session")
+	}
+}
+
 func TestOutboundTunnelPreservesWebSocketUpgrade(t *testing.T) {
 	var localAuthority string
 	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -202,7 +301,9 @@ func TestOutboundTunnelPreservesWebSocketUpgrade(t *testing.T) {
 	connectorCtx, cancelConnector := context.WithCancel(context.Background())
 	defer cancelConnector()
 	connectorDone := make(chan error, 1)
-	go func() { connectorDone <- Connect(connectorCtx, endpoint, grant, localAuthority) }()
+	go func() {
+		connectorDone <- Connect(connectorCtx, endpoint, grant, ConnectorOptions{LocalAddr: localAuthority})
+	}()
 	waitCtx, cancelWait := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelWait()
 	if err := manager.WaitConnected(waitCtx, 25); err != nil {
