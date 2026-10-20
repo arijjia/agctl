@@ -205,6 +205,7 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
+			stripAgctlCookies(pr.Out)
 			pr.Out.Host = authority
 			if pr.In.Header.Get("Origin") != "" {
 				pr.Out.Header.Set("Origin", pr.Out.URL.Scheme+"://"+authority)

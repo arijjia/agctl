@@ -8,7 +8,7 @@ size: L
 area: security
 repo: arijjia/agctl
 created: 2026-10-13
-updated: 2026-10-13
+updated: 2026-10-20
 tags: ["night"]
 depends: []
 epic: night-backlog-sweep-2026-10-12
@@ -54,3 +54,4 @@ server-to-server при upstream 401; использовать встроенн�
   Remote ingress/TLS не развертывался; TLS termination и внешний сетевой probe
   остаются deployment-проверкой ЦИТ.
 - 2026-10-13: done — Gateway реализован и проверен unit/race/e2e; ingress TLS остаётся deployment шагом ЦИТ.
+- 2026-10-20: 2026-10-20 security hardening: gateway and Chat reverse proxies strip agctl_* cookies before DSH upstream while retaining DSH runtime cookies. Unit and connector fake-upstream tests cover platform-cookie non-forwarding; Docker/browser e2e still pass.

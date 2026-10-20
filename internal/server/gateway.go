@@ -86,6 +86,7 @@ func (s *Server) proxyWorkspace(w http.ResponseWriter, r *http.Request, ws store
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(&url.URL{Scheme: "http", Host: target})
+			stripAgctlCookies(pr.Out)
 			// Host фиксированный: dsh привязывает mint-cookie к authority,
 			// константный хост делает cookie валидной для всех запросов.
 			pr.Out.Host = target
@@ -234,6 +235,23 @@ func stripTokenParam(rawQuery string) string {
 		kept = append(kept, pair)
 	}
 	return strings.Join(kept, "&")
+}
+
+// stripAgctlCookies prevents platform authentication credentials from crossing
+// the reverse-proxy boundary into a DSH runtime. DSH's own scoped cookies and
+// unrelated client cookies remain available to the upstream.
+func stripAgctlCookies(req *http.Request) {
+	cookies := req.Cookies()
+	if len(cookies) == 0 {
+		return
+	}
+	req.Header.Del("Cookie")
+	for _, cookie := range cookies {
+		if cookie.Name == "agctl_session" || strings.HasPrefix(cookie.Name, "agctl_") {
+			continue
+		}
+		req.AddCookie(cookie)
+	}
 }
 
 // rewriteLocation — внутренний Location upstream ведёт на корень ("/") или

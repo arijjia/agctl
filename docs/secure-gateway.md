@@ -34,6 +34,9 @@ Browser -- HTTPS --> trusted ingress -- HTTP/loopback --> agctl serve
    контейнера старую cookie DSH отклонит; новый 401 запускает mint заново.
 5. Cookie DSH не заменяет cookie agctl: для доступа к workspace нужны обе
    проверки — сессия платформы и владелец/администратор.
+6. Перед upstream proxy удаляет `agctl_*` cookies, включая платформенную
+   `agctl_session`; DSH получает собственные runtime cookies и остальные cookies
+   запроса, но не платформенный bearer.
 
 ## TLS и запуск
 
