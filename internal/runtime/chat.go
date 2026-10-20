@@ -9,8 +9,9 @@ import (
 )
 
 // ChatSpec is the stable logical identity of one user's lazy Chat runtime.
-// StorageID survives runtime replacement and maps to a Docker bind-mount or a
-// Kubernetes PVC; RuntimeID identifies the compute resource, not a host port.
+// StorageID survives runtime replacement and is unique within a provider's
+// persistence scope (AGCTL_HOME for Docker, a dedicated namespace for K8s); it
+// maps to a bind-mount or PVC. RuntimeID identifies compute, not storage/port.
 type ChatSpec struct {
 	RuntimeID    string
 	StorageID    string

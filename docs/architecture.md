@@ -321,13 +321,15 @@ e2e. Нынешний fallback в панели запускает локальн
 не знает контейнерный ID/порт.
 
 Добавлен prototype `internal/runtime/k8srt`: он создаёт Pod + ClusterIP
-Service + per-user PVC, задаёт `RuntimeClassName`, requests/limits, non-root,
-seccomp, отключает service-account token; idle stop удаляет Pod/Service,
-оставляя PVC. Provider seeding выполняет init-container через `agctl init-chat-home`.
-Fake-client tests проверяют resource shape и сохранение PVC. Но `server.New`
-по-прежнему выбирает Docker по умолчанию; `cmd serve` пока не умеет выбрать
-K8s provider, а live-cluster smoke не запускался. Поэтому этот prototype не
-является готовым K8s deployment.
+Service + per-user PVC; PVC/Secret имена следуют стабильному `StorageID`, а
+Pod/Service — replaceable `RuntimeID`. Он задаёт `RuntimeClassName`,
+requests/limits, non-root, seccomp и отключает service-account token; idle stop
+удаляет Pod/Service/NetworkPolicy, оставляя PVC/Secret. Init-container выполняет
+`agctl init-chat-home`. Fake-client tests проверяют resource shape, StorageID
+reuse и сохранение PVC. Но policy пока разрешает ingress любому Pod namespace
+на relay-порт, egress открыт и CNI не проверен; pod readiness не ждётся.
+`server.New` по-прежнему выбирает Docker; `cmd serve` не выбирает K8s provider,
+а live-cluster smoke не запускался. Поэтому это не готовый K8s deployment.
 
 ### Целевой K8s lifecycle режима «Чат»
 

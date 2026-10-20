@@ -243,12 +243,15 @@ IMG=agctl-dsh:0.2.0 scripts/e2e-cabinet-playwright.sh
 - **Это ещё не Kubernetes-native deployment**: ChatProvider отделяет
   endpoint/StorageID; prototype `internal/runtime/k8srt` создаёт Pod/Service/PVC
   и прошёл fake-client tests (Pod non-root/seccomp, ClusterIP без hostPort,
-  ingress NetworkPolicy, PVC переживает stop); `server.New`/`cmd serve` пока
-  выбирают Docker, а live-cluster smoke не запускался. Workspace RuntimeIface всё ещё содержит
-  Docker HostPort/host-path assumptions; нет K8s runtime selector/controller,
-  distributed runtime leases или multi-replica DB. До этого этапа запускать как
-  single-control-plane Docker deployment, не как production K8s. Для K8s также
-  нужны NetworkPolicy, RBAC и encryption-at-rest для Secret/PVC.
+  ingress-only prototype NetworkPolicy, PVC переживает stop); PVC/Secret
+  именуются от стабильного `StorageID`, Pod/Service — от `RuntimeID`. Policy
+  пока разрешает любой Pod namespace к relay-порту, egress открыт и target-CNI
+  не проверен. `server.New`/`cmd serve` пока выбирают Docker, live-cluster smoke
+  не запускался. Workspace RuntimeIface всё ещё содержит Docker HostPort/
+  host-path assumptions; нет K8s runtime selector/controller, distributed runtime
+  leases или multi-replica DB. До этого этапа запускать как single-control-plane
+  Docker deployment, не как production K8s. Для K8s нужны gateway-specific
+  NetworkPolicy/egress hardening, RBAC и encryption-at-rest для Secret/PVC.
 - Автосохранение git выполняет agctl каждые 2 минуты и при остановке: агент
   коммитит часто, agctl доставляет до bare-origin.
 

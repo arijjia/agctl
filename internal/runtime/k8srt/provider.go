@@ -28,8 +28,10 @@ import (
 
 const webPort = 3080
 
-// Config controls the namespaced K8s runtime. The image must be pushed to a
-// registry reachable by the cluster; local Docker tags are not sufficient.
+// Config controls the namespaced K8s runtime. Namespace is the storage scope:
+// use a dedicated namespace per agctl installation unless StorageIDs are made
+// globally unique. The image must be pushed to a registry reachable by the
+// cluster; local Docker tags are not sufficient.
 type Config struct {
 	Namespace        string
 	Kubeconfig       string
@@ -127,28 +129,34 @@ func (p *Provider) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 		return agctlrt.ChatHandle{}, fmt.Errorf("k8srt: runtime and storage IDs are required")
 	}
 	name := resourceName(spec.RuntimeID)
-	labels := map[string]string{
+	storageName := storageResourceName(spec.StorageID)
+	runtimeLabels := map[string]string{
 		"app.kubernetes.io/name":       "agctl-dsh-chat",
 		"app.kubernetes.io/managed-by": "agctl",
 		"agctl.io/runtime-key":         name,
 		"agctl.io/storage-key":         labelValue(spec.StorageID),
 	}
-	pvcName, serviceName, secretName := "data-"+name, "chat-"+name, "llm-"+name
+	storageLabels := map[string]string{
+		"app.kubernetes.io/name":       "agctl-dsh-chat",
+		"app.kubernetes.io/managed-by": "agctl",
+		"agctl.io/storage-key":         labelValue(spec.StorageID),
+	}
+	pvcName, serviceName, secretName := "data-"+storageName, "chat-"+name, "llm-"+storageName
 
-	if err := p.ensurePVC(ctx, pvcName, labels); err != nil {
+	if err := p.ensurePVC(ctx, pvcName, storageLabels); err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
-	secretName, err := p.ensureLLMSecret(ctx, secretName, labels, spec.Provider.APIKey)
+	secretName, err := p.ensureLLMSecret(ctx, secretName, storageLabels, spec.Provider.APIKey)
 	if err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
-	if err := p.ensureService(ctx, serviceName, labels); err != nil {
+	if err := p.ensureService(ctx, serviceName, runtimeLabels); err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
-	if err := p.ensureNetworkPolicy(ctx, name, labels); err != nil {
+	if err := p.ensureNetworkPolicy(ctx, name, runtimeLabels); err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
-	pod, err := p.ensurePod(ctx, name, pvcName, secretName, labels, spec)
+	pod, err := p.ensurePod(ctx, name, pvcName, secretName, runtimeLabels, spec)
 	if err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
@@ -240,9 +248,10 @@ func (p *Provider) ensureService(ctx context.Context, name string, labels map[st
 	return nil
 }
 
-// ensureNetworkPolicy restricts ingress to same-namespace callers (the agctl
-// gateway) on the relay port only. Egress stays unrestricted because LLM
-// base URLs are user-configured; that residual is documented in architecture.
+// ensureNetworkPolicy is a prototype ingress guard: it permits any Pod in the
+// configured namespace to reach the relay port. It is not gateway-specific,
+// does not constrain egress, and requires target-CNI validation/hardening before
+// production use because LLM base URLs are user-configured.
 func (p *Provider) ensureNetworkPolicy(ctx context.Context, name string, labels map[string]string) error {
 	api := p.client.NetworkingV1().NetworkPolicies(p.cfg.Namespace)
 	policyName := "net-" + name
@@ -425,6 +434,14 @@ func (p *Provider) LogsChat(ctx context.Context, handle agctlrt.ChatHandle, tail
 func resourceName(runtimeID string) string {
 	sum := sha256.Sum256([]byte(runtimeID))
 	return "agctl-chat-" + hex.EncodeToString(sum[:8])
+}
+
+// storageResourceName derives PVC/Secret names from the stable StorageID, not
+// the replaceable runtime generation. Namespace must be scoped to one agctl
+// installation so identical per-user StorageIDs cannot collide.
+func storageResourceName(storageID string) string {
+	sum := sha256.Sum256([]byte(storageID))
+	return "agctl-storage-" + hex.EncodeToString(sum[:8])
 }
 
 func labelValue(value string) string {

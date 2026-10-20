@@ -97,7 +97,10 @@ dev-места = 5 % пользователей, из них ⅓ живые од
 верифицирован живым прогоном — при пилоте повторить `capacity-bench*.sh` на
 целевом железе. Таблица k3s — целевой sizing, не результат кластерного теста;
 Kubernetes scheduler/PVC attach и RuntimeClass gVisor/Kata overhead не измерены.
-Есть K8s ChatProvider prototype с Pod/Service/PVC и fake-client tests, но он
-не подключён к `cmd serve` и не проверен на живом кластере; Dev-workspace adapter,
-NetworkPolicy, PVC retention/encryption и cluster sizing остаются открытыми.
+Есть K8s ChatProvider prototype с Pod/Service/PVC, стабильными PVC/Secret по
+StorageID и fake-client tests, но он не подключён к `cmd serve` и не проверен
+на живом кластере. Prototype NetworkPolicy — только namespace-wide ingress на
+relay-порт, egress открыт и target-CNI не проверен. Dev-workspace adapter,
+gateway-specific policy/RBAC, PVC backup-retention/encryption и cluster sizing
+остаются открытыми.
 Пиковые сценарии («пара одновременно») покрывать prewarm (R1.3).
