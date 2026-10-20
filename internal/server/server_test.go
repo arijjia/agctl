@@ -96,6 +96,9 @@ func (f *fakeRuntime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (ag
 	if err := provision.RefreshProvider(dshHome, spec.Provider); err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
+	if err := provision.EnsureChatPlugins(dshHome, assetsDshSkel); err != nil {
+		return agctlrt.ChatHandle{}, err
+	}
 	instanceID := "chat-ctr-" + spec.RuntimeID
 	f.logs[instanceID] = "dsh web listening on http://127.0.0.1/?token=fake-chat-" + spec.RuntimeID
 	return agctlrt.ChatHandle{

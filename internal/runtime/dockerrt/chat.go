@@ -42,6 +42,11 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	if err := provision.RefreshProvider(dshHome, spec.Provider); err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
+	// Брендинг режима Chat (ИИ-мастерская ТюмГУ): включается и в домашки,
+	// засеянные до появления плагина. Dev-workspaces его не получают.
+	if err := provision.EnsureChatPlugins(dshHome, rt.cfg.DshSkel); err != nil {
+		return agctlrt.ChatHandle{}, err
+	}
 	port, err := FreePort()
 	if err != nil {
 		return agctlrt.ChatHandle{}, err

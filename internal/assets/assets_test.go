@@ -83,3 +83,37 @@ func TestChatSessionFilesPluginSkeletonInSync(t *testing.T) {
 		t.Fatal("skel web cordis.patch.yml does not load agctl-chat-session-files Host plugin")
 	}
 }
+
+// Chat-only UI plugins are shipped to chat homes dynamically (EnsureChatPlugins),
+// so the dev skeleton must contain the package files but never enable it.
+func TestChatBrandPluginSkeletonPresentButDisabled(t *testing.T) {
+	src := filepath.Join("..", "..", "dsh-plugins", "chat-brand")
+	dst := filepath.Join("dsh-skel", "profiles", "web", "node_modules", "@arijjia", "agctl-chat-brand")
+	for _, f := range []string{"package.json", "cordis.patch.yml", filepath.Join("lib", "index.js"), filepath.Join("lib", "client.js")} {
+		want, err := os.ReadFile(filepath.Join(src, f))
+		if err != nil {
+			t.Fatalf("chat-brand source %s: %v", f, err)
+		}
+		got, err := os.ReadFile(filepath.Join(dst, f))
+		if err != nil {
+			t.Fatalf("chat-brand skeleton %s missing: %v", f, err)
+		}
+		if !bytes.Equal(want, got) {
+			t.Fatalf("chat-brand drift at %s; recopy dsh-plugins/chat-brand", f)
+		}
+	}
+	pj, err := os.ReadFile(filepath.Join("dsh-skel", "profiles", "web", "package.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(pj, []byte("@arijjia/agctl-chat-brand")) {
+		t.Fatal("skel web bundles must not enable chat-brand (dev workspaces stay clean)")
+	}
+	manifest, err := os.ReadFile(filepath.Join(dst, "package.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(manifest, []byte(`"inject": []`)) || !bytes.Contains(manifest, []byte(`"platform": "web"`)) {
+		t.Fatal("chat-brand client must declare an empty inject for the web platform")
+	}
+}

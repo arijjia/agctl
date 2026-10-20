@@ -9,10 +9,10 @@ export const name = "agctl-chat-session-files";
 export const inject = ["sessionController", "workspaceRegistry"];
 
 /**
- * Host plugin for agctl Chat containers. Intercept new Session creation and
- * give the Session its own hidden cwd in the persistent /workspace volume.
- * Chat Sessions remain a flat/ungrouped history rather than appearing as
- * one visible Workspace folder per conversation.
+ * Host plugin for agctl Chat containers. Each new DSH Session gets a hidden
+ * per-session directory and an internal Workspace whose path equals that cwd.
+ * The chat-brand client flattens/hides those Workspace folders in the UI, while
+ * DSH still sees a valid Workspace and keeps the composer enabled.
  */
 export function apply(ctx) {
 	const rootValue = process.env.AGCTL_CHAT_SESSION_ROOT;
@@ -27,28 +27,25 @@ export function apply(ctx) {
 	const createWithSessionDirectory = async (request = {}) => {
 		if (request.cwd !== undefined) return callOriginal(request);
 
-		const sessionId = request.sessionId ?? `session-${randomUUID()}`;
-		// Idempotent adoption must retain the Session's already-persisted cwd.
-		if (request.sessionId !== undefined && typeof controller.inspect === "function") {
-			try {
-				const existing = await controller.inspect(sessionId);
-				if (existing) return callOriginal(request);
-			} catch {
-				// Not found or not inspectable: create with the caller's id and a new cwd.
-			}
-		}
+		// Caller-owned ids may be idempotent re-adoptions; keep the DSH contract
+		// untouched rather than creating a second hidden Workspace.
+		if (request.sessionId !== undefined) return callOriginal(request);
+		const sessionId = `session-${randomUUID()}`;
 
-		const workspaceId = request.workspaceId;
-		if (workspaceId !== undefined && !registry.get(workspaceId)) return callOriginal(request);
+		const requestedWorkspaceId = request.workspaceId;
+		if (requestedWorkspaceId !== undefined && !registry.get(requestedWorkspaceId)) return callOriginal(request);
 
 		const cwd = sessionDirectory(root, sessionId);
 		await mkdir(cwd, { recursive: true, mode: 0o700 });
 		await writeFile(path.join(cwd, SCOPE_MARKER), `session=${sessionId}\n`, { mode: 0o600, flag: "wx" }).catch((error) => {
 			if (error?.code !== "EEXIST") throw error;
 		});
-
-		const { workspaceId: _workspaceId, ...rest } = request;
-		return callOriginal({ ...rest, sessionId, cwd });
+		// DSH rc2 rejects workspaceId+cwd together, but the web composer requires
+		// every new Session to belong to a Workspace. Create a hidden per-session
+		// Workspace at the same directory, then pass only that WorkspaceId.
+		const workspace = await registry.create(cwd, "Chat");
+		const { workspaceId: _workspaceId, cwd: _cwd, ...rest } = request;
+		return callOriginal({ ...rest, sessionId, workspaceId: workspace.id });
 	};
 
 	controller.create = createWithSessionDirectory;

@@ -12,6 +12,7 @@ TEST_HOME="${E2E_UI_HOME:-/tmp/agctl-cabinet-playwright-$RUN_ID}"
 ADDR="127.0.0.1:${E2E_UI_PORT:-18936}"
 BASE="http://$ADDR"
 FAKE_PORT="${E2E_UI_FAKE_PORT:-18772}"
+LLM_BASE_URL="http://host.docker.internal:$FAKE_PORT/v1"
 IMG="${IMG:-agctl-dsh:0.2.0-ssh-night5}"
 BIN="$TEST_HOME/agctl"
 LOGIN="playwright-admin"
@@ -60,8 +61,9 @@ trap cleanup EXIT INT TERM
 
 python3 scripts/fake-llm.py --port "$FAKE_PORT" --bind 0.0.0.0 >"$TEST_HOME/fake.log" 2>&1 &
 FAKE_PID=$!
-"$BIN" serve --home "$TEST_HOME/data" --addr "$ADDR" --image "$IMG" \
-  --require-approval --chat-ttl-min 15 >"$TEST_HOME/serve.log" 2>&1 &
+AGCTL_LLM_API_KEY=e2e-fake-key-not-a-secret "$BIN" serve --home "$TEST_HOME/data" --addr "$ADDR" --image "$IMG" \
+  --require-approval --chat-ttl-min 15 --llm-base-url "$LLM_BASE_URL" \
+  --llm-model stub-model --llm-models stub-model >"$TEST_HOME/serve.log" 2>&1 &
 AGCTL_PID=$!
 
 READY=""
@@ -79,7 +81,7 @@ fi
 export PLATFORM_URL="$BASE"
 export E2E_LOGIN="$LOGIN"
 export E2E_PASSWORD="$PASSWORD"
-export E2E_LLM_BASE_URL="http://host.docker.internal:$FAKE_PORT/v1"
+export E2E_LLM_BASE_URL="$LLM_BASE_URL"
 export E2E_SCREENSHOT="$TEST_HOME/result.png"
 if ! node tests/e2e-ui/cabinet-ui.mjs; then
   echo "Playwright flow failed; screenshot/logs: $TEST_HOME" >&2

@@ -104,7 +104,7 @@
 |---|---|---|
 | R1.1 ✅ | Корень после login → `/chat/`; без cookie → `/app/`; default dsh UI + Cabinet plugin | done |
 | R1.2 ✅ | Per-user lazy dsh runtimes, persistent user DSH_HOME/work volumes, ensure-on-request, 15-min TTL reaper, shutdown cleanup | done; `/chat/` больше не общий контейнер |
-| R1.3 partial ✅ | Hidden per-session cwd folders implemented; quotas/retention/prewarm and naming the DSH `Ungrouped` session list remain | **M** |
+| R1.3 partial ✅ | Hidden per-session cwd + internal Workspace and flat Chat session list implemented; quotas/retention/prewarm remain | **M** |
 
 ### 1.4 Что видит пользователь: один домен, разные runtime
 
@@ -148,11 +148,12 @@ workspace. Сейчас dsh web сам раздаёт frontend bundle из runti
 `/workspace/.sessions/<sessionId>` до создания Agent. Файлы и вложения, которые
 агент сохраняет относительно текущего cwd, переживают удаление контейнера;
 новая сессия получает новый пустой каталог. Все сессии остаются в одном DSH
-runtime и видны в истории. Поскольку DSH 0.2.0-rc.2 запрещает одновременно
-передать `workspaceId` и индивидуальный `cwd`, plugin снимает Workspace
-association: интерфейс пока показывает такие беседы в `Ungrouped`, а не внутри
-папки Chat. Это UX-полировка; файловая привязка уже работает, но каталоги не
-являются security boundary между сессиями того же пользователя.
+runtime и видны в истории. DSH 0.2.0-rc.2 не принимает одновременно
+`workspaceId` и индивидуальный `cwd`, поэтому Host-плагин создаёт внутренний
+Workspace с путём этой сессии и передаёт только его id. Клиентский chat-brand
+скрывает строки Workspace и показывает сессии плоским списком; пользователи
+не видят файловых директорий. Это всё равно только файловая привязка, не
+security boundary: shell того же пользователя может перейти в соседнюю папку.
 
 ### 1.6 Почему lazy-контейнер, а не только файловые ACL
 
@@ -299,7 +300,7 @@ e2e. Нынешний fallback в панели запускает локальн
 |---|---|---|
 | R1.1 ✅ | Корень после login → `/chat/`; без cookie → `/app/`; default dsh UI + Cabinet plugin | done |
 | R1.2 ✅ | Per-user lazy dsh runtimes, per-user DSH_HOME/work volumes, ensure-on-request, TTL reaper, active-stream guard, graceful shutdown | done |
-| R1.3 partial ✅ | Hidden persistent cwd per Session implemented; quotas/retention/prewarm and replacing the DSH `Ungrouped` display remain | **M** |
+| R1.3 partial ✅ | Hidden per-session cwd + internal Workspace and flat Chat session list implemented; quotas/retention/prewarm remain | **M** |
 | R2.1 ✅ | Заявка на server workspace + admin approve/reject (`--require-approval`), browser flow root→chat→request→approve | done |
 | R2.2 fallback | Команда запуска dsh локально (frontend тоже локальный; fallback, не целевой server-front режим) | prototype |
 | R2.2 target | Connector + outbound WebSocket bridge: server frontend, local DSH backend | **L** |

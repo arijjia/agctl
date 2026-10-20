@@ -8,7 +8,7 @@ size: L
 area: platform
 repo: arijjia/agctl
 created: 2026-10-19
-updated: 2026-10-19
+updated: 2026-10-20
 tags: ["two-mode", "night-shift"]
 depends: []
 ---
@@ -32,3 +32,6 @@ depends: []
 - 2026-10-19: R1.3 completed: sessionController.create wrapper assigns hidden cwd /workspace/.sessions/<sessionId> before Session header persistence; remains within one per-user work volume and DSH Session history. e2e-cabinet PASS=12/12; Browser approval flow PASS; go test -race PASS. DSH UI currently presents these sessions under Ungrouped because rc2 forbids workspaceId+cwd.
 - 2026-10-19: Владелец уточнил target: Kubernetes-native. Audit: per-user lazy lifecycle совместим как Pod+Service+PVC (delete Pod, retain PVC), ChatProvider уже выделен с StorageID/Endpoint и Docker adapter. Но текущий default constructor запускает только Docker; dev RuntimeIface хранит HostPort/host paths, control-plane SQLite+in-memory locks — не HA. Не называть текущую сборку K8s-ready до adapter/controller/PVC/lease и cluster e2e.
 - 2026-10-19: Владелец подтвердила Docker-first: кубы — только совместимость на будущее, K8s-работы приостановлены. Подключён платформенный LLM по умолчанию (корп. LiteLLM qwens): модал dsh про API key у новых пользователей исчезает; приоритет провайдеров: личный секрет > платформенный > модал dsh.
+- 2026-10-20: Подключение корп. моделей проверено живым прогоном на дефолтном agctl-dsh:0.2.0: регистрация без личного ключа -> /chat/ сразу с litellm baseURL и qwens (модал dsh не появляется). Найден и закрыт дефект: старый DSH_HOME при рестарте agctl не переписывал креды — EnsureChat теперь идемпотентно делает RefreshProvider на каждом ленивом старте (f8b7173).
+- 2026-10-20: UX bugfix 2026-10-20: DSH отключал composer у ungrouped Session. Решение: внутренний Workspace per Session на скрытом cwd, chat-brand сворачивает directory tree в flat «Сессии» и убирает правый file/terminal controls; Playwright PASS на mouse New Session + prompt/reply.
+- 2026-10-20: Chat UX regression закрыта: session.create теперь привязывает Session к скрытому Workspace per-session cwd, chat-brand скрывает все directory rows, файлы/terminal/access controls и оставляет flat «Сессии». Постоянный Playwright e2e проверяет mouse New Session + отправку/ответ fake LLM; 2026-10-20 PASS.

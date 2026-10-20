@@ -248,6 +248,9 @@ func cmdInitChatHome(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if err := provision.EnsureChatPlugins(*home, assets.DshSkel); err != nil {
+		log.Fatal(err)
+	}
 	switch {
 	case seeded:
 		fmt.Println("init-chat-home: seeded")

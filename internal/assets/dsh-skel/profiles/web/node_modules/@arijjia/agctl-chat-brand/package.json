@@ -1,0 +1,23 @@
+{
+  "name": "@arijjia/agctl-chat-brand",
+  "description": "agctl Chat mode branding: Tyumen State University workshop identity, session-only sidebar, no dev panels",
+  "version": "0.1.7",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    }
+  }
+}

@@ -50,6 +50,41 @@ try {
     // Existing isolated test dsh-home may already have dismissed the dialog.
   }
 
+  // Chat mode is intentionally session-only: internal per-session Workspaces
+  // stay hidden, but the DSH Session must still be creatable and promptable.
+  if (await page.getByText('Add an API key to get started').isVisible().catch(() => false)) {
+    throw new Error('platform default LLM did not suppress the first-run API-key modal');
+  }
+  await page.getByText('ИИ-мастерская ТюмГУ', { exact: true }).waitFor({ state: 'visible', timeout: 10000 });
+  await page.getByText('Тюмень на правильном пути', { exact: true }).waitFor({ state: 'visible', timeout: 10000 });
+  await page.getByText('Сессии', { exact: true }).waitFor({ state: 'visible', timeout: 10000 });
+  if (await page.locator('svg[viewBox="0 0 23.16 17.04"]').count() !== 0) {
+    throw new Error('DeepSeek whale mark remains in Chat mode');
+  }
+  if (await page.locator('img[data-agctl-logo]').count() === 0) throw new Error('TюмГУ logo image missing');
+  const visibleWorkspaceRows = await page.locator('.YDXeBa_projectRow').evaluateAll((rows) => rows.filter((row) => !!row.offsetParent).length);
+  if (visibleWorkspaceRows !== 0) throw new Error(`Chat mode exposed ${visibleWorkspaceRows} Workspace directory rows`);
+  const chatOnlyControls = [
+    'button[aria-label="Open right sidebar"]',
+    'button[aria-label*="Workspace files"]',
+    'button[aria-label*="New terminal"]',
+    'button[aria-label*="Access mode"]',
+    'button[aria-label="Add files or run commands"]',
+  ];
+  for (const selector of chatOnlyControls) {
+    await page.locator(selector).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {
+      throw new Error(`Chat mode exposes a development/file control: ${selector}`);
+    });
+  }
+  await page.locator('button[aria-label="New session"]').first().click();
+  const chatComposer = page.locator('[data-composer-input="true"]');
+  await chatComposer.waitFor({ state: 'visible', timeout: 10000 });
+  await page.waitForFunction(() => document.querySelector('[data-composer-input="true"]')?.getAttribute('contenteditable') === 'true', { timeout: 10000 });
+  await chatComposer.fill('Проверь чат ТюмГУ');
+  await chatComposer.press('Enter');
+  await page.getByText('FAKE-LLM-REPLY: всё работает', { exact: false }).last().waitFor({ state: 'visible', timeout: 20000 });
+  console.log('PASS: Chat mode branding, hidden directory tools, New Session and send work');
+
   await cabinetEntry.click();
   await page.getByRole('heading', { name: 'Кабинет agctl' }).waitFor({ state: 'visible' });
   await page.getByText(`Вошёл как ${process.env.E2E_LOGIN}`, { exact: false }).waitFor({ state: 'visible', timeout: 15000 });

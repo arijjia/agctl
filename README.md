@@ -77,12 +77,11 @@ origin: `/chat/` ведёт в личный chat runtime, `/w/{id}/` — в вы
 `dsh-plugins/cabinet/`.
 
 **Важно:** в режиме 1 каждый DSH Session получает скрытый persistent cwd
-`/workspace/.sessions/<sessionId>` внутри личного тома. Это привязка файлов к
-сессии, но не security boundary: пользователь может перейти в соседнюю папку
-своим shell. Из-за контракта DSH 0.2.0-rc.2 новые сессии отображаются в
-`Ungrouped`, а не как отдельные Workspace-папки; это остаётся UX-полировкой.
-Квоты томов, retention и prewarm-пул — следующий шаг. Детали —
-[docs/architecture.md](docs/architecture.md).
+`/workspace/.sessions/<sessionId>` внутри личного тома. Host создаёт внутренний
+Workspace на этот путь, а chat-brand скрывает директории и показывает плоский
+список сессий. Это привязка файлов, но не security boundary: пользователь
+может перейти в соседнюю папку своим shell. Квоты томов, retention и
+prewarm-пул — следующий шаг. Детали — [docs/architecture.md](docs/architecture.md).
 
 ## Стартовые комплекты и компоненты
 

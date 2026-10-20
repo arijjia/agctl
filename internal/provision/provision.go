@@ -6,6 +6,7 @@
 package provision
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -290,6 +291,96 @@ func SeedDshHome(home string, p Provider, skelFS fs.FS) error {
 	}
 	return RefreshProvider(home, p)
 }
+
+// EnsureChatPlugins synchronizes the Host/client plugins used only by Chat
+// homes. It is idempotent and also upgrades DSH_HOME volumes seeded by older
+// agctl builds. Dev workspaces keep the ordinary DSH web UI.
+func EnsureChatPlugins(home string, skelFS fs.FS) error {
+	if skelFS == nil {
+		return fmt.Errorf("provision: chat plugin skeleton is nil")
+	}
+	bundles := []string{chatSessionFilesBundle, chatBrandBundle}
+	for _, bundle := range bundles {
+		dst := filepath.Join(home, "profiles", "web", "node_modules", filepath.FromSlash(bundle))
+		src := "dsh-skel/profiles/web/node_modules/" + bundle
+		if err := CopyFS(skelFS, src, dst); err != nil {
+			return fmt.Errorf("provision: sync %s: %w", bundle, err)
+		}
+	}
+
+	pjPath := filepath.Join(home, "profiles", "web", "package.json")
+	raw, err := os.ReadFile(pjPath)
+	if err != nil {
+		return fmt.Errorf("provision: chat profile package.json: %w", err)
+	}
+	var manifest map[string]any
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return fmt.Errorf("provision: chat profile manifest: %w", err)
+	}
+	dsh, ok := manifest["dsh"].(map[string]any)
+	if !ok {
+		dsh = map[string]any{}
+		manifest["dsh"] = dsh
+	}
+	profile, ok := dsh["profile"].(map[string]any)
+	if !ok {
+		profile = map[string]any{}
+		dsh["profile"] = profile
+	}
+	bundlesAny, _ := profile["bundles"].([]any)
+	changed := false
+	for _, bundle := range bundles {
+		has := false
+		for _, b := range bundlesAny {
+			if s, _ := b.(string); s == bundle {
+				has = true
+				break
+			}
+		}
+		if !has {
+			bundlesAny = append(bundlesAny, bundle)
+			changed = true
+		}
+	}
+	if changed {
+		profile["bundles"] = bundlesAny
+		out, err := json.MarshalIndent(manifest, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(pjPath, append(out, '\n'), 0o644); err != nil {
+			return fmt.Errorf("provision: chat profile write: %w", err)
+		}
+	}
+
+	patchPath := filepath.Join(home, "profiles", "web", "cordis.patch.yml")
+	patch, err := os.ReadFile(patchPath)
+	if os.IsNotExist(err) {
+		patch, err = fs.ReadFile(skelFS, "dsh-skel/profiles/web/cordis.patch.yml")
+	}
+	if err != nil {
+		return fmt.Errorf("provision: chat profile patch: %w", err)
+	}
+	entries := []struct{ id, bundle string }{
+		{"agctl-chat-session-files", chatSessionFilesBundle},
+		{"agctl-chat-brand", chatBrandBundle},
+	}
+	for _, item := range entries {
+		if bytes.Contains(patch, []byte(item.bundle)) {
+			continue
+		}
+		patch = append(patch, []byte(fmt.Sprintf("- id: %s\n  name: %s\n", item.id, yamlStr(item.bundle)))...)
+	}
+	if err := os.WriteFile(patchPath, patch, 0o644); err != nil {
+		return fmt.Errorf("provision: chat profile patch write: %w", err)
+	}
+	return nil
+}
+
+const (
+	chatSessionFilesBundle = "@arijjia/agctl-chat-session-files"
+	chatBrandBundle        = "@arijjia/agctl-chat-brand"
+)
 
 // seedWorkspaceRegistry — предзаписанный реестр воркспейсов dsh: одна запись
 // на /workspace. Без неё dsh при первом буте пытается создать «дефолтный»

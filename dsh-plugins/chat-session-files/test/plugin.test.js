@@ -5,30 +5,39 @@ import os from "node:os";
 import path from "node:path";
 import { apply } from "../lib/index.js";
 
-test("new Session gets one persistent cwd without mutating an existing Workspace", async () => {
+test("new Session gets a hidden per-session Workspace and persistent cwd", async () => {
 	const home = await mkdtemp(path.join(os.tmpdir(), "agctl-chat-files-"));
 	const root = path.join(home, ".sessions");
 	const oldRoot = process.env.AGCTL_CHAT_SESSION_ROOT;
 	process.env.AGCTL_CHAT_SESSION_ROOT = root;
 	try {
 		const created = [];
+		const createdWorkspaces = [];
 		const attached = [];
 		const existing = new Map();
-		const workspace = { attachSession: async (id) => attached.push(id) };
+		const workspaces = new Map([["ws-agctl", { id: "ws-agctl", path: "/workspace" }]]);
+		const registry = {
+			get: (id) => workspaces.get(id),
+			create: async (cwd, title) => {
+				const workspace = { id: `hidden-${path.basename(cwd)}`, path: cwd, title };
+				createdWorkspaces.push(workspace);
+				workspaces.set(workspace.id, workspace);
+				return workspace;
+			},
+		};
 		const originalCreate = async (request) => {
 			created.push(request);
 			const id = request.sessionId;
-			existing.set(id, { meta: { id, cwd: request.cwd } });
+			const workspace = workspaces.get(request.workspaceId);
+			if (workspace) attached.push({ id, workspaceId: workspace.id });
+			existing.set(id, { meta: { id, cwd: workspace?.path || request.cwd } });
 			return { sessionId: id };
 		};
-		const controller = {
-			inspect: async (id) => existing.get(id),
-			create: originalCreate,
-		};
+		const controller = { create: originalCreate };
 		const disposers = [];
 		const ctx = {
 			sessionController: controller,
-			workspaceRegistry: { get: (id) => (id === "ws-agctl" ? workspace : undefined) },
+			workspaceRegistry: registry,
 			logger: { info: () => {} },
 			effect: (register) => disposers.push(register()),
 		};
@@ -38,17 +47,21 @@ test("new Session gets one persistent cwd without mutating an existing Workspace
 		const id = createdResult.sessionId;
 		const dir = path.join(root, id);
 		await access(path.join(dir, ".agctl-session-workdir"));
-		assert.equal(created[0].cwd, dir);
-		assert.equal(created[0].workspaceId, undefined);
+		assert.equal(created.length, 1);
+		assert.equal(created[0].cwd, undefined);
 		assert.equal(created[0].agentPreset, "default");
-		assert.deepEqual(attached, []);
+		assert.equal(createdWorkspaces.length, 1);
+		assert.equal(createdWorkspaces[0].path, dir);
+		assert.equal(createdWorkspaces[0].title, "Chat");
+		assert.equal(created[0].workspaceId, createdWorkspaces[0].id);
+		assert.deepEqual(attached, [{ id, workspaceId: createdWorkspaces[0].id }]);
 
-		// Idempotent re-adoption preserves the existing cwd and does not allocate a new folder.
-		await controller.create({ sessionId: id, workspaceId: "ws-agctl" });
+		// A caller-owned Session id remains under the DSH native idempotent contract.
+		await controller.create({ sessionId: "session-caller-owned", workspaceId: "ws-agctl" });
 		assert.equal(created.length, 2);
-		assert.equal(created[1].sessionId, id);
-		assert.equal(created[1].cwd, undefined);
-		assert.deepEqual(attached, []);
+		assert.equal(createdWorkspaces.length, 1);
+		assert.equal(created[1].sessionId, "session-caller-owned");
+		assert.equal(created[1].workspaceId, "ws-agctl");
 
 		for (const dispose of disposers) dispose?.();
 		assert.equal(controller.create, originalCreate);
