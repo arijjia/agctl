@@ -331,6 +331,46 @@ func (d *DB) SecretByUser(userID int64) (Secret, error) {
 	return s, wrap("secret by user", err)
 }
 
+// ── local connector credentials ( durable pairing после one-time grant ) ────
+
+// LocalConnector — durable credential ноутбука: хранится только хеш токена.
+type LocalConnector struct {
+	ID         int64
+	UserID     int64
+	TokenHash  string
+	Label      string
+	CreatedAt  string
+	LastSeenAt string
+}
+
+func (d *DB) LocalConnectorCreate(userID int64, tokenHash, label string) (int64, error) {
+	res, err := d.Exec(`INSERT INTO local_connectors(user_id, token_hash, label, created_at, last_seen_at)
+		VALUES(?,?,?,?,?)`, userID, tokenHash, label, now(), now())
+	if err != nil {
+		return 0, wrap("local connector create", err)
+	}
+	id, err := res.LastInsertId()
+	return id, wrap("local connector id", err)
+}
+
+func (d *DB) LocalConnectorByHash(tokenHash string) (LocalConnector, error) {
+	var c LocalConnector
+	err := d.QueryRow(`SELECT id, user_id, token_hash, label, created_at, last_seen_at
+		FROM local_connectors WHERE token_hash = ?`, tokenHash).
+		Scan(&c.ID, &c.UserID, &c.TokenHash, &c.Label, &c.CreatedAt, &c.LastSeenAt)
+	return c, wrap("local connector by hash", err)
+}
+
+func (d *DB) LocalConnectorTouch(id int64) error {
+	_, err := d.Exec(`UPDATE local_connectors SET last_seen_at = ? WHERE id = ?`, now(), id)
+	return wrap("local connector touch", err)
+}
+
+func (d *DB) LocalConnectorsDeleteForUser(userID int64) error {
+	_, err := d.Exec(`DELETE FROM local_connectors WHERE user_id = ?`, userID)
+	return wrap("local connectors delete", err)
+}
+
 // UpdateWorkspaceProvider — смена Base URL/моделей воркспейса (ротация).
 func (d *DB) UpdateWorkspaceProvider(id, baseURL, model string, models []string) error {
 	_, err := d.Exec(`UPDATE workspaces SET base_url = ?, model = ?, models = ?,

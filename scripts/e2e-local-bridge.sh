@@ -31,7 +31,8 @@ cleanup() {
   sleep 1 # connector context also stops its launched dsh web child
   pkill -f "dsh web --port $DSH_PORT" >/dev/null 2>&1
   [ -n "$SERVE_PID" ] && { kill "$SERVE_PID" >/dev/null 2>&1; wait "$SERVE_PID" 2>/dev/null; }
-  rm -rf "$TEST_HOME"
+  sleep 1 # let the killed dsh release its npm cache before removal
+  rm -rf "$TEST_HOME" 2>/dev/null || rm -rf "$TEST_HOME"
 }
 trap cleanup EXIT INT TERM
 
@@ -63,6 +64,7 @@ pass "pairing grant issued (bearer, single-use)"
 export HOME="$TEST_HOME/host-home"
 mkdir -p "$HOME"
 "$BIN" local connect --server "$BASE" --grant "$GRANT" \
+  --credential-file "$TEST_HOME/connector.json" \
   --launch-dsh --dsh-port "$DSH_PORT" >"$TEST_HOME/connect.log" 2>&1 &
 CONNECT_PID=$!
 
@@ -98,7 +100,24 @@ if [ -n "$TOKEN" ] && grep -q "$TOKEN" "$TEST_HOME/serve.log"; then
 fi
 pass "boot token stays out of server logs"
 
-# 6. Revoke closes the connector session.
+# 5b. Durable credential: stop the grant-based connector and reconnect with the
+#     saved credential file — no new grant needed.
+kill "$CONNECT_PID" >/dev/null 2>&1
+sleep 2
+"$BIN" local connect --server "$BASE" \
+  --credential-file "$TEST_HOME/connector.json" \
+  --launch-dsh --dsh-port "$DSH_PORT" >"$TEST_HOME/connect2.log" 2>&1 &
+CONNECT_PID=$!
+CONNECTED=""
+for i in $(seq 1 30); do
+  status=$(curl -s -b "$TEST_HOME/jar" "$BASE/api/local-backend/status")
+  echo "$status" | grep -q '"connected":true' && CONNECTED=1 && break
+  sleep 1
+done
+[ -n "$CONNECTED" ] || { tail -20 "$TEST_HOME/connect2.log" >&2; fail "credential reconnect failed"; }
+pass "durable credential reconnects without a new grant"
+
+# 6. Revoke closes the connector session and deletes the credential record.
 curl -s -b "$TEST_HOME/jar" -X DELETE "$BASE/api/local-backend" -o /dev/null
 sleep 2
 kill -0 "$CONNECT_PID" 2>/dev/null && fail "connector survived revoke"

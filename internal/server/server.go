@@ -207,7 +207,7 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		s.localBridge.ConnectorHandler().ServeHTTP(w, r)
+		s.handleLocalBackendConnect(w, r)
 	}))
 	localUI := s.requireUser(func(w http.ResponseWriter, r *http.Request, id identity) {
 		if !s.localBridgeEnabled() {

@@ -15,6 +15,26 @@ import (
 	"github.com/coder/websocket"
 )
 
+// testConnectorServer mimics the server-side pairing route: the one-time
+// grant is consumed and, when issueCred is set, a durable connector token is
+// delivered over the control stream after the upgrade.
+func testConnectorServer(m *Manager, issueCred bool) *httptest.Server {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/connect", func(w http.ResponseWriter, r *http.Request) {
+		userID, err := m.ConsumeGrant(BearerToken(r.Header.Get("Authorization")))
+		if err != nil {
+			http.Error(w, "invalid grant", http.StatusUnauthorized)
+			return
+		}
+		token := ""
+		if issueCred {
+			token = "agctl-conn-1-test"
+		}
+		m.AcceptConnector(userID, w, r, token)
+	})
+	return httptest.NewServer(mux)
+}
+
 func TestGrantIsUserBoundSingleUseAndExpires(t *testing.T) {
 	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 	m := NewManager()
@@ -24,11 +44,11 @@ func TestGrantIsUserBoundSingleUseAndExpires(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	userID, err := m.consumeGrant(token)
+	userID, err := m.ConsumeGrant(token)
 	if err != nil || userID != 42 {
 		t.Fatalf("consumed grant user=%d err=%v; want user 42", userID, err)
 	}
-	if _, err := m.consumeGrant(token); !errors.Is(err, ErrInvalidGrant) {
+	if _, err := m.ConsumeGrant(token); !errors.Is(err, ErrInvalidGrant) {
 		t.Fatalf("replayed grant err=%v, want ErrInvalidGrant", err)
 	}
 	if _, err := m.IssueGrant(0, time.Minute); err == nil {
@@ -50,10 +70,10 @@ func TestGrantIsUserBoundSingleUseAndExpires(t *testing.T) {
 	if len(m.grants) != 1 {
 		t.Fatalf("expired unconsumed grants were not pruned: remaining=%d", len(m.grants))
 	}
-	if _, err := m.consumeGrant(expiring); !errors.Is(err, ErrInvalidGrant) {
+	if _, err := m.ConsumeGrant(expiring); !errors.Is(err, ErrInvalidGrant) {
 		t.Fatalf("expired grant err=%v, want ErrInvalidGrant", err)
 	}
-	if got, err := m.consumeGrant(fresh); err != nil || got != 43 {
+	if got, err := m.ConsumeGrant(fresh); err != nil || got != 43 {
 		t.Fatalf("fresh grant user=%d err=%v; want user 43", got, err)
 	}
 }
@@ -93,7 +113,7 @@ func TestOutboundTunnelProxiesHTTPAndSSEForBoundUser(t *testing.T) {
 
 	manager := NewManager()
 	defer manager.Close()
-	connectorServer := httptest.NewServer(manager.ConnectorHandler())
+	connectorServer := testConnectorServer(manager, true)
 	defer connectorServer.Close()
 	endpoint := "ws" + strings.TrimPrefix(connectorServer.URL, "http") + "/connect"
 	grant, err := manager.IssueGrant(17, time.Minute)
@@ -165,7 +185,7 @@ func TestOutboundTunnelProxiesHTTPAndSSEForBoundUser(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("revoking connector did not close its outbound session")
 	}
-	if _, err := manager.consumeGrant(grant); !errors.Is(err, ErrInvalidGrant) {
+	if _, err := manager.ConsumeGrant(grant); !errors.Is(err, ErrInvalidGrant) {
 		t.Fatalf("consumed grant became reusable after revoke: %v", err)
 	}
 }
@@ -192,7 +212,7 @@ func TestOutboundTunnelMintsDSHBootTokenAndAcceptsRefresh(t *testing.T) {
 
 	manager := NewManager()
 	defer manager.Close()
-	connectorServer := httptest.NewServer(manager.ConnectorHandler())
+	connectorServer := testConnectorServer(manager, true)
 	defer connectorServer.Close()
 	endpoint := "ws" + strings.TrimPrefix(connectorServer.URL, "http") + "/connect"
 	grant, err := manager.IssueGrant(31, time.Minute)
@@ -297,7 +317,7 @@ func TestOutboundTunnelPreservesWebSocketUpgrade(t *testing.T) {
 
 	manager := NewManager()
 	defer manager.Close()
-	connectorServer := httptest.NewServer(manager.ConnectorHandler())
+	connectorServer := testConnectorServer(manager, true)
 	defer connectorServer.Close()
 	endpoint := "ws" + strings.TrimPrefix(connectorServer.URL, "http") + "/connect"
 	grant, err := manager.IssueGrant(25, time.Minute)

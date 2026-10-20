@@ -267,17 +267,21 @@ owner-keyed proxy с HTTP/SSE/WS, фильтрацией `agctl_*` cookies и mi
 вместе с `--secure-cookies`) открывает pairing API `POST /api/local-backend/grant`,
 `GET …/status`, `DELETE …`, bearer handshake `GET /api/local-backend/connect`
 и UI-proxy `GET|POST /api/local-backend/ui/…` (флаг-off даёт 404 на всех).
-Осталось для рабочего режима: reconnect/heartbeat политика и security review.
-Cabinet UX уже в панели: карточка «Локальный бэкенд (experimental)» выдаёт
-готовую команду подключения (одноразовый grant, TTL 2 мин), показывает статус
-и отключает коннектор; при выключенном флаге карточка честно показывает
-fallback. CLI-коннектор: `agctl local connect` (--server/--grant, опционально
---launch-dsh со скрейпом boot-токена из логов или --dsh-token), флаг сервера
-требует `--secure-cookies` за TLS, кроме loopback-адреса для локальной
-разработки. `scripts/e2e-local-bridge.sh` прогоняет настоящий локальный dsh
-web (host-бинарь, изолированный HOME) через outbound connector: UI реального
-DSH открывается на origin agctl, токен не попадает в серверные логи, revoke
-закрывает соединение. Это experimental контур, не local mode.
+Осталось для рабочего режима: security review (threat model из карточки
+local-backend-websocket-bridge). Reconnect/heartbeat: yamux keepalive 20 с в
+carrier; CLI `agctl local connect` переживает обрывы — после pairing сервер
+выдаёт durable credential (hash в SQLite `local_connectors`, raw только в
+файле 0600 на ноутбуке), reconnect по ней не требует grant, «Отключить» в
+Cabinet удаляет запись и закрывает сессию. Cabinet UX в панели: карточка
+«Локальный бэкенд (experimental)» выдаёт готовую команду подключения,
+показывает статус и отключает коннектор; при выключенном флаге — fallback.
+CLI: `agctl local connect` (--server/--grant|--credential-file, опционально
+--launch-dsh со скрейпом boot-токена или --dsh-token), флаг сервера требует
+`--secure-cookies` за TLS, кроме loopback-адреса для локальной разработки.
+`scripts/e2e-local-bridge.sh` прогоняет настоящий локальный dsh web
+(host-бинарь, изолированный HOME) через outbound connector: UI реального DSH
+на origin agctl, токен не в серверных логах, reconnect по credential, revoke.
+Это experimental контур, не local mode.
 
 Если «frontend на сервере» означает, что сами static assets обязаны
 физически отдаваться сервером (не через proxied local dsh web), потребуется

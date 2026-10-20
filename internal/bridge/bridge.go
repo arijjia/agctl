@@ -38,6 +38,15 @@ type helloFrame struct {
 	DSHToken       string `json:"dshToken,omitempty"`
 }
 
+// controlFrame is the bidirectional control-stream envelope. Server → connector
+// delivers the durable ConnectorToken once after pairing; connector → server
+// sends helloFrame lines (authority + boot-token refreshes).
+type controlFrame struct {
+	ConnectorToken string `json:"connectorToken,omitempty"`
+	LocalAuthority string `json:"localAuthority,omitempty"`
+	DSHToken       string `json:"dshToken,omitempty"`
+}
+
 var (
 	ErrInvalidGrant = errors.New("bridge: invalid, expired, or already-used grant")
 	ErrNoConnector  = errors.New("bridge: no active connector for user")
@@ -115,7 +124,7 @@ func (m *Manager) IssueGrant(userID int64, ttl time.Duration) (string, error) {
 	return token, nil
 }
 
-func (m *Manager) consumeGrant(token string) (int64, error) {
+func (m *Manager) ConsumeGrant(token string) (int64, error) {
 	secret, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil || len(secret) != 32 {
 		return 0, ErrInvalidGrant
@@ -134,72 +143,76 @@ func (m *Manager) consumeGrant(token string) (int64, error) {
 	return g.userID, nil
 }
 
-// ConnectorHandler accepts the separate bearer-authenticated connector channel.
-// The browser's agctl cookie is never accepted as a connector credential.
-func (m *Manager) ConnectorHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if r.Header.Get("Origin") != "" {
-			// The native connector is not a browser client. Rejecting Origin keeps
-			// this bearer-only endpoint out of browser cross-site WebSocket flows.
-			http.Error(w, "origin not allowed", http.StatusForbidden)
-			return
-		}
-		token := bearerToken(r.Header.Get("Authorization"))
-		userID, err := m.consumeGrant(token)
-		if err != nil {
-			http.Error(w, "invalid connector grant", http.StatusUnauthorized)
-			return
-		}
-		ws, err := websocket.Accept(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer ws.CloseNow()
+// AcceptConnector upgrades an already-authenticated connector request. The
+// caller (server route) resolves the user identity itself — from a one-time
+// pairing grant or from the durable connector credential — and passes
+// connectorToken ("" on credential reconnects) for the server to deliver once
+// over the control stream so the CLI can store it for future reconnects.
+func (m *Manager) AcceptConnector(userID int64, w http.ResponseWriter, r *http.Request, connectorToken string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if r.Header.Get("Origin") != "" {
+		// The native connector is not a browser client. Rejecting Origin keeps
+		// this bearer-only endpoint out of browser cross-site WebSocket flows.
+		http.Error(w, "origin not allowed", http.StatusForbidden)
+		return
+	}
+	ws, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer ws.CloseNow()
 
-		connCtx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		carrier := websocket.NetConn(connCtx, ws, websocket.MessageBinary)
-		session, err := yamux.Server(carrier, muxConfig())
-		if err != nil {
-			return
+	connCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	carrier := websocket.NetConn(connCtx, ws, websocket.MessageBinary)
+	session, err := yamux.Server(carrier, muxConfig())
+	if err != nil {
+		return
+	}
+	// The connector must announce its local DSH authority before the peer
+	// becomes usable; without it the proxy could not rewrite Host/Origin.
+	control, err := session.Accept()
+	if err != nil {
+		return
+	}
+	// One decoder serves the whole control stream: a fresh decoder per read
+	// would buffer later lines invisibly (hello + token may share a segment).
+	_ = control.SetReadDeadline(time.Now().Add(10 * time.Second)) // hung-peer guard
+	decoder := json.NewDecoder(control)
+	authority, helloToken, err := readHello(decoder)
+	if err != nil {
+		_ = control.Close()
+		return
+	}
+	_ = control.SetReadDeadline(time.Time{}) // pumpControl blocks for updates
+	if connectorToken != "" {
+		// Deliver the durable credential once; the connector stores it locally.
+		payload, err := json.Marshal(controlFrame{ConnectorToken: connectorToken})
+		if err == nil {
+			_ = control.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			_, _ = control.Write(append(payload, '\n'))
+			_ = control.SetWriteDeadline(time.Time{})
 		}
-		// The connector must announce its local DSH authority before the peer
-		// becomes usable; without it the proxy could not rewrite Host/Origin.
-		control, err := session.Accept()
-		if err != nil {
-			return
-		}
-		// One decoder serves the whole control stream: a fresh decoder per read
-		// would buffer later lines invisibly (hello + token may share a segment).
-		_ = control.SetReadDeadline(time.Now().Add(10 * time.Second)) // hung-peer guard
-		decoder := json.NewDecoder(control)
-		authority, helloToken, err := readHello(decoder)
-		if err != nil {
-			_ = control.Close()
-			return
-		}
-		_ = control.SetReadDeadline(time.Time{}) // pumpControl blocks for updates
-		p := &peer{session: session, authority: authority}
-		if helloToken != "" {
-			p.setToken(helloToken)
-		}
-		old := m.register(userID, p)
-		if old != nil {
-			_ = old.session.Close()
-		}
-		defer func() {
-			m.unregister(userID, p)
-			_ = session.Close()
-		}()
-		// Later control lines refresh the local DSH boot token (e.g. after the
-		// user restarts their local DSH and reconnects through the CLI).
-		go pumpControl(p, decoder)
-		<-session.CloseChan()
-	})
+	}
+	p := &peer{session: session, authority: authority}
+	if helloToken != "" {
+		p.setToken(helloToken)
+	}
+	old := m.register(userID, p)
+	if old != nil {
+		_ = old.session.Close()
+	}
+	defer func() {
+		m.unregister(userID, p)
+		_ = session.Close()
+	}()
+	// Later control lines refresh the local DSH boot token (e.g. after the
+	// user restarts their local DSH and reconnects through the CLI).
+	go pumpControl(p, decoder)
+	<-session.CloseChan()
 }
 
 // ConnectorOptions tunes the outbound connector. The zero value is valid.
@@ -211,6 +224,10 @@ type ConnectorOptions struct {
 	// (e.g. scraped from local dsh web logs). Each value is forwarded to the
 	// server over the authenticated control stream only — never in URLs or logs.
 	DSHBootTokens <-chan string
+	// OnConnectorToken, when set, receives the durable connector credential the
+	// server issues after a grant pairing. Store it securely (0600 file); it is
+	// the reconnect credential until revoked by the user.
+	OnConnectorToken func(token string)
 }
 
 // Connect dials the agctl connector endpoint and serves its multiplexed streams
@@ -249,6 +266,8 @@ func Connect(ctx context.Context, endpoint, grantToken string, opts ConnectorOpt
 	}
 	// Keep the control stream open for the lifetime of the session; yamux has
 	// no half-close, and closing it would tear down the whole session.
+
+	go pumpConnectorControl(control, opts.OnConnectorToken)
 
 	if opts.DSHBootTokens != nil {
 		go forwardTokens(ctx, control, opts.DSHBootTokens)
@@ -549,7 +568,7 @@ func muxConfig() *yamux.Config {
 	return cfg
 }
 
-func bearerToken(header string) string {
+func BearerToken(header string) string {
 	const prefix = "Bearer "
 	if !strings.HasPrefix(header, prefix) {
 		return ""
@@ -559,26 +578,26 @@ func bearerToken(header string) string {
 
 // readHello reads the connector's control-frame announcement with a deadline.
 func readHello(decoder *json.Decoder) (authority, dshToken string, err error) {
-	var hello helloFrame
-	if err := decoder.Decode(&hello); err != nil {
+	var frame controlFrame
+	if err := decoder.Decode(&frame); err != nil {
 		return "", "", fmt.Errorf("bridge: decode hello: %w", err)
 	}
-	if !isLoopbackAuthority(hello.LocalAuthority) {
+	if !isLoopbackAuthority(frame.LocalAuthority) {
 		return "", "", ErrBadLocalAddr
 	}
-	return hello.LocalAuthority, hello.DSHToken, nil
+	return frame.LocalAuthority, frame.DSHToken, nil
 }
 
 // pumpControl consumes later control lines; only DSH boot-token refreshes are
 // defined today. It stops when the connector closes the stream or the session.
 func pumpControl(p *peer, decoder *json.Decoder) {
 	for {
-		var line helloFrame
-		if err := decoder.Decode(&line); err != nil {
+		var frame controlFrame
+		if err := decoder.Decode(&frame); err != nil {
 			return
 		}
-		if line.DSHToken != "" {
-			p.setToken(line.DSHToken)
+		if frame.DSHToken != "" {
+			p.setToken(frame.DSHToken)
 		}
 	}
 }
@@ -587,7 +606,7 @@ func writeHello(control net.Conn, localAddr string) error {
 	if err := control.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
 		return fmt.Errorf("bridge: control deadline: %w", err)
 	}
-	payload, err := json.Marshal(helloFrame{LocalAuthority: localAddr})
+	payload, err := json.Marshal(controlFrame{LocalAuthority: localAddr})
 	if err != nil {
 		return err
 	}
@@ -595,6 +614,24 @@ func writeHello(control net.Conn, localAddr string) error {
 		return err
 	}
 	return control.SetWriteDeadline(time.Time{})
+}
+
+// readConnectorToken waits (bounded) for the server's durable credential after
+// pairing; it shares the control stream with the hello the connector wrote.
+func pumpConnectorControl(control net.Conn, onToken func(string)) {
+	// Session-lifetime reader: grant pairings receive the durable credential
+	// once; credential reconnects receive nothing and this goroutine simply
+	// lives until the session closes.
+	decoder := json.NewDecoder(control)
+	for {
+		var frame controlFrame
+		if err := decoder.Decode(&frame); err != nil {
+			return
+		}
+		if frame.ConnectorToken != "" && onToken != nil {
+			onToken(frame.ConnectorToken)
+		}
+	}
 }
 
 // forwardTokens relays connector-side boot-token discoveries to the server.
@@ -610,7 +647,7 @@ func forwardTokens(ctx context.Context, control net.Conn, tokens <-chan string) 
 			if err := control.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
 				return
 			}
-			payload, err := json.Marshal(helloFrame{DSHToken: token})
+			payload, err := json.Marshal(controlFrame{DSHToken: token})
 			if err != nil {
 				return
 			}

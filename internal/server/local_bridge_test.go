@@ -129,6 +129,110 @@ func TestLocalBridgeGrantStatusRevokeLifecycle(t *testing.T) {
 	}
 }
 
+func TestLocalBridgeCredentialReconnectAndRevoke(t *testing.T) {
+	e := newTestEnvWith(t, 3, func(c *Config) { c.ExperimentalLocalBridge = true })
+	e.register(e.admin, "anna", "secret1")
+	fakeLocal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer fakeLocal.Close()
+	localAddr := strings.TrimPrefix(fakeLocal.URL, "http://")
+	endpoint := "ws" + strings.TrimPrefix(e.api.URL, "http") + "/api/local-backend/connect"
+
+	code, body := e.do(e.admin, "POST", "/api/local-backend/grant", nil)
+	if code != http.StatusCreated {
+		t.Fatalf("grant = %d %s", code, body)
+	}
+	var granted localGrantResponse
+	if err := json.Unmarshal([]byte(body), &granted); err != nil {
+		t.Fatal(err)
+	}
+
+	paired := make(chan string, 1)
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	done1 := make(chan error, 1)
+	go func() {
+		done1 <- bridge.Connect(ctx1, endpoint, granted.Grant, bridge.ConnectorOptions{
+			LocalAddr: localAddr,
+			OnConnectorToken: func(token string) {
+				paired <- token
+			},
+		})
+	}()
+	cred, err := waitChannel(paired, 5*time.Second)
+	if err != nil {
+		t.Fatalf("durable credential not delivered: %v", err)
+	}
+	if !strings.HasPrefix(cred, "agctl-conn-1-") {
+		t.Fatalf("credential prefix missing: %q", cred[:16])
+	}
+	awaitLocalStatus(t, e, true)
+
+	// Reconnect with the durable credential instead of a grant.
+	cancel1()
+	<-done1
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	done2 := make(chan error, 1)
+	go func() {
+		done2 <- bridge.Connect(ctx2, endpoint, cred, bridge.ConnectorOptions{LocalAddr: localAddr})
+	}()
+	awaitLocalStatus(t, e, true)
+
+	// Wrong credential is rejected outright.
+	if _, _, err := websocket.Dial(context.Background(), endpoint, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": []string{"Bearer agctl-conn-1-wrong"}},
+	}); err == nil {
+		t.Fatal("connector accepted an unknown credential")
+	}
+
+	// Revoke deletes the durable record and closes the live session.
+	if code, _ := e.do(e.admin, "DELETE", "/api/local-backend", nil); code != http.StatusNoContent {
+		t.Fatalf("revoke = %d, want 204", code)
+	}
+	select {
+	case <-done2:
+	case <-time.After(5 * time.Second):
+		t.Fatal("session survived revoke")
+	}
+	if _, _, err := websocket.Dial(context.Background(), endpoint, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + cred}},
+	}); err == nil {
+		t.Fatal("revoked credential still reconnects")
+	}
+}
+
+func waitChannel(ch <-chan string, timeout time.Duration) (string, error) {
+	select {
+	case v := <-ch:
+		return v, nil
+	case <-time.After(timeout):
+		return "", context.DeadlineExceeded
+	}
+}
+
+func awaitLocalStatus(t *testing.T, e *testEnv, want bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		code, body := e.do(e.admin, "GET", "/api/local-backend/status", nil)
+		if code == http.StatusOK && strings.Contains(body, `"connected":`+boolWord(want)) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("status never became connected=%v; last body=%s", want, body)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func boolWord(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
 func TestLocalBridgeConnectorRejectsBrowserOriginsAndBadGrants(t *testing.T) {
 	e := newTestEnvWith(t, 3, func(c *Config) { c.ExperimentalLocalBridge = true })
 	e.register(e.admin, "anna", "secret1")
