@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -56,6 +57,13 @@ func main() {
 		cmdWorkspace(os.Args[2:])
 	case "connect":
 		cmdConnect(os.Args[2:])
+	case "local":
+		if len(os.Args) >= 3 && os.Args[2] == "connect" {
+			cmdLocalConnect(os.Args[3:])
+		} else {
+			fmt.Fprintln(os.Stderr, "использование: agctl local connect --server URL --grant TOKEN [--launch-dsh] ...")
+			os.Exit(2)
+		}
 	case "sync":
 		cmdSync(os.Args[2:])
 	case "version":
@@ -78,6 +86,8 @@ func usage() {
   backlog <new|list|top|check|start|done|cancel|note|migrate> [флаги]
   workspace create --user ЛОГИН --name ИМЯ --template 1c-vibe --base-url URL --model M --api-key KEY
   connect --port SSH_PORT [--host HOST] [--user root] [--identity KEY] [--print]
+  local connect --server URL --grant TOKEN [--local 127.0.0.1:3080] [--launch-dsh]
+      [--dsh-bin dsh] [--dsh-port 3080] [--dsh-token TOKEN]
   sync create --name NAME --local DIR --host HOST --port SSH_PORT [--user root] [--print]
   sync list|pause|resume|flush|terminate [Mutagen args]
   version
@@ -126,8 +136,8 @@ func cmdServe(args []string) {
 	llmModels := fsSet.String("llm-models", envOr("AGCTL_LLM_MODELS", ""), "список моделей чата через запятую")
 	llmAPIKey := fsSet.String("llm-api-key", envOr("AGCTL_LLM_API_KEY", ""), "ключ провайдера чата (предпочтительно через env AGCTL_LLM_API_KEY)")
 	_ = fsSet.Parse(args)
-	if *experimentalLocalBridge && !*secureCookies {
-		log.Fatal("--experimental-local-bridge requires --secure-cookies behind a trusted TLS ingress")
+	if *experimentalLocalBridge && !*secureCookies && !isLoopbackAddr(*addr) {
+		log.Fatal("--experimental-local-bridge requires --secure-cookies behind a trusted TLS ingress (plain loopback --addr is allowed for local development only)")
 	}
 
 	defaultLLM := provision.Provider{
@@ -339,4 +349,17 @@ func keyState(secret string) string {
 		return "не задан"
 	}
 	return "задан"
+}
+
+// isLoopbackAddr — true для адресов вида 127.0.0.1:p, [::1]:p, localhost:p.
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

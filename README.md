@@ -233,13 +233,18 @@ IMG=agctl-dsh:0.2.0 scripts/e2e-cabinet-playwright.sh
   без флага демо создаёт место напрямую.
 - «Локальный backend + frontend на сервере» пока не реализован end-to-end.
   Панель показывает fallback-команду, которая запускает локальный dsh web
-  вместе с его UI. `internal/bridge` + `--experimental-local-bridge` дают
-  pairing API, experimental UI-proxy `/api/local-backend/ui/…` и mint
-  boot-токена поверх туннеля: коннектор доставляет токен локального dsh
-  контрол-стримом (hello + обновления), proxy ретраит 401 сервер↔локальный
-  DSH и фильтрует `agctl_*` cookies. Осталось до режима: CLI-процесс
-  коннектора (чтение логов локального dsh), reconnect/heartbeat-политика,
-  Cabinet UX и pinned-DSH e2e.
+  вместе с его UI. Experimental-контур уже в бинаре: на сервере
+  `--experimental-local-bridge`, на ноутбуке
+
+  ```sh
+  agctl local connect --server https://agctl.example --grant ТОКЕН \
+    --launch-dsh            # или --local 127.0.0.1:3080 --dsh-token ТОКЕН
+  ```
+
+  Pairing API, UI-proxy `/api/local-backend/ui/…` и mint boot-токена через
+  туннель работают (проверено живым smoke с fake-DSH). Осталось до режима:
+  reconnect/heartbeat-политика, Cabinet UX вместо curl, pinned-DSH e2e и
+  security review — поэтому это experimental, не готовый режим.
 - DSH UI проходит через same-origin gateway; Docker web/SSH порты привязаны
   к `127.0.0.1:<порт>`. Для удалённого браузера нужен доверенный TLS ingress
   на agctl и `--secure-cookies`. Сам agctl TLS не терминирует; доступ

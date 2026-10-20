@@ -245,7 +245,13 @@ func TestOutboundTunnelMintsDSHBootTokenAndAcceptsRefresh(t *testing.T) {
 	valid = "boot-secret-2"
 	mu.Unlock()
 	tokenUpdates <- "boot-secret-2"
-	time.Sleep(200 * time.Millisecond) // control-stream delivery
+	refreshDeadline := time.Now().Add(3 * time.Second)
+	for manager.DSHToken(31) != "boot-secret-2" {
+		if time.Now().After(refreshDeadline) {
+			t.Fatalf("token refresh not applied; current=%q", manager.DSHToken(31))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	response2, err := proxyServer.Client().Get(proxyServer.URL + "/")
 	if err != nil {
 		t.Fatal(err)
