@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/arijjia/agctl/internal/bridge"
@@ -22,7 +23,7 @@ func cmdLocalConnect(args []string) {
 	fs := flag.NewFlagSet("local connect", flag.ExitOnError)
 	server := fs.String("server", envOr("AGCTL_LOCAL_SERVER", ""), "адрес платформы agctl (например, https://agctl.example)")
 	grant := fs.String("grant", envOr("AGCTL_LOCAL_GRANT", ""), "одноразовый pairing grant из POST /api/local-backend/grant (лучше через env AGCTL_LOCAL_GRANT)")
-	local := fs.String("local", "127.0.0.1:3080", "loopback-адрес локального dsh web")
+	local := fs.String("local", "", "loopback-адрес локального dsh web (по умолчанию 127.0.0.1:<dsh-port>)")
 	launchDSH := fs.Bool("launch-dsh", false, "запустить локальный dsh web и вычитывать boot-токен из его логов")
 	dshBin := fs.String("dsh-bin", "dsh", "бинарь локального dsh для --launch-dsh")
 	dshPort := fs.Int("dsh-port", 3080, "порт локального dsh web для --launch-dsh")
@@ -33,6 +34,9 @@ func cmdLocalConnect(args []string) {
 		fmt.Fprintln(os.Stderr, "нужны --server (или AGCTL_LOCAL_SERVER) и --grant (или AGCTL_LOCAL_GRANT)")
 		fs.Usage()
 		os.Exit(2)
+	}
+	if strings.TrimSpace(*local) == "" {
+		*local = "127.0.0.1:" + strconv.Itoa(*dshPort)
 	}
 	wsEndpoint, err := bridge.ConnectorWebSocketURL(*server)
 	if err != nil {

@@ -242,9 +242,11 @@ IMG=agctl-dsh:0.2.0 scripts/e2e-cabinet-playwright.sh
   ```
 
   Pairing API, UI-proxy `/api/local-backend/ui/…` и mint boot-токена через
-  туннель работают (проверено живым smoke с fake-DSH). Осталось до режима:
-  reconnect/heartbeat-политика, Cabinet UX вместо curl, pinned-DSH e2e и
-  security review — поэтому это experimental, не готовый режим.
+  туннель работают: `scripts/e2e-local-bridge.sh` прогоняет **настоящий
+  локальный dsh web** (host-бинарь, изолированный HOME) через outbound
+  connector и обслуживает его UI на origin agctl. Осталось до режима:
+  reconnect/heartbeat-политика, Cabinet UX вместо curl и security review —
+  это experimental, не готовый режим.
 - DSH UI проходит через same-origin gateway; Docker web/SSH порты привязаны
   к `127.0.0.1:<порт>`. Для удалённого браузера нужен доверенный TLS ingress
   на agctl и `--secure-cookies`. Сам agctl TLS не терминирует; доступ

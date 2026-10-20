@@ -268,11 +268,14 @@ owner-keyed proxy с HTTP/SSE/WS, фильтрацией `agctl_*` cookies и mi
 `GET …/status`, `DELETE …`, bearer handshake `GET /api/local-backend/connect`
 и UI-proxy `GET|POST /api/local-backend/ui/…` (флаг-off даёт 404 на всех).
 Осталось для рабочего режима: reconnect/heartbeat политика, Cabinet UX вместо
-curl, pinned-DSH e2e и security review. CLI-коннектор уже есть: `agctl local
-connect` (--server/--grant, опционально --launch-dsh со скрейпом boot-токена
-из логов или --dsh-token), флаг сервера требует `--secure-cookies` за TLS,
-кроме loopback-адреса для локальной разработки. Это experimental контур,
-не local mode.
+curl и security review. CLI-коннектор уже есть: `agctl local connect`
+(--server/--grant, опционально --launch-dsh со скрейпом boot-токена из логов
+или --dsh-token), флаг сервера требует `--secure-cookies` за TLS, кроме
+loopback-адреса для локальной разработки. `scripts/e2e-local-bridge.sh`
+прогоняет настоящий локальный dsh web (host-бинарь, изолированный HOME) через
+outbound connector: UI реального DSH открывается на origin agctl, токен не
+попадает в серверные логи, revoke закрывает соединение. Это experimental
+контур, не local mode.
 
 Если «frontend на сервере» означает, что сами static assets обязаны
 физически отдаваться сервером (не через proxied local dsh web), потребуется

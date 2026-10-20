@@ -173,11 +173,16 @@ func (m *Manager) ConnectorHandler() http.Handler {
 		if err != nil {
 			return
 		}
-		authority, helloToken, err := readHello(control)
+		// One decoder serves the whole control stream: a fresh decoder per read
+		// would buffer later lines invisibly (hello + token may share a segment).
+		_ = control.SetReadDeadline(time.Now().Add(10 * time.Second)) // hung-peer guard
+		decoder := json.NewDecoder(control)
+		authority, helloToken, err := readHello(decoder)
 		if err != nil {
 			_ = control.Close()
 			return
 		}
+		_ = control.SetReadDeadline(time.Time{}) // pumpControl blocks for updates
 		p := &peer{session: session, authority: authority}
 		if helloToken != "" {
 			p.setToken(helloToken)
@@ -192,7 +197,7 @@ func (m *Manager) ConnectorHandler() http.Handler {
 		}()
 		// Later control lines refresh the local DSH boot token (e.g. after the
 		// user restarts their local DSH and reconnects through the CLI).
-		go pumpControl(p, control)
+		go pumpControl(p, decoder)
 		<-session.CloseChan()
 	})
 }
@@ -357,7 +362,9 @@ func (t *dshMintTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	if err != nil || resp.StatusCode != http.StatusUnauthorized {
 		return resp, err
 	}
-	tok := t.token()
+	// The connector may report the boot token right after the session opens;
+	// give the control stream a short window before giving up on mint.
+	tok := waitToken(t.token, 2*time.Second)
 	if tok == "" {
 		return resp, nil
 	}
@@ -386,6 +393,21 @@ func stripTokenParam(rawQuery string) string {
 		kept = append(kept, pair)
 	}
 	return strings.Join(kept, "&")
+}
+
+// waitToken polls the token source briefly; a 401 is rare, so the small delay
+// only affects requests racing the connector's first token announcement.
+func waitToken(source func() string, window time.Duration) string {
+	deadline := time.Now().Add(window)
+	for {
+		if token := source(); token != "" {
+			return token
+		}
+		if time.Now().After(deadline) {
+			return ""
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // BackendAuthority returns the connector-announced loopback authority.
@@ -536,12 +558,9 @@ func bearerToken(header string) string {
 }
 
 // readHello reads the connector's control-frame announcement with a deadline.
-func readHello(control net.Conn) (authority, dshToken string, err error) {
-	if err := control.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
-		return "", "", fmt.Errorf("bridge: control deadline: %w", err)
-	}
+func readHello(decoder *json.Decoder) (authority, dshToken string, err error) {
 	var hello helloFrame
-	if err := json.NewDecoder(io.LimitReader(control, 4<<10)).Decode(&hello); err != nil {
+	if err := decoder.Decode(&hello); err != nil {
 		return "", "", fmt.Errorf("bridge: decode hello: %w", err)
 	}
 	if !isLoopbackAuthority(hello.LocalAuthority) {
@@ -552,8 +571,7 @@ func readHello(control net.Conn) (authority, dshToken string, err error) {
 
 // pumpControl consumes later control lines; only DSH boot-token refreshes are
 // defined today. It stops when the connector closes the stream or the session.
-func pumpControl(p *peer, control net.Conn) {
-	decoder := json.NewDecoder(io.LimitReader(control, 4<<10))
+func pumpControl(p *peer, decoder *json.Decoder) {
 	for {
 		var line helloFrame
 		if err := decoder.Decode(&line); err != nil {
