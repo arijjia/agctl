@@ -35,6 +35,53 @@ func testConnectorServer(m *Manager, issueCred bool) *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
+func TestConnectorRejectsBrowserOriginAndOversizedFrames(t *testing.T) {
+	m := NewManager()
+	defer m.Close()
+	grant, err := m.IssueGrant(9, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/connect", func(w http.ResponseWriter, r *http.Request) {
+		userID, err := m.ConsumeGrant(BearerToken(r.Header.Get("Authorization")))
+		if err != nil {
+			http.Error(w, "invalid grant", http.StatusUnauthorized)
+			return
+		}
+		m.AcceptConnector(userID, w, r, "")
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	endpoint := "ws" + strings.TrimPrefix(server.URL, "http") + "/connect"
+
+	// Browser-like cross-site Origin never reaches the upgrade.
+	if _, _, err := websocket.Dial(context.Background(), endpoint, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": []string{"https://evil.example"}},
+	}); err == nil {
+		t.Fatal("connector accepted a browser Origin")
+	}
+
+	// An oversized carrier frame must terminate the session instead of being
+	// buffered (coder/websocket rejects reads beyond the configured limit).
+	headers := http.Header{"Authorization": []string{"Bearer " + grant}}
+	ws, _, err := websocket.Dial(context.Background(), endpoint, &websocket.DialOptions{HTTPHeader: headers})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.CloseNow()
+	big := make([]byte, (1<<20)+16)
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelWrite()
+	_ = ws.Write(writeCtx, websocket.MessageBinary, big)
+	// Any subsequent exchange must fail: the peer closed on the limit breach.
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelRead()
+	if _, _, err := ws.Read(readCtx); err == nil {
+		t.Fatal("session survived an oversized carrier frame")
+	}
+}
+
 func TestGrantIsUserBoundSingleUseAndExpires(t *testing.T) {
 	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 	m := NewManager()

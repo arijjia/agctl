@@ -267,11 +267,16 @@ owner-keyed proxy с HTTP/SSE/WS, фильтрацией `agctl_*` cookies и mi
 вместе с `--secure-cookies`) открывает pairing API `POST /api/local-backend/grant`,
 `GET …/status`, `DELETE …`, bearer handshake `GET /api/local-backend/connect`
 и UI-proxy `GET|POST /api/local-backend/ui/…` (флаг-off даёт 404 на всех).
-Осталось для рабочего режима: security review (threat model из карточки
-local-backend-websocket-bridge). Reconnect/heartbeat: yamux keepalive 20 с в
-carrier; CLI `agctl local connect` переживает обрывы — после pairing сервер
-выдаёт durable credential (hash в SQLite `local_connectors`, raw только в
-файле 0600 на ноутбуке), reconnect по ней не требует grant, «Отключить» в
+Security review карточки local-backend-websocket-bridge проведён (2026-10-20):
+исправлены WS read-limit carrier (1 МиБ, oversized frame рвёт сессию) и
+same-origin на UI-proxy; верифицированы hash-only хранение credential,
+отсутствие токенов в URL/логах, per-user изоляция пиров, loopback-only цели,
+мгновенный invalidate при revoke. Residuals записаны в карточке: rate-limit
+на `/api/local-backend/connect`, production rollout требует доверенного TLS
+ingress и ops-ревью. Reconnect/heartbeat: yamux keepalive 20 с в carrier;
+CLI `agctl local connect` переживает обрывы — после pairing сервер выдаёт
+durable credential (hash в SQLite `local_connectors`, raw только в файле
+0600 на ноутбуке), reconnect по ней не требует grant, «Отключить» в
 Cabinet удаляет запись и закрывает сессию. Cabinet UX в панели: карточка
 «Локальный бэкенд (experimental)» выдаёт готовую команду подключения,
 показывает статус и отключает коннектор; при выключенном флаге — fallback.
@@ -281,7 +286,7 @@ CLI: `agctl local connect` (--server/--grant|--credential-file, опционал
 `scripts/e2e-local-bridge.sh` прогоняет настоящий локальный dsh web
 (host-бинарь, изолированный HOME) через outbound connector: UI реального DSH
 на origin agctl, токен не в серверных логах, reconnect по credential, revoke.
-Это experimental контур, не local mode.
+Режим experimental и готов к пилоту по решению владельца, не production.
 
 Если «frontend на сервере» означает, что сами static assets обязаны
 физически отдаваться сервером (не через proxied local dsh web), потребуется

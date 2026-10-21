@@ -214,6 +214,10 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 			writeErr(w, http.StatusNotFound, "локальный connector не включён")
 			return
 		}
+		if origin := r.Header.Get("Origin"); origin != "" && !sameOriginAuthority(origin, r.Host) {
+			writeErr(w, http.StatusForbidden, "cross-origin запрос к локальному бэку запрещён")
+			return
+		}
 		s.localBridge.ProxyHandler(id.ID).ServeHTTP(w, r)
 	})
 	mux.Handle("GET /api/local-backend/ui/", http.StripPrefix("/api/local-backend/ui", localUI))

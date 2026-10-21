@@ -345,6 +345,24 @@ func TestLocalBridgeUIProxyRoutesToConnectorAnnouncedBackend(t *testing.T) {
 	}
 }
 
+func TestLocalBridgeUIProxyRejectsCrossOrigin(t *testing.T) {
+	e := newTestEnvWith(t, 3, func(c *Config) { c.ExperimentalLocalBridge = true })
+	e.register(e.admin, "anna", "secret1")
+	request, err := http.NewRequest(http.MethodGet, e.api.URL+"/api/local-backend/ui/echo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Origin", "https://evil.example")
+	response, err := e.admin.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-origin UI proxy = %d, want 403", response.StatusCode)
+	}
+}
+
 func TestLocalBridgeUIProxyDisabledWithoutFlag(t *testing.T) {
 	e := newTestEnv(t, 3)
 	e.register(e.admin, "anna", "secret1")

@@ -163,6 +163,9 @@ func (m *Manager) AcceptConnector(userID int64, w http.ResponseWriter, r *http.R
 	if err != nil {
 		return
 	}
+	// Carrier frames are yamux protocol messages (≤64 KiB payload each); the
+	// read limit caps a hostile peer's oversized-frame allocations.
+	ws.SetReadLimit(1 << 20)
 	defer ws.CloseNow()
 
 	connCtx, cancel := context.WithCancel(context.Background())

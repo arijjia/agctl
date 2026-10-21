@@ -2,13 +2,13 @@
 schema: 1.0.0
 id: local-backend-websocket-bridge
 title: "Локальный backend с server-hosted DSH frontend через outbound connector"
-status: in-progress
+status: done
 priority: P1
 size: L
 area: platform
 repo: arijjia/agctl
 created: 2026-10-19
-updated: 2026-10-20
+updated: 2026-10-21
 tags: []
 depends: []
 epic: two-mode-mvp
@@ -88,3 +88,5 @@ upstream Host/Origin на локальный DSH endpoint. Никаких вхо
 - 2026-10-20: 2026-10-20 pinned-DSH e2e: scripts/e2e-local-bridge.sh runs the real host dsh web (isolated HOME) behind `agctl local connect --launch-dsh` and serves its UI on the agctl origin via the outbound tunnel; boot token stays out of server logs, revoke closes the session. Found and fixed a control-stream bug: a per-read json.Decoder buffered the token line together with hello (fresh decoder must not be used per line; read deadline set before hello and cleared after). Remaining: reconnect/heartbeat policy, Cabinet UX, security review.
 - 2026-10-20: 2026-10-20 Cabinet UX: local backend card (title Локальный бэкенд (experimental)) issues a one-time grant and renders the ready `agctl local connect` command, shows connected status, and offers Отключить (DELETE + status refresh); flag-off renders the honest fallback note. Playwright asserts the card and fallback; embedded copy synced, anti-drift green. Remaining: reconnect/heartbeat policy and security review.
 - 2026-10-20: 2026-10-20 reconnect/heartbeat: pairing now issues a durable connector credential (SQLite local_connectors, hash-only server side; raw token delivered once over the control stream and stored 0600 by the CLI). `agctl local connect` reconnects with exponential backoff (max 30s) using the saved credential; auth rejections stop with a clear re-pair hint. Revoke (Cabinet or DELETE) deletes the record, closes the session and invalidates reconnects. yamux keepalive (20s) serves as the carrier heartbeat. E2E extended: credential reconnect without a new grant. Remaining: security review only.
+- 2026-10-21: 2026-10-20 security review (self, pre-pilot): FIXED — WS read limit 1 MiB on the connector carrier (oversized frame closes session, test added); same-origin check on /api/local-backend/ui/ (cross-origin 403, test added). VERIFIED — grant/credential never in URLs or access logs (logMiddleware logs method+path only; dial errors carry no token); credential stored hash-only in SQLite, raw only in 0600 file; peer registry is per-user, cross-user proxy 502 tested; loopback-only local target and ws-only-loopback/wss-elsewhere validated in code; Origin header rejected on the connector endpoint; revoke deletes record + closes session (tested). RESIDUALS (documented): no rate limit on /connect (256-bit bearer, cheap DB lookup only), no egress restrictions from laptop connector beyond loopback dsh, production rollout still requires trusted TLS ingress and ops review. Criteria met — closing as experimental-ready; production rollout decision stays with the owner.
+- 2026-10-21: done — Security review done with fixes and documented residuals; all acceptance criteria verified (pairing, durable credential, reconnect, full real-DSH e2e, Cabinet UX).

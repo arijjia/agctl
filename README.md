@@ -242,12 +242,14 @@ IMG=agctl-dsh:0.2.0 scripts/e2e-cabinet-playwright.sh
   ```
 
   Pairing API, UI-proxy `/api/local-backend/ui/…`, mint boot-токена через
-  туннель, reconnect по durable-credential и Cabinet UX работают;
-  `scripts/e2e-local-bridge.sh` прогоняет **настоящий локальный dsh web**
-  (host-бинарь, изолированный HOME) через outbound connector: grant → pairing
-  → UI на origin agctl → reconnect по сохранённой credential → revoke.
-  Оставалось до режима: security review. credential хранится локально (0600),
-  на сервере — только хеш; revoke удаляет запись и сессию.
+  туннель, reconnect по durable-credential, Cabinet UX и security review
+  готовы; `scripts/e2e-local-bridge.sh` прогоняет **настоящий локальный dsh
+  web** (host-бинарь, изолированный HOME) через outbound connector: grant →
+  pairing → UI на origin agctl → reconnect по сохранённой credential → revoke.
+  credential хранится локально (0600), на сервере — только хеш; revoke удаляет
+  запись и сессию. Известные residuals: нет rate-limit на `/connect`,
+  production rollout требует доверенного TLS ingress и ops-ревью — режим
+  experimental, готов к пилоту по решению владельца.
 - DSH UI проходит через same-origin gateway; Docker web/SSH порты привязаны
   к `127.0.0.1:<порт>`. Для удалённого браузера нужен доверенный TLS ingress
   на agctl и `--secure-cookies`. Сам agctl TLS не терминирует; доступ
