@@ -38,6 +38,9 @@ type fakeRuntime struct {
 	chatSpecs  map[string]agctlrt.ChatSpec
 	chatHome   string
 	failNext   error // если задано — Start возвращает ошибку
+	// chatEndpointOverride — endpoint для следующего handle от EnsureChat;
+	// по умолчанию фейковый мёртвый порт 40000+userID.
+	chatEndpointOverride string
 }
 
 func newFakeRuntime() *fakeRuntime {
@@ -101,9 +104,13 @@ func (f *fakeRuntime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (ag
 	}
 	instanceID := "chat-ctr-" + spec.RuntimeID
 	f.logs[instanceID] = "dsh web listening on http://127.0.0.1/?token=fake-chat-" + spec.RuntimeID
+	endpoint := fmt.Sprintf("http://127.0.0.1:%d", 40000+spec.UserID)
+	if f.chatEndpointOverride != "" {
+		endpoint = f.chatEndpointOverride
+	}
 	return agctlrt.ChatHandle{
 		RuntimeID: spec.RuntimeID, InstanceID: instanceID,
-		Endpoint: fmt.Sprintf("http://127.0.0.1:%d", 40000+spec.UserID),
+		Endpoint: endpoint,
 	}, nil
 }
 

@@ -2,6 +2,10 @@ package server
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -213,5 +217,99 @@ func TestReaperDoesNotStopActiveChat(t *testing.T) {
 	e.srv.reapIdleChats()
 	if e.srv.chats[404] == nil || e.rt.chatStops[chat.handle.RuntimeID] != 0 {
 		t.Fatal("reaper stopped an active chat request")
+	}
+}
+
+// getChatHTML — GET /chat/ с браузерным Accept: text/html (страница чата).
+func (e *testEnv) getChatHTML(c *http.Client) (int, string) {
+	e.t.Helper()
+	req, err := http.NewRequest("GET", e.api.URL+"/chat/", nil)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	req.Header.Set("Accept", "text/html")
+	resp, err := c.Do(req)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return resp.StatusCode, string(body)
+}
+
+// TestChatProxyRecreatesRuntimeAfterDowntime — после смерти контейнера вне
+// жизненного цикла серва (рестарт Docker VM, ручной docker rm) кэшированный
+// endpoint не должен вечно показывать «Личный чат запускается…»: dial-отказы
+// внутри grace считаются нормальным прогревом dsh, дольше grace — кэш
+// сбрасывается и /chat/ лениво пересоздаёт рантайм.
+func TestChatProxyRecreatesRuntimeAfterDowntime(t *testing.T) {
+	e := newTestEnvWith(t, 3, func(c *Config) { c.Tier0 = true }) // маршруты /chat/
+	e.register(e.admin, "anna", "secret1")
+	uid := int64(1) // первый зарегистрированный пользователь в чистой test-db
+
+	chat, err := e.srv.ensureChat(uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Фейковый endpoint — мёртвый порт: имитируем погибший контейнер.
+	if got := chat.handle.Endpoint; got != "http://127.0.0.1:40001" {
+		t.Fatalf("fixture endpoint = %q, want dead fake port", got)
+	}
+
+	// 1) Первый dial-отказ: страница прогрева, кэш ЖИВ (не пересоздаём —
+	// так работает и нормальный первый прогрев dsh).
+	code, body := e.getChatHTML(e.admin)
+	if code != http.StatusServiceUnavailable || !strings.Contains(body, "запускается") {
+		t.Fatalf("warm page: code=%d body=%q", code, body)
+	}
+	if e.rt.chatStarts[chat.handle.RuntimeID] != 1 {
+		t.Fatalf("grace period must not recreate runtime, starts = %d", e.rt.chatStarts[chat.handle.RuntimeID])
+	}
+	e.srv.chatMu.Lock()
+	marked := !e.srv.chats[uid].downSince.IsZero()
+	e.srv.chatMu.Unlock()
+	if !marked {
+		t.Fatal("first dial failure did not mark runtime down")
+	}
+
+	// 2) Grace истёк: следующий отказ выселяет кэш (сам запрос ещё получает
+	// страницу прогрева — как браузер по мета-refresh), а запрос после
+	// вытеснения пересоздаёт рантайм на живом endpoint.
+	e.srv.chatMu.Lock()
+	e.srv.chats[uid].downSince = time.Now().Add(-2 * chatDownGrace)
+	e.srv.chatMu.Unlock()
+	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, "chat-is-alive")
+	}))
+	defer live.Close()
+	e.rt.chatEndpointOverride = live.URL
+
+	code, body = e.getChatHTML(e.admin)
+	if code != http.StatusServiceUnavailable || !strings.Contains(body, "запускается") {
+		t.Fatalf("eviction request: code=%d body=%q", code, body)
+	}
+	e.srv.chatMu.Lock()
+	evicted := e.srv.chats[uid] == nil
+	e.srv.chatMu.Unlock()
+	if !evicted {
+		t.Fatal("runtime older than grace was not evicted")
+	}
+
+	// 3) Как следующий авто-refresh браузера: рантайм пересоздан, прокси живой.
+	code, body = e.getChatHTML(e.admin)
+	if code != http.StatusOK || !strings.Contains(body, "chat-is-alive") {
+		t.Fatalf("recovered proxy: code=%d body=%q", code, body)
+	}
+	if e.rt.chatStarts[chat.handle.RuntimeID] != 2 {
+		t.Fatalf("runtime must be recreated exactly once more, starts = %d", e.rt.chatStarts[chat.handle.RuntimeID])
+	}
+	e.srv.chatMu.Lock()
+	healthy := e.srv.chats[uid] != nil && e.srv.chats[uid].downSince.IsZero()
+	e.srv.chatMu.Unlock()
+	if !healthy {
+		t.Fatal("recreated runtime must be cached and healthy")
 	}
 }

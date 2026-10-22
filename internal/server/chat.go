@@ -7,8 +7,10 @@ package server
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -24,11 +26,20 @@ import (
 
 const chatNamePrefix = "chat"
 
-// chatRuntime — живой персональный чат runtime пользователя.
+// chatDownGrace — сколько endpoint рантайма может не отвечать (dial-ошибками),
+// прежде чем кэш признается мёртвым. Меньший порог ломает нормальный прогрев:
+// dsh в свежесозданном контейнере начинает слушать порт не мгновенно.
+const chatDownGrace = 45 * time.Second
+
+// chatRuntime — живой персональный чат runtime пользователя. downSince — время
+// первого dial-отказа прокси (ноль = живой); лечит вечное «запускается…» после
+// смерти контейнера вне жизненного цикла серва (рестарт Docker VM, ручной
+// docker rm): кэш сбрасывается, и /chat/ лениво пересоздаёт рантайм.
 type chatRuntime struct {
-	handle   agctlrt.ChatHandle
-	lastSeen time.Time
-	active   int // streaming HTTP/WS requests; reaper must not stop active sessions
+	handle    agctlrt.ChatHandle
+	lastSeen  time.Time
+	active    int // streaming HTTP/WS requests; reaper must not stop active sessions
+	downSince time.Time
 }
 
 // shouldSleepChat — решение рипера: runtime простаивал дольше TTL.
@@ -149,6 +160,50 @@ func (s *Server) reapIdleChats() {
 	}
 }
 
+// isDialFailure — прокси вообще не достучался до рантайма (контейнер ещё
+// грузится или уже мёртв). Обрыв уже открытого соединения (стрим/WS) сюда не
+// попадает: там Op "read"/"write", и пересоздавать рантайм из-за него нельзя.
+func isDialFailure(err error) bool {
+	var opErr *net.OpError
+	return errors.As(err, &opErr) && opErr.Op == "dial"
+}
+
+// markChatDown фиксирует первый dial-отказ рантайма и сообщает, истёк ли grace.
+// Возвращает false, если запись уже не актуальна (выселена/заменена) или отказ
+// случился внутри grace — второй случай отличает нормальный прогрев dsh от
+// мёртвого кэша и не должен приводить к пересозданию.
+func (s *Server) markChatDown(userID int64, rt *chatRuntime) bool {
+	s.chatMu.Lock()
+	defer s.chatMu.Unlock()
+	if s.chats[userID] != rt {
+		return false
+	}
+	if rt.downSince.IsZero() {
+		rt.downSince = time.Now()
+		return false
+	}
+	return time.Since(rt.downSince) >= chatDownGrace
+}
+
+// evictChat забывает мёртвый runtime. Контейнер не трогаем (его может уже не
+// быть), персистентные данные живут на маунтах: следующий /chat/ пройдёт через
+// ensureChat → EnsureChat, которая идемпотентно пересоздаёт контейнер.
+func (s *Server) evictChat(userID int64, rt *chatRuntime) {
+	s.chatMu.Lock()
+	if s.chats[userID] == rt {
+		delete(s.chats, userID)
+	}
+	s.chatMu.Unlock()
+	log.Printf("[chat] пользователь %d: runtime %s недоступен дольше %s — кэш сброшен, контейнер пересоздастся при следующем открытии чата", userID, rt.handle.Endpoint, chatDownGrace)
+}
+
+// writeWarmChatPage — страница авто-повтора, пока личный чат прогревается.
+func writeWarmChatPage(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_, _ = fmt.Fprintf(w, `<!doctype html><meta charset="utf-8"><title>agctl: прогрев</title><meta http-equiv="refresh" content="2"><p style="font-family:system-ui;padding:2rem">Личный чат запускается… <a href="/chat/">Повторить сейчас</a></p>`)
+}
+
 // rootEntry — корень платформы: залогинен → свой чат, иначе → SPA-логин.
 func (s *Server) rootEntry(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.who(r); err != nil {
@@ -170,6 +225,10 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 	rt, err := s.ensureChat(id.ID)
 	if err != nil {
 		log.Printf("[chat] ensure user %d: %v", id.ID, err)
+		if strings.Contains(r.Header.Get("Accept"), "text/html") {
+			writeWarmChatPage(w)
+			return
+		}
 		writeErr(w, http.StatusServiceUnavailable, "чат ещё прогревается, обнови страницу через пару секунд")
 		return
 	}
@@ -222,6 +281,10 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 			token: func() string { return s.chatToken(r.Context(), rt.handle) },
 		},
 		ModifyResponse: func(resp *http.Response) error {
+			// Рантайм ответил — он живой: гасим счётчик dial-отказов.
+			s.chatMu.Lock()
+			rt.downSince = time.Time{}
+			s.chatMu.Unlock()
 			if loc := resp.Header.Get("Location"); loc != "" {
 				resp.Header.Set("Location", rewriteLocation(loc, prefix, authority))
 			}
@@ -246,10 +309,11 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			log.Printf("[chat] proxy user %d: %v", id.ID, err)
+			if isDialFailure(err) && s.markChatDown(id.ID, rt) {
+				s.evictChat(id.ID, rt)
+			}
 			if strings.Contains(r.Header.Get("Accept"), "text/html") {
-				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				w.WriteHeader(http.StatusServiceUnavailable)
-				_, _ = fmt.Fprintf(w, `<!doctype html><meta charset="utf-8"><title>agctl: прогрев</title><meta http-equiv="refresh" content="2"><p style="font-family:system-ui;padding:2rem">Личный чат запускается… <a href="/chat/">Повторить сейчас</a></p>`)
+				writeWarmChatPage(w)
 				return
 			}
 			writeErr(w, http.StatusBadGateway, "чат недоступен")
