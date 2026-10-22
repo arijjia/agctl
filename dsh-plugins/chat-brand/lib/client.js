@@ -64,13 +64,21 @@ window.__ModuleLoader__.load({
 				identity.style.overflow = 'visible';
 				identity.setAttribute('aria-hidden', 'false');
 			}
+			// Инъекция чат-шелла прячет строку идентичности до подмены (CSS
+			// visibility:hidden) — бренд применён, показываем.
+			if (identity) identity.style.setProperty('visibility', 'visible', 'important');
 		}
 
 		function fixPlaceholder() {
-			for (const el of document.querySelectorAll('span,div,h1,h2,h3,p')) {
+			for (const el of queryAllDeep('span,div,h1,h2,h3,p')) {
 				if (el.children.length) continue;
 				const t = el.textContent || '';
 				if (/Into the Unknown/i.test(t)) el.textContent = t.replace(/Into the Unknown/gi, PLACEHOLDER);
+				// Пустой композер: англо-хинт dsh про «что построить» — русским.
+				if (/Describe what you want to build/i.test(t)) el.textContent = 'Опиши задачу — / команды, @ файлы и сессии';
+			}
+			for (const group of queryAllDeep('[class*="pXSMma_titleGroup"]')) {
+				group.style.setProperty('visibility', 'visible', 'important');
 			}
 			for (const el of queryAllDeep('[data-composer-input="true"]')) {
 				el.setAttribute('data-placeholder', 'Напишите сообщение…');
@@ -81,6 +89,21 @@ window.__ModuleLoader__.load({
 				for (const attr of ['data-placeholder', 'placeholder']) {
 					const value = el.getAttribute(attr) || '';
 					if (/message or run a task|commands, @ files/i.test(value)) el.setAttribute(attr, 'Напишите сообщение…');
+				}
+			}
+		}
+
+		// fixModels — группа DeepSeek в выборщике моделей не существует: только
+		// квинсы платформенного провайдера agctl. Страховка инъекции чат-шелла
+		// (та работает с первого кадра, эта — при прямом заходе в dsh мимо шлюза).
+		function fixModels() {
+			for (const heading of queryAllDeep('[class*="_heading_"]')) {
+				if ((heading.textContent || '').trim() !== 'DeepSeek') continue;
+				const group = heading.parentElement;
+				if (group && group.parentElement && group.parentElement.matches('[class*="_7KE1Ra_groups"]')) {
+					group.style.setProperty('display', 'none', 'important');
+				} else {
+					heading.style.setProperty('display', 'none', 'important');
 				}
 			}
 		}
@@ -148,7 +171,7 @@ window.__ModuleLoader__.load({
 			}
 			for (const control of queryAllDeep('button,[role=tab]')) {
 				const label = `${control.getAttribute('aria-label') || ''} ${control.getAttribute('title') || ''} ${control.textContent || ''}`.trim();
-				if (/workspace files|new terminal|choose shell|access mode|add files or run commands|trajectory/i.test(label)) {
+				if (/workspace files|new terminal|choose workspace|choose shell|access mode|add files or run commands|trajectory/i.test(label)) {
 					control.style.setProperty('display', 'none', 'important');
 					control.setAttribute('aria-hidden', 'true');
 					control.setAttribute('tabindex', '-1');
@@ -160,6 +183,7 @@ window.__ModuleLoader__.load({
 			try { closePreviewNotice(); } catch (e) {}
 			try { applyBrand(); } catch (e) {}
 			try { fixPlaceholder(); } catch (e) {}
+			try { fixModels(); } catch (e) {}
 			try { flattenSessions(); } catch (e) {}
 			try { hideDevPanels(); } catch (e) {}
 		}

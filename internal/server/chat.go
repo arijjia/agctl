@@ -265,6 +265,11 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
 			stripAgctlCookies(pr.Out)
+			// Не просим сжатие: чат-шелл встраивается в HTML до отдачи браузеру,
+			// а gzip/br тело нельзя безопасно менять без потери прокси-потока.
+			// DSH runtime локальный; экономия нескольких KB не стоит разных
+			// (curl vs браузер) версий документа.
+			pr.Out.Header.Set("Accept-Encoding", "identity")
 			pr.Out.Host = authority
 			if pr.In.Header.Get("Origin") != "" {
 				pr.Out.Header.Set("Origin", pr.Out.URL.Scheme+"://"+authority)
@@ -285,6 +290,9 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 			s.chatMu.Lock()
 			rt.downSince = time.Time{}
 			s.chatMu.Unlock()
+			// Pre-paint чат-шелл — bounded, identity-encoded HTML; при слишком
+			// большом или ошибочно читаемом документе helper возвращает исходный поток.
+			injectChatShellResponse(resp)
 			if loc := resp.Header.Get("Location"); loc != "" {
 				resp.Header.Set("Location", rewriteLocation(loc, prefix, authority))
 			}
