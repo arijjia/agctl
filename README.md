@@ -33,6 +33,23 @@ git clone https://github.com/arijjia/agctl && cd agctl
 make demo            # соберёт UI, бинар и образ agctl-dsh, поднимет сервер
 ```
 
+### Запуск с корпоративными моделями (qwens через LiteLLM)
+
+```bash
+go build -o dist/agctl ./cmd/agctl
+export AGCTL_LLM_API_KEY="<ключ корпоративного LiteLLM>"   # в репозиторий не попадает
+./dist/agctl serve --addr 127.0.0.1:8929 \
+  --llm-base-url https://litellm-dev.utmn.ru/v1 \
+  --llm-models qwen-3.8-dee,qwen-3.8-27b,qwen-3.8-fast,qwen3guard,qwen3.5-9b-q8_0 \
+  --llm-model qwen-3.8-fast
+```
+
+Ключ нужен только при первом таком запуске: провайдер сохраняется
+зашифрованным в SQLite и при следующих рестартах восстанавливается
+автоматически (env/флаги можно не передавать). Пользователи без личного
+секрета сразу получают корпоративные модели — dsh-модал «Add an API key»
+не появляется.
+
 Откройте `http://127.0.0.1:8929`:
 
 1. **Регистрация** — первый пользователь становится админом.
