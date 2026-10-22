@@ -246,15 +246,14 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		return StartResult{}, err
 	}
 	// гонки за порт: docker сам отдаст ошибку, если порт занят.
-	// Пин корпоративного хоста провайдера: сплит-DNS корпоративного VPN не
-	// виден Docker VM (имя не резолвится ENOTFOUND, хотя IP из контейнера
-	// доступен) — резолвим на хосте и добавляем --add-host на момент создания.
+	// Все Base URL могут иметь разные split-DNS corporate hosts; резолвим
+	// каждый на хосте и добавляем --add-host при создании контейнера.
 	extraHosts := []string{"host.docker.internal:host-gateway"}
-	if pin, err := pinnedHost(p.BaseURL, net.LookupIP); err != nil {
-		log.Printf("[dockerrt] %s: %v — контейнер стартует без пина, запросы к LLM могут падать (проверьте VPN)", wsID, err)
-	} else if pin != "" {
-		extraHosts = append(extraHosts, pin)
+	pins, pinErrors := pinsForBaseURLs(p.AllBaseURLs(), net.LookupIP)
+	for _, err := range pinErrors {
+		log.Printf("[dockerrt] %s: %v — для этого LLM endpoint нет DNS-пина (проверьте VPN)", wsID, err)
 	}
+	extraHosts = append(extraHosts, pins...)
 	env := []string{
 		"AGCTL_LLM_API_KEY=" + p.APIKey,
 		"AGCTL_WS_ID=" + wsID,
@@ -371,6 +370,32 @@ func pinnedHost(baseURL string, lookup func(string) ([]net.IP, error)) (string, 
 		return "", fmt.Errorf("резолв %s не дал адресов", host)
 	}
 	return host + ":" + pick, nil
+}
+
+// pinsForBaseURLs adds one DNS pin per distinct hostname, preserving URL order.
+// Lookup failures are returned for logging while other endpoints still pin.
+func pinsForBaseURLs(baseURLs []string, lookup func(string) ([]net.IP, error)) ([]string, []error) {
+	seenHosts := map[string]bool{}
+	var pins []string
+	var errs []error
+	for _, baseURL := range baseURLs {
+		u, err := url.Parse(baseURL)
+		if err != nil || u.Hostname() == "" {
+			continue
+		}
+		host := strings.ToLower(u.Hostname())
+		if seenHosts[host] {
+			continue
+		}
+		seenHosts[host] = true
+		pin, err := pinnedHost(baseURL, lookup)
+		if err != nil {
+			errs = append(errs, err)
+		} else if pin != "" {
+			pins = append(pins, pin)
+		}
+	}
+	return pins, errs
 }
 
 // removeByName удаляет контейнер по имени (чистка «хвостов» рестартов).

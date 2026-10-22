@@ -61,7 +61,7 @@ func TestWorkspacesCRUD(t *testing.T) {
 	ws := Workspace{
 		ID: "w-1", OwnerID: uid, Name: "demo", Status: "provisioning",
 		RepoPath: "/x/demo.git", WorkPath: "/w/w-1/repo", DshHome: "/w/w-1/dsh-home",
-		HostPort: 50000, BaseURL: "https://llm/v1", Model: "m1",
+		HostPort: 50000, BaseURL: "https://llm/v1", BaseURLs: []string{"https://llm/v1", "https://backup-llm/v1"}, Model: "m1",
 	}
 	if err := db.InsertWorkspace(ws); err != nil {
 		t.Fatalf("insert: %v", err)
@@ -76,6 +76,9 @@ func TestWorkspacesCRUD(t *testing.T) {
 	if err != nil || got.Status != "running" || got.ContainerID != "cid42" {
 		t.Fatalf("got: %+v err=%v", got, err)
 	}
+	if got.BaseURL != "https://llm/v1" || len(got.BaseURLs) != 2 || got.BaseURLs[1] != "https://backup-llm/v1" {
+		t.Fatalf("multi base URLs not round-tripped: %+v", got)
+	}
 	all, err := db.WorkspacesAll()
 	if err != nil || len(all) != 1 {
 		t.Fatalf("all: %v len=%d", err, len(all))
@@ -83,6 +86,19 @@ func TestWorkspacesCRUD(t *testing.T) {
 	_ = db.DeleteWorkspace("w-1")
 	if _, err := db.WorkspaceByID("w-1"); err != ErrNotFound {
 		t.Fatalf("ждали ErrNotFound, получили %v", err)
+	}
+}
+
+func TestWorkspaceBaseURLsLegacyFallback(t *testing.T) {
+	db := openTest(t)
+	uid, _ := db.CreateUser("anna", "h", "user")
+	ws := Workspace{ID: "w-legacy", OwnerID: uid, Name: "legacy", BaseURL: "https://legacy-llm/v1"}
+	if err := db.InsertWorkspace(ws); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.WorkspaceByID(ws.ID)
+	if err != nil || len(got.BaseURLs) != 1 || got.BaseURLs[0] != ws.BaseURL {
+		t.Fatalf("legacy baseURL fallback: %+v err=%v", got, err)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -566,11 +567,15 @@ func (s *Server) wsJSON(ctx context.Context, w store.Workspace, owner string) ma
 	if components == nil {
 		components = []string{}
 	}
+	baseURLs := w.BaseURLs
+	if len(baseURLs) == 0 && w.BaseURL != "" {
+		baseURLs = []string{w.BaseURL}
+	}
 	return map[string]any{
 		"id": w.ID, "name": w.Name, "status": w.Status,
 		"owner": owner, "createdAt": w.CreatedAt, "updatedAt": w.UpdatedAt,
 		"url": workspaceURL(w), "port": w.HostPort, "error": w.Error,
-		"model": w.Model, "models": w.Models, "baseURL": w.BaseURL,
+		"model": w.Model, "models": w.Models, "baseURL": w.BaseURL, "baseURLs": baseURLs,
 		"kit": w.Template, "template": w.Template, "components": components,
 		"repoPath": w.RepoPath, "sshEnabled": w.SSHPubKey != "", "sshPort": w.SSHPort,
 	}
@@ -601,7 +606,8 @@ func (s *Server) loadWS(r *http.Request, id identity) (store.Workspace, error) {
 	return w, nil
 }
 
-// providerOf — провайдер воркспейса: настройки из запроса или из секрета юзера.
+// providerOf — при создании берёт defaults пользователя, при restart —
+// настройки конкретного воркспейса; Secret остаётся источником ключа и fallback.
 func (s *Server) providerOf(w store.Workspace, ownerID int64, req ProviderReq) (provision.Provider, error) {
 	if req.APIKey == "" {
 		sec, err := s.db.SecretByUser(ownerID)
@@ -612,17 +618,33 @@ func (s *Server) providerOf(w store.Workspace, ownerID int64, req ProviderReq) (
 		if err != nil {
 			return provision.Provider{}, fmt.Errorf("токен не расшифровывается: %w", err)
 		}
-		base, models := sec.BaseURL, sec.Models
-		if req.BaseURL != "" {
-			base = req.BaseURL
+		baseURLs, models := w.BaseURLs, w.Models
+		if len(baseURLs) == 0 && strings.TrimSpace(w.BaseURL) != "" {
+			baseURLs = []string{strings.TrimSpace(w.BaseURL)}
 		}
-		if ms := req.allModels(); len(ms) > 0 {
-			models = ms
+		if len(models) == 0 && w.Model != "" {
+			models = []string{w.Model}
 		}
-		return provision.Provider{BaseURL: base, Model: firstModel(models), Models: models, APIKey: key}, nil
+		if len(baseURLs) == 0 && strings.TrimSpace(sec.BaseURL) != "" {
+			baseURLs = []string{strings.TrimSpace(sec.BaseURL)}
+		}
+		if len(models) == 0 {
+			models = sec.Models
+			if len(models) == 0 && sec.Model != "" {
+				models = []string{sec.Model}
+			}
+		}
+		if requested := req.allBaseURLs(); len(requested) > 0 {
+			baseURLs = requested
+		}
+		if requested := req.allModels(); len(requested) > 0 {
+			models = requested
+		}
+		base := firstModel(baseURLs)
+		return provision.Provider{BaseURL: base, BaseURLs: baseURLs, Model: firstModel(models), Models: models, APIKey: key}, nil
 	}
-	ms := req.allModels()
-	return provision.Provider{BaseURL: req.BaseURL, Model: firstModel(ms), Models: ms, APIKey: req.APIKey}, nil
+	urls, ms := req.allBaseURLs(), req.allModels()
+	return provision.Provider{BaseURL: firstModel(urls), BaseURLs: urls, Model: firstModel(ms), Models: ms, APIKey: req.APIKey}, nil
 }
 
 func firstModel(models []string) string {
@@ -632,13 +654,36 @@ func firstModel(models []string) string {
 	return ""
 }
 
-// ProviderReq — форма создания/старта воркспейса.
-// models — список (по одной на строку допускается), model — legacy/первая.
+const maxProviderBaseURLs = 8
+
+// ProviderReq — форма создания/редактирования воркспейса. baseURL/model
+// остаются scalar aliases для старых клиентов; списки — новые поля.
 type ProviderReq struct {
-	BaseURL string   `json:"baseURL"`
-	Model   string   `json:"model"`
-	Models  []string `json:"models"`
-	APIKey  string   `json:"apiKey"`
+	BaseURL  string   `json:"baseURL"`
+	BaseURLs []string `json:"baseURLs"`
+	Model    string   `json:"model"`
+	Models   []string `json:"models"`
+	APIKey   string   `json:"apiKey"`
+}
+
+// allBaseURLs — список endpoints в порядке выбора; scalar baseURL дополняет
+// list (обычно это first-entry alias) и удаляется как дубль.
+func (r ProviderReq) allBaseURLs() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(raw string) {
+		u := strings.TrimRight(strings.TrimSpace(raw), "/")
+		if u == "" || seen[u] {
+			return
+		}
+		seen[u] = true
+		out = append(out, u)
+	}
+	for _, u := range r.BaseURLs {
+		add(u)
+	}
+	add(r.BaseURL)
+	return out
 }
 
 // allModels — нормализованный список: models + model, без дублей и пустых.
@@ -660,15 +705,28 @@ func (r ProviderReq) allModels() []string {
 	return out
 }
 
+func validateBaseURLs(urls []string) error {
+	if len(urls) == 0 {
+		return errors.New("укажите хотя бы один Base URL провайдера")
+	}
+	if len(urls) > maxProviderBaseURLs {
+		return fmt.Errorf("допускается не больше %d Base URL", maxProviderBaseURLs)
+	}
+	for _, base := range urls {
+		u, err := url.Parse(base)
+		if err != nil || (!strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https")) || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return errors.New("каждый Base URL должен быть корректным http(s):// URL без логина, пароля, query и fragment")
+		}
+	}
+	return nil
+}
+
 func (r ProviderReq) validate() error {
-	if strings.TrimSpace(r.BaseURL) == "" {
-		return errors.New("укажите Base URL провайдера")
+	if err := validateBaseURLs(r.allBaseURLs()); err != nil {
+		return err
 	}
 	if len(r.allModels()) == 0 {
 		return errors.New("укажите хотя бы одну модель")
-	}
-	if !strings.Contains(r.BaseURL, "://") {
-		return errors.New("Base URL должен начинаться с http(s)://")
 	}
 	return nil
 }

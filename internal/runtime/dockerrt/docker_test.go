@@ -3,6 +3,7 @@ package dockerrt
 import (
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 )
 
@@ -37,6 +38,31 @@ func TestPinnedHost(t *testing.T) {
 		if !c.wantErr && got != c.want {
 			t.Errorf("pinnedHost(%q) = %q, ждали %q", c.baseURL, got, c.want)
 		}
+	}
+}
+
+func TestPinsForBaseURLs(t *testing.T) {
+	calls := map[string]int{}
+	lookup := func(host string) ([]net.IP, error) {
+		calls[host]++
+		switch host {
+		case "corp-a.example":
+			return []net.IP{net.ParseIP("10.0.0.1")}, nil
+		case "corp-b.example":
+			return []net.IP{net.ParseIP("10.0.0.2")}, nil
+		default:
+			return nil, fmt.Errorf("no such host %s", host)
+		}
+	}
+	pins, errs := pinsForBaseURLs([]string{
+		"https://corp-a.example/v1", "https://corp-b.example/v1",
+		"https://corp-a.example/other", "http://127.0.0.1:4000/v1", "https://bad.example/v1",
+	}, lookup)
+	if strings.Join(pins, ",") != "corp-a.example:10.0.0.1,corp-b.example:10.0.0.2" {
+		t.Fatalf("pins = %v", pins)
+	}
+	if len(errs) != 1 || calls["corp-a.example"] != 1 {
+		t.Fatalf("lookup errors=%v calls=%v", errs, calls)
 	}
 }
 

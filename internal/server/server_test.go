@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -33,6 +34,8 @@ type fakeRuntime struct {
 	stopped    map[string]int
 	removed    map[string]int
 	logs       map[string]string
+	logTails   map[string]string
+	providers  map[string]provision.Provider
 	chatStarts map[string]int
 	chatStops  map[string]int
 	chatSpecs  map[string]agctlrt.ChatSpec
@@ -46,7 +49,7 @@ type fakeRuntime struct {
 func newFakeRuntime() *fakeRuntime {
 	return &fakeRuntime{
 		started: map[string]int{}, startOpts: map[string]dockerrt.StartOpts{}, resumed: map[string]int{},
-		stopped: map[string]int{}, removed: map[string]int{}, logs: map[string]string{},
+		stopped: map[string]int{}, removed: map[string]int{}, logs: map[string]string{}, logTails: map[string]string{}, providers: map[string]provision.Provider{},
 		chatStarts: map[string]int{}, chatStops: map[string]int{}, chatSpecs: map[string]agctlrt.ChatSpec{},
 	}
 }
@@ -59,12 +62,16 @@ func (f *fakeRuntime) Start(ctx context.Context, ws provision.Layout, wsID strin
 	}
 	f.started[wsID]++
 	f.startOpts[wsID] = opts
+	f.providers[wsID] = p
 	f.logs[wsID] = fmt.Sprintf("dsh web listening on http://0.0.0.0:3080/?token=fake-boot-token-%s", wsID)
 	return dockerrt.StartResult{ContainerID: "ctr-" + wsID, HostPort: opts.HostPort}, nil
 }
 
 func (f *fakeRuntime) Resume(ctx context.Context, containerID string) error {
 	f.resumed[containerID]++
+	if f.stopped[containerID] > 0 {
+		return fmt.Errorf("container not found")
+	}
 	return nil
 }
 
@@ -80,6 +87,7 @@ func (f *fakeRuntime) Remove(ctx context.Context, containerID string) error {
 }
 
 func (f *fakeRuntime) Logs(ctx context.Context, containerID, tailN string) (string, error) {
+	f.logTails[containerID] = tailN
 	return f.logs[strings.TrimPrefix(containerID, "ctr-")], nil
 }
 
@@ -414,10 +422,13 @@ func TestWorkspaceLifecycle(t *testing.T) {
 		t.Fatal("API-токен LLM утёк в ответе GET воркспейса")
 	}
 
-	// logs
-	code, body = e.do(e.admin, "GET", "/api/workspaces/"+wsID+"/logs", nil)
-	if code != 200 || !strings.Contains(body, "fake-boot-token") {
-		t.Fatalf("logs: %d %s", code, body)
+	// logs: boot-token редактируется, хвост ограничен сверху.
+	code, body = e.do(e.admin, "GET", "/api/workspaces/"+wsID+"/logs?tail=999999", nil)
+	if code != 200 || strings.Contains(body, "fake-boot-token") || !strings.Contains(body, "[redacted]") {
+		t.Fatalf("logs must redact dsh boot token: %d %s", code, body)
+	}
+	if got := e.rt.logTails[ws.ContainerID]; got != strconv.Itoa(maxWorkspaceLogTail) {
+		t.Fatalf("runtime logs tail = %q, want capped %d", got, maxWorkspaceLogTail)
 	}
 
 	// stop → stopped

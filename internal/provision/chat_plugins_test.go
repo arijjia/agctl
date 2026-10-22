@@ -46,7 +46,7 @@ func TestEnsureChatPluginsMigratesOldChatHomeIdempotently(t *testing.T) {
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	for _, bundle := range []string{"@arijjia/agctl-chat-session-files", "@arijjia/agctl-chat-brand"} {
+	for _, bundle := range []string{"@arijjia/agctl-cabinet", "@arijjia/agctl-chat-session-files", "@arijjia/agctl-chat-brand"} {
 		count := 0
 		for _, got := range manifest.DSH.Profile.Bundles {
 			if got == bundle {
@@ -58,6 +58,7 @@ func TestEnsureChatPluginsMigratesOldChatHomeIdempotently(t *testing.T) {
 		}
 	}
 	for _, rel := range []string{
+		"node_modules/@arijjia/agctl-cabinet/lib/client.js",
 		"node_modules/@arijjia/agctl-chat-session-files/lib/index.js",
 		"node_modules/@arijjia/agctl-chat-brand/lib/client.js",
 	} {
@@ -69,7 +70,7 @@ func TestEnsureChatPluginsMigratesOldChatHomeIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, bundle := range []string{"@arijjia/agctl-chat-session-files", "@arijjia/agctl-chat-brand"} {
+	for _, bundle := range []string{"@arijjia/agctl-cabinet", "@arijjia/agctl-chat-session-files", "@arijjia/agctl-chat-brand"} {
 		if count := strings.Count(string(patchData), bundle); count != 1 {
 			t.Fatalf("cordis patch bundle %s count = %d, want 1", bundle, count)
 		}

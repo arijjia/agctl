@@ -18,6 +18,35 @@ func testProvider() Provider {
 	return Provider{BaseURL: "https://litellm.example/v1", Model: "qwen-test", APIKey: "sk-test-token"}
 }
 
+func TestRefreshProviderWritesMultipleBaseURLAliases(t *testing.T) {
+	home := t.TempDir()
+	p := Provider{
+		BaseURL:  "https://corp-a.example/v1",
+		BaseURLs: []string{"https://corp-a.example/v1", "https://corp-b.example/v1"},
+		Models:   []string{"qwen-fast", "qwen-deep"}, APIKey: "secret-test-only",
+	}
+	if err := RefreshProvider(home, p); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := os.ReadFile(filepath.Join(home, "settings.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(settings)
+	for _, want := range []string{
+		"    agctl:", "baseURL: \"https://corp-a.example/v1\"",
+		"    agctl-2:", "baseURL: \"https://corp-b.example/v1\"",
+		"provider: agctl", "model: \"qwen-fast\"", "id: \"qwen-deep\"",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("settings.yaml lacks %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, p.APIKey) {
+		t.Fatal("API key must not appear in settings.yaml")
+	}
+}
+
 // TestProvisionFull — полный цикл: bare+клон+шаблон+dsh-home, autosave.
 func TestProvisionFull(t *testing.T) {
 	home := t.TempDir()

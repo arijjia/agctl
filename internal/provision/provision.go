@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,10 +27,31 @@ import (
 
 // Provider — настройки LLM-провайдера воркспейса (из личного кабинета).
 type Provider struct {
-	BaseURL string   // например https://litellm-dev.utmn.ru/v1
-	Model   string   // модель по умолчанию (первая из Models)
-	Models  []string // все доступные модели (выпадающий список в dsh)
-	APIKey  string   // токен — только в .credentials.yaml и env контейнера
+	BaseURL  string   // primary/legacy base URL (первый элемент BaseURLs)
+	BaseURLs []string // несколько provider endpoints с общим списком Models
+	Model    string   // модель по умолчанию (первая из Models)
+	Models   []string // все доступные модели (выпадающий список в dsh)
+	APIKey   string   // токен — только в .credentials.yaml и env контейнера
+}
+
+// AllBaseURLs — список URL в порядке выбора, старые вызовы BaseURL-only
+// остаются совместимы. BaseURL всегда ставится первым и дубликаты убираются.
+func (p Provider) AllBaseURLs() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(raw string) {
+		u := strings.TrimSpace(strings.TrimRight(raw, "/"))
+		if u == "" || seen[u] {
+			return
+		}
+		seen[u] = true
+		out = append(out, u)
+	}
+	add(p.BaseURL)
+	for _, u := range p.BaseURLs {
+		add(u)
+	}
+	return out
 }
 
 // DefaultModel — модель по умолчанию: Model, иначе первая из Models.
@@ -299,7 +321,7 @@ func EnsureChatPlugins(home string, skelFS fs.FS) error {
 	if skelFS == nil {
 		return fmt.Errorf("provision: chat plugin skeleton is nil")
 	}
-	bundles := []string{chatSessionFilesBundle, chatBrandBundle}
+	bundles := []string{cabinetBundle, chatSessionFilesBundle, chatBrandBundle}
 	for _, bundle := range bundles {
 		dst := filepath.Join(home, "profiles", "web", "node_modules", filepath.FromSlash(bundle))
 		src := "dsh-skel/profiles/web/node_modules/" + bundle
@@ -362,6 +384,7 @@ func EnsureChatPlugins(home string, skelFS fs.FS) error {
 		return fmt.Errorf("provision: chat profile patch: %w", err)
 	}
 	entries := []struct{ id, bundle string }{
+		{"agctl-cabinet", cabinetBundle},
 		{"agctl-chat-session-files", chatSessionFilesBundle},
 		{"agctl-chat-brand", chatBrandBundle},
 	}
@@ -378,6 +401,7 @@ func EnsureChatPlugins(home string, skelFS fs.FS) error {
 }
 
 const (
+	cabinetBundle          = "@arijjia/agctl-cabinet"
 	chatSessionFilesBundle = "@arijjia/agctl-chat-session-files"
 	chatBrandBundle        = "@arijjia/agctl-chat-brand"
 )
@@ -435,12 +459,23 @@ func jsonStr(s string) string {
 // dsh импортирует свежий settings.yaml при следующем старте.
 func RefreshProvider(home string, p Provider) error {
 	models := p.AllModels()
+	urls := p.AllBaseURLs()
+	if len(urls) == 0 {
+		urls = []string{""} // сохраняем прежний пустой-provider/modal flow
+	}
 	var sb strings.Builder
-	sb.WriteString("# Настройки воркспейса agctl: провайдер из личного кабинета.\nllm-pi-ai:\n  providers:\n    agctl:\n      apiKeyEnv: AGCTL_LLM_API_KEY\n      api: openai-completions\n")
-	sb.WriteString("      baseURL: " + yamlStr(p.BaseURL) + "\n      models:\n")
-	for _, m := range models {
-		sb.WriteString("        - id: " + yamlStr(m) + "\n          name: " + yamlStr(m) +
-			"\n          contextWindow: 262144\n          maxTokens: 65536\n")
+	sb.WriteString("# Настройки воркспейса agctl: provider aliases share models/credential.\nllm-pi-ai:\n  providers:\n")
+	for i, baseURL := range urls {
+		alias := "agctl"
+		if i > 0 {
+			alias += "-" + strconv.Itoa(i+1)
+		}
+		sb.WriteString("    " + alias + ":\n      apiKeyEnv: AGCTL_LLM_API_KEY\n      api: openai-completions\n")
+		sb.WriteString("      baseURL: " + yamlStr(baseURL) + "\n      models:\n")
+		for _, m := range models {
+			sb.WriteString("        - id: " + yamlStr(m) + "\n          name: " + yamlStr(m) +
+				"\n          contextWindow: 262144\n          maxTokens: 65536\n")
+		}
 	}
 	sb.WriteString("agent-default-model:\n  provider: agctl\n  model: " + yamlStr(p.DefaultModel()) + "\n")
 	if err := os.WriteFile(filepath.Join(home, "settings.yaml"), []byte(sb.String()), 0o644); err != nil {

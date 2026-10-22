@@ -77,14 +77,22 @@ window.__ModuleLoader__.load({
 				color: "inherit",
 			},
 			button: {
-				padding: "6px 12px",
+				padding: "7px 13px",
 				fontSize: 13,
+				fontWeight: 650,
 				borderRadius: 8,
-				border: "1px solid var(--dsw-alias-border-l1, #ccc)",
-				background: "var(--dsw-specific-button, #eee)",
-				color: "inherit",
+				border: "1px solid #1459b8",
+				background: "#1769d2",
+				color: "#fff",
 				cursor: "pointer",
+				boxShadow: "0 1px 2px rgba(0,0,0,.16)",
 			},
+			field: { display: "flex", flexDirection: "column", gap: 6, width: "100%", marginTop: 10 },
+			fieldLabel: { fontSize: 12, fontWeight: 600, color: "var(--dsw-alias-label-secondary, #555)" },
+			formStack: { display: "flex", flexDirection: "column", gap: 10, maxWidth: 620 },
+			logPanel: { marginTop: 8, padding: 12, border: "1px solid var(--dsw-alias-border-l1, #ddd)", borderRadius: 10, maxWidth: 900 },
+			logs: { margin: "8px 0 0", padding: 12, maxHeight: 360, overflow: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, color: "var(--dsw-alias-label-primary, #222)", background: "var(--dsw-alias-bg-module-platform, rgba(0,0,0,.04))", borderRadius: 8 },
+
 			place: {
 				display: "flex",
 				justifyContent: "space-between",
@@ -101,8 +109,24 @@ window.__ModuleLoader__.load({
 			placeMeta: { fontSize: 12, color: "var(--dsw-alias-label-tertiary, #888)" },
 			note: { fontSize: 12, color: "var(--dsw-alias-label-tertiary, #888)", marginTop: 14 },
 			status: { fontSize: 12, marginTop: 8, whiteSpace: "pre-wrap" },
-			mini: { padding: "3px 8px", fontSize: 12 },
+			mini: { padding: "5px 10px", fontSize: 12 },
 		};
+
+		function ensureCabinetStyles() {
+			if (document.querySelector("style[data-agctl-cabinet-styles]")) return;
+			const style = document.createElement("style");
+			style.dataset.agctlCabinetStyles = "1";
+			style.textContent = `
+				[data-agctl-cabinet-root] button,[data-agctl-cabinet-root] a { transition: background .15s ease, box-shadow .15s ease, transform .15s ease; }
+				[data-agctl-cabinet-root] button:hover:not(:disabled),[data-agctl-cabinet-root] a:hover { background:#1255aa!important; border-color:#1255aa!important; color:#fff!important; }
+				[data-agctl-cabinet-root] button:focus-visible,[data-agctl-cabinet-root] a:focus-visible { outline:3px solid rgba(22,136,245,.35); outline-offset:2px; }
+				[data-agctl-cabinet-root] button:disabled { opacity:.58; cursor:not-allowed!important; box-shadow:none; }
+				[data-agctl-cabinet-root] input,[data-agctl-cabinet-root] textarea,[data-agctl-cabinet-root] select { min-height:38px; }
+			`;
+			document.head.appendChild(style);
+		}
+
+		const parseList = (text) => [...new Set(String(text || "").split(String.fromCharCode(10)).flatMap((line) => line.split(/[;,]/)).map((v) => v.trim()).filter(Boolean))];
 
 		function CabinetPage() {
 			const [url, setUrl] = React.useState(() => {
@@ -120,10 +144,19 @@ window.__ModuleLoader__.load({
 			const [password, setPassword] = React.useState("");
 			const [name, setName] = React.useState("");
 			const [kit, setKit] = React.useState("base");
-			const [llmBaseURL, setLLMBaseURL] = React.useState("");
-			const [llmModel, setLLMModel] = React.useState("");
+			const [llmBaseURLsText, setLLMBaseURLsText] = React.useState("");
+			const [llmModelsText, setLLMModelsText] = React.useState("");
 			const [llmAPIKey, setLLMAPIKey] = React.useState("");
 			const [sshPubKey, setSSHPubKey] = React.useState("");
+			const [editingID, setEditingID] = React.useState("");
+			const [editBaseURLsText, setEditBaseURLsText] = React.useState("");
+			const [editModelsText, setEditModelsText] = React.useState("");
+			const [editAPIKey, setEditAPIKey] = React.useState("");
+			const [editSSHPubKey, setEditSSHPubKey] = React.useState("");
+			const [disableSSH, setDisableSSH] = React.useState(false);
+			const [logsID, setLogsID] = React.useState("");
+			const [logsText, setLogsText] = React.useState("");
+			const [logsBusy, setLogsBusy] = React.useState(false);
 			const [busy, setBusy] = React.useState(false);
 			const [msg, setMsg] = React.useState("");
 			const [cfg, setCfg] = React.useState({ requireApproval: false });
@@ -272,15 +305,18 @@ window.__ModuleLoader__.load({
 					setMsg("Придумай имя рабочего места");
 					return;
 				}
-				if (!llmBaseURL.trim() || !llmModel.trim()) {
-					setMsg("Укажи Base URL и модель LLM-провайдера (токен можно оставить пустым, если он уже сохранён)");
+				const baseURLs = parseList(llmBaseURLsText);
+				const models = parseList(llmModelsText);
+				if (!baseURLs.length || !models.length) {
+					setMsg("Укажи хотя бы один Base URL и одну модель (по одному значению на строку; токен можно оставить пустым, если он уже сохранён)");
 					return;
 				}
 				const payload = {
 					name: clean,
 					kit,
-					baseURL: llmBaseURL.trim(),
-					models: [llmModel.trim()],
+					baseURL: baseURLs[0],
+					baseURLs,
+					models,
 					apiKey: llmAPIKey.trim(),
 					sshPubKey: sshPubKey.trim(),
 				};
@@ -349,6 +385,104 @@ window.__ModuleLoader__.load({
 				}
 			};
 
+			const loadLogs = async (ws) => {
+				setLogsID(ws.id);
+				setLogsBusy(true);
+				setLogsText("Загружаю последние строки…");
+				try {
+					const res = await api("/api/workspaces/" + ws.id + "/logs?tail=500");
+					setLogsText(res.ok && res.data ? (res.data.logs || "Логи пусты.") : "Не удалось загрузить логи (HTTP " + res.status + ").");
+				} catch (err) {
+					setLogsText("Ошибка загрузки логов: " + String((err && err.message) || err));
+				} finally {
+					setLogsBusy(false);
+				}
+			};
+
+			const openEdit = (ws) => {
+				setLogsID("");
+				setEditingID(ws.id);
+				const urls = Array.isArray(ws.baseURLs) && ws.baseURLs.length ? ws.baseURLs : (ws.baseURL ? [ws.baseURL] : []);
+				const models = Array.isArray(ws.models) && ws.models.length ? ws.models : (ws.model ? [ws.model] : []);
+				setEditBaseURLsText(urls.join("\n"));
+				setEditModelsText(models.join("\n"));
+				setEditAPIKey("");
+				setEditSSHPubKey("");
+				setDisableSSH(false);
+			};
+
+			const waitWorkspaceSettled = async (id) => {
+				for (let i = 0; i < 120; i++) {
+					const res = await api("/api/workspaces/" + id);
+					const current = res.ok && res.data ? res.data.workspace : null;
+					if (!current || !["provisioning", "stopping"].includes(current.status)) return current;
+					await new Promise((resolve) => setTimeout(resolve, 500));
+				}
+				return null;
+			};
+
+			const saveWorkspaceEdit = (ws) => async (e) => {
+				e.preventDefault();
+				const baseURLs = parseList(editBaseURLsText);
+				const models = parseList(editModelsText);
+				if (!baseURLs.length || !models.length) {
+					setMsg("Нужны хотя бы один Base URL и одна модель.");
+					return;
+				}
+				setBusy(true);
+				setMsg("Сохраняю настройки «" + ws.name + "»…");
+				try {
+					const res = await api("/api/workspaces/" + ws.id + "/provider", {
+						method: "PATCH",
+						body: JSON.stringify({ baseURL: baseURLs[0], baseURLs, models, apiKey: editAPIKey.trim() }),
+					});
+					if (!res.ok) {
+						setMsg("Провайдер не сохранён (HTTP " + res.status + "): " + ((res.data && res.data.error) || ""));
+						return;
+					}
+					let current = res.data && res.data.workspace;
+					if (current && current.status === "provisioning") {
+						current = await waitWorkspaceSettled(ws.id);
+						if (!current) {
+							setMsg("Контейнер всё ещё применяет провайдера; обнови список через несколько секунд.");
+							await load();
+							return;
+						}
+					}
+					if (current && current.status === "failed") {
+						setMsg("Провайдер сохранён, но пересоздание контейнера завершилось ошибкой: " + (current.error || "см. логи"));
+						await load();
+						return;
+					}
+					if (editSSHPubKey.trim() || disableSSH) {
+						const sshRes = await api("/api/workspaces/" + ws.id + "/ssh", {
+							method: "PATCH",
+							body: JSON.stringify({ pubKey: disableSSH ? "" : editSSHPubKey.trim() }),
+						});
+						if (!sshRes.ok) {
+							setMsg("Провайдер сохранён, но SSH не изменён (HTTP " + sshRes.status + "): " + ((sshRes.data && sshRes.data.error) || ""));
+							await load();
+						return;
+						}
+						if (sshRes.data && sshRes.data.status === "provisioning") {
+							const settled = await waitWorkspaceSettled(ws.id);
+							if (!settled) {
+								setMsg("SSH обновляется; контейнер ещё перезапускается, обнови список через несколько секунд.");
+								await load();
+								return;
+							}
+						}
+					}
+					setMsg("Настройки «" + ws.name + "» обновлены.");
+					setEditingID("");
+					await load();
+				} catch (err) {
+					setMsg("Не удалось сохранить настройки: " + String((err && err.message) || err));
+				} finally {
+					setBusy(false);
+				}
+			};
+
 			const saveUrl = (v) => {
 				setUrl(v);
 				try {
@@ -380,7 +514,7 @@ window.__ModuleLoader__.load({
 			if (phase === "login") {
 				return h(
 					"div",
-					{ style: styles.wrap },
+					{ style: styles.wrap, "data-agctl-cabinet-root": "1" },
 					h("h1", { style: styles.title }, "Кабинет agctl"),
 					h("p", { style: styles.subtitle }, "Войди, чтобы видеть свои рабочие места с агентами."),
 					conn,
@@ -412,7 +546,7 @@ window.__ModuleLoader__.load({
 
 			return h(
 				"div",
-				{ style: styles.wrap },
+				{ style: styles.wrap, "data-agctl-cabinet-root": "1" },
 				h("h1", { style: styles.title }, "Кабинет agctl"),
 				h(
 					"p",
@@ -429,51 +563,46 @@ window.__ModuleLoader__.load({
 						h("h2", { style: styles.cardTitle }, "Новое рабочее место"),
 						h(
 							"div",
-							{ style: styles.row },
-							h("input", {
-								style: styles.input,
-								placeholder: "имя (например, demo-1c)",
-								value: name,
-								onChange: (e) => setName(e.target.value),
-							}),
+							{ style: styles.formStack },
 							h(
-								"select",
-								{ style: { ...styles.input, maxWidth: 140 }, value: kit, onChange: (e) => setKit(e.target.value) },
-								kits.map((k) => h("option", { value: k, key: k }, k)),
+								"label",
+								{ style: styles.field },
+								h("span", { style: styles.fieldLabel }, "Имя рабочего места"),
+								h("input", { style: { ...styles.input, width: "100%" }, placeholder: "например, demo-1c", value: name, onChange: (e) => setName(e.target.value) }),
 							),
-							h("button", { style: styles.button, type: "submit", disabled: busy }, cfg.requireApproval ? "Запросить" : "Создать"),
+							h(
+								"label",
+								{ style: styles.field },
+								h("span", { style: styles.fieldLabel }, "Комплект"),
+								h("select", { style: { ...styles.input, width: "100%" }, value: kit, onChange: (e) => setKit(e.target.value) }, kits.map((k) => h("option", { value: k, key: k }, k))),
+							),
+							h(
+								"label",
+								{ style: styles.field },
+								h("span", { style: styles.fieldLabel }, "Base URL провайдера (несколько — по одному на строку)"),
+								h("textarea", { style: { ...styles.input, width: "100%", minHeight: 72, resize: "vertical" }, placeholder: "https://litellm.example/v1, https://backup.example/v1", value: llmBaseURLsText, onChange: (e) => setLLMBaseURLsText(e.target.value) }),
+							),
+							h(
+								"label",
+								{ style: styles.field },
+								h("span", { style: styles.fieldLabel }, "Модели (общие для каждого Base URL; по одной на строку)"),
+								h("textarea", { style: { ...styles.input, width: "100%", minHeight: 72, resize: "vertical" }, placeholder: "qwen-3.8-fast, qwen-3.8-deep", value: llmModelsText, onChange: (e) => setLLMModelsText(e.target.value) }),
+							),
+							h(
+								"label",
+								{ style: styles.field },
+								h("span", { style: styles.fieldLabel }, "API-токен"),
+								h("input", { style: { ...styles.input, width: "100%" }, type: "password", placeholder: "пусто = использовать сохранённый токен", value: llmAPIKey, autoComplete: "new-password", onChange: (e) => setLLMAPIKey(e.target.value) }),
+							),
+							h(
+								"label",
+								{ style: styles.field },
+								h("span", { style: styles.fieldLabel }, "SSH public key (необязательно)"),
+								h("textarea", { style: { ...styles.input, width: "100%", minHeight: 72, resize: "vertical" }, placeholder: "содержимое ~/.ssh/id_ed25519.pub", value: sshPubKey, onChange: (e) => setSSHPubKey(e.target.value) }),
+							),
+							h("p", { style: styles.note }, "SSH доступен только по ключу и привязан к 127.0.0.1 сервера; для удалённой машины сначала нужен SSH-туннель. Токен можно не вводить, если он уже сохранён."),
+							h("button", { style: { ...styles.button, alignSelf: "flex-start" }, type: "submit", disabled: busy }, cfg.requireApproval ? "Отправить заявку" : "Создать рабочее место"),
 						),
-						h(
-							"div",
-							{ style: { ...styles.row, marginTop: 10 } },
-							h("input", {
-								style: styles.input,
-								placeholder: "LLM Base URL (например, https://litellm.example/v1)",
-								value: llmBaseURL,
-								onChange: (e) => setLLMBaseURL(e.target.value),
-							}),
-							h("input", {
-								style: styles.input,
-								placeholder: "модель (например, gpt-4.1)",
-								value: llmModel,
-								onChange: (e) => setLLMModel(e.target.value),
-							}),
-						),
-						h("input", {
-							style: { ...styles.input, width: "100%", marginTop: 10 },
-							type: "password",
-							placeholder: "API-токен (не сохраняется в браузере; пусто = использовать сохранённый)",
-							value: llmAPIKey,
-							autoComplete: "new-password",
-							onChange: (e) => setLLMAPIKey(e.target.value),
-						}),
-						h("textarea", {
-							style: { ...styles.input, width: "100%", minHeight: 58, marginTop: 10, resize: "vertical" },
-							placeholder: "SSH public key (необязательно; например, содержимое ~/.ssh/id_ed25519.pub)",
-							value: sshPubKey,
-							onChange: (e) => setSSHPubKey(e.target.value),
-						}),
-						h("p", { style: styles.note }, "SSH доступен только по ключу и привязан к 127.0.0.1 сервера; для удалённой машины сначала нужен SSH-туннель до сервера."),
 					),
 				phase === "ready" &&
 					h(
@@ -546,44 +675,63 @@ window.__ModuleLoader__.load({
 						places.length === 0 && h("p", { style: styles.note }, "Пока пусто — создай первое место."),
 						places.map((ws) =>
 							h(
-								"div",
-								{ style: styles.place, key: ws.id },
+								"section",
+								{ key: ws.id, style: { marginBottom: 12 } },
 								h(
-									"span",
-									null,
-									h("span", { style: styles.placeName }, ws.name + " "),
+									"div",
+									{ style: styles.place },
 									h(
 										"span",
-										{ style: styles.placeMeta },
-										"· " + (ws.status || "?") + (ws.kit ? " · " + ws.kit : "") +
-											(ws.sshEnabled && ws.sshPort ? " · SSH :" + ws.sshPort : ""),
+										null,
+										h("span", { style: styles.placeName }, ws.name + " "),
+										h("span", { style: styles.placeMeta }, "· " + (ws.status || "?") + (ws.kit ? " · " + ws.kit : "") + (ws.sshEnabled && ws.sshPort ? " · SSH :" + ws.sshPort : "")),
+									),
+									h(
+										"span",
+										{ style: styles.row },
+										ws.url && h("a", { href: ws.url, target: "_blank", rel: "noreferrer", style: { ...styles.button, textDecoration: "none" } }, "Открыть"),
+										h("button", { style: { ...styles.button, ...styles.mini }, onClick: () => logsID === ws.id ? setLogsID("") : loadLogs(ws), disabled: logsBusy }, logsID === ws.id ? "Скрыть логи" : "Логи"),
+										h("button", { style: { ...styles.button, ...styles.mini }, onClick: () => editingID === ws.id ? setEditingID("") : openEdit(ws), disabled: busy }, editingID === ws.id ? "Закрыть" : "Настройки"),
+										ws.status === "running" && h("button", { style: { ...styles.button, ...styles.mini }, onClick: act(ws, "stop"), disabled: busy }, "Стоп"),
+										ws.status !== "running" && h("button", { style: { ...styles.button, ...styles.mini }, onClick: act(ws, "start"), disabled: busy || ws.status === "provisioning" }, "Старт"),
 									),
 								),
-								h(
-									"span",
-									{ style: styles.row },
-									ws.url &&
-										h(
-											"a",
-											{ href: ws.url, target: "_blank", style: { ...styles.button, textDecoration: "none" } },
-											"Открыть",
-										),
-									ws.status === "running" &&
-										h(
-											"button",
-											{ style: { ...styles.button, ...styles.mini }, onClick: act(ws, "stop"), disabled: busy },
-											"Стоп",
-										),
-									ws.status !== "running" &&
-										h(
-											"button",
-											{ style: { ...styles.button, ...styles.mini }, onClick: act(ws, "start"), disabled: busy },
-											"Старт",
-										),
+								ws.sshEnabled && ws.sshPort && h("p", { style: styles.note }, "SSH: agctl connect --host 127.0.0.1 --port " + ws.sshPort + " · VS Code Remote-SSH"),
+								logsID === ws.id && h("div", { style: styles.logPanel },
+									h("div", { style: { ...styles.row, justifyContent: "space-between" } },
+										h("h3", { style: styles.cardTitle }, "Логи контейнера · " + ws.name),
+										h("button", { style: { ...styles.button, ...styles.mini }, onClick: () => loadLogs(ws), disabled: logsBusy }, logsBusy ? "Загружаю…" : "Обновить"),
+									),
+									h("pre", { style: styles.logs }, logsText),
 								),
-								ws.sshEnabled && ws.sshPort && h("div", { style: { ...styles.note, width: "100%" } },
-									"SSH (на сервере): agctl connect --host 127.0.0.1 --port " + ws.sshPort +
-									"  ·  IDE: VS Code → Remote-SSH к этому хосту/порту"),
+								editingID === ws.id && h("form", { style: styles.logPanel, onSubmit: saveWorkspaceEdit(ws) },
+									h("h3", { style: styles.cardTitle }, "Настройки · " + ws.name),
+									h("label", { style: styles.field },
+										h("span", { style: styles.fieldLabel }, "Base URL (по одному на строку)"),
+										h("textarea", { style: { ...styles.input, width: "100%", minHeight: 64, resize: "vertical" }, value: editBaseURLsText, onChange: (e) => setEditBaseURLsText(e.target.value) }),
+									),
+									h("label", { style: styles.field },
+										h("span", { style: styles.fieldLabel }, "Модели (одинаковый список для каждого Base URL)"),
+										h("textarea", { style: { ...styles.input, width: "100%", minHeight: 64, resize: "vertical" }, value: editModelsText, onChange: (e) => setEditModelsText(e.target.value) }),
+									),
+									h("label", { style: styles.field },
+										h("span", { style: styles.fieldLabel }, "Новый API-токен (пусто = использовать сохранённый)"),
+										h("input", { style: { ...styles.input, width: "100%" }, type: "password", autoComplete: "new-password", value: editAPIKey, onChange: (e) => setEditAPIKey(e.target.value) }),
+									),
+									h("label", { style: styles.field },
+										h("span", { style: styles.fieldLabel }, "Новый SSH public key (пусто = не менять текущий)"),
+										h("textarea", { style: { ...styles.input, width: "100%", minHeight: 64, resize: "vertical" }, value: editSSHPubKey, onChange: (e) => setEditSSHPubKey(e.target.value) }),
+									),
+									h("label", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13 } },
+										h("input", { type: "checkbox", checked: disableSSH, onChange: (e) => setDisableSSH(e.target.checked) }),
+										"Отключить SSH",
+									),
+									h("div", { style: { ...styles.row, marginTop: 12 } },
+										h("button", { style: { ...styles.button, ...styles.mini }, type: "submit", disabled: busy }, busy ? "Сохраняю…" : "Сохранить параметры"),
+										h("button", { style: { ...styles.button, ...styles.mini }, type: "button", onClick: () => setEditingID("") }, "Отмена"),
+									),
+									h("p", { style: styles.note }, "Состав комплекта и имя репозитория — неизменяемые после создания; провайдер можно менять безопасно с пересозданием контейнера."),
+								),
 							),
 						),
 				phase === "connecting" && h("p", { style: styles.note }, "Подключаюсь к agctl…"),
@@ -602,6 +750,7 @@ window.__ModuleLoader__.load({
 		 * @param ctx - the browser plugin context.
 		 */
 		function apply(ctx) {
+			ensureCabinetStyles();
 			ctx.slots.inject("main", () =>
 				ctx.slots.register(
 					{

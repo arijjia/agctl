@@ -34,7 +34,8 @@ type Workspace struct {
 	DshHome     string
 	ContainerID string
 	HostPort    int
-	BaseURL     string
+	BaseURL     string   // primary/legacy URL (первый элемент BaseURLs)
+	BaseURLs    []string // список endpoints; сериализуется в workspaces.base_urls
 	Model       string   // модель по умолчанию (legacy-колонка)
 	Models      []string // весь список (колонка models, "\n"-разделитель)
 	Error       string
@@ -76,6 +77,41 @@ func DecodeModels(raw, fallback string) []string {
 	}
 	if len(out) == 0 && fallback != "" {
 		out = []string{fallback}
+	}
+	return out
+}
+
+// EncodeBaseURLs stores URL lists as JSON so commas/newlines in opaque paths
+// never change their boundaries. URLs are de-duplicated in input order.
+func EncodeBaseURLs(urls []string) string {
+	clean := normalizeBaseURLs(urls)
+	b, _ := json.Marshal(clean)
+	return string(b)
+}
+
+// DecodeBaseURLs reads the multi-URL column, falling back to the legacy scalar.
+func DecodeBaseURLs(raw, fallback string) []string {
+	var urls []string
+	if raw != "" {
+		_ = json.Unmarshal([]byte(raw), &urls)
+	}
+	urls = normalizeBaseURLs(urls)
+	if len(urls) == 0 && strings.TrimSpace(fallback) != "" {
+		urls = []string{strings.TrimSpace(fallback)}
+	}
+	return urls
+}
+
+func normalizeBaseURLs(urls []string) []string {
+	seen := make(map[string]bool, len(urls))
+	out := make([]string, 0, len(urls))
+	for _, raw := range urls {
+		u := strings.TrimSpace(raw)
+		if u == "" || seen[u] {
+			continue
+		}
+		seen[u] = true
+		out = append(out, u)
 	}
 	return out
 }
@@ -204,16 +240,20 @@ func (d *DB) DeleteExpiredSessions() error {
 // ── workspaces ───────────────────────────────────────────────────────────────
 
 const wsCols = `id, owner_id, name, template, status, repo_path, work_path, dsh_home,
-	container_id, host_port, base_url, model, models, components, error, created_at, updated_at,
+	container_id, host_port, base_url, base_urls, model, models, components, error, created_at, updated_at,
 	ssh_pub_key, ssh_port`
 
 func scanWS(row interface{ Scan(...any) error }) (Workspace, error) {
 	var w Workspace
-	var modelsRaw, componentsRaw string
+	var baseURLsRaw, modelsRaw, componentsRaw string
 	err := row.Scan(&w.ID, &w.OwnerID, &w.Name, &w.Template, &w.Status, &w.RepoPath, &w.WorkPath,
-		&w.DshHome, &w.ContainerID, &w.HostPort, &w.BaseURL, &w.Model, &modelsRaw, &componentsRaw, &w.Error,
+		&w.DshHome, &w.ContainerID, &w.HostPort, &w.BaseURL, &baseURLsRaw, &w.Model, &modelsRaw, &componentsRaw, &w.Error,
 		&w.CreatedAt, &w.UpdatedAt, &w.SSHPubKey, &w.SSHPort)
 	if err == nil {
+		w.BaseURLs = DecodeBaseURLs(baseURLsRaw, w.BaseURL)
+		if len(w.BaseURLs) > 0 {
+			w.BaseURL = w.BaseURLs[0]
+		}
 		w.Models = DecodeModels(modelsRaw, w.Model)
 		w.Components = DecodeIDs(componentsRaw)
 	}
@@ -221,11 +261,15 @@ func scanWS(row interface{ Scan(...any) error }) (Workspace, error) {
 }
 
 func (d *DB) InsertWorkspace(w Workspace) error {
+	baseURLs := w.BaseURLs
+	if len(baseURLs) == 0 && w.BaseURL != "" {
+		baseURLs = []string{w.BaseURL}
+	}
 	_, err := d.Exec(`INSERT INTO workspaces(id, owner_id, name, template, status, repo_path,
-		work_path, dsh_home, container_id, host_port, base_url, model, models, components, error, ssh_pub_key, ssh_port)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		work_path, dsh_home, container_id, host_port, base_url, base_urls, model, models, components, error, ssh_pub_key, ssh_port)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		w.ID, w.OwnerID, w.Name, w.Template, w.Status, w.RepoPath, w.WorkPath, w.DshHome,
-		w.ContainerID, w.HostPort, w.BaseURL, w.Model, EncodeModels(w.Models), EncodeIDs(w.Components), w.Error,
+		w.ContainerID, w.HostPort, w.BaseURL, EncodeBaseURLs(baseURLs), w.Model, EncodeModels(w.Models), EncodeIDs(w.Components), w.Error,
 		w.SSHPubKey, w.SSHPort)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
@@ -247,7 +291,7 @@ func (d *DB) WorkspacesByOwner(ownerID int64) ([]Workspace, error) {
 
 func (d *DB) WorkspacesAll() ([]Workspace, error) {
 	return d.wsList(`SELECT w.id, w.owner_id, w.name, w.template, w.status, w.repo_path, w.work_path,
-		w.dsh_home, w.container_id, w.host_port, w.base_url, w.model, w.models, w.components, w.error,
+		w.dsh_home, w.container_id, w.host_port, w.base_url, w.base_urls, w.model, w.models, w.components, w.error,
 		w.created_at, w.updated_at, w.ssh_pub_key, w.ssh_port
 		FROM workspaces w JOIN users u ON u.id = w.owner_id
 		ORDER BY w.created_at DESC`)
@@ -386,10 +430,13 @@ func (d *DB) SettingGet(key string) (string, error) {
 	return value, wrap("setting get", err)
 }
 
-// UpdateWorkspaceProvider — смена Base URL/моделей воркспейса (ротация).
-func (d *DB) UpdateWorkspaceProvider(id, baseURL, model string, models []string) error {
-	_, err := d.Exec(`UPDATE workspaces SET base_url = ?, model = ?, models = ?,
-		updated_at = ? WHERE id = ?`, baseURL, model, EncodeModels(models), now(), id)
+// UpdateWorkspaceProvider — смена Base URLs/моделей воркспейса (ротация).
+func (d *DB) UpdateWorkspaceProvider(id, baseURL string, baseURLs []string, model string, models []string) error {
+	if len(baseURLs) == 0 && baseURL != "" {
+		baseURLs = []string{baseURL}
+	}
+	_, err := d.Exec(`UPDATE workspaces SET base_url = ?, base_urls = ?, model = ?, models = ?,
+		updated_at = ? WHERE id = ?`, baseURL, EncodeBaseURLs(baseURLs), model, EncodeModels(models), now(), id)
 	return wrap("update ws provider", err)
 }
 

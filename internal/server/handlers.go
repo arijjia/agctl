@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -260,7 +261,7 @@ func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, i
 	}
 	ws := store.Workspace{
 		ID: wsID, OwnerID: id.ID, Name: req.Name, Template: kitID, Components: components,
-		Status: "provisioning", HostPort: port, BaseURL: p.BaseURL,
+		Status: "provisioning", HostPort: port, BaseURL: p.BaseURL, BaseURLs: p.AllBaseURLs(),
 		Model: p.DefaultModel(), Models: p.AllModels(), SSHPubKey: sshPubKey, SSHPort: sshPort,
 	}
 	if err := s.db.InsertWorkspace(ws); err != nil {
@@ -491,6 +492,26 @@ func pathUnder(home, p string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
+var (
+	workspaceLogQueryTokenRE = regexp.MustCompile(`(?i)([?&]token=)[^&\s"'<>]+`)
+	workspaceLogBearerRE     = regexp.MustCompile(`(?i)(bearer\s+)[A-Za-z0-9._~+/-]+=*`)
+	workspaceLogEnvKeyRE     = regexp.MustCompile(`(?i)(AGCTL_LLM_API_KEY\s*=\s*)[^\s"'<>]+`)
+	workspaceLogCookieRE     = regexp.MustCompile(`(?i)(dsh-auth-[A-Za-z0-9_-]+=)[^;\s]+`)
+	workspaceLogAPIKeyRE     = regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{8,}\b`)
+)
+
+const maxWorkspaceLogTail = 2000
+
+// redactWorkspaceLogs — runtime boot-логи могут включать dsh login token и
+// случайно напечатанные credentials; UI/API отдаёт только санитизированный хвост.
+func redactWorkspaceLogs(logs string) string {
+	logs = workspaceLogQueryTokenRE.ReplaceAllString(logs, `${1}[redacted]`)
+	logs = workspaceLogBearerRE.ReplaceAllString(logs, `${1}[redacted]`)
+	logs = workspaceLogEnvKeyRE.ReplaceAllString(logs, `${1}[redacted]`)
+	logs = workspaceLogCookieRE.ReplaceAllString(logs, `${1}[redacted]`)
+	return workspaceLogAPIKeyRE.ReplaceAllString(logs, "[redacted]")
+}
+
 func (s *Server) handleWorkspaceLogs(w http.ResponseWriter, r *http.Request, id identity) {
 	ws, err := s.loadWS(r, id)
 	if errors.Is(err, errForbidden) {
@@ -507,12 +528,16 @@ func (s *Server) handleWorkspaceLogs(w http.ResponseWriter, r *http.Request, id 
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	logs, err := s.rt.Logs(ctx, ws.ContainerID, strconv.Itoa(atoiDefault(r.URL.Query().Get("tail"), 200)))
+	tail := atoiDefault(r.URL.Query().Get("tail"), 200)
+	if tail > maxWorkspaceLogTail {
+		tail = maxWorkspaceLogTail
+	}
+	logs, err := s.rt.Logs(ctx, ws.ContainerID, strconv.Itoa(tail))
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"logs": "(контейнер не отвечает: " + err.Error() + ")"})
+		writeJSON(w, http.StatusOK, map[string]any{"logs": redactWorkspaceLogs("(контейнер не отвечает: " + err.Error() + ")")})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"logs": logs})
+	writeJSON(w, http.StatusOK, map[string]any{"logs": redactWorkspaceLogs(logs)})
 }
 
 // sshHostPortFor возвращает опубликованный SSH-порт только для включённого
@@ -582,7 +607,7 @@ func (s *Server) handleWorkspaceSSH(w http.ResponseWriter, r *http.Request, id i
 		if len(models) == 0 && ws.Model != "" {
 			models = []string{ws.Model}
 		}
-		provider = provision.Provider{BaseURL: ws.BaseURL, Model: ws.Model, Models: models, APIKey: apiKey}
+		provider = provision.Provider{BaseURL: ws.BaseURL, BaseURLs: ws.BaseURLs, Model: ws.Model, Models: models, APIKey: apiKey}
 	}
 	if err := s.db.UpdateWorkspaceSSH(ws.ID, key, port); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -641,14 +666,22 @@ func (s *Server) handleWorkspaceProvider(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	// Пустые поля = оставить текущие значения воркспейса.
-	base := ws.BaseURL
-	if strings.TrimSpace(req.BaseURL) != "" {
-		base = strings.TrimSpace(req.BaseURL)
-		if !strings.Contains(base, "://") {
-			writeErr(w, http.StatusBadRequest, "Base URL должен начинаться с http(s)://")
+	baseURLs := ws.BaseURLs
+	if len(baseURLs) == 0 && ws.BaseURL != "" {
+		baseURLs = []string{ws.BaseURL}
+	}
+	if requested := req.allBaseURLs(); len(requested) > 0 {
+		if err := validateBaseURLs(requested); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		baseURLs = requested
 	}
+	if err := validateBaseURLs(baseURLs); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	base := baseURLs[0]
 	models := req.allModels()
 	if len(models) == 0 {
 		models = ws.Models
@@ -672,13 +705,13 @@ func (s *Server) handleWorkspaceProvider(w http.ResponseWriter, r *http.Request,
 		writeErr(w, http.StatusBadRequest, "нет сохранённого токена — укажите API-токен")
 		return
 	}
-	p := provision.Provider{BaseURL: base, Model: models[0], Models: models, APIKey: key}
+	p := provision.Provider{BaseURL: base, BaseURLs: baseURLs, Model: models[0], Models: models, APIKey: key}
 	paths := s.pathsFor(ws, s.db.WorkspaceOwnerLogin(ws.OwnerID))
 	if err := provision.RefreshProvider(paths.DshHome, p); err != nil {
 		writeErr(w, http.StatusInternalServerError, "настройки не записаны: "+err.Error())
 		return
 	}
-	if err := s.db.UpdateWorkspaceProvider(ws.ID, base, models[0], models); err != nil {
+	if err := s.db.UpdateWorkspaceProvider(ws.ID, base, baseURLs, models[0], models); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -688,11 +721,13 @@ func (s *Server) handleWorkspaceProvider(w http.ResponseWriter, r *http.Request,
 			return
 		}
 	}
-	_ = s.db.Audit(id.Login, "workspace.provider", ws.ID, "baseURL="+base+" models="+strings.Join(models, ","))
+	_ = s.db.Audit(id.Login, "workspace.provider", ws.ID, "baseURLs="+strconv.Itoa(len(baseURLs))+" models="+strings.Join(models, ","))
 	if ws.Status == "running" {
+		if err := s.db.UpdateWorkspaceStatus(ws.ID, "provisioning", "применяем новые настройки провайдера…"); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		go s.recreateForProvider(ws.ID, paths, p, id.Login)
-		ws.Status = "provisioning"
-		ws.Error = "применяем новые настройки провайдера…"
 	}
 	ws, _ = s.db.WorkspaceByID(ws.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"workspace": s.wsJSON(r.Context(), ws, id.Login)})
@@ -876,7 +911,8 @@ func (s *Server) handleWorkspaceRequestCreate(w http.ResponseWriter, r *http.Req
 	// конфликт всплывёт там с понятной ошибкой, заявка вернётся в pending.
 
 	payloadPlain := map[string]any{
-		"baseURL": req.BaseURL, "model": req.Model, "models": req.allModels(),
+		"baseURL": firstModel(req.allBaseURLs()), "baseURLs": req.allBaseURLs(),
+		"model": firstModel(req.allModels()), "models": req.allModels(),
 		"apiKey": req.APIKey,
 	}
 	blob, err := json.Marshal(payloadPlain)
@@ -1021,7 +1057,7 @@ func (s *Server) handleWorkspaceRequestDecision(approve bool) func(http.Response
 		}
 		ws := store.Workspace{
 			ID: wsID, OwnerID: wr.UserID, Name: wr.Name, Template: wr.Kit, Components: wr.Components,
-			Status: "provisioning", HostPort: port, BaseURL: provider.BaseURL,
+			Status: "provisioning", HostPort: port, BaseURL: provider.BaseURL, BaseURLs: provider.AllBaseURLs(),
 			Model: provider.DefaultModel(), Models: provider.AllModels(),
 			SSHPubKey: wr.SSHPubKey,
 		}

@@ -36,7 +36,7 @@ func TestMigrateV5DatabaseAddsSSHColumns(t *testing.T) {
 	}
 	defer db.Close()
 
-	for _, want := range []string{"ssh_pub_key", "ssh_port"} {
+	for _, want := range []string{"ssh_pub_key", "ssh_port", "base_urls"} {
 		rows, err := db.Query("PRAGMA table_info(workspaces)")
 		if err != nil {
 			t.Fatal(err)
@@ -56,7 +56,7 @@ func TestMigrateV5DatabaseAddsSSHColumns(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !found {
-			t.Fatalf("column %s not added by migration 006", want)
+			t.Fatalf("column %s not added by migrations after v5", want)
 		}
 	}
 }
