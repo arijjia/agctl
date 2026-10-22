@@ -235,6 +235,9 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/workspace-requests/{id}/reject", s.requireAdmin(s.handleWorkspaceRequestDecision(false)))
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
+	// /map — карта системы за сессией; росток будущей админ-панели (1.md).
+	mux.HandleFunc("GET /map", s.requireUser(s.handleMapIndex))
+	mux.HandleFunc("GET /map/{name}", s.requireUser(s.handleMapFile))
 	// Experimental local-connector control plane. Routes register so the
 	// flag-off answer is an honest 404 (not a confusing 405/SPA page); every
 	// handler re-checks the flag. The UI proxy below forwards to the local DSH
