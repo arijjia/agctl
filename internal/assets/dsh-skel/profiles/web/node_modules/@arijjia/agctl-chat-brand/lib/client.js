@@ -179,12 +179,172 @@ window.__ModuleLoader__.load({
 			}
 		}
 
+		// ── виртуальные папки сессий (режим 1, цвет = университетский синий) ────
+		const FOLDERS_KEY = "agctl-chat-folders.v1";
+
+		function foldersState() {
+			try {
+				const s = JSON.parse(localStorage.getItem(FOLDERS_KEY));
+				if (s && Array.isArray(s.folders) && s.assign) return s;
+			} catch (e) {}
+			return { folders: [], assign: {}, active: "" };
+		}
+
+		function saveFoldersState(state) {
+			try { localStorage.setItem(FOLDERS_KEY, JSON.stringify(state)); } catch (e) {}
+		}
+
+		function folderColor(name) {
+			let hash = 0;
+			for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+			return `hsl(${hash % 360}, 68%, 42%)`;
+		}
+
+		function sessionKey(row) {
+			return (row.textContent || "").trim().slice(0, 120);
+		}
+
+		let folderMenu = null;
+
+		function closeFolderMenu() {
+			if (folderMenu) { folderMenu.remove(); folderMenu = null; }
+		}
+
+		function openFolderMenu(x, y, row, key) {
+			closeFolderMenu();
+			const state = foldersState();
+			const assigned = state.assign[key] || "";
+			const items = [
+				...state.folders.map((name) => ({ label: (assigned === name ? "✓ " : "") + name, color: folderColor(name), act: () => { state.assign[key] = name; saveFoldersState(state); } })),
+				{ label: "＋ Новая папка…", act: () => {
+					const name = (window.prompt("Имя папки сессий:") || "").trim();
+					if (!name) return;
+					if (!state.folders.includes(name)) state.folders.push(name);
+					state.assign[key] = name;
+					saveFoldersState(state);
+				} },
+			];
+			if (assigned) items.push({ label: "Убрать из папки", act: () => { delete state.assign[key]; saveFoldersState(state); } });
+			folderMenu = document.createElement("div");
+			folderMenu.dataset.agctlFolderMenu = "1";
+			folderMenu.style.cssText = "position:fixed;z-index:9999;min-width:180px;padding:6px;border-radius:10px;background:var(--dsw-specific-menu,#fff);box-shadow:0 8px 24px rgba(0,0,0,.25);border:1px solid var(--dsw-alias-border-l1,#ddd);display:flex;flex-direction:column;gap:2px";
+			for (const item of items) {
+				const btn = document.createElement("button");
+				btn.type = "button";
+				btn.textContent = item.label;
+				btn.style.cssText = "display:flex;align-items:center;gap:8px;border:none;background:transparent;color:inherit;font:inherit;font-size:13px;padding:7px 10px;border-radius:8px;cursor:pointer;text-align:left";
+				btn.addEventListener("mouseenter", () => { btn.style.background = "var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.07))"; });
+				btn.addEventListener("mouseleave", () => { btn.style.background = "transparent"; });
+				btn.addEventListener("click", () => { item.act(); closeFolderMenu(); fixAll(); });
+				folderMenu.appendChild(btn);
+			}
+			document.body.appendChild(folderMenu);
+			const rect = folderMenu.getBoundingClientRect();
+			folderMenu.style.left = Math.min(x, window.innerWidth - rect.width - 8) + "px";
+			folderMenu.style.top = Math.min(y, window.innerHeight - rect.height - 8) + "px";
+		}
+
+		function applyFolders() {
+			const label = [...document.querySelectorAll('[class*=sectionLabel]')].find((e) =>
+				/^(сессии|workspaces)$/i.test((e.textContent || "").trim()),
+			);
+			if (!label) return;
+			const root = label.closest('[class*=root]') || label.parentElement?.parentElement;
+			if (!root) return;
+			const tree = root.querySelector('[role=tree]');
+			if (!tree) return;
+			const state = foldersState();
+
+			// чипсы фильтра: Все | папки… | ＋
+			let chips = root.querySelector('[data-agctl-folders]');
+			if (!state.folders.length && !chips) {
+				for (const row of tree.querySelectorAll('.YDXeBa_sessionRow')) {
+					const key = sessionKey(row);
+					if (state.assign[key]) {
+						row.addEventListener("contextmenu", (ev) => { ev.preventDefault(); openFolderMenu(ev.clientX, ev.clientY, row, key); });
+					}
+				}
+				return; // папок нет — UI не нужен, но контекстное меню на размеченных строках висит
+			}
+			if (!chips) {
+				chips = document.createElement("div");
+				chips.dataset.agctlFolders = "1";
+				chips.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;padding:2px 10px 8px";
+				const header = label.closest('[class*=sectionHeader]');
+				(header || label).parentElement.insertBefore(chips, header ? header.nextSibling : label.nextSibling);
+			}
+			chips.replaceChildren();
+			const chip = (name, isActive, onClick) => {
+				const b = document.createElement("button");
+				b.type = "button";
+				b.textContent = name;
+				b.style.cssText = `display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer;border:1px solid ${isActive ? folderColor(name === "Все" ? "#1676df" : name) : "var(--dsw-alias-border-l1,#ccc)"};background:${isActive ? "var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.07))" : "transparent"};color:inherit`;
+				if (name !== "Все") {
+					const dot = document.createElement("span");
+					dot.style.cssText = `width:8px;height:8px;border-radius:999px;background:${folderColor(name)}`;
+					b.prepend(dot);
+				}
+				b.addEventListener("click", onClick);
+				return b;
+			};
+			chips.appendChild(chip("Все", !state.active, () => { state.active = ""; saveFoldersState(state); fixAll(); }));
+			for (const name of state.folders) {
+				chips.appendChild(chip(name, state.active === name, () => { state.active = state.active === name ? "" : name; saveFoldersState(state); fixAll(); }));
+			}
+			const add = document.createElement("button");
+			add.type = "button";
+			add.textContent = "＋";
+			add.title = "Новая папка";
+			add.style.cssText = "border:1px dashed var(--dsw-alias-border-l1,#bbb);background:transparent;color:inherit;border-radius:999px;width:24px;height:24px;cursor:pointer;font-size:13px;line-height:1";
+			add.addEventListener("click", () => {
+				const name = (window.prompt("Имя папки сессий:") || "").trim();
+				if (!name) return;
+				const fresh = foldersState();
+				if (!fresh.folders.includes(name)) fresh.folders.push(name);
+				fresh.active = name;
+				saveFoldersState(fresh);
+				fixAll();
+			});
+			chips.appendChild(add);
+
+			// разметка строк: цветная точка папки + фильтр активной папки + контекстное меню
+			for (const row of tree.querySelectorAll('.YDXeBa_sessionRow')) {
+				const key = sessionKey(row);
+				const isPseudo = /^new session$/i.test(key);
+				const assigned = state.assign[key] || "";
+				if (assigned) {
+					let dot = row.querySelector('[data-agctl-folder-dot]');
+					if (!dot) {
+						dot = document.createElement("span");
+						dot.dataset.agctlFolderDot = "1";
+						dot.style.cssText = "width:8px;height:8px;border-radius:999px;flex:none;display:inline-block;margin-right:6px";
+						row.insertBefore(dot, row.firstChild);
+					}
+					dot.style.background = folderColor(assigned);
+					if (!row.dataset.agctlFolderMenu) {
+						row.dataset.agctlFolderMenu = "1";
+						row.addEventListener("contextmenu", (ev) => { ev.preventDefault(); openFolderMenu(ev.clientX, ev.clientY, row, sessionKey(row)); });
+					}
+				} else {
+					const dot = row.querySelector('[data-agctl-folder-dot]');
+					if (dot) dot.remove();
+				}
+				const hidden = !isPseudo && state.active && assigned !== state.active;
+				row.style.setProperty("display", hidden ? "none" : "", "important");
+			}
+		}
+
+		document.addEventListener("click", (ev) => {
+			if (folderMenu && !folderMenu.contains(ev.target)) closeFolderMenu();
+		});
+
 		function fixAll() {
 			try { closePreviewNotice(); } catch (e) {}
 			try { applyBrand(); } catch (e) {}
 			try { fixPlaceholder(); } catch (e) {}
 			try { fixModels(); } catch (e) {}
 			try { flattenSessions(); } catch (e) {}
+			try { applyFolders(); } catch (e) {}
 			try { hideDevPanels(); } catch (e) {}
 		}
 

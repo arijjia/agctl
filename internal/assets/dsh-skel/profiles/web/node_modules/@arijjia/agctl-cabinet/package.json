@@ -1,7 +1,7 @@
 {
   "name": "@arijjia/agctl-cabinet",
   "description": "agctl cabinet panel for dsh web: workspaces, REST, and optional SSH channel",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

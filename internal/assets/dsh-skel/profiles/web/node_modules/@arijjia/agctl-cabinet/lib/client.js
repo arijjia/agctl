@@ -749,8 +749,103 @@ window.__ModuleLoader__.load({
 		 * Contribute the «Кабинет» entry to the sidebar and the page it opens.
 		 * @param ctx - the browser plugin context.
 		 */
+		// ── единая навигация режимов: чат (синий) ↔ рабочие места (оранжевые) ──
+		// ВАЖНО: секция строится сырым DOM (createElement/appendChild), а не
+		// React-h() — слот живёт вне React-дерева dsh, h() дал бы [object Object].
+		const CHAT_ACCENT = "#1676df";
+		const DEV_ACCENT = "#e8833a";
+		const FOLDER_PATH = "M1.5 4.2c0-.9.7-1.6 1.6-1.6h3l1.6 1.8h5.2c.9 0 1.6.7 1.6 1.6v6c0 .9-.7 1.6-1.6 1.6H3.1c-.9 0-1.6-.7-1.6-1.6v-7.8z";
+
+		function el(tag, style, text) {
+			const node = document.createElement(tag);
+			if (style) node.style.cssText = style;
+			if (text !== undefined) node.textContent = text;
+			return node;
+		}
+
+		function folderIcon(color) {
+			const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+			svg.setAttribute("width", "15");
+			svg.setAttribute("height", "15");
+			svg.setAttribute("viewBox", "0 0 16 16");
+			svg.setAttribute("fill", "none");
+			svg.setAttribute("aria-hidden", "true");
+			for (const [fill, stroke] of [[color, "none"], ["none", color]]) {
+				const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+				path.setAttribute("d", FOLDER_PATH);
+				path.setAttribute("fill", fill);
+				path.setAttribute("stroke", stroke);
+				path.setAttribute("stroke-width", "1.3");
+				path.setAttribute("stroke-linejoin", "round");
+				if (fill !== "none") path.setAttribute("opacity", "0.22");
+				svg.appendChild(path);
+			}
+			return svg;
+		}
+
+		function statusDot(status) {
+			const color = status === "running" ? "#2fa653" : status === "provisioning" ? "#e8b13a" : "#9aa1ab";
+			const dot = el("span", "width:7px;height:7px;border-radius:999px;background:" + color + ";flex:none");
+			dot.title = status || "";
+			return dot;
+		}
+
+		function navRow(href, label, color, extra) {
+			const active = decodeURIComponent(location.pathname) === href || (href !== "/chat/" && location.pathname.startsWith(href));
+			const row = el("a", "display:flex;align-items:center;gap:8px;padding:5px 10px;margin-left:4px;border-radius:8px;text-decoration:none;font-size:13px;color:inherit;cursor:pointer;background:" + (active ? "var(--dsw-alias-interactive-bg-hover, rgba(0,0,0,.06))" : "transparent") + ";font-weight:" + (active ? 650 : 400));
+			row.href = href;
+			row.title = label;
+			row.appendChild(folderIcon(color));
+			const text = el("span", "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap", label);
+			row.appendChild(text);
+			if (extra) row.appendChild(extra);
+			return row;
+		}
+
+		async function refreshNav(root) {
+			let places = [];
+			try {
+				const res = await fetch("/api/workspaces", { credentials: "include", headers: { Accept: "application/json" } });
+				if (res.ok) {
+					const data = await res.json();
+					if (Array.isArray(data && data.workspaces)) places = data.workspaces;
+				}
+			} catch (e) {}
+			const nav = el("div", "display:flex;flex-direction:column;gap:2px;padding:6px 4px 10px");
+			nav.setAttribute("data-agctl-nav", "1");
+			nav.appendChild(el("div", "font-size:11px;font-weight:650;letter-spacing:.4px;color:var(--dsw-alias-label-tertiary,#888);padding:0 10px 2px", "РЕЖИМЫ"));
+			nav.appendChild(navRow("/chat/", "Личный чат", CHAT_ACCENT));
+			for (const ws of places) {
+				nav.appendChild(navRow(ws.url || "/w/" + ws.id + "/", ws.name, DEV_ACCENT, statusDot(ws.status)));
+			}
+			root.replaceChildren(nav);
+		}
+
+		function mountModeNav() {
+			if (document.querySelector('[data-agctl-nav-host]')) return;
+			const tree = document.querySelector('[role="tree"]');
+			if (!tree) return;
+			const host = tree.closest('[class*="root"]') || tree.parentElement;
+			if (!host || !host.parentElement) return;
+			// Сырой DOM (не React): слот живёт вне React-дерева dsh.
+			const slot = document.createElement("div");
+			slot.setAttribute("data-agctl-nav-host", "1");
+			host.parentElement.insertBefore(slot, host);
+			refreshNav(slot);
+			if (!window.__agctlNavTimer) window.__agctlNavTimer = setInterval(() => refreshNav(slot), 15000);
+		}
+
 		function apply(ctx) {
 			ensureCabinetStyles();
+			const startNav = () => {
+				mountModeNav();
+				if (!window.__agctlNavObserver) {
+					window.__agctlNavObserver = new MutationObserver(() => mountModeNav());
+					window.__agctlNavObserver.observe(document.body, { childList: true, subtree: true });
+				}
+			};
+			if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", startNav);
+			else startNav();
 			ctx.slots.inject("main", () =>
 				ctx.slots.register(
 					{
