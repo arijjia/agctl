@@ -371,6 +371,21 @@ func (d *DB) LocalConnectorsDeleteForUser(userID int64) error {
 	return wrap("local connectors delete", err)
 }
 
+// ── settings (платформенные KV-настройки; значение шифрует вызывающий) ──────
+
+func (d *DB) SettingSet(key, value string) error {
+	_, err := d.Exec(`INSERT INTO settings(key, value, updated_at) VALUES(?,?,?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		key, value, now())
+	return wrap("setting set", err)
+}
+
+func (d *DB) SettingGet(key string) (string, error) {
+	var value string
+	err := d.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
+	return value, wrap("setting get", err)
+}
+
 // UpdateWorkspaceProvider — смена Base URL/моделей воркспейса (ротация).
 func (d *DB) UpdateWorkspaceProvider(id, baseURL, model string, models []string) error {
 	_, err := d.Exec(`UPDATE workspaces SET base_url = ?, model = ?, models = ?,

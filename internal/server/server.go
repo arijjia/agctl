@@ -109,6 +109,7 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 	if db == nil || sec == nil || workspaceRuntime == nil || chatProvider == nil {
 		return nil, fmt.Errorf("server: db, secrets and both runtime providers are required")
 	}
+	resolveDefaultLLM(db, sec, &cfg)
 	s := &Server{
 		db: db, sec: sec, cfg: cfg, rt: workspaceRuntime, chatProvider: chatProvider,
 		localBridge: bridge.NewManager(),
@@ -138,6 +139,46 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 		CookieSecure:  cfg.SecureCookies,
 	}
 	return s, nil
+}
+
+// chatDefaultLLMKey — ключ настроек для платформенного провайдера чата.
+const chatDefaultLLMKey = "chat_default_llm"
+
+// resolveDefaultLLM делает платформенный провайдер чата персистентным: задан
+// через флаги/env — сохраняется зашифрованным; не задан — восстанавливается из
+// прошлых запусков. Так рестарт без AGCTL_LLM_* не возвращает dsh-модал
+// «Add an API key». Если провайдера нет вовсе — честно предупреждаем.
+func resolveDefaultLLM(db *store.DB, sec *secrets.Manager, cfg *Config) {
+	if cfg.DefaultLLM.APIKey != "" {
+		plain, err := json.Marshal(cfg.DefaultLLM)
+		if err == nil {
+			if enc, encErr := sec.Encrypt(string(plain)); encErr == nil {
+				if err := db.SettingSet(chatDefaultLLMKey, enc); err != nil {
+					log.Printf("llm: не удалось сохранить платформенный провайдер: %v", err)
+				}
+			}
+		}
+		return
+	}
+	raw, err := db.SettingGet(chatDefaultLLMKey)
+	if err != nil || raw == "" {
+		if cfg.Tier0 {
+			log.Printf("llm: предупреждение — платформенный провайдер чата не задан (флаги --llm-* или env AGCTL_LLM_*); dsh покажет модал «Add an API key»")
+		}
+		return
+	}
+	plain, err := sec.Decrypt(raw)
+	if err != nil {
+		log.Printf("llm: не удалось расшифровать сохранённый провайдер чата: %v", err)
+		return
+	}
+	var restored provision.Provider
+	if err := json.Unmarshal([]byte(plain), &restored); err != nil || restored.APIKey == "" {
+		log.Printf("llm: сохранённый провайдер чата повреждён — игнорирую")
+		return
+	}
+	cfg.DefaultLLM = restored
+	log.Printf("llm: восстановлен платформенный провайдер чата %s (моделей: %d, ключ задан) — из сохранённых настроек", restored.BaseURL, len(restored.AllModels()))
 }
 
 // Close освобождает живые ленивые chat-контейнеры (тома не удаляются), затем

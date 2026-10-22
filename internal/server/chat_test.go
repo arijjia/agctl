@@ -9,7 +9,58 @@ import (
 	"time"
 
 	"github.com/arijjia/agctl/internal/provision"
+	"github.com/arijjia/agctl/internal/secrets"
+	"github.com/arijjia/agctl/internal/store"
 )
+
+// TestChatDefaultLLMPersistsAcrossRestarts — платформенный провайдер, заданный
+// один раз (флаги/env), восстанавливается из зашифрованных настроек после
+// рестарта без AGCTL_LLM_*: модал dsh «Add an API key» не возвращается.
+func TestChatDefaultLLMPersistsAcrossRestarts(t *testing.T) {
+	home := t.TempDir()
+	build := func(tune func(*Config)) (*Server, *fakeRuntime, func()) {
+		db, err := store.Open(filepath.Join(home, "test.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		keyPath, err := secrets.EnsureMasterKey(home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sec, err := secrets.New(keyPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rt := newFakeRuntime()
+		rt.chatHome = home
+		cfg := Config{Home: home, Addr: "test", MaxPerUser: 3, AutosaveEvery: time.Hour}
+		if tune != nil {
+			tune(&cfg)
+		}
+		s, err := NewWithRuntimeProviders(db, sec, cfg, rt, rt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s, rt, func() { s.Close(); db.Close() }
+	}
+
+	_, _, close1 := build(func(c *Config) {
+		c.DefaultLLM = provision.Provider{
+			BaseURL: "https://corp.example.invalid/v1", Model: "qwen-3.8-fast", APIKey: "persist-key-1",
+		}
+	})
+	close1() // рестарт: тот же home, но без DefaultLLM в флагах
+
+	s2, rt2, close2 := build(nil)
+	defer close2()
+	if _, err := s2.ensureChat(505); err != nil {
+		t.Fatal(err)
+	}
+	got := rt2.chatSpecs[s2.chatRuntimeID(505)].Provider
+	if got.BaseURL != "https://corp.example.invalid/v1" || got.Model != "qwen-3.8-fast" || got.APIKey != "persist-key-1" {
+		t.Fatalf("restored provider = %+v; want persisted corporate provider", got)
+	}
+}
 
 func TestEnsureChatIsPerUserAndReusesRuntime(t *testing.T) {
 	e := newTestEnv(t, 3)

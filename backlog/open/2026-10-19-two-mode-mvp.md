@@ -8,7 +8,7 @@ size: L
 area: platform
 repo: arijjia/agctl
 created: 2026-10-19
-updated: 2026-10-20
+updated: 2026-10-22
 tags: ["two-mode", "night-shift"]
 depends: []
 ---
@@ -36,3 +36,4 @@ depends: []
 - 2026-10-20: UX bugfix 2026-10-20: DSH отключал composer у ungrouped Session. Решение: внутренний Workspace per Session на скрытом cwd, chat-brand сворачивает directory tree в flat «Сессии» и убирает правый file/terminal controls; Playwright PASS на mouse New Session + prompt/reply.
 - 2026-10-20: Chat UX regression закрыта: session.create теперь привязывает Session к скрытому Workspace per-session cwd, chat-brand скрывает все directory rows, файлы/terminal/access controls и оставляет flat «Сессии». Постоянный Playwright e2e проверяет mouse New Session + отправку/ответ fake LLM; 2026-10-20 PASS.
 - 2026-10-20: 2026-10-20: local connector carrier prototype landed behind no production route/default. Docker remains only runnable backend; bridge is transport proof-of-concept, not a user-facing mode. Full pairing UI, durable connector identity/revoke/reconnect and pinned DSH end-to-end remain open.
+- 2026-10-22: 2026-10-22 bugfix: владелец увидела dsh-модал API key на :8929 — новый бинарь был запущен без --llm-*/env, платформенный дефолт не персистентен. Исправлено: DefaultLLM сохраняется зашифрованным в SQLite (settings/migration 009) при старте с флагами и восстанавливается при рестарте без env; при полном отсутствии — предупреждение в логе вместо молчаливого модала. Test: restart-persistence через fake runtime.
