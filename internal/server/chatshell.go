@@ -22,6 +22,9 @@ button[aria-label="Add workspace"],button[aria-label="View options"],
 button[aria-label^="Workspace actions for "],button[aria-label^="New session in "]{display:none!important}
 [class*="projectRow"]{display:none!important}
 [class*="_tabLayout_"]:has(button[aria-label="Collapse right sidebar"]){display:none!important}
+/* Грид фрейма dsh резервирует третью колонку под (скрытую) правую панель —
+   сохранённое состояние ширины не должно съедать половину чата. */
+div[style*="grid-template-columns"][class*="_frame"]{grid-template-columns:auto minmax(0px,1fr) minmax(0px,0px)!important}
 svg[viewBox="0 0 23.16 17.04"]{visibility:hidden}
 [class*="brandIdentity"],[class*="pXSMma_titleGroup"]{visibility:hidden!important}
 [class*="previewBadge"]{display:none!important}

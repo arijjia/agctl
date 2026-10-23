@@ -35,6 +35,15 @@ window.__ModuleLoader__.load({
 			return img;
 		}
 
+		function ensureBrandStyles() {
+			if (document.querySelector("style[data-agctl-brand-styles]")) return;
+			const style = document.createElement("style");
+			style.dataset.agctlBrandStyles = "1";
+			// Дубль правила чат-шелла: работает и без рестарта шлюза.
+			style.textContent = 'div[style*="grid-template-columns"][class*="_frame"]{grid-template-columns:auto minmax(0px,1fr) minmax(0px,0px)!important}';
+			document.head.appendChild(style);
+		}
+
 		function applyBrand() {
 			// Replace every DeepSeek whale mark (sidebar and empty-state) by the
 			// owner-provided Tyumen State University mark.
@@ -76,6 +85,8 @@ window.__ModuleLoader__.load({
 				if (/Into the Unknown/i.test(t)) el.textContent = t.replace(/Into the Unknown/gi, PLACEHOLDER);
 				// Пустой композер: англо-хинт dsh про «что построить» — русским.
 				if (/Describe what you want to build/i.test(t)) el.textContent = 'Опиши задачу — / команды, @ файлы и сессии';
+				// Плейсхолдер открытой сессии — тоже русским.
+				if (/Message or run a task/i.test(t)) el.textContent = 'Напишите сообщение…';
 			}
 			for (const group of queryAllDeep('[class*="pXSMma_titleGroup"]')) {
 				group.style.setProperty('visibility', 'visible', 'important');
@@ -152,11 +163,13 @@ window.__ModuleLoader__.load({
 
 		function hideDevPanels() {
 			// DSH Layout may mount right-sidebar controls inside a shadow root.
-			// Close it if open, then remove both affordances in Chat mode.
+			// Сначала штатно схлопываем панель (dsh запомнит закрытое состояние и
+			// отдаст main-области всю ширину): кнопка скрыта CSS инъекцией,
+			// но программный click по display:none работает.
 			const rightButtons = queryAllDeep('button[aria-label*="right sidebar"]');
 			const collapse = rightButtons.find((b) => /collapse/i.test(b.getAttribute('aria-label') || ''));
-			if (collapse && collapse.offsetParent !== null && !collapse.dataset.agctlClosed) {
-				collapse.dataset.agctlClosed = '1';
+			if (collapse && !collapse.dataset.agctlCollapsed) {
+				collapse.dataset.agctlCollapsed = '1';
 				collapse.click();
 			}
 			for (const button of rightButtons) {
@@ -169,9 +182,10 @@ window.__ModuleLoader__.load({
 				const t = (row.textContent || '').trim();
 				if (/^(terminal|files|терминал|файлы)$/i.test(t)) row.style.setProperty('display', 'none', 'important');
 			}
+			// trajectory НЕ прячем: это вкладка шагов агента, владелец ею пользуется.
 			for (const control of queryAllDeep('button,[role=tab]')) {
 				const label = `${control.getAttribute('aria-label') || ''} ${control.getAttribute('title') || ''} ${control.textContent || ''}`.trim();
-				if (/workspace files|new terminal|choose workspace|choose shell|access mode|add files or run commands|trajectory/i.test(label)) {
+				if (/workspace files|new terminal|choose workspace|choose shell|access mode|add files or run commands/i.test(label)) {
 					control.style.setProperty('display', 'none', 'important');
 					control.setAttribute('aria-hidden', 'true');
 					control.setAttribute('tabindex', '-1');
@@ -350,6 +364,7 @@ window.__ModuleLoader__.load({
 
 		function apply() {
 			if (window.__agctlChatBrandTimer) return;
+			ensureBrandStyles();
 			fixAll();
 			setTimeout(fixAll, 1000);
 			setTimeout(fixAll, 4000);

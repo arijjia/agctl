@@ -1,7 +1,7 @@
 {
   "name": "@arijjia/agctl-chat-brand",
   "description": "agctl Chat mode branding: Tyumen State University workshop identity, session-only sidebar, no dev panels",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
