@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "receiptId": "2508f564-26c6-4ad2-ab6d-e4fb9d00b651",
+  "receiptId": "9d8ed5d6-2be8-4da6-aeb2-9d19a83ee5a0",
   "status": "current",
   "command": "deliver",
   "type": "architecture",
   "input": "/Users/masha/src/arijjia/cit/agctl/system/map/overview.architecture.json",
   "output": "/Users/masha/src/arijjia/cit/agctl/system/map/overview.html",
   "specification": {
-    "sha256": "03c4980e8ab836b58b07e72b4f3abf66c2572aaea350cd6e6c4ada27dafd55ae",
-    "bytes": 5995
+    "sha256": "7a6d11b86198b500a27e85f779e881244b9057bab5ae253572121c0bc31e704f",
+    "bytes": 6596
   },
   "artifact": {
-    "sha256": "fd2da003d837e631d7b50b5397e9fe93654aa5fb4c895cef5e774a814547325e",
-    "bytes": 776302
+    "sha256": "13ceb417cf8dd70b58c98ad0cb2b4dfea6a815f980bb99bb7e1ed42022a86504",
+    "bytes": 776864
   }
 }

@@ -1,7 +1,8 @@
 // Package system содержит авторские артефакты карты системы: system/map/*.html —
-// самодостаточные archify-диаграммы (источник — *.architecture.json рядом,
-// сборка `make map_build`). Они отдаются agctl как страница /map — будущее
-// админ-панели; сейчас это только карта.
+// самодостаточные archify-диаграммы (источник — *.architecture.json рядом;
+// пересборка — archify CLI: `finalize architecture overview.architecture.json
+// overview.html --quality showcase`). Они отдаются agctl как страница /map —
+// будущее админ-панели; сейчас это только карта.
 package system
 
 import (

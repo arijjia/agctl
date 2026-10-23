@@ -23,6 +23,16 @@ flowchart LR
     U -->|«Кабинет» plugin| T
 ```
 
+## Документация
+
+| Документ | О чём |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | **Текущая архитектура**: два режима, шлюзы, чат-runtime, режим разработки, local backend, K8s-прототип — с точными ссылками на код. Этому документу соответствует карта системы |
+| [docs/architecture-roadmap.md](docs/architecture-roadmap.md) | **Архитектурный роадмап**: где мы сейчас, горизонты 1–3, принципы |
+| [docs/capacity.md](docs/capacity.md) | Оценка ресурсов по числу пользователей |
+| [docs/secure-gateway.md](docs/secure-gateway.md) | Схема шлюза и cookie-mint |
+| `system/map/overview.html` | Карта системы (archify); на работающем сервере — страница `/map` за сессией |
+
 ## Быстрый старт (ноутбук, ~10 минут)
 
 Нужно: **Go 1.27+**, **Docker** (Docker Desktop / dockerd), **Node 22+**
@@ -153,6 +163,8 @@ agctl serve     # UI + API + provision
 agctl migrate   # накатить миграции SQLite
 agctl backlog <new|list|top|check|start|done|cancel|note|migrate>
 agctl connect --port SSH_PORT [--host HOST] [--identity KEY] [--print]
+agctl local connect --server URL --grant TOKEN [--launch-dsh] [--dsh-token TOKEN]
+agctl init-chat-home --home DSH_HOME   # внутренний: init-container K8s-чата
 agctl sync create --name NAME --local DIR --port SSH_PORT [--host HOST] [--user root] [--print]
 agctl sync list|pause|resume|flush|terminate [mutagen args]
 agctl workspace create --user ЛОГИН --name ИМЯ --template base --base-url URL --model M --api-key KEY
@@ -166,12 +178,14 @@ agctl version
 | `--home DIR` | каталог данных (по умолчанию `~/.agctl`) |
 | `--addr H:P` | слушающий адрес (по умолчанию `127.0.0.1:8929`) |
 | `--image T` | тег образа воркспейса (по умолчанию `agctl-dsh:0.2.0`) |
+| `--bin-dir D` | каталог linux-сборок agctl для образа (по умолчанию `./dist`) |
 | `--max-per-user N` | лимит dev-workspaces на пользователя (по умолчанию 3) |
+| `--mem-gb N` / `--cpus N` | лимиты контейнеров (по умолчанию 2 ГБ / 2 CPU) |
 | `--chat-ttl-min N` | idle TTL per-user чат-контейнера, минуты (по умолчанию 15) |
 | `--tier0=false` | отключить корневой маршрут в личный чат (для админ-only стенда) |
 | `--require-approval` | новые dev-workspaces создаются заявкой, до admin approve контейнер не выдаётся |
 | `--secure-cookies` | флаг Secure у cookies (за HTTPS-ingress) |
-| `--experimental-local-bridge` | experimental pairing API + UI-proxy локального connector (требует `--secure-cookies` и доверенного TLS ingress); mint boot-токена поверх туннеля работает, если connector сообщил токен; CLI-процесса коннектора пока нет |
+| `--experimental-local-bridge` | experimental pairing API + UI-proxy локального connector (требует `--secure-cookies` и доверенного TLS ingress); подключение — `agctl local connect` (см. раздел «Локальный бэкенд» ниже) |
 | `--cors-origin LIST` | точные origins для панели Кабинета, через запятую; пусто = CORS выключен |
 | `--llm-base-url URL` | OpenAI-совместимый провайдер чата по умолчанию (напр. корпоративный LiteLLM) |
 | `--llm-models LIST` | модели чата по умолчанию через запятую; `--llm-model M` — какая из них основная |
@@ -233,7 +247,8 @@ Mutagen до запуска синхронизации.
 | `make demo` | всё сразу + запуск сервера |
 | `IMG=… scripts/e2e-cabinet.sh` | Docker e2e: два пользователя → два личных `/chat/` runtime + workspace-панель; SSH off by default |
 | `IMG=… scripts/e2e-ssh.sh` | Docker e2e SSH: ключ → sshd → shell → снятие/ротация; optional real-Mutagen round-trip |
-| `scripts/e2e-cabinet-playwright.sh` | Playwright: root → регистрация → dsh chat → Кабинет → заявка → admin approve → dev-workspace |
+| `scripts/e2e-local-bridge.sh` | Docker e2e local bridge: настоящий локальный dsh через outbound connector, reconnect, revoke |
+| `scripts/e2e-smoke.sh` | быстрый smoke-прогон всего цикла |
 | `scripts/e2e-cabinet-playwright.sh` | Playwright: root → регистрация → личный dsh chat → Кабинет → заявка → admin approve → dev-workspace |
 
 Первый запуск браузерного теста:
