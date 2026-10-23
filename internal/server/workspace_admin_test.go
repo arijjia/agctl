@@ -47,7 +47,7 @@ func TestWorkspaceRestartKeepsWorkspaceProvider(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		ws, _ = e.db.WorkspaceByID(wsID)
-		if e.rt.started[wsID] >= 2 && e.rt.providers[wsID].BaseURL == "https://workspace-provider.example/v1" {
+		if ws.Status == "running" && e.rt.started[wsID] >= 2 && e.rt.providers[wsID].BaseURL == "https://workspace-provider.example/v1" {
 			break
 		}
 		time.Sleep(15 * time.Millisecond)

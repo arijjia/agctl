@@ -7,6 +7,7 @@ package server
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -22,6 +24,7 @@ import (
 
 	"github.com/arijjia/agctl/internal/provision"
 	agctlrt "github.com/arijjia/agctl/internal/runtime"
+	"github.com/arijjia/agctl/internal/store"
 )
 
 const chatNamePrefix = "chat"
@@ -55,6 +58,347 @@ func (s *Server) chatRuntimeID(userID int64) string {
 }
 
 func chatStorageID(userID int64) string { return "u" + strconv.FormatInt(userID, 10) }
+
+const (
+	chatFoldersStateMaxBytes = 256 << 10
+	maxChatFoldersPerUser    = 64
+	maxChatFolderAssignments = 5000
+)
+
+type chatFolderSetting struct {
+	Instructions string `json:"instructions"`
+}
+
+type chatFolderPending struct {
+	Name  string   `json:"name"`
+	Known []string `json:"known"`
+	At    int64    `json:"at"`
+}
+
+type chatFoldersState struct {
+	Folders       []string                     `json:"folders"`
+	Assign        map[string]string            `json:"assign"`
+	Settings      map[string]chatFolderSetting `json:"settings"`
+	Active        string                       `json:"active"`
+	PendingFolder *chatFolderPending           `json:"pendingFolder,omitempty"`
+}
+
+func emptyChatFoldersState() chatFoldersState {
+	return chatFoldersState{Folders: []string{}, Assign: map[string]string{}, Settings: map[string]chatFolderSetting{}}
+}
+
+func chatFoldersSettingKey(userID int64) string {
+	return "chat-folders-u" + strconv.FormatInt(userID, 10)
+}
+
+// handleChatFoldersGet/Put keep virtual folders and assignments server-side so
+// they survive browser storage clears and can be used by the same-origin chat/dev UI.
+func (s *Server) handleChatFoldersGet(w http.ResponseWriter, r *http.Request, id identity) {
+	state := emptyChatFoldersState()
+	raw, err := s.db.SettingGet(chatFoldersSettingKey(id.ID))
+	if err == nil {
+		if err := json.Unmarshal([]byte(raw), &state); err != nil {
+			writeErr(w, http.StatusInternalServerError, "сохранённые папки повреждены")
+			return
+		}
+	} else if !errors.Is(err, store.ErrNotFound) {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	normalizeChatFoldersState(&state)
+	writeJSON(w, http.StatusOK, map[string]any{"folders": state})
+}
+
+func (s *Server) handleChatFoldersPut(w http.ResponseWriter, r *http.Request, id identity) {
+	r.Body = http.MaxBytesReader(w, r.Body, chatFoldersStateMaxBytes)
+	var state chatFoldersState
+	if err := json.NewDecoder(r.Body).Decode(&state); err != nil {
+		writeErr(w, http.StatusBadRequest, "неверный JSON папок")
+		return
+	}
+	if err := normalizeAndValidateChatFoldersState(&state); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	encoded, err := json.Marshal(state)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "не удалось сериализовать папки")
+		return
+	}
+	if len(encoded) > chatFoldersStateMaxBytes {
+		writeErr(w, http.StatusBadRequest, "настройки папок слишком большие")
+		return
+	}
+	if err := s.db.SettingSet(chatFoldersSettingKey(id.ID), string(encoded)); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	_ = s.db.Audit(id.Login, "chat.folders.update", strconv.FormatInt(id.ID, 10), fmt.Sprintf("folders=%d assignments=%d", len(state.Folders), len(state.Assign)))
+	writeJSON(w, http.StatusOK, map[string]any{"folders": state})
+}
+
+func normalizeChatFoldersState(state *chatFoldersState) {
+	if state.Folders == nil {
+		state.Folders = []string{}
+	}
+	if state.Assign == nil {
+		state.Assign = map[string]string{}
+	}
+	if state.Settings == nil {
+		state.Settings = map[string]chatFolderSetting{}
+	}
+}
+
+func normalizeAndValidateChatFoldersState(state *chatFoldersState) error {
+	normalizeChatFoldersState(state)
+	if len(state.Folders) > maxChatFoldersPerUser || len(state.Assign) > maxChatFolderAssignments {
+		return fmt.Errorf("слишком много папок или сессий")
+	}
+	seen := map[string]bool{}
+	for i, name := range state.Folders {
+		name = strings.TrimSpace(name)
+		if name == "" || len(name) > 80 || strings.ContainsAny(name, "\r\n") {
+			return fmt.Errorf("некорректное имя папки")
+		}
+		if seen[name] {
+			return fmt.Errorf("папка «%s» указана несколько раз", name)
+		}
+		seen[name] = true
+		state.Folders[i] = name
+	}
+	for sessionID, folder := range state.Assign {
+		if sessionID == "" || len(sessionID) > 160 {
+			delete(state.Assign, sessionID)
+			continue
+		}
+		folder = strings.TrimSpace(folder)
+		if !seen[folder] {
+			delete(state.Assign, sessionID)
+			continue
+		}
+		state.Assign[sessionID] = folder
+	}
+	for name, setting := range state.Settings {
+		if !seen[name] {
+			delete(state.Settings, name)
+			continue
+		}
+		if len(setting.Instructions) > maxFolderInstructionBytes {
+			return fmt.Errorf("инструкции папки «%s» слишком длинные", name)
+		}
+		if strings.Contains(setting.Instructions, folderInstructionStart) || strings.Contains(setting.Instructions, folderInstructionEnd) {
+			return fmt.Errorf("инструкции папки «%s» содержат служебный маркер", name)
+		}
+	}
+	if !seen[state.Active] {
+		state.Active = ""
+	}
+	if p := state.PendingFolder; p != nil && !seen[strings.TrimSpace(p.Name)] {
+		state.PendingFolder = nil
+	}
+	return nil
+}
+
+const (
+	folderInstructionStart    = "<!-- agctl-folder-instructions:start -->"
+	folderInstructionEnd      = "<!-- agctl-folder-instructions:end -->"
+	maxFolderInstructionBytes = 16 << 10
+)
+
+// handleChatFolderInstructions stores virtual-project instructions in each
+// session's AGENTS.local.md. DSH's built-in agent-instructions plugin loads the
+// file as workspace context on first request/resume; folder grouping itself
+// remains browser-local and does not create a DSH workspace directory.
+func (s *Server) handleChatFolderInstructions(w http.ResponseWriter, r *http.Request, id identity) {
+	sessionID := r.PathValue("sessionID")
+	if !validChatSessionID(sessionID) {
+		writeErr(w, http.StatusBadRequest, "неверный id чат-сессии")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxFolderInstructionBytes+4096)
+	var req struct {
+		Folder       string `json:"folder"`
+		Instructions string `json:"instructions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "неверный JSON")
+		return
+	}
+	req.Folder = strings.TrimSpace(req.Folder)
+	req.Instructions = strings.TrimSpace(req.Instructions)
+	if len(req.Folder) > 80 || strings.ContainsAny(req.Folder, "\r\n") {
+		writeErr(w, http.StatusBadRequest, "имя папки слишком длинное или содержит перенос строки")
+		return
+	}
+	if len(req.Instructions) > maxFolderInstructionBytes || strings.Contains(req.Instructions, folderInstructionStart) || strings.Contains(req.Instructions, folderInstructionEnd) {
+		writeErr(w, http.StatusBadRequest, "инструкции слишком длинные или содержат служебный маркер")
+		return
+	}
+
+	sessionDir, err := safeChatSessionDir(s.cfg.Home, id.ID, sessionID, req.Instructions != "")
+	if err != nil {
+		code := http.StatusNotFound
+		if strings.Contains(err.Error(), "symlink") || errors.Is(err, errInvalidChatSessionPath) {
+			code = http.StatusBadRequest
+		}
+		writeErr(w, code, "не удалось безопасно разрешить каталог чат-сессии")
+		return
+	}
+	path := filepath.Join(sessionDir, "AGENTS.local.md")
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		writeErr(w, http.StatusBadRequest, "AGENTS.local.md не должен быть символической ссылкой")
+		return
+	}
+	old, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		writeErr(w, http.StatusInternalServerError, "не удалось прочитать инструкции: "+err.Error())
+		return
+	}
+	updated, err := mergeFolderInstructions(old, req.Folder, req.Instructions)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if string(updated) == string(old) {
+		writeJSON(w, http.StatusOK, map[string]any{"sessionId": sessionID, "folder": req.Folder, "updated": false})
+		return
+	}
+	if strings.TrimSpace(string(updated)) == "" {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			writeErr(w, http.StatusInternalServerError, "не удалось удалить пустой файл инструкций")
+			return
+		}
+	} else if err := atomicWriteFile(sessionDir, path, updated, 0o644); err != nil {
+		writeErr(w, http.StatusInternalServerError, "не удалось сохранить инструкции: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sessionId": sessionID, "folder": req.Folder, "updated": true,
+		"instructionsFile": "AGENTS.local.md",
+		"refreshHint":      "инструкции подхватятся при следующем чтении файлов или повторном открытии сессии",
+	})
+}
+
+var errInvalidChatSessionPath = errors.New("invalid chat session path")
+
+func safeChatSessionDir(home string, userID int64, sessionID string, create bool) (string, error) {
+	if !validChatSessionID(sessionID) {
+		return "", errInvalidChatSessionPath
+	}
+	canonicalHome, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		return "", err
+	}
+	canonicalHome, err = filepath.Abs(canonicalHome)
+	if err != nil {
+		return "", err
+	}
+	chatsRoot := filepath.Join(canonicalHome, "chats")
+	userRoot := filepath.Join(chatsRoot, chatStorageID(userID))
+	workRoot := filepath.Join(userRoot, "work")
+	for _, dir := range []string{chatsRoot, userRoot, workRoot} {
+		info, err := os.Lstat(dir)
+		if err != nil {
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return "", fmt.Errorf("symlink or non-directory in chat path: %s", dir)
+		}
+	}
+	sessionsRoot := filepath.Join(workRoot, ".sessions")
+	info, err := os.Lstat(sessionsRoot)
+	if os.IsNotExist(err) && create {
+		if err := os.Mkdir(sessionsRoot, 0o700); err != nil && !os.IsExist(err) {
+			return "", err
+		}
+		info, err = os.Lstat(sessionsRoot)
+	}
+	if err != nil {
+		return "", err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return "", fmt.Errorf("symlink or non-directory in chat path: %s", sessionsRoot)
+	}
+	sessionDir := filepath.Join(sessionsRoot, sessionID)
+	if !pathUnder(sessionsRoot, sessionDir) {
+		return "", errInvalidChatSessionPath
+	}
+	info, err = os.Lstat(sessionDir)
+	if os.IsNotExist(err) && create {
+		if err := os.Mkdir(sessionDir, 0o700); err != nil && !os.IsExist(err) {
+			return "", err
+		}
+		info, err = os.Lstat(sessionDir)
+	}
+	if err != nil {
+		return "", err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return "", fmt.Errorf("symlink or non-directory in chat path: %s", sessionDir)
+	}
+	return sessionDir, nil
+}
+
+func validChatSessionID(id string) bool {
+	if !strings.HasPrefix(id, "session-") || len(id) > 120 {
+		return false
+	}
+	for _, r := range id {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-') {
+			return false
+		}
+	}
+	return filepath.Base(id) == id
+}
+
+func mergeFolderInstructions(existing []byte, folder, instructions string) ([]byte, error) {
+	if instructions != "" && folder == "" {
+		return nil, fmt.Errorf("сначала выберите папку")
+	}
+	text := string(existing)
+	start := strings.Index(text, folderInstructionStart)
+	end := strings.Index(text, folderInstructionEnd)
+	if (start < 0) != (end < 0) || start >= 0 && end < start {
+		return nil, fmt.Errorf("AGENTS.local.md содержит неполный блок agctl — сохранение отменено")
+	}
+	if start >= 0 {
+		end += len(folderInstructionEnd)
+		text = text[:start] + strings.TrimLeft(text[end:], "\r\n")
+	}
+	if instructions == "" {
+		return []byte(strings.TrimRight(text, "\r\n")), nil
+	}
+	block := folderInstructionStart + "\n## Папка «" + folder + "»\n\n" + instructions + "\n" + folderInstructionEnd
+	if strings.TrimSpace(text) == "" {
+		return []byte(block + "\n"), nil
+	}
+	return []byte(strings.TrimRight(text, "\r\n") + "\n\n" + block + "\n"), nil
+}
+
+func atomicWriteFile(dir, target string, data []byte, mode os.FileMode) error {
+	tmp, err := os.CreateTemp(dir, ".agctl-folder-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, target)
+}
 
 // userProvider — LLM-провайдер для личного чата: личный секрет пользователя,
 // иначе платформенный провайдер по умолчанию (корпоративный LiteLLM); только

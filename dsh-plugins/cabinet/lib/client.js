@@ -793,10 +793,12 @@ window.__ModuleLoader__.load({
 		function navRow(href, label, color, extra) {
 			const active = decodeURIComponent(location.pathname) === href || (href !== "/chat/" && location.pathname.startsWith(href));
 			const row = el("a", "display:flex;align-items:center;gap:8px;padding:5px 10px;margin-left:4px;border-radius:8px;text-decoration:none;font-size:13px;color:inherit;cursor:pointer;background:" + (active ? "var(--dsw-alias-interactive-bg-hover, rgba(0,0,0,.06))" : "transparent") + ";font-weight:" + (active ? 650 : 400));
+			row.dataset.agctlNavRow = "1";
 			row.href = href;
 			row.title = label;
 			row.appendChild(folderIcon(color));
 			const text = el("span", "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap", label);
+			text.dataset.agctlNavLabel = "1";
 			row.appendChild(text);
 			if (extra) row.appendChild(extra);
 			return row;
@@ -811,14 +813,38 @@ window.__ModuleLoader__.load({
 					if (Array.isArray(data && data.workspaces)) places = data.workspaces;
 				}
 			} catch (e) {}
-			const nav = el("div", "display:flex;flex-direction:column;gap:2px;padding:6px 4px 10px");
+			const nav = el("div", "display:flex;flex-direction:column;gap:2px;padding:6px 4px 10px;min-width:0");
 			nav.setAttribute("data-agctl-nav", "1");
-			nav.appendChild(el("div", "font-size:11px;font-weight:650;letter-spacing:.4px;color:var(--dsw-alias-label-tertiary,#888);padding:0 10px 2px", "РЕЖИМЫ"));
+			const heading = el("div", "font-size:11px;font-weight:650;letter-spacing:.4px;color:var(--dsw-alias-label-tertiary,#888);padding:0 10px 2px", "РЕЖИМЫ");
+			heading.dataset.agctlNavHeading = "1";
+			nav.appendChild(heading);
 			nav.appendChild(navRow("/chat/", "Личный чат", CHAT_ACCENT));
 			for (const ws of places) {
 				nav.appendChild(navRow(ws.url || "/w/" + ws.id + "/", ws.name, DEV_ACCENT, statusDot(ws.status)));
 			}
 			root.replaceChildren(nav);
+			syncModeNavWidth(root);
+		}
+
+		function syncModeNavWidth(root) {
+			const nav = root && root.querySelector('[data-agctl-nav]');
+			if (!nav) return;
+			const sidebar = document.querySelector('[class*="hHd-Xa_root"]');
+			const collapsed = !!(sidebar && sidebar.classList.contains('hHd-Xa_collapsed'));
+			nav.dataset.collapsed = collapsed ? "1" : "0";
+			nav.style.alignItems = collapsed ? "center" : "stretch";
+			nav.style.padding = collapsed ? "6px 0 10px" : "6px 4px 10px";
+			const heading = nav.querySelector('[data-agctl-nav-heading]');
+			if (heading) heading.style.display = collapsed ? "none" : "block";
+			for (const row of nav.querySelectorAll('[data-agctl-nav-row]')) {
+				row.style.width = collapsed ? "38px" : "auto";
+				row.style.height = collapsed ? "36px" : "auto";
+				row.style.padding = collapsed ? "7px 0" : "5px 10px";
+				row.style.margin = collapsed ? "0 auto" : "0 4px";
+				row.style.justifyContent = collapsed ? "center" : "flex-start";
+				const label = row.querySelector('[data-agctl-nav-label]');
+				if (label) label.style.display = collapsed ? "none" : "block";
+			}
 		}
 
 		function mountModeNav() {
@@ -832,6 +858,11 @@ window.__ModuleLoader__.load({
 			slot.setAttribute("data-agctl-nav-host", "1");
 			host.parentElement.insertBefore(slot, host);
 			refreshNav(slot);
+			const sidebar = tree.closest('[class*="hHd-Xa_root"]');
+			if (sidebar && !window.__agctlNavWidthObserver) {
+				window.__agctlNavWidthObserver = new MutationObserver(() => syncModeNavWidth(slot));
+				window.__agctlNavWidthObserver.observe(sidebar, { attributes: true, attributeFilter: ["class"] });
+			}
 			if (!window.__agctlNavTimer) window.__agctlNavTimer = setInterval(() => refreshNav(slot), 15000);
 		}
 

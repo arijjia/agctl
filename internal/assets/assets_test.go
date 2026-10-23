@@ -113,7 +113,7 @@ func TestChatBrandPluginSkeletonPresentButDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(manifest, []byte(`"inject": []`)) || !bytes.Contains(manifest, []byte(`"platform": "web"`)) {
-		t.Fatal("chat-brand client must declare an empty inject for the web platform")
+	if !bytes.Contains(manifest, []byte(`"inject": ["configForms"]`)) || !bytes.Contains(manifest, []byte(`"platform": "web"`)) {
+		t.Fatal("chat-brand client must request the configForms service and target the web platform")
 	}
 }
