@@ -1,8 +1,9 @@
 // agctl chat-brand — client half (hand-written Lazy-CJS bundle).
 // Режим 1 «Чат»: брендинг ИИ-мастерская ТюмГУ, свой логотип, плейсхолдер
-// первого сообщения, плоский список сессий без Workspaces/файлов/терминала,
-// автозакрытие диалога "Preview Notice". Регистрируется только в chat-домашках
-// (SeedDshHome chatUI=true); dev-workspaces получают чистый скелет.
+// первого сообщения, дерево папок сессий вместо плоского списка (нативный
+// список Workspaces скрыт, секции-аккордеоны — единственный обозреватель
+// сессий), автозакрытие диалога "Preview Notice". Регистрируется только в
+// chat-домашках (SeedDshHome chatUI=true); dev-workspaces получают чистый скелет.
 window.__ModuleLoader__.load({
 	id: "@arijjia/agctl-chat-brand",
 	factory: (require) => {
@@ -119,7 +120,11 @@ window.__ModuleLoader__.load({
 			}
 		}
 
-		function flattenSessions() {
+		// Родной список Workspaces/сессий скрывается ЦЕЛИКОМ: единственным
+		// обозревателем сессий становится дерево папок (applyFolders).
+		// Узлы из DOM НЕ удаляются — React держит их смонтированными, программный
+		// клик по скрытой строке остаётся фолбэком открытия сессии.
+		function hideNativeSessionList() {
 			const label = [...document.querySelectorAll('[class*=sectionLabel]')].find((e) =>
 				/^(workspaces|сессии)$/i.test((e.textContent || '').trim()),
 			);
@@ -133,20 +138,17 @@ window.__ModuleLoader__.load({
 					if (/^(view options|add workspace)$/i.test(a)) button.style.setProperty('display', 'none', 'important');
 				}
 			}
-			const tree = root?.querySelector('[role=tree]');
+			// Прячем именно дерево сессий, не дерево поиска: у результатов поиска
+			// свой [role=tree] с классом *_searchTree, и на время поиска нативное
+			// дерево сессий вообще размонтируется.
+			const trees = [...(root?.querySelectorAll('[role=tree]') || [])];
+			const tree = trees.find((t) => !(t.getAttribute('class') || '').includes('searchTree'));
 			if (!tree) return;
 			tree.setAttribute('aria-label', 'Сессии');
-			// Workspace rows are only internal directory labels. Session rows are
-			// siblings in the tree, so hiding these leaves a flat Chat-like history.
-			for (const row of tree.querySelectorAll('.YDXeBa_projectRow')) row.style.setProperty('display', 'none', 'important');
+			tree.style.setProperty('display', 'none', 'important');
 			for (const action of root.querySelectorAll('button')) {
 				const a = action.getAttribute('aria-label') || '';
 				if (/^new session in /i.test(a) || /^workspace actions for /i.test(a)) action.style.setProperty('display', 'none', 'important');
-			}
-			for (const group of tree.querySelectorAll('[class*=groupSection]')) group.style.setProperty('--dsh-workspace-indent', '0px');
-			for (const row of tree.querySelectorAll('.YDXeBa_sessionRow')) {
-				row.style.marginLeft = '0';
-				row.style.paddingLeft = '12px';
 			}
 		}
 
@@ -196,8 +198,13 @@ window.__ModuleLoader__.load({
 		// ── виртуальные папки сессий (режим 1, цвет = университетский синий) ────
 		const FOLDERS_KEY = "agctl-chat-folders.v1";
 		const FOLDERS_MIGRATED_KEY = "agctl-chat-folders.server-sync.v1";
+		// UI-состояние дерева (свёрнутые секции) — только localStorage: серверный
+		// контракт state {folders, assign, settings, active, pendingFolder} не
+		// расширяем (Go-структура неизвестные поля молча отбрасывает).
+		const FOLDERS_UI_KEY = "agctl-chat-folders-ui.v1";
 		let folderServerAvailable = false;
 		let folderStateLoadPromise = null;
+		let pluginCtx = null;
 
 		function foldersState() {
 			try {
@@ -225,6 +232,18 @@ window.__ModuleLoader__.load({
 			try { localStorage.setItem(FOLDERS_KEY, JSON.stringify(state)); } catch (e) {}
 			if (!folderServerAvailable) return;
 			void putFoldersState(state).catch((e) => console.warn("[agctl] folders were not synced to server:", e));
+		}
+
+		function foldersUiState() {
+			try {
+				const s = JSON.parse(localStorage.getItem(FOLDERS_UI_KEY));
+				if (s && typeof s === "object" && s.collapsed && typeof s.collapsed === "object") return s;
+			} catch (e) {}
+			return { collapsed: {} };
+		}
+
+		function saveFoldersUiState(ui) {
+			try { localStorage.setItem(FOLDERS_UI_KEY, JSON.stringify(ui)); } catch (e) {}
 		}
 
 		async function syncAssignedFolderInstructions(state) {
@@ -271,8 +290,107 @@ window.__ModuleLoader__.load({
 			return key.startsWith("session-") ? key : "";
 		}
 
-		function sessionKey(row) {
-			return sessionId(row) || (row.textContent || "").trim().slice(0, 120);
+		// ── сервисы dsh-клиента (мягкие зависимости, ctx.get в момент вызова;
+		// без них плагин работает через DOM-фолбэк и не рискует не загрузиться,
+		// как было бы при жёстком exports.inject) ────────────────────────────────
+		function svc(name) {
+			try { return (pluginCtx && pluginCtx.get && pluginCtx.get(name)) || null; }
+			catch (e) { return null; }
+		}
+
+		function sessionsSnapshot() {
+			const s = svc("sessions");
+			try {
+				const snap = s && s.list && s.list.getSnapshot();
+				if (snap && snap.byId && Array.isArray(snap.ids)) return snap;
+			} catch (e) {}
+			return null;
+		}
+
+		function workspacesSnapshot() {
+			const w = svc("workspaces");
+			try {
+				const snap = w && w.list && w.list.getSnapshot();
+				if (snap && Array.isArray(snap.items)) return snap;
+			} catch (e) {}
+			return null;
+		}
+
+		// Открытая сейчас сессия: официальный признак dsh — retainedBy.mainView>0
+		// (тот же предикат, что в SearchResults браузера воркспейсов).
+		function currentSessionId() {
+			const snap = sessionsSnapshot();
+			if (snap) {
+				for (const s of Object.values(snap.byId)) {
+					if (((s.retainedBy && s.retainedBy.mainView) || 0) > 0) return s.id;
+				}
+			}
+			const selected = document.querySelector(".YDXeBa_sessionRow.YDXeBa_selected");
+			return selected ? sessionId(selected) : "";
+		}
+
+		// collectSessions — полный список сессий для дерева. Первичный источник —
+		// стор dsh: нативный браузер рендерит строки условно (схлопнутые
+		// воркспейсы и лимит «показать ещё» физически отсутствуют в DOM), стор же
+		// содержит все сессии. Фолбэк — скрытые нативные строки.
+		function collectSessions() {
+			const snap = sessionsSnapshot();
+			const workspaces = workspacesSnapshot();
+			if (snap) {
+				const archived = new Set((workspaces && workspaces.archivedSessionIds) || []);
+				const pinned = (workspaces && workspaces.pinnedSessionIds) || [];
+				const pinRank = new Map(pinned.map((id, i) => [id, i]));
+				const rows = [];
+				for (const id of snap.ids) {
+					const s = snap.byId[id];
+					if (!s || s.origin === "subagent" || archived.has(id)) continue;
+					rows.push({
+						id,
+						title: s.blank ? "Новая сессия" : ((s.title || "").trim() || s.displayTitle || "Без названия"),
+						ts: s.updatedAt || 0,
+						running: !!s.running,
+						blank: !!s.blank,
+						pin: pinRank.has(id) ? pinRank.get(id) : -1,
+					});
+				}
+				rows.sort((a, b) => {
+					if (a.blank !== b.blank) return a.blank ? -1 : 1;
+					if ((a.pin >= 0) !== (b.pin >= 0)) return a.pin >= 0 ? -1 : 1;
+					if (a.pin >= 0 && b.pin >= 0 && a.pin !== b.pin) return a.pin - b.pin;
+					return b.ts - a.ts;
+				});
+				return rows;
+			}
+			const rows = [];
+			for (const row of document.querySelectorAll(".YDXeBa_sessionRow")) {
+				const id = sessionId(row);
+				if (!id) continue;
+				const title = (row.textContent || "").trim().slice(0, 120);
+				rows.push({ id, title: title || "Без названия", ts: 0, running: false, blank: /^new session$/i.test(title), pin: -1 });
+			}
+			return rows;
+		}
+
+		// Открыть сессию: официальный путь клиента — uiWorkspace.openSession(id),
+		// ровно тот же метод, что вызывает нативная строка при клике. Фолбэк —
+		// программный клик по родной (скрытой) строке: обработчики React работают
+		// через делегирование, display:none клику не мешает, узел не удалён.
+		function openSessionRow(id) {
+			const ui = svc("uiWorkspace");
+			if (ui && typeof ui.openSession === "function") {
+				try {
+					ui.openSession(id);
+					return true;
+				} catch (e) { console.warn("[agctl] uiWorkspace.openSession не сработал:", e); }
+			}
+			for (const row of document.querySelectorAll("[data-row-key]")) {
+				if (row.getAttribute("data-row-key") === "session:" + id) {
+					row.click();
+					return true;
+				}
+			}
+			console.warn("[agctl] сессия не найдена для открытия:", id);
+			return false;
 		}
 
 		let folderMenu = null;
@@ -449,6 +567,273 @@ window.__ModuleLoader__.load({
 			}, true);
 		}
 
+		// ── вертикальное дерево-аккордеон папок (замена горизонтальных чипсов) ──
+		function ensureFolderStyles() {
+			if (document.querySelector("style[data-agctl-folder-tree]")) return;
+			const style = document.createElement("style");
+			style.dataset.agctlFolderTree = "1";
+			style.textContent = [
+				'[data-agctl-folders-tree]{display:flex;flex-direction:column;gap:2px;padding:2px 8px 10px}',
+				'.agctl-folder-section{display:flex;flex-direction:column}',
+				'.agctl-folder-head{display:flex;align-items:center;gap:6px;min-height:32px;padding:0 8px;border-radius:var(--dsw-radius-md,8px);cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary,#222)}',
+				'.agctl-folder-head:hover,.agctl-folder-head:focus-visible{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.07));outline:none}',
+				'.agctl-folder-chevron{width:14px;height:20px;display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--dsw-alias-label-caption,#999);font-size:9px;transition:transform .15s var(--ds-ease-in-out,ease)}',
+				'.agctl-folder-section.agctl-open>.agctl-folder-head .agctl-folder-chevron{transform:rotate(90deg)}',
+				'.agctl-folder-dot{width:8px;height:8px;border-radius:999px;flex:none}',
+				'.agctl-folder-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px}',
+				'.agctl-folder-count{flex:none;color:var(--dsw-alias-label-tertiary,#888);font-size:12px;line-height:16px}',
+				'.agctl-folder-actions{flex:none;display:none;align-items:center;gap:2px;margin-left:4px}',
+				'.agctl-folder-head:hover .agctl-folder-actions,.agctl-folder-head:focus-visible .agctl-folder-actions{display:inline-flex}',
+				'.agctl-folder-btn{border:0;background:transparent;color:var(--dsw-alias-label-tertiary,#888);cursor:pointer;font:inherit;font-size:13px;line-height:1;padding:4px 5px;border-radius:6px}',
+				'.agctl-folder-btn:hover{color:var(--dsw-alias-label-primary,#222);background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.07))}',
+				'.agctl-folder-rows{display:none;flex-direction:column;gap:1px;padding-left:16px}',
+				'.agctl-folder-section.agctl-open>.agctl-folder-rows{display:flex}',
+				'.agctl-tree-row{display:flex;align-items:center;gap:6px;min-height:30px;padding:0 8px;border-radius:var(--dsw-radius-md,8px);cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary,#222)}',
+				'.agctl-tree-row:hover,.agctl-tree-row.agctl-selected{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.07))}',
+				'.agctl-row-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px}',
+				'.agctl-row-time{flex:none;color:var(--dsw-alias-label-tertiary,#888);font-size:10px;line-height:16px}',
+				'.agctl-row-run{width:7px;height:7px;border-radius:999px;background:#2fae62;flex:none}',
+				'.agctl-tree-row.agctl-running .agctl-row-title{font-weight:600}',
+				'.agctl-folder-empty{color:var(--dsw-alias-label-tertiary,#888);font-size:12px;line-height:18px;padding:3px 8px 5px 30px}',
+				'.agctl-add-folder{display:flex;align-items:center;gap:6px;margin:4px 8px 0;padding:5px 10px;border:1px dashed var(--dsw-alias-border-l1,#bbb);border-radius:999px;background:transparent;color:var(--dsw-alias-label-secondary,#555);cursor:pointer;font:inherit;font-size:12px;align-self:flex-start}',
+				'.agctl-add-folder:hover{color:var(--dsw-alias-label-primary,#222);background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.07))}',
+			].join("\n");
+			document.head.appendChild(style);
+		}
+
+		function fmtRowTime(ts) {
+			if (!ts) return "";
+			const d = new Date(ts);
+			const now = new Date();
+			const pad = (n) => String(n).padStart(2, "0");
+			if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
+				return pad(d.getHours()) + ":" + pad(d.getMinutes());
+			}
+			const dm = pad(d.getDate()) + "." + pad(d.getMonth() + 1);
+			return d.getFullYear() === now.getFullYear() ? dm : dm + "." + String(d.getFullYear()).slice(2);
+		}
+
+		function setFolderOpen(name, open) {
+			const ui = foldersUiState();
+			if (open) delete ui.collapsed[name];
+			else ui.collapsed[name] = true;
+			saveFoldersUiState(ui);
+			if (open) {
+				// Активная папка = последняя развёрнутая: нативная кнопка New session
+				// (bindFolderNewSession) привяжет следующую сессию к ней.
+				const state = foldersState();
+				if (state.active !== name) {
+					state.active = name;
+					saveFoldersState(state);
+				}
+			}
+		}
+
+		function createFolderFlow() {
+			const name = (window.prompt("Имя папки сессий:") || "").trim();
+			if (!name) return;
+			const fresh = foldersState();
+			if (!fresh.folders.includes(name)) fresh.folders.push(name);
+			fresh.settings[name] = fresh.settings[name] || { instructions: "" };
+			fresh.active = name;
+			saveFoldersState(fresh);
+			setFolderOpen(name, true);
+			fixAll();
+			setTimeout(() => editFolderSettings(name, false), 0);
+		}
+
+		// «＋» на папке: создаёт сессию немедленно (uiWorkspace.startSession —
+		// штатное поведение родной кнопки New session) и привязывает её к папке.
+		function newSessionInFolder(name) {
+			const state = foldersState();
+			const snap = sessionsSnapshot();
+			const known = snap ? [...snap.ids] : [...document.querySelectorAll(".YDXeBa_sessionRow")].map(sessionId).filter(Boolean);
+			state.active = name;
+			state.settings[name] = state.settings[name] || { instructions: "" };
+			state.pendingFolder = { name, known, at: Date.now() };
+			saveFoldersState(state);
+			setFolderOpen(name, true);
+			// Пустая (draft) сессия переиспользуется, а не создаётся заново — её id
+			// уже в known, поэтому свежим diff по pendingFolder её не поймает.
+			if (snap) {
+				const workspaces = workspacesSnapshot();
+				const archived = new Set((workspaces && workspaces.archivedSessionIds) || []);
+				const blank = snap.ids.map((id) => snap.byId[id]).find((s) => s && s.blank && !archived.has(s.id));
+				if (blank) {
+					state.assign[blank.id] = name;
+					syncFolderInstructions(blank.id, name, state);
+					saveFoldersState(state);
+				}
+			}
+			const ui = svc("uiWorkspace");
+			if (ui && typeof ui.startSession === "function") {
+				const workspaces = workspacesSnapshot();
+				const current = currentSessionId();
+				const host = workspaces && (workspaces.items.find((w) => current && w.sessionIds.includes(current)) || workspaces.items[0]);
+				try {
+					if (host) ui.startSession(host.workspaceId);
+					else ui.startSession();
+				} catch (e) { console.warn("[agctl] новая сессия не создана:", e); }
+			} else {
+				// Фолбэк: родная кнопка New session — bindFolderNewSession привяжет
+				// следующую сессию к активной папке.
+				const button = [...document.querySelectorAll("button[aria-label]")].find((b) => /^new session$/i.test((b.getAttribute("aria-label") || "").trim()));
+				if (button) button.click();
+			}
+			setTimeout(() => fixAll(), 120);
+		}
+
+		function folderTreeRow(row, state, currentId) {
+			const assigned = state.assign[row.id] || "";
+			const el = document.createElement("div");
+			el.className = "agctl-tree-row" + (row.id === currentId ? " agctl-selected" : "") + (row.running ? " agctl-running" : "");
+			el.dataset.agctlSessionId = row.id;
+			const dot = document.createElement("span");
+			dot.className = "agctl-folder-dot";
+			dot.style.background = assigned ? folderColor(assigned) : "var(--dsw-alias-label-caption,#b6bac0)";
+			el.appendChild(dot);
+			const title = document.createElement("span");
+			title.className = "agctl-row-title";
+			title.textContent = row.title;
+			title.title = row.title;
+			el.appendChild(title);
+			if (row.running) {
+				const run = document.createElement("span");
+				run.className = "agctl-row-run";
+				el.appendChild(run);
+			}
+			const time = document.createElement("span");
+			time.className = "agctl-row-time";
+			time.textContent = fmtRowTime(row.ts);
+			el.appendChild(time);
+			el.addEventListener("click", () => openSessionRow(row.id));
+			el.addEventListener("contextmenu", (ev) => { ev.preventDefault(); openFolderMenu(ev.clientX, ev.clientY, null, row.id); });
+			return el;
+		}
+
+		function folderSectionView(section, state, ui, currentId) {
+			const isUnassigned = section.name === "";
+			const open = !ui.collapsed[section.name];
+			const sec = document.createElement("div");
+			sec.className = "agctl-folder-section" + (open ? " agctl-open" : "");
+			sec.dataset.agctlFolder = section.name;
+			const head = document.createElement("div");
+			head.className = "agctl-folder-head";
+			head.setAttribute("role", "button");
+			head.setAttribute("tabindex", "0");
+			head.setAttribute("aria-expanded", open ? "true" : "false");
+			const chevron = document.createElement("span");
+			chevron.className = "agctl-folder-chevron";
+			chevron.textContent = "▶";
+			head.appendChild(chevron);
+			const dot = document.createElement("span");
+			dot.className = "agctl-folder-dot";
+			dot.style.background = isUnassigned ? "var(--dsw-alias-label-caption,#b6bac0)" : folderColor(section.name);
+			head.appendChild(dot);
+			const title = document.createElement("span");
+			title.className = "agctl-folder-title";
+			title.textContent = isUnassigned ? "Без папки" : section.name;
+			head.appendChild(title);
+			const count = document.createElement("span");
+			count.className = "agctl-folder-count";
+			count.textContent = String(section.rows.length);
+			head.appendChild(count);
+			if (!isUnassigned) {
+				const actions = document.createElement("span");
+				actions.className = "agctl-folder-actions";
+				const settings = document.createElement("button");
+				settings.type = "button";
+				settings.className = "agctl-folder-btn";
+				settings.textContent = "⚙";
+				settings.title = "Настройки папки «" + section.name + "»";
+				settings.addEventListener("click", (ev) => { ev.stopPropagation(); editFolderSettings(section.name); });
+				const add = document.createElement("button");
+				add.type = "button";
+				add.className = "agctl-folder-btn";
+				add.textContent = "＋";
+				add.title = "Новая сессия в папке «" + section.name + "»";
+				add.addEventListener("click", (ev) => { ev.stopPropagation(); newSessionInFolder(section.name); });
+				actions.appendChild(settings);
+				actions.appendChild(add);
+				head.appendChild(actions);
+			}
+			// Актуальное состояние читаем из DOM, а не из замыкания рендера:
+			// быстрые клики между тиками fixAll должны честно чередоваться.
+			// Сразу пересобираем дерево — реакция на клик мгновенная.
+			const toggle = () => {
+				setFolderOpen(section.name, !sec.classList.contains("agctl-open"));
+				fixAll();
+			};
+			head.addEventListener("click", toggle);
+			head.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(); } });
+			if (!isUnassigned) {
+				head.addEventListener("contextmenu", (ev) => { ev.preventDefault(); editFolderSettings(section.name); });
+			}
+			sec.appendChild(head);
+			const body = document.createElement("div");
+			body.className = "agctl-folder-rows";
+			for (const row of section.rows) body.appendChild(folderTreeRow(row, state, currentId));
+			if (!section.rows.length) {
+				const empty = document.createElement("div");
+				empty.className = "agctl-folder-empty";
+				empty.textContent = isUnassigned ? "Нет сессий без папки" : "В папке пока нет сессий";
+				body.appendChild(empty);
+			}
+			sec.appendChild(body);
+			return sec;
+		}
+
+		function renderFolderTree(root, label, state, rows) {
+			ensureFolderStyles();
+			let host = root.querySelector("[data-agctl-folders-tree]");
+			if (!host) {
+				host = document.createElement("div");
+				host.dataset.agctlFoldersTree = "1";
+				host.setAttribute("role", "tree");
+				host.setAttribute("aria-label", "Сессии");
+				const header = label.closest("[class*=sectionHeader]");
+				(header || label).parentElement.insertBefore(host, header ? header.nextSibling : label.nextSibling);
+				// Хвосты прежней версии (чипсы и точки в нативных строках) больше
+				// не нужны — дерево их заменяет.
+				for (const legacy of root.querySelectorAll("[data-agctl-folders],[data-agctl-folder-dot]")) legacy.remove();
+			}
+			// Пока активен родной поиск сессий, дерево папок убираем с глаз.
+			const searching = !!root.querySelector('[class*="searchTree"], [class*="searchResultRow"]');
+			host.style.display = searching ? "none" : "";
+			if (searching) {
+				delete host.dataset.agctlTreeSig;
+				return;
+			}
+			const ui = foldersUiState();
+			const currentId = currentSessionId();
+			const sections = state.folders.map((name) => ({ name, rows: [] }));
+			sections.push({ name: "", rows: [] });
+			const byName = new Map(sections.map((s) => [s.name, s]));
+			for (const row of rows) {
+				const bucket = byName.get(state.assign[row.id] || "") || byName.get("");
+				bucket.rows.push(row);
+			}
+			// Пересобираем DOM только при реальных изменениях: цикл fixAll тикает
+			// каждые 1.5с, а реконструкция сбрасывала бы hover и фокус.
+			const sig = JSON.stringify({
+				folders: state.folders,
+				assign: state.assign,
+				collapsed: ui.collapsed,
+				currentId,
+				rows: rows.map((r) => [r.id, r.title, r.ts, r.running ? 1 : 0]),
+			});
+			if (host.dataset.agctlTreeSig === sig) return;
+			host.dataset.agctlTreeSig = sig;
+			host.replaceChildren();
+			for (const section of sections) host.appendChild(folderSectionView(section, state, ui, currentId));
+			const addFolder = document.createElement("button");
+			addFolder.type = "button";
+			addFolder.className = "agctl-add-folder";
+			addFolder.textContent = "＋ Новая папка";
+			addFolder.addEventListener("click", createFolderFlow);
+			host.appendChild(addFolder);
+		}
+
 		function applyFolders() {
 			bindFolderNewSession();
 			const label = [...document.querySelectorAll('[class*=sectionLabel]')].find((e) =>
@@ -457,118 +842,33 @@ window.__ModuleLoader__.load({
 			if (!label) return;
 			const root = label.closest('[class*=root]') || label.parentElement?.parentElement;
 			if (!root) return;
-			const tree = root.querySelector('[role=tree]');
-			if (!tree) return;
 			const state = foldersState();
-			const sessionRows = [...tree.querySelectorAll('.YDXeBa_sessionRow')];
+			const rows = collectSessions();
 			const pending = state.pendingFolder;
 			if (pending && Date.now() - pending.at < 2 * 60 * 1000) {
-				const fresh = sessionRows.find((row) => {
-					const id = sessionId(row);
-					return id && !pending.known.includes(id);
-				});
+				const fresh = rows.find((row) => !pending.known.includes(row.id));
 				if (fresh) {
-					const id = sessionId(fresh);
-					state.assign[id] = pending.name;
+					state.assign[fresh.id] = pending.name;
 					state.settings[pending.name] = state.settings[pending.name] || { instructions: "" };
 					delete state.pendingFolder;
 					saveFoldersState(state);
-					syncFolderInstructions(id, pending.name, state);
+					setFolderOpen(pending.name, true);
+					syncFolderInstructions(fresh.id, pending.name, state);
 				}
 			} else if (pending) {
 				delete state.pendingFolder;
 				saveFoldersState(state);
 			}
-
-			// Чипсы видны сразу, даже когда папок ещё нет: это точка входа в создание.
-			let chips = root.querySelector('[data-agctl-folders]');
-			if (!chips) {
-				chips = document.createElement("div");
-				chips.dataset.agctlFolders = "1";
-				chips.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;padding:2px 10px 8px";
-				const header = label.closest('[class*=sectionHeader]');
-				(header || label).parentElement.insertBefore(chips, header ? header.nextSibling : label.nextSibling);
-			}
-			chips.replaceChildren();
-			const chip = (name, isActive, onClick) => {
-				const b = document.createElement("button");
-				b.type = "button";
-				b.textContent = name;
-				b.style.cssText = `display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer;border:1px solid ${isActive ? folderColor(name === "Все" ? "#1676df" : name) : "var(--dsw-alias-border-l1,#ccc)"};background:${isActive ? "var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.07))" : "transparent"};color:inherit`;
-				if (name !== "Все") {
-					const dot = document.createElement("span");
-					dot.style.cssText = `width:8px;height:8px;border-radius:999px;background:${folderColor(name)}`;
-					b.prepend(dot);
-				}
-				b.addEventListener("click", onClick);
-				return b;
-			};
-			chips.appendChild(chip("Все", !state.active, () => { state.active = ""; saveFoldersState(state); fixAll(); }));
-			for (const name of state.folders) {
-				const folderChip = chip(name, state.active === name, () => { state.active = state.active === name ? "" : name; saveFoldersState(state); fixAll(); });
-				folderChip.addEventListener("contextmenu", (ev) => { ev.preventDefault(); editFolderSettings(name); });
-				chips.appendChild(folderChip);
-				const settings = document.createElement("button");
-				settings.type = "button";
-				settings.textContent = "⚙";
-				settings.title = "Настройки папки «" + name + "»";
-				settings.setAttribute("aria-label", settings.title);
-				settings.style.cssText = "border:0;background:transparent;color:var(--dsw-alias-label-tertiary,#888);padding:2px 4px;border-radius:6px;cursor:pointer;font-size:12px";
-				settings.addEventListener("click", () => editFolderSettings(name));
-				chips.appendChild(settings);
-			}
-			const add = document.createElement("button");
-			add.type = "button";
-			add.textContent = "＋";
-			add.title = "Новая папка";
-			add.style.cssText = "border:1px dashed var(--dsw-alias-border-l1,#bbb);background:transparent;color:inherit;border-radius:999px;width:24px;height:24px;cursor:pointer;font-size:13px;line-height:1";
-			add.addEventListener("click", () => {
-				const name = (window.prompt("Имя папки сессий:") || "").trim();
-				if (!name) return;
-				const fresh = foldersState();
-				if (!fresh.folders.includes(name)) fresh.folders.push(name);
-				fresh.settings[name] = fresh.settings[name] || { instructions: "" };
-				fresh.active = name;
-				saveFoldersState(fresh);
-				fixAll();
-				setTimeout(() => editFolderSettings(name, false), 0);
-			});
-			chips.appendChild(add);
-
-			// разметка строк: цветная точка папки + фильтр активной папки + контекстное меню
-			for (const row of sessionRows) {
-				const session = sessionId(row);
-				const title = (row.textContent || "").trim().slice(0, 120);
-				const key = session || title;
-				const isPseudo = /^new session$/i.test(title);
-				// Upgrade the pre-W3 title-key mapping to stable DSH session IDs.
-				if (session && !state.assign[session] && state.assign[title]) {
-					state.assign[session] = state.assign[title];
-					delete state.assign[title];
+			// Upgrade the pre-W3 title-key mapping to stable DSH session IDs.
+			for (const row of rows) {
+				if (!state.assign[row.id] && state.assign[row.title]) {
+					state.assign[row.id] = state.assign[row.title];
+					delete state.assign[row.title];
 					saveFoldersState(state);
-					syncFolderInstructions(session, state.assign[session], state);
+					syncFolderInstructions(row.id, state.assign[row.id], state);
 				}
-				const assigned = state.assign[key] || "";
-				if (session && !row.dataset.agctlFolderContextBound) {
-					row.dataset.agctlFolderContextBound = "1";
-					row.addEventListener("contextmenu", (ev) => { ev.preventDefault(); openFolderMenu(ev.clientX, ev.clientY, row, sessionId(row)); });
-				}
-				if (assigned) {
-					let dot = row.querySelector('[data-agctl-folder-dot]');
-					if (!dot) {
-						dot = document.createElement("span");
-						dot.dataset.agctlFolderDot = "1";
-						dot.style.cssText = "width:8px;height:8px;border-radius:999px;flex:none;display:inline-block;margin-right:6px";
-						row.insertBefore(dot, row.firstChild);
-					}
-					dot.style.background = folderColor(assigned);
-				} else {
-					const dot = row.querySelector('[data-agctl-folder-dot]');
-					if (dot) dot.remove();
-				}
-				const hidden = !isPseudo && state.active && assigned !== state.active;
-				row.style.setProperty("display", hidden ? "none" : "", "important");
 			}
+			renderFolderTree(root, label, state, rows);
 		}
 
 		document.addEventListener("click", (ev) => {
@@ -580,12 +880,13 @@ window.__ModuleLoader__.load({
 			try { applyBrand(); } catch (e) {}
 			try { fixPlaceholder(); } catch (e) {}
 			try { fixModels(); } catch (e) {}
-			try { flattenSessions(); } catch (e) {}
+			try { hideNativeSessionList(); } catch (e) {}
 			try { applyFolders(); } catch (e) {}
 			try { hideDevPanels(); } catch (e) {}
 		}
 
 		function apply(ctx) {
+			pluginCtx = ctx;
 			// Developer Tools в chat-home включаем штатной настройкой DSH: иначе
 			// встроенный dsh-client-ui-conversation полностью исключает view=trajectory.
 			try {
@@ -595,6 +896,7 @@ window.__ModuleLoader__.load({
 				}
 			} catch (e) {}
 			ensureBrandStyles();
+			ensureFolderStyles();
 			void hydrateFolderState().then(() => fixAll());
 			if (window.__agctlChatBrandTimer) return;
 			fixAll();
