@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# pre-commit agctl: проверяет только СТАДИРОВАННОЕ, падает с первой ошибки.
+# gofmt + go vet — по изменённым .go; node --check — по .js/.mjs; тест синка
+# плагинов ↔ dsh-skel — если тронуты плагины или ассеты; .env не коммитится.
+# Полный прогон (race, gitleaks, e2e) — в CI (.github/workflows/ci.yml).
+set -u
+cd "$(git rev-parse --show-toplevel)" || exit 1
+fail=0
+
+staged() { git diff --cached --name-only --diff-filter=ACMR; }
+
+# 1) .env и секреты в git не попадают никогда (шаблон — .env.example).
+if staged | grep -Eq '(^|/)\.env$'; then
+	echo "✗ pre-commit: .env содержит секреты и не коммитится (нужны переменные — добавь в .env.example без значений)"
+	fail=1
+fi
+
+# 2) Go: форматирование и vet по изменённым файлам.
+gos=$(staged | grep '\.go$' || true)
+if [ -n "$gos" ]; then
+	unformatted=$(gofmt -l $gos)
+	if [ -n "$unformatted" ]; then
+		echo "✗ gofmt (make go_fmt): $unformatted"
+		fail=1
+	fi
+	if ! go vet ./...; then
+		echo "✗ go vet"
+		fail=1
+	fi
+fi
+
+# 3) JS/MJS плагинов и веба: синтаксис.
+js=$(staged | grep -E '\.(js|mjs)$' || true)
+for f in $js; do
+	if ! node --check "$f"; then
+		echo "✗ node --check: $f"
+		fail=1
+	fi
+done
+
+# 4) Плагины ↔ зеркальные копии в dsh-skel: тест синка при любых правках
+#    плагинов или ассетов (частая ошибка — поправить одну из двух копий).
+if staged | grep -Eq '^(dsh-plugins/|internal/assets/)' && [ "$fail" -eq 0 ]; then
+	if ! go test ./internal/assets ./internal/provision >/dev/null; then
+		echo "✗ плагины и их копии в internal/assets/dsh-skel не синхронны"
+		fail=1
+	fi
+fi
+
+if [ "$fail" -eq 0 ]; then
+	echo "pre-commit: ok"
+fi
+exit $fail
