@@ -72,6 +72,14 @@ func (s *Server) workspaceManifest(w http.ResponseWriter, r *http.Request) {
 // proxyWorkspace проверяет состояние и проксирует один путь воркспейса.
 func (s *Server) proxyWorkspace(w http.ResponseWriter, r *http.Request, ws store.Workspace) {
 	if ws.Status != "running" || ws.HostPort == 0 {
+		// Браузеру (клик по stopped-месту в «РЕЖИМАХ») — брендированная
+		// страница с кнопкой запуска; API-клиенту — прежний JSON.
+		if strings.Contains(r.Header.Get("Accept"), "text/html") {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusConflict)
+			_, _ = io.WriteString(w, stoppedWorkspacePage(ws))
+			return
+		}
 		writeErr(w, http.StatusConflict, "воркспейс не запущен (статус: "+ws.Status+")")
 		return
 	}
@@ -87,6 +95,9 @@ func (s *Server) proxyWorkspace(w http.ResponseWriter, r *http.Request, ws store
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(&url.URL{Scheme: "http", Host: target})
 			stripAgctlCookies(pr.Out)
+			// dev-шелл брендинга вставляется в HTML на лету — сжатие от
+			// upstream не пропускаем: инъекция требует чистого текста.
+			pr.Out.Header.Set("Accept-Encoding", "identity")
 			// Host фиксированный: dsh привязывает mint-cookie к authority,
 			// константный хост делает cookie валидной для всех запросов.
 			pr.Out.Host = target
@@ -122,6 +133,10 @@ func (s *Server) proxyWorkspace(w http.ResponseWriter, r *http.Request, ws store
 			},
 		},
 		ModifyResponse: func(resp *http.Response) error {
+			// Брендинг dev-места: тот же подход, что чат-шелл на /chat/, но
+			// только заголовок/лого/тэглайн — инструменты разработчика не
+			// трогаем (панели, Workspaces, выборщик моделей).
+			injectDevShellResponse(resp)
 			if loc := resp.Header.Get("Location"); loc != "" {
 				resp.Header.Set("Location", rewriteLocation(loc, prefix, target))
 			}

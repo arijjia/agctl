@@ -1,0 +1,105 @@
+package server
+
+import (
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/arijjia/agctl/internal/store"
+)
+
+// TestInjectDevShell — dev-шелл брендинга встаёт после <head>, идемпотентен и
+// содержит логотип/бренд, но не трогает чат-специфику (нет скрытия панелей).
+func TestInjectDevShell(t *testing.T) {
+	doc := `<!doctype html><html><head><title>DeepSeek Harness</title></head><body>ok</body></html>`
+	out := string(injectDevShell([]byte(doc)))
+	if !strings.Contains(out, `<style data-agctl="dev-shell">`) {
+		t.Fatal("dev-shell не вставлен")
+	}
+	if !strings.Contains(out, "<title>ИИ-мастерская ТюмГУ</title>") {
+		t.Fatal("title не заменён на wire")
+	}
+	if !strings.Contains(out, "data:image/png;base64,") {
+		t.Fatal("логотип не вшит в dev-шелл")
+	}
+	if !strings.Contains(out, "Тюмень на правильном пути") {
+		t.Fatal("тэглайн не заменяется dev-шеллом")
+	}
+	again := string(injectDevShell([]byte(out)))
+	if again != out {
+		t.Fatal("инъекция не идемпотентна")
+	}
+}
+
+// TestStoppedWorkspacePage — страница остановленного места брендируется,
+// экранирует имя и несёт кнопку запуска с polling на API места.
+func TestStoppedWorkspacePage(t *testing.T) {
+	ws := store.Workspace{ID: `w1"><script>`, Name: `Место "тест"`, Status: "stopped"}
+	page := stoppedWorkspacePage(ws)
+	for _, want := range []string{
+		"ИИ-мастерская ТюмГУ",
+		"Рабочее место «Место &#34;тест&#34;» сейчас остановлено",
+		"agctl-start",
+		"/api/workspaces/w1%22%3E%3Cscript%3E/start",
+		"data:image/png;base64,",
+	} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("в странице нет %q", want)
+		}
+	}
+	if strings.Contains(page, `w1"><script>`) {
+		t.Fatal("id воркспейса не экранирован в URL")
+	}
+}
+
+// TestProxyWorkspaceStoppedPage — браузер по /w/{id}/ остановленного места
+// получает брендированную HTML-страницу с кнопкой запуска, API-клиент —
+// прежний JSON. владелец места — авторизованный пользователь.
+func TestProxyWorkspaceStoppedPage(t *testing.T) {
+	e := newTestEnv(t, 3)
+	e.register(e.admin, "anna", "secret1")
+
+	ws := store.Workspace{ID: "wstop", OwnerID: 1, Name: "останавливалось",
+		Status: "stopped", BaseURL: "https://llm.example/v1", Model: "m1"}
+	if err := e.db.InsertWorkspace(ws); err != nil {
+		t.Fatalf("insert workspace: %v", err)
+	}
+
+	// Браузерный запрос: Accept требует text/html → HTML-страница с кнопкой.
+	req, err := http.NewRequest("GET", e.api.URL+"/w/wstop/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	resp, err := e.admin.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := readAll(t, resp)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("html: статус %d, тело: %s", resp.StatusCode, body)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Fatalf("html: content-type %q", ct)
+	}
+	for _, want := range []string{"agctl-start", "ИИ-мастерская ТюмГУ", "/api/workspaces/wstop/start"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("html: в странице нет %q", want)
+		}
+	}
+
+	// API-клиент: без text/html в Accept — прежний JSON.
+	req2, err := http.NewRequest("GET", e.api.URL+"/w/wstop/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req2.Header.Set("Accept", "application/json")
+	resp2, err := e.admin.Do(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body2 := readAll(t, resp2)
+	if resp2.StatusCode != http.StatusConflict || !strings.Contains(body2, "воркспейс не запущен") {
+		t.Fatalf("json: статус %d, тело: %s", resp2.StatusCode, body2)
+	}
+}

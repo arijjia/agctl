@@ -6,10 +6,13 @@ package server
 
 import (
 	"bytes"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/arijjia/agctl/internal/assets"
 )
 
 const chatShellMaxHTMLBytes = 1 << 20 // 1 MiB: больше главной страницы dsh на порядок
@@ -123,28 +126,116 @@ new MutationObserver(function(muts){
 // chatShellHead — инъекция, добавляемая сразу после открывающего <head>.
 var chatShellHead = chatShellStyle + chatShellScript
 
+// devShellStyle / devShellScriptTpl — брендинг-only шелл dev-workspace
+// (/w/{id}/): заголовок вкладки, строка идентичности (логотип вместо кита,
+// «ИИ-мастерская ТюмГУ») и тэглайн «Тюмень на правильном пути». В отличие от
+// чат-шелла панели, Workspaces и выборщик моделей не трогаем — это рабочие
+// инструменты режима разработки. Плагин chat-brand в dev-домашки не сеется,
+// поэтому ранний скрипт шлюза сразу ставит настоящий логотип (тот же PNG, что
+// в chat-brand: internal/assets/brand/logo.png).
+const devShellStyle = `<style data-agctl="dev-shell">
+svg[viewBox="0 0 23.16 17.04"]{visibility:hidden}
+</style>`
+
+const devShellScriptTpl = `<script data-agctl="dev-shell">(function(){
+"use strict";
+var BRAND="ИИ-мастерская ТюмГУ",TAGLINE="Тюмень на правильном пути",LOGO="data:image/png;base64,__AGCTL_LOGO__";
+function fixTitle(){if(document.title!==BRAND)document.title=BRAND;}
+function makeLogo(h){var img=document.createElement('img');img.src=LOGO;img.alt='';img.dataset.agctlLogo='1';img.style.height=h+'px';img.style.width='auto';img.style.objectFit='contain';img.style.display='block';return img;}
+function fixIdentity(root){
+  if(!root||!root.querySelectorAll)return;
+  var i,k,found;
+  var whales=root.querySelectorAll('svg[viewBox="0 0 23.16 17.04"]');
+  for(i=0;i<whales.length;i++){
+    var w=whales[i];
+    var h=Math.max(18,Math.round(w.getBoundingClientRect().height||24));
+    w.replaceWith(makeLogo(h));
+  }
+  var rows=[];
+  if(root.matches&&root.matches('[class*="brandIdentity"]'))rows.push(root);
+  found=root.querySelectorAll('[class*="brandIdentity"]');
+  for(i=0;i<found.length;i++)rows.push(found[i]);
+  for(i=0;i<rows.length;i++){
+    var row=rows[i];
+    if(!row.querySelector('[data-agctl-brand-title]')){
+      var mark=document.createElement('span');mark.style.cssText='display:inline-flex;align-items:center';
+      mark.appendChild(makeLogo(28));
+      var title=document.createElement('span');title.dataset.agctlBrandTitle='1';title.textContent=BRAND;
+      title.style.cssText='font-size:14px;font-weight:600;line-height:1.1;white-space:nowrap';
+      row.replaceChildren(mark,title);row.style.display='inline-flex';row.style.alignItems='center';row.style.gap='8px';row.style.overflow='visible';
+    }
+    row.style.setProperty('visibility','visible','important');
+  }
+  var tags=[];
+  if(root.matches&&root.matches('[class*="pXSMma_titleGroup"]'))tags.push(root);
+  found=root.querySelectorAll('[class*="pXSMma_titleGroup"]');
+  for(i=0;i<found.length;i++)tags.push(found[i]);
+  for(i=0;i<tags.length;i++){
+    var g=tags[i];
+    var leaves=g.querySelectorAll('*');
+    for(k=0;k<leaves.length;k++){
+      var el=leaves[k];
+      if(el.children.length)continue;
+      var t=el.textContent||'';
+      if(/Into the Unknown/i.test(t)){el.textContent=t.replace(/Into the Unknown/gi,TAGLINE);g.style.setProperty('visibility','visible','important');}
+      else if(t===TAGLINE){g.style.setProperty('visibility','visible','important');}
+    }
+  }
+}
+fixTitle();fixIdentity(document);
+new MutationObserver(function(muts){
+  fixTitle();
+  for(var i=0;i<muts.length;i++){
+    var m=muts[i];
+    if(m.addedNodes)for(var j=0;j<m.addedNodes.length;j++){
+      var n=m.addedNodes[j];
+      if(n.nodeType===1)fixIdentity(n);
+    }
+    if(m.type==='characterData'&&m.target.parentElement&&m.target.parentElement.closest){
+      var g=m.target.parentElement.closest('[class*="pXSMma_titleGroup"]');
+      if(g)fixIdentity(g);
+    }
+  }
+}).observe(document,{subtree:true,childList:true,characterData:true});
+})();</script>`
+
+// devShellHead собирается один раз: логотип вшивается base64 из ассетов.
+var devShellHead = devShellStyle + strings.ReplaceAll(
+	devShellScriptTpl, "__AGCTL_LOGO__",
+	base64.StdEncoding.EncodeToString(assets.BrandLogo))
+
 // injectChatShell вставляет чат-шелл в HTML-документ (идемпотентно).
 func injectChatShell(body []byte) []byte {
+	return injectShell(body, `<style data-agctl="chat-shell">`, chatShellHead)
+}
+
+// injectDevShell вставляет dev-шелл брендинга в HTML dev-workspace.
+func injectDevShell(body []byte) []byte {
+	return injectShell(body, `<style data-agctl="dev-shell">`, devShellHead)
+}
+
+// injectShell вставляет head-инъекцию в HTML-документ (идемпотентно по marker).
+func injectShell(body []byte, marker, head string) []byte {
 	if len(body) == 0 {
 		return body
 	}
 	s := string(body)
-	if strings.Contains(s, `<style data-agctl="chat-shell">`) {
+	if strings.Contains(s, marker) {
 		return body
 	}
 	// Заголовок меняем на wire тоже: инъекция стоит до <title>, и парсер иначе
 	// перезаписал бы document.title дефолтом после выполнения раннего скрипта.
 	s = strings.Replace(s, "<title>DeepSeek Harness</title>", "<title>ИИ-мастерская ТюмГУ</title>", 1)
 	if i := openingTagEnd(s, "head"); i >= 0 {
-		return []byte(s[:i] + chatShellHead + s[i:])
+		return []byte(s[:i] + head + s[i:])
 	}
 	if i := openingTagEnd(s, "body"); i >= 0 {
-		return []byte(s[:i] + chatShellHead + s[i:])
+		return []byte(s[:i] + head + s[i:])
 	}
 	if i := doctypeEnd(s); i >= 0 {
-		return []byte(s[:i] + chatShellHead + s[i:])
+		return []byte(s[:i] + head + s[i:])
 	}
-	return []byte(chatShellHead + s)
+	return []byte(head + s)
 }
 
 // openingTagEnd — HTML-aware scan до открывающего тега name. Комментарии,
@@ -289,6 +380,15 @@ func doctypeEnd(s string) int {
 // префикс: при ошибке чтения/слишком большом HTML прокси отдает оригинальный
 // поток без модификации.
 func injectChatShellResponse(resp *http.Response) {
+	injectShellResponse(resp, injectChatShell)
+}
+
+// injectDevShellResponse — то же для dev-workspace (/w/{id}/).
+func injectDevShellResponse(resp *http.Response) {
+	injectShellResponse(resp, injectDevShell)
+}
+
+func injectShellResponse(resp *http.Response, inject func([]byte) []byte) {
 	if resp == nil || resp.Body == nil || resp.StatusCode != http.StatusOK ||
 		!strings.Contains(resp.Header.Get("Content-Type"), "text/html") ||
 		resp.Header.Get("Content-Encoding") != "" {
@@ -301,7 +401,7 @@ func injectChatShellResponse(resp *http.Response) {
 		return
 	}
 	_ = original.Close()
-	injected := injectChatShell(body)
+	injected := inject(body)
 	if len(injected) == len(body) && bytes.Equal(injected, body) {
 		resp.Body = io.NopCloser(bytes.NewReader(body))
 		return
