@@ -40,12 +40,11 @@ flowchart LR
 
 ```bash
 git clone https://github.com/arijjia/agctl && cd agctl
-make demo            # соберёт UI, бинар и образ agctl-dsh, поднимет демо-стенд
+make up              # соберёт UI, бинарь и поднимет платформу: http://127.0.0.1:8929
 ```
 
-Демо-стенд изолирован: дом `/tmp/agctl-demo`, адрес **http://127.0.0.1:8930** —
-реальный `~/.agctl` и порт 8929 не затрагиваются. Остановка и зачистка —
-`make stop` / `make demo_fresh`.
+Дом платформы — `~/.agctl` (создаётся сам), образом agctl-dsh при первом
+старте контейнера сервер обзаведётся тоже сам. Остановка — `make stop`.
 
 ### Запуск с корпоративными моделями (qwens через LiteLLM)
 
@@ -116,8 +115,7 @@ Ctrl+C так же корректно.
   страницу «рабочее место остановлено» с кнопкой «Запустить рабочее место»
   (после запуска браузер сам вернётся в интерфейс места).
 
-Откройте адрес демо-стенда **http://127.0.0.1:8930** (свой постоянный
-инстанс — `make up` на `http://127.0.0.1:8929`):
+Откройте **http://127.0.0.1:8929**:
 
 1. **Регистрация** — первый пользователь становится админом.
 2. После входа корень автоматически направляет в **личный чат DSH** (`/chat/`)
@@ -275,7 +273,6 @@ Mutagen до запуска синхронизации.
 | `make web_build` | React SPA → `web/dist` → `go:embed` |
 | `make img_build` | linux-сборка agctl + docker-образ `agctl-dsh:0.2.0` (`IMG=agctl-dsh:X make img_build`) |
 | `make release_local` | матрица darwin/linux/windows × arm64/amd64 в `dist/` |
-| `make demo` | всё сразу + запуск сервера |
 | `IMG=… scripts/e2e-cabinet.sh` | Docker e2e: два пользователя → два личных `/chat/` runtime + workspace-панель; SSH off by default |
 | `IMG=… scripts/e2e-ssh.sh` | Docker e2e SSH: ключ → sshd → shell → снятие/ротация; optional real-Mutagen round-trip |
 | `scripts/e2e-local-bridge.sh` | Docker e2e local bridge: настоящий локальный dsh через outbound connector, reconnect, revoke |

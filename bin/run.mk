@@ -23,7 +23,7 @@ $(RUNTIME_DIR):
 	@mkdir -p $(RUNTIME_DIR)
 
 ## up: собрать и поднять платформу в фоне (RUN_ADDR/RUN_HOME переопределяются)
-up: web_build go_build | $(RUNTIME_DIR)
+up: web_build go_build go_linux | $(RUNTIME_DIR)
 	@if [ -f "$(RUN_UP_PID)" ] && kill -0 "$$(cat $(RUN_UP_PID))" 2>/dev/null; then \
 	  echo "agctl уже запущен (pid $$(cat $(RUN_UP_PID))) — make stop"; exit 1; fi
 	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl serve --addr "$(RUN_ADDR)" >>"$(RUN_UP_LOG)" 2>&1 & echo $$! > "$(RUN_UP_PID)"
@@ -35,7 +35,7 @@ up: web_build go_build | $(RUNTIME_DIR)
 	  echo "✗ сервер упал при старте — хвост $(RUN_UP_LOG):"; tail -5 "$(RUN_UP_LOG)"; exit 1; fi
 
 ## corp: то же, что up, но с корпоративным LiteLLM (ключ — в .env)
-corp: web_build go_build | $(RUNTIME_DIR)
+corp: web_build go_build go_linux | $(RUNTIME_DIR)
 	@if [ -f "$(RUN_CORP_PID)" ] && kill -0 "$$(cat $(RUN_CORP_PID))" 2>/dev/null; then \
 	  echo "corp-инстанс уже запущен (pid $$(cat $(RUN_CORP_PID))) — make stop"; exit 1; fi
 	@if [ -z "$$(printenv AGCTL_LLM_API_KEY)" ]; then \
