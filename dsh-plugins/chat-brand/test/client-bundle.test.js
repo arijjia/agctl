@@ -74,6 +74,18 @@ test("сайдбар выглядит как родные Workspaces dsh: ико
 	assert.match(src, /getBoundingClientRect\(\)\.width < 120/, "свёрнутая рельса скрывает дерево");
 });
 
+test("composer hint — штатный locale dsh, не DOM-патч", async () => {
+	const src = await readFile(clientPath, "utf8");
+	assert.match(src, /installComposerLocale/, "локаль ставится отдельной функцией");
+	assert.match(src, /addLanguage\(\{ id: "ru", label: "Русский", fallback: "en" \}\)/, "ru добавлен как язык dsh с fallback en");
+	assert.match(src, /locale\.register\("conversation", "ru", COMPOSER_RU\)/, "словарь conversation зарегистрирован для ru");
+	assert.match(src, /"placeholder\.default": "Напишите сообщение/, "открытая сессия: русский placeholder.default");
+	assert.match(src, /"placeholder\.hero": "Опишите/, "пустой чат: русский placeholder.hero");
+	assert.match(src, /explicitPreference == null\)\s*locale\.setLocale\("ru"\)/s, "явный выбор языка пользователя не перетирается");
+	assert.doesNotMatch(src, /setAttribute\('data-placeholder'|setAttribute\('placeholder'/, "прямые DOM-патчи placeholder убраны");
+	assert.doesNotMatch(src, /Message or run a task/, "английский текст открытой сессии больше не патчится");
+});
+
 test("папка соответствует реальному project Workspace и сохраняет инструкции в каталоге", async () => {
 	const src = await readFile(clientPath, "utf8");
 	assert.match(src, /"agctl-chat-folders\.v1"/, "серверное состояние папок сохраняется совместимым");
