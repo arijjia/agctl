@@ -18,6 +18,9 @@ type ChatSpec struct {
 	UserID       int64
 	Provider     provision.Provider
 	SessionScope bool
+	// SSHPubKey — роль developer: поднять sshd в контейнере (key-only,
+	// порт публикуется только на loopback хоста). Пусто = sshd не поднимать.
+	SSHPubKey string
 }
 
 // ChatHandle describes one running runtime generation. Endpoint is private to
@@ -27,6 +30,8 @@ type ChatHandle struct {
 	RuntimeID  string
 	InstanceID string
 	Endpoint   string
+	// SSHPort — хост-порт SSH канала (роль developer); 0 = sshd не поднимался.
+	SSHPort int
 }
 
 // ChatProvider manages scale-to-zero Chat compute while keeping StorageID's

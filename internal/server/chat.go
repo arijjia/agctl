@@ -458,6 +458,7 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 	spec := agctlrt.ChatSpec{
 		RuntimeID: s.chatRuntimeID(userID), StorageID: chatStorageID(userID),
 		UserID: userID, Provider: s.userProvider(userID), SessionScope: true,
+		SSHPubKey: s.developerSSHPubKey(userID),
 	}
 	handle, err := s.chatProvider.EnsureChat(ctx, spec)
 	if err != nil {
@@ -472,6 +473,21 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 	s.chatMu.Unlock()
 	log.Printf("[chat] пользователь %d: личный runtime поднят (%s)", userID, handle.Endpoint)
 	return rt, nil
+}
+
+// developerSSHPubKey — публичный SSH-ключ разработчика (роли developer/admin),
+// хранится в settings KV (`/api/me/ssh`). Пусто = sshd в контейнере не
+// поднимаем (роли user чат-контейнер без ssh).
+func (s *Server) developerSSHPubKey(userID int64) string {
+	u, err := s.db.UserByID(userID)
+	if err != nil || (u.Role != "developer" && u.Role != "admin") {
+		return ""
+	}
+	key, err := s.db.SettingGet(fmt.Sprintf("dev-ssh-pubkey-u%d", userID))
+	if err != nil {
+		return ""
+	}
+	return key
 }
 
 // reapIdleChats stops per-user compute after the idle TTL. The ChatProvider

@@ -51,14 +51,24 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	if err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
+	opts := StartOpts{HostPort: port}
+	sshPort := 0
+	if spec.SSHPubKey != "" {
+		// Роль developer: sshd в том же контейнере (key-only, loopback хоста).
+		if sshPort, err = FreePort(); err != nil {
+			return agctlrt.ChatHandle{}, err
+		}
+		opts.SSHPubKey, opts.SSHHostPort = spec.SSHPubKey, sshPort
+	}
 	layout := provision.Layout{Work: work, DshHome: dshHome, ChatSessionScoped: spec.SessionScope}
-	res, err := rt.Start(ctx, layout, spec.RuntimeID, StartOpts{HostPort: port}, spec.Provider)
+	res, err := rt.Start(ctx, layout, spec.RuntimeID, opts, spec.Provider)
 	if err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
 	return agctlrt.ChatHandle{
 		RuntimeID: spec.RuntimeID, InstanceID: res.ContainerID,
 		Endpoint: fmt.Sprintf("http://127.0.0.1:%d", port),
+		SSHPort:  res.SSHPort,
 	}, nil
 }
 

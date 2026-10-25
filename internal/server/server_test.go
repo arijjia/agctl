@@ -123,9 +123,13 @@ func (f *fakeRuntime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (ag
 	if f.chatEndpointOverride != "" {
 		endpoint = f.chatEndpointOverride
 	}
+	sshPort := 0
+	if spec.SSHPubKey != "" {
+		sshPort = 2222 // как публикует реальный dockerrt.EnsureChat
+	}
 	return agctlrt.ChatHandle{
 		RuntimeID: spec.RuntimeID, InstanceID: instanceID,
-		Endpoint: endpoint,
+		Endpoint: endpoint, SSHPort: sshPort,
 	}, nil
 }
 

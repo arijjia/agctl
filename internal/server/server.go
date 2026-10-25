@@ -120,7 +120,7 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 		s.cfg.AutosaveEvery = 2 * time.Minute
 	}
 	if s.cfg.ChatTTL <= 0 {
-		s.cfg.ChatTTL = 15 * time.Minute
+		s.cfg.ChatTTL = 60 * time.Minute
 	}
 	if s.cfg.MaxPerUser <= 0 {
 		s.cfg.MaxPerUser = 3
@@ -237,6 +237,14 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/workspace-requests", s.requireUser(s.handleWorkspaceRequestsList))
 	mux.HandleFunc("POST /api/workspace-requests/{id}/approve", s.requireAdmin(s.handleWorkspaceRequestDecision(true)))
 	mux.HandleFunc("POST /api/workspace-requests/{id}/reject", s.requireAdmin(s.handleWorkspaceRequestDecision(false)))
+	// v3 unified runtime: роль developer по заявке (привязка к учётке) и её
+	// SSH-ключ для персонального контейнера.
+	mux.HandleFunc("POST /api/role-requests", s.requireUser(s.handleRoleRequestCreate))
+	mux.HandleFunc("GET /api/role-requests", s.requireUser(s.handleRoleRequestsList))
+	mux.HandleFunc("POST /api/role-requests/{id}/approve", s.requireAdmin(s.handleRoleRequestDecision(true)))
+	mux.HandleFunc("POST /api/role-requests/{id}/reject", s.requireAdmin(s.handleRoleRequestDecision(false)))
+	mux.HandleFunc("GET /api/me/ssh", s.requireUser(s.handleMeSSHGet))
+	mux.HandleFunc("PUT /api/me/ssh", s.requireUser(s.handleMeSSHPut))
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
 	// /map — карта системы за сессией; росток будущей админ-панели (1.md).

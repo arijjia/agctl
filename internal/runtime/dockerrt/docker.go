@@ -229,6 +229,8 @@ func tail(s string, n int) string {
 type StartResult struct {
 	ContainerID string
 	HostPort    int
+	// SSHPort — хост-порт SSH (роль developer); 0 = sshd не публиковался.
+	SSHPort int
 }
 
 // StartOpts — параметры публикации контейнера: порт dsh web и, опционально,
@@ -313,7 +315,11 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		_, _ = rt.cli.ContainerRemove(ctx, res.ID, client.ContainerRemoveOptions{Force: true})
 		return StartResult{}, fmt.Errorf("docker: start: %w", err)
 	}
-	return StartResult{ContainerID: res.ID, HostPort: opts.HostPort}, nil
+	sshPort := 0
+	if opts.SSHPubKey != "" && opts.SSHHostPort > 0 {
+		sshPort = opts.SSHHostPort
+	}
+	return StartResult{ContainerID: res.ID, HostPort: opts.HostPort, SSHPort: sshPort}, nil
 }
 
 // Resume запускает существующий (остановленный) контейнер.

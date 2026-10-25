@@ -181,6 +181,12 @@ func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, i
 		writeErr(w, http.StatusForbidden, "включён режим апрува: создайте заявку через /api/workspace-requests")
 		return
 	}
+	// v3 unified runtime: dev-места — инструмент роли developer (у обычного
+	// пользователя вся работа в персональном чат-контейнере).
+	if id.Role != "admin" && id.Role != "developer" {
+		writeErr(w, http.StatusForbidden, "создание рабочих мест — для роли developer: подайте заявку (POST /api/role-requests)")
+		return
+	}
 	var req struct {
 		Name       string   `json:"name"`
 		Kit        string   `json:"kit"`

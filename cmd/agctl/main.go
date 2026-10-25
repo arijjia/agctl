@@ -123,7 +123,7 @@ func cmdServe(args []string) {
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
 	experimentalLocalBridge := fsSet.Bool("experimental-local-bridge", false, "experimental local connector pairing API (requires trusted TLS ingress and --secure-cookies)")
 	requireApproval := fsSet.Bool("require-approval", false, "создание dev-мест только через заявку с апрувом администратора")
-	chatTTLMin := fsSet.Int("chat-ttl-min", 15, "минуты простоя чат-контейнера до сна (том пользователя сохраняется)")
+	chatTTLMin := fsSet.Int("chat-ttl-min", 60, "минуты простоя персонального контейнера до сна (том пользователя сохраняется)")
 	corsOrigins := fsSet.String("cors-origin", envOr("AGCTL_CORS_ORIGINS", ""), "точные origins через запятую, которым разрешён кросс-доменный /api (кабинет-плагин dsh web); пусто = CORS выключен")
 	tier0 := fsSet.Bool("tier0", true, "поднимать общий чат (Tier 0) и отдавать корень платформы в него")
 	maxPerUser := fsSet.Int("max-per-user", 3, "лимит воркспейсов на пользователя")
