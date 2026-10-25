@@ -3,13 +3,13 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "agctl — физика: процессы, порты, протоколы",
-    "output": ".archify/architecture-agctl-processes-20261025-181244/agctl-processes.html",
+    "output": ".archify/architecture-agctl-processes-20261025-183853/agctl-processes.html",
     "quality_profile": "showcase",
     "repository": {
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "6bd76010d3a4de917bf71eedba7926e1dbaa7281"
+      "revision": "2da9332663df222a0e62a5016c42d007b46d6ea8"
     },
     "views": [
       {
@@ -19,8 +19,8 @@
           "browser",
           "serve",
           "dockerd",
-          "home",
-          "dshhome"
+          "agdb",
+          "seckey"
         ],
         "note": "Логин +0 процессов; файлы/том — отдельны от процессов runtime"
       },
@@ -156,36 +156,46 @@
       ]
     },
     {
-      "id": "home",
+      "id": "agdb",
       "type": "database",
-      "label": "$AGCTL_HOME — файлы, не процесс",
-      "sublabel": "SQLite WAL · secrets.key · user volumes · Git",
+      "label": "agctl.db — SQLite WAL",
+      "sublabel": "users · sessions · roles · audit",
       "pos": [
-        430,
-        480
+        880,
+        430
       ],
       "size": [
-        270,
-        96
+        220,
+        88
       ],
       "sources": [
         {
           "path": "cmd/agctl/main.go",
-          "line": 95,
-          "end_line": 108,
-          "label": "AGCTL_HOME, ~/.agctl"
-        },
+          "line": 165,
+          "end_line": 168,
+          "label": "store.Open($AGCTL_HOME/agctl.db)"
+        }
+      ]
+    },
+    {
+      "id": "seckey",
+      "type": "database",
+      "label": "secrets.key — вне Git",
+      "sublabel": "мастер-ключ AES-256-GCM · 0600",
+      "pos": [
+        1190,
+        430
+      ],
+      "size": [
+        250,
+        88
+      ],
+      "sources": [
         {
           "path": "cmd/agctl/main.go",
           "line": 157,
-          "end_line": 167,
-          "label": "master key + agctl.db"
-        },
-        {
-          "path": "internal/provision/provision.go",
-          "line": 508,
-          "end_line": 544,
-          "label": "AutosaveOnce: commit+push"
+          "end_line": 164,
+          "label": "EnsureMasterKey + secrets.New"
         }
       ]
     },
@@ -195,11 +205,11 @@
       "label": "u<id>/dsh-home — вне Git",
       "sublabel": "сессии · настройки · credentials",
       "pos": [
-        900,
-        430
+        880,
+        552
       ],
       "size": [
-        230,
+        220,
         88
       ],
       "sources": [
@@ -230,10 +240,10 @@
       "sublabel": "файлы проектов · .git · под Git",
       "pos": [
         1170,
-        430
+        552
       ],
       "size": [
-        260,
+        250,
         88
       ],
       "sources": [
@@ -258,10 +268,10 @@
       "sublabel": "под $AGCTL_HOME · путь target уточнит MVP",
       "pos": [
         1170,
-        560
+        676
       ],
       "size": [
-        260,
+        250,
         88
       ],
       "sources": [
@@ -400,7 +410,7 @@
       "sublabel": "удалённо — только через туннель/VPN",
       "pos": [
         24,
-        920
+        984
       ],
       "size": [
         214,
@@ -428,7 +438,7 @@
       "sublabel": "исходящий WSS :443 · credential 0600",
       "pos": [
         24,
-        780
+        880
       ],
       "size": [
         222,
@@ -450,7 +460,7 @@
       "sublabel": "127.0.0.1:3080 · HTTP+WS",
       "pos": [
         420,
-        780
+        880
       ],
       "size": [
         232,
@@ -502,13 +512,15 @@
     },
     {
       "kind": "region",
-      "label": "Том пользователя u<id> — под $AGCTL_HOME, файлы не процесс",
+      "label": "$AGCTL_HOME — файлы, не процесс",
       "wraps": [
+        "agdb",
+        "seckey",
         "dshhome",
         "wkspace",
         "gitstore"
       ],
-      "pad": 32
+      "pad": 36
     },
     {
       "kind": "security-group",
@@ -525,7 +537,8 @@
       "wraps": [
         "serve",
         "dockerd",
-        "home",
+        "agdb",
+        "seckey",
         "dshhome",
         "wkspace",
         "gitstore",
@@ -533,7 +546,7 @@
         "dshchat",
         "sshd"
       ],
-      "pad": 52
+      "pad": 72
     }
   ],
   "connections": [
@@ -555,11 +568,17 @@
     {
       "id": "c3",
       "from": "serve",
-      "to": "home",
-      "label": "SQLite WAL · secrets.key",
+      "to": "agdb",
+      "label": "SQLite WAL",
       "variant": "dashed",
       "fromSide": "bottom",
-      "toSide": "top"
+      "toSide": "left",
+      "via": [
+        [
+          565,
+          474
+        ]
+      ]
     },
     {
       "id": "c4",
@@ -592,11 +611,11 @@
       "toSide": "right",
       "via": [
         [
-          1480,
-          956
+          1500,
+          1020
         ],
         [
-          1480,
+          1500,
           302
         ]
       ]
@@ -625,19 +644,15 @@
       "label": "bind mount RW · host FS",
       "variant": "emphasis",
       "fromSide": "left",
-      "toSide": "top",
+      "toSide": "left",
       "via": [
         [
-          1200,
+          1145,
           182
         ],
         [
-          1200,
-          360
-        ],
-        [
-          1300,
-          360
+          1145,
+          596
         ]
       ]
     },
@@ -647,15 +662,19 @@
       "to": "dshhome",
       "label": "bind mount RW · DSH_HOME",
       "fromSide": "left",
-      "toSide": "right",
+      "toSide": "top",
       "via": [
         [
-          1145,
+          1106,
           182
         ],
         [
-          1145,
-          474
+          1106,
+          535
+        ],
+        [
+          990,
+          535
         ]
       ]
     },
@@ -669,12 +688,12 @@
       "toSide": "left",
       "via": [
         [
-          770,
+          760,
           365
         ],
         [
-          770,
-          604
+          760,
+          720
         ]
       ]
     }
@@ -706,12 +725,12 @@
       "dot": "violet",
       "title": "Персистентность: куда идут записи",
       "items": [
+        "Рамка $AGCTL_HOME — файлы, не процесс: внутри agctl.db, secrets.key и данные пользователей u<id>",
         "dsh web и процессы-дети читают/пишут файлы напрямую через RW bind mount; записи не проксируются через agctl serve",
-        "Том пользователя — подкаталог $AGCTL_HOME на диске хоста, а не Docker-volume внутри демона: сейчас chats/u<id>, цель v3 — u<id>.",
-        "Цель v3: u<id>/dsh-home (сессии, настройки) и соседний u<id>/workspace/<project> (файлы проектов и их .git)",
-        "Рамка Git на схеме: под версиями — workspace/<project> и history store; вне Git — dsh-home, agctl.db, secrets.key, контейнеры",
+        "Сейчас в коде: $AGCTL_HOME/chats/u<id>/{dsh-home,work}; цель v3 — u<id>/{dsh-home,workspace/<project>}, миграции пока нет",
+        "Рамка Git: версии — workspace/<project> и history store; вне Git — dsh-home, agctl.db, secrets.key, контейнеры",
         "Контейнер можно удалить — том остаётся. Бэкап платформы = копия $AGCTL_HOME",
-        "Pinned source snapshot показывает chats/u<id>/{dsh-home,work}; переход на u<id>/{dsh-home,workspace/} — target, миграции пока нет"
+        "Git history store (bare) — сейчас repos/; целевой путь модель не зафиксировала, уточнит MVP"
       ]
     },
     {
