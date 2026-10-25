@@ -1,82 +1,48 @@
-# @arijjia/agctl-cabinet — панель «Кабинет» для dsh web
+# @arijjia/agctl-cabinet — кабинет v3 (0.7.0)
 
-Клиент-плагин DeepSeek Harness: добавляет боковую панель dsh web «Кабинет»
-для управления рабочими местами agctl и опционального SSH-доступа.
+Клиент-плагин dsh web: единый личный runtime `/chat/`, проекты, заявки на
+роль developer и персональный SSH. Режимов и переходов между workspace нет.
+Legacy workspace API и experimental local backend UI не используются.
+Серверные реализации этих возможностей плагин не изменяет.
 
-- Корень платформы после входа открывает личный ленивый dsh runtime; DSH_HOME
-  переживает сон контейнера. Режим Chat не использует Git.
-- «Кабинет» открывает режим разработки: server-workspace с Git и SSH;
-  `--require-approval` переводит создание в заявку с admin approve/reject.
-- При `--require-approval` панель показывает «Мои заявки» и очередь для admin.
-  Provider payload хранится на сервере только зашифрованным.
-- Local backend сейчас показывает честный fallback: локальный `dsh web`
-  открывает также локальный UI. Целевой same-domain server-UI/local-backend
-  требует отдельного outbound connector/WebSocket bridge и ещё не реализован.
+## Контракты
 
-## Как это устроено
+- Авторизация: `POST /api/login` с `{login,password}`, cookie credentials.
+- `GET /api/me` → `{user:{login,role}}`.
+- User: мотивация `POST /api/role-requests` с `{motivation}`, список своих
+  заявок через `GET /api/role-requests`.
+- Admin: очередь заявок developer и решения
+  `POST /api/role-requests/{id}/approve|reject`.
+- Список заявок: `{role,requests:[{id,userId,login,status,motivation,
+  decidedBy,decidedAt,createdAt}]}`. Панель показывает историю решений;
+  кнопки решений доступны только admin для pending-заявок.
+- Developer/admin: `GET /api/me/ssh`, `PUT /api/me/ssh` с `{pubKey}`;
+  ответ `{pubKey,sshPort}`. Пустой ключ отключает SSH. Порт 0 означает сон
+  runtime; открыть чат и обновить кабинет. Команда:
+  `ssh root@127.0.0.1 -p PORT`. Loopback относится к серверу: для удалённого
+  доступа необходим SSH-туннель. Приватные ключи не отправляются.
+- Всем ролям: `GET /api/projects` → `{projects:[{name,directory}]}`,
+  `POST /api/projects` с `{name}`. `directory` — контейнерный путь
+  `/workspace/<name>`, не host path. После создания Кабинет регистрирует его
+  через официальный DSH `workspaces.create({path})`, чтобы чат мог запускать
+  новые сессии в каталоге проекта.
 
-- `lib/index.js` — host-половина, no-op (пакет виден как Loader-строка;
-  паттерн `dsh-client-ui-jobs`).
-- `lib/client.js` — браузерная половина: рукописный Lazy-CJS-бандл в
-  формате хоста (`window.__ModuleLoader__.load({id, factory})`), поэтому
-  шаг сборки не нужен. Регистрация: `sidebar.panellist` (id
-  `agctl-cabinet`, label «Кабинет») + keyed slot `main` с тем же ключом —
-  паттерн `dsh-client-ui-plugin-manager`.
-- `package.json → dsh.client`: `platform: "web"`,
-  `inject: ["@deepseek-ai/dsh-client-ui-layout"]` (даёт сервис `layout`;
-  `slots` — базовый сервис ядра).
+## Регистрация и оформление
 
-## Волна 2: живой agctl REST
+`lib/client.js` — рукописный Lazy-CJS bundle через
+`window.__ModuleLoader__.load`, сборка не нужна. Сохранены стили/бренд agctl,
+`sidebar.panellist` («Кабинет», id `agctl-cabinet`) и keyed slot `main`.
+`lib/index.js` — host no-op; `cordis.patch.yml` регистрирует пакет.
+`package.json` сохраняет dsh.client platform web и layout injection.
 
-Экран кабинета работает против настоящего `agctl serve`: вход
-(`POST /api/login`), `GET /api/me`, список мест (`GET /api/workspaces`),
-создание (`POST /api/workspaces`), старт/стоп (`POST .../start|stop`). При
-создании можно вставить `ssh-ed25519 ...` публичный ключ: он передаётся как
-`sshPubKey`, в карточке места появится `sshPort` и команда `agctl connect`.
-Ключ можно заменить/снять через `PATCH /api/workspaces/{id}/ssh`; приватная
-часть ключа никогда не покидает машину пользователя.
+Пустое поле URL использует текущий origin. Явный URL хранится в localStorage;
+для кросс-доменного подключения сервер должен разрешать соответствующий
+origin и credentials. Ссылка в кабинете ведёт на `/chat/` выбранного сервера.
+В боковой навигации только личный чат, без workspace-запросов и таймеров.
 
-- База адреса: если поле URL пусто — запросы идут относительно текущего
-  origin (случай «dsh открыт через шлюз agctl `/w/<id>/`»: same-origin,
-  cookie agctl уже стоит). Иначе — указанный URL.
-- Кросс-доменный случай (панель в прямом dsh, agctl на другом порту)
-  требует разрешить origin на agctl:
-
-  ```sh
-  agctl serve --cors-origin "http://127.0.0.1:3555"
-  ```
-
-  Список пуст по умолчанию — CORS выключен; wildcard с credentials не
-  используется никогда (`internal/server/cors_test.go`).
-
-## Проверка волны 2 (ночь 2026-10-18→19)
-
-```sh
-# терминал 1: изолированный dsh web с панелью
-scripts/night-profile.sh
-# терминал 2: agctl с CORS на тестовом home
-/tmp/agctl-night serve --home /tmp/agctl-night-agctl-home \
-  --addr 127.0.0.1:18929 --cors-origin "http://127.0.0.1:3555"
-```
-
-Открыть `http://127.0.0.1:3555/` (скрипт печатает URL с boot-токеном) →
-Кабинет → URL `http://127.0.0.1:18929` → вход тестовым пользователем →
-список мест/создание. Живой провод подтверждён: combo-бандл dsh содержит
-код панели (проверено curl по boot graph), agctl отвечает с ACAO.
-
-## Запуск (изолированно)
-
-```sh
-scripts/night-profile.sh        # поднять dsh web на http://127.0.0.1:3555
-scripts/night-profile.sh stop   # остановить
-```
-
-Скрипт держит собственный `DSH_HOME` (`/tmp/agctl-night-dsh-home`),
-ставит пакет в профиль `night-cabinet` (`dsh plugin --profile … add
-file:…`), включает его в `dsh.profile.bundles` и печатает URL с
-boot-токеном для автовхода. Живая сессия владельца (:3080) не трогается.
-
-## Не делать
-
-- Не поднимать этот профиль на порту 3080 и в дефолтном `$DSH_HOME`.
-- Не коммитить токены из логов (лог живёт в /tmp, вне репо).
+Копия пакета в embedded web profile должна быть побайтно идентична исходной.
+Проверка: `node --check lib/client.js`, `node --check lib/index.js`,
+`node --test test/client.test.cjs` (mock-проверки ролей, payload, SSH-сна,
+истёкшей авторизации и отсутствия legacy-навигации).
+Для ручного smoke используйте изолированный профиль/TEST_HOME, не живой
+профиль владельца и не порт 3080. Не сохраняйте токены в репозитории.
