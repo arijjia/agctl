@@ -7,13 +7,13 @@
   "quality": "showcase",
   "specification": {
     "path": "/Users/masha/src/arijjia/cit/agctl/system/map/agctl-processes.architecture.json",
-    "sha256": "7bde93161e8c56717f708e6c2829af30bef44335715e6b9d13585936d0d4eb12",
-    "bytes": 15176
+    "sha256": "ceae9873d3024dbbd3b4c5ee31bb6f3b40cd56972e898527a2521805a6b8753e",
+    "bytes": 13893
   },
   "artifact": {
     "path": "/Users/masha/src/arijjia/cit/agctl/system/map/agctl-processes.html",
-    "sha256": "491ddb6f987cc1bae3c7f901e87acae24f952e05488efe0bd19b963deb4056a2",
-    "bytes": 782353
+    "sha256": "0d9ab3f9010eda3bda54e0d8a98ad6fc242709cdf15ea0cf0058df51753a1258",
+    "bytes": 775001
   },
   "gates": {
     "validate": "pass",
@@ -38,12 +38,12 @@
     "availableVersion": "3.2.0",
     "releaseNotes": "https://github.com/tt-a1i/archify/releases/tag/v3.2.0",
     "severity": "normal",
-    "checkedAt": "2026-10-24T12:03:47.978Z",
+    "checkedAt": "2026-10-25T11:19:04.802Z",
     "source": "cache",
     "noticeRequired": true,
-    "noticeText": "Archify update: 3.0.1 → 3.2.0. A previous check at 2026-10-24T12:03:47.978Z found a newer release. Release notes: https://github.com/tt-a1i/archify/releases/tag/v3.2.0. The installed Skill has not changed; ask to snooze or ignore this reminder.",
+    "noticeText": "Archify update: 3.0.1 → 3.2.0. A previous check at 2026-10-25T11:19:04.802Z found a newer release. Release notes: https://github.com/tt-a1i/archify/releases/tag/v3.2.0. The installed Skill has not changed; ask to snooze or ignore this reminder.",
     "eventKey": "archify@sha256:70e210265c59f24dcbdf2a502ff671104b5454e7ee7d3554aecd86bad32384f5"
   },
   "visualReview": "not-requested",
-  "durationMs": 1291
+  "durationMs": 1308
 }

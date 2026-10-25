@@ -9,7 +9,7 @@
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "42620a5d193393dcb472bdab0c7ec583df534bc6"
+      "revision": "e9d4b5c6c17ecc026d0969876d49c59cfbe8c789"
     },
     "views": [
       {
@@ -38,18 +38,18 @@
       },
       {
         "id": "v-dev",
-        "label": "Dev-workspace",
+        "label": "Разработчик (роль developer)",
         "focus": [
           "browser",
           "sshclient",
           "serve",
-          "relayw",
-          "dshws",
+          "relayc",
+          "dshchat",
           "sshd",
           "home",
           "llm"
         ],
-        "note": "+2–3 процесса на место; SSH-порт только на loopback хоста"
+        "note": "SSH-канал к своим файлам: +1 процесс sshd в том же контейнере"
       },
       {
         "id": "v-local",
@@ -81,8 +81,8 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 292,
-          "end_line": 308,
+          "line": 303,
+          "end_line": 317,
           "label": "корень: вход → /app/, сессия → /chat/"
         },
         {
@@ -97,7 +97,7 @@
       "id": "serve",
       "type": "backend",
       "label": "agctl serve — 1 Go-процесс",
-      "sublabel": ":8929 · auth · /api · шлюзы /chat /w",
+      "sublabel": ":8929 · auth · /api · шлюзы /chat /w · роли",
       "pos": [
         430,
         300
@@ -115,14 +115,14 @@
         },
         {
           "path": "internal/server/server.go",
-          "line": 217,
-          "end_line": 299,
+          "line": 214,
+          "end_line": 305,
           "label": "маршруты /api /w /chat /map"
         },
         {
           "path": "internal/server/server.go",
-          "line": 339,
-          "end_line": 392,
+          "line": 349,
+          "end_line": 402,
           "label": "фоновые задачи (горутины)"
         }
       ]
@@ -237,8 +237,8 @@
         {
           "path": "internal/runtime/dockerrt/chat.go",
           "line": 17,
-          "end_line": 62,
-          "label": "EnsureChat: seed + Start"
+          "end_line": 71,
+          "label": "EnsureChat: seed + Start (+SSH developer)"
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
@@ -248,67 +248,13 @@
       ]
     },
     {
-      "id": "relayw",
-      "type": "backend",
-      "label": "agctl-relay — node",
-      "sublabel": "0.0.0.0:3080 → пайп :3099",
-      "pos": [
-        860,
-        330
-      ],
-      "size": [
-        176,
-        72
-      ],
-      "sources": [
-        {
-          "path": "internal/assets/image/entrypoint.sh",
-          "line": 47,
-          "label": "запуск релея"
-        },
-        {
-          "path": "internal/assets/image/relay.mjs",
-          "line": 1,
-          "end_line": 12,
-          "label": "L4-релей"
-        }
-      ]
-    },
-    {
-      "id": "dshws",
-      "type": "backend",
-      "label": "dsh web — node",
-      "sublabel": "127.0.0.1:3099 · агент: git, терминал",
-      "pos": [
-        1215,
-        322
-      ],
-      "size": [
-        240,
-        104
-      ],
-      "sources": [
-        {
-          "path": "internal/provision/provision.go",
-          "line": 193,
-          "end_line": 278,
-          "label": "конвейер provision"
-        },
-        {
-          "path": "internal/assets/image/Dockerfile",
-          "line": 24,
-          "label": "пин @deepseek-ai/dsh@0.2.0-rc.2"
-        }
-      ]
-    },
-    {
       "id": "sshd",
       "type": "security",
-      "label": "sshd (opt-in при ключе)",
-      "sublabel": ":2222 · public-key only",
+      "label": "sshd — только роль developer",
+      "sublabel": ":2222 · key-only · порт на loopback",
       "pos": [
         1215,
-        470
+        270
       ],
       "size": [
         240,
@@ -320,6 +266,11 @@
           "line": 22,
           "end_line": 45,
           "label": "sshd только при AGCTL_SSH_PUBKEY"
+        },
+        {
+          "path": "internal/server/chat.go",
+          "line": 481,
+          "label": "ключ — только у роли developer"
         }
       ]
     },
@@ -357,7 +308,7 @@
       "sublabel": "удалённо — только через туннель/VPN",
       "pos": [
         24,
-        820
+        840
       ],
       "size": [
         214,
@@ -385,7 +336,7 @@
       "sublabel": "исходящий WSS :443 · credential 0600",
       "pos": [
         24,
-        640
+        700
       ],
       "size": [
         222,
@@ -407,7 +358,7 @@
       "sublabel": "127.0.0.1:3080 · HTTP+WS",
       "pos": [
         420,
-        640
+        700
       ],
       "size": [
         232,
@@ -449,19 +400,10 @@
     },
     {
       "kind": "region",
-      "label": "Контейнер чата u<id> — ×N, ленивый, 2 процесса",
+      "label": "Контейнер пользователя u<id> — ×N, ленивый, TTL 1 ч",
       "wraps": [
         "relayc",
-        "dshchat"
-      ],
-      "pad": 12
-    },
-    {
-      "kind": "region",
-      "label": "Контейнер dev-workspace — ×M, 2–3 процесса",
-      "wraps": [
-        "relayw",
-        "dshws",
+        "dshchat",
         "sshd"
       ],
       "pad": 12
@@ -475,8 +417,6 @@
         "home",
         "relayc",
         "dshchat",
-        "relayw",
-        "dshws",
         "sshd"
       ],
       "pad": 34
@@ -511,7 +451,7 @@
       "id": "c4",
       "from": "serve",
       "to": "relayc",
-      "label": "HTTP → port-fwd :3080",
+      "label": "HTTP · /chat/ и /w/{id} → :3080",
       "variant": "emphasis",
       "fromSide": "right",
       "toSide": "left"
@@ -530,32 +470,18 @@
       "variant": "emphasis"
     },
     {
-      "id": "c7",
-      "from": "serve",
-      "to": "relayw",
-      "label": "HTTP → port-fwd :3080",
-      "fromSide": "right",
-      "toSide": "left"
-    },
-    {
-      "id": "c8",
-      "from": "relayw",
-      "to": "dshws",
-      "label": "raw TCP → 127.0.0.1:3099"
-    },
-    {
-      "id": "c9",
-      "from": "dshws",
-      "to": "llm",
-      "label": "HTTPS :443",
-      "fromSide": "top",
-      "toSide": "bottom"
-    },
-    {
       "id": "c10",
       "from": "sshclient",
       "to": "sshd",
-      "label": "SSH-2 → 127.0.0.1:<dyn>"
+      "label": "SSH-2 → 127.0.0.1:<dyn>",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          1335,
+          876
+        ]
+      ]
     },
     {
       "id": "c11",
@@ -584,7 +510,8 @@
         "Вход/логин: +0 — экран рисует SPA agctl (go:embed), dsh ещё не существует",
         "Открылся /chat/: +2 — agctl-relay и dsh web; до готовности agctl отдаёт свой HTML прогрева",
         "Агент работает: + недолговечные дети dsh web (bash, python3, git, npx MCP)",
-        "Каждое dev-место: +2–3 (relay, dsh web, sshd при ключе); сон чата по TTL = оба процесса удаляются"
+        "Разработчик: +1 — sshd в его персональном контейнере (роль developer, при переданном ключе)",
+        "Сон по TTL (1 ч простоя) удаляет все процессы контейнера; том пользователя живёт"
       ]
     },
     {
@@ -592,7 +519,7 @@
       "title": "Порты и полный путь",
       "items": [
         "Наружу — только 127.0.0.1:8929 — единственный порт (TLS agctl не терминирует: впереди ingress)",
-        "Хост-порты контейнеров — динамические, только на loopback: web :3080, ssh :2222",
+        "Хост-порты контейнеров — динамические, только на loopback: web :3080, ssh :2222 (роль developer)",
         "Путь чата: браузер → :8929 → proxy + mint ?token= → relay :3080 → dsh :3099 → LLM :443",
         "Внутри контейнера dsh слушает только 127.0.0.1:3099 — наружу его отдаёт relay :3080"
       ]

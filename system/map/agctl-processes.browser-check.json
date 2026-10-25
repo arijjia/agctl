@@ -6,11 +6,11 @@
   "status": "pass",
   "visualReview": "not-requested",
   "provenance": "current",
-  "deliveryReceiptId": "16c7eb6c-7dcc-465f-9232-eec31d7ce806",
+  "deliveryReceiptId": "6e3d21ea-91c9-4031-b1ca-e2dfa021bdba",
   "artifact": {
-    "path": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261024-165956/agctl-processes.html",
-    "sha256": "33345e69b1d043ca6c55910854d438b81dc3f103631fe196ef4cd9c712ad64b5",
-    "bytes": 782210
+    "path": "/Users/masha/src/arijjia/cit/agctl/system/map/agctl-processes.html",
+    "sha256": "0d9ab3f9010eda3bda54e0d8a98ad6fc242709cdf15ea0cf0058df51753a1258",
+    "bytes": 775001
   },
   "state": {
     "detail": "read",
@@ -47,9 +47,9 @@
           "bodyPaddingPx": 12,
           "headerPx": 52,
           "diagramChromePx": 78,
-          "svgPx": 733,
+          "svgPx": 748,
           "cardsPx": 0,
-          "viewBoxHeight": 960
+          "viewBoxHeight": 980
         },
         "viewBoxWidth": 1763,
         "minimumProjectedNodeTextPx": 6.107770845150312,
@@ -84,7 +84,7 @@
         "innerWidth": 1600,
         "innerHeight": 1000,
         "scrollWidth": 1600,
-        "scrollHeight": 1028,
+        "scrollHeight": 1045,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -99,9 +99,9 @@
           "bodyPaddingPx": 64,
           "headerPx": 60,
           "diagramChromePx": 84,
-          "svgPx": 820,
+          "svgPx": 837,
           "cardsPx": 0,
-          "viewBoxHeight": 960
+          "viewBoxHeight": 980
         },
         "viewBoxWidth": 1763,
         "minimumProjectedNodeTextPx": 6.833806012478729,
@@ -136,7 +136,7 @@
         "innerWidth": 1920,
         "innerHeight": 1080,
         "scrollWidth": 1920,
-        "scrollHeight": 1109,
+        "scrollHeight": 1128,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -151,9 +151,9 @@
           "bodyPaddingPx": 64,
           "headerPx": 60,
           "diagramChromePx": 84,
-          "svgPx": 900,
+          "svgPx": 919,
           "cardsPx": 0,
-          "viewBoxHeight": 960
+          "viewBoxHeight": 980
         },
         "viewBoxWidth": 1763,
         "minimumProjectedNodeTextPx": 7.500850822461713,
@@ -203,9 +203,9 @@
           "bodyPaddingPx": 64,
           "headerPx": 68,
           "diagramChromePx": 94,
-          "svgPx": 1018,
+          "svgPx": 1039,
           "cardsPx": 0,
-          "viewBoxHeight": 960
+          "viewBoxHeight": 980
         },
         "viewBoxWidth": 1763,
         "minimumProjectedNodeTextPx": 8,
@@ -308,9 +308,9 @@
           "bodyPaddingPx": 12,
           "headerPx": 52,
           "diagramChromePx": 78,
-          "svgPx": 733,
+          "svgPx": 748,
           "cardsPx": 0,
-          "viewBoxHeight": 960
+          "viewBoxHeight": 980
         },
         "viewBoxWidth": 1763,
         "minimumProjectedNodeTextPx": 6.107770845150312,
@@ -345,7 +345,7 @@
         "innerWidth": 1600,
         "innerHeight": 1000,
         "scrollWidth": 1600,
-        "scrollHeight": 1028,
+        "scrollHeight": 1045,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -360,9 +360,9 @@
           "bodyPaddingPx": 64,
           "headerPx": 60,
           "diagramChromePx": 84,
-          "svgPx": 820,
+          "svgPx": 837,
           "cardsPx": 0,
-          "viewBoxHeight": 960
+          "viewBoxHeight": 980
         },
         "viewBoxWidth": 1763,
         "minimumProjectedNodeTextPx": 6.833806012478729,
@@ -397,7 +397,7 @@
         "innerWidth": 1920,
         "innerHeight": 1080,
         "scrollWidth": 1920,
-        "scrollHeight": 1109,
+        "scrollHeight": 1128,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -412,9 +412,9 @@
           "bodyPaddingPx": 64,
           "headerPx": 60,
           "diagramChromePx": 84,
-          "svgPx": 900,
+          "svgPx": 919,
           "cardsPx": 0,
-          "viewBoxHeight": 960
+          "viewBoxHeight": 980
         },
         "viewBoxWidth": 1763,
         "minimumProjectedNodeTextPx": 7.500850822461713,
@@ -464,9 +464,9 @@
           "bodyPaddingPx": 64,
           "headerPx": 68,
           "diagramChromePx": 94,
-          "svgPx": 1018,
+          "svgPx": 1039,
           "cardsPx": 0,
-          "viewBoxHeight": 960
+          "viewBoxHeight": 980
         },
         "viewBoxWidth": 1763,
         "minimumProjectedNodeTextPx": 8,
@@ -521,9 +521,9 @@
           "bodyPaddingPx": 12,
           "headerPx": 52,
           "diagramChromePx": 78,
-          "svgPx": 733,
+          "svgPx": 748,
           "cardsPx": 0,
-          "viewBoxHeight": 960
+          "viewBoxHeight": 980
         },
         "viewBoxWidth": 1763,
         "minimumProjectedNodeTextPx": 6.107770845150312,
@@ -558,7 +558,7 @@
         "innerWidth": 1600,
         "innerHeight": 1000,
         "scrollWidth": 1600,
-        "scrollHeight": 1028,
+        "scrollHeight": 1045,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -573,9 +573,9 @@
           "bodyPaddingPx": 64,
           "headerPx": 60,
           "diagramChromePx": 84,
-          "svgPx": 820,
+          "svgPx": 837,
           "cardsPx": 0,
-          "viewBoxHeight": 960
+          "viewBoxHeight": 980
         },
         "viewBoxWidth": 1763,
         "minimumProjectedNodeTextPx": 6.833806012478729,
@@ -610,7 +610,7 @@
         "innerWidth": 1920,
         "innerHeight": 1080,
         "scrollWidth": 1920,
-        "scrollHeight": 1109,
+        "scrollHeight": 1128,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -625,9 +625,9 @@
           "bodyPaddingPx": 64,
           "headerPx": 60,
           "diagramChromePx": 84,
-          "svgPx": 900,
+          "svgPx": 919,
           "cardsPx": 0,
-          "viewBoxHeight": 960
+          "viewBoxHeight": 980
         },
         "viewBoxWidth": 1763,
         "minimumProjectedNodeTextPx": 7.500850822461713,
@@ -677,9 +677,9 @@
           "bodyPaddingPx": 64,
           "headerPx": 68,
           "diagramChromePx": 94,
-          "svgPx": 1018,
+          "svgPx": 1039,
           "cardsPx": 0,
-          "viewBoxHeight": 960
+          "viewBoxHeight": 980
         },
         "viewBoxWidth": 1763,
         "minimumProjectedNodeTextPx": 8,
@@ -715,7 +715,6 @@
     "contactSheet": null
   },
   "sidecars": {
-    "directory": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261024-165956/review-3",
     "receipt": "agctl-processes.browser-check.json",
     "files": []
   }
