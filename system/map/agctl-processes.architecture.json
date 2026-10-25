@@ -3,13 +3,13 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "agctl — физика: процессы, порты, протоколы",
-    "output": ".archify/architecture-agctl-processes-20261025-173332/agctl-processes.html",
+    "output": ".archify/architecture-agctl-processes-20261025-174333/agctl-processes.html",
     "quality_profile": "showcase",
     "repository": {
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "1a67fe85be748d6b8ebbc992fd581cec1ba538d1"
+      "revision": "5d7a2fbdd174d0f6e897080d9f2ed1713275432f"
     },
     "views": [
       {
@@ -112,21 +112,21 @@
       "sources": [
         {
           "path": "cmd/agctl/main.go",
-          "line": 118,
-          "end_line": 120,
-          "label": "serve, addr по умолчанию"
+          "line": 117,
+          "end_line": 222,
+          "label": "cmdServe startup + HTTP listener"
         },
         {
           "path": "internal/server/server.go",
           "line": 214,
-          "end_line": 305,
-          "label": "маршруты /api /w /chat /map"
+          "end_line": 316,
+          "label": "API/gateway routes + auth middleware"
         },
         {
-          "path": "internal/server/server.go",
-          "line": 349,
-          "end_line": 402,
-          "label": "фоновые задачи (горутины)"
+          "path": "internal/server/chat.go",
+          "line": 421,
+          "end_line": 519,
+          "label": "lazy per-user runtime + TTL reaper"
         }
       ]
     },
@@ -598,7 +598,17 @@
         "Цель v3: $AGCTL_HOME/u<id>/dsh-home (сессии, настройки) + workspace/<project> (файлы проектов)",
         "agctl serve отдельно ведёт SQLite/secrets и запускает Git autosave в своём Go-процессе",
         "Контейнер можно удалить — том остаётся. Git-снимки тоже лежат под AGCTL_HOME; точная целевая раскладка уточняется в MVP",
-        "Source pin e9d4b5c показывает старые chats/u<id>/{dsh-home,work}; пути выше — целевая схема, не заявление о завершённой миграции"
+        "Pinned source snapshot всё ещё показывает chats/u<id>/{dsh-home,work}; пути выше — target v3, не заявление о завершённой миграции"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "agctl serve — сердце платформы",
+      "items": [
+        "Постоянно работающий управляющий процесс платформы на хосте: один Go-процесс, слушает :8929, принимает HTTP/WS/SSE.",
+        "Проверяет сессию и роль, обслуживает API и шлюзы; в целевой v3-модели лениво запускает через Docker один runtime пользователя.",
+        "TTL/reaper останавливает вычисления, но оставляет том. agctl serve не запускает команды агента и не проксирует файловые записи.",
+        "dsh и дочерние инструменты читают и пишут напрямую через RW bind mount; фоновые задачи, включая Git autosave, выполняются в Go-процессе как горутины. SQLite и секреты — данные платформы в AGCTL_HOME."
       ]
     }
   ]
