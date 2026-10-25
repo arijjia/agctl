@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "agctl — физика: процессы, порты, протоколы",
-    "output": ".archify/architecture-agctl-processes-20261025-175012/agctl-processes.html",
+    "output": ".archify/architecture-agctl-processes-20261025-175746/agctl-processes.html",
     "quality_profile": "showcase",
     "repository": {
       "url": "git@github.com:arijjia/agctl.git",
@@ -195,7 +195,7 @@
       "id": "uvolume",
       "type": "database",
       "label": "u<id> — volume, файлы не процесс",
-      "sublabel": "v3: dsh-home вне Git · workspace/<project> под Git",
+      "sublabel": "внутри $AGCTL_HOME · workspace/ под Git",
       "pos": [
         860,
         460
@@ -557,6 +557,15 @@
           508
         ]
       ]
+    },
+    {
+      "id": "c14",
+      "from": "home",
+      "to": "uvolume",
+      "label": "подкаталог · host FS",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left"
     }
   ],
   "cards": [
@@ -596,10 +605,11 @@
       "title": "Персистентность: куда идут записи",
       "items": [
         "dsh web и процессы-дети читают/пишут файлы напрямую через RW bind mount; записи не проксируются через agctl serve",
-        "Цель v3: $AGCTL_HOME/u<id>/dsh-home (сессии, настройки) + workspace/<project> (файлы проектов)",
+        "Том пользователя — подкаталог $AGCTL_HOME на диске хоста, а не Docker-volume внутри демона: сейчас chats/u<id>, цель v3 — u<id>.",
+        "Цель v3: u<id>/dsh-home (сессии, настройки) и соседний u<id>/workspace/<project> (файлы проектов и их .git)",
         "agctl serve отдельно ведёт SQLite/secrets и запускает Git autosave в своём Go-процессе",
-        "Контейнер можно удалить — том остаётся. Git-снимки тоже лежат под AGCTL_HOME; точная целевая раскладка уточняется в MVP",
-        "Pinned source snapshot всё ещё показывает chats/u<id>/{dsh-home,work}; пути выше — target v3, не заявление о завершённой миграции"
+        "Контейнер можно удалить — том остаётся. Бэкап платформы = копия $AGCTL_HOME",
+        "Pinned source snapshot показывает chats/u<id>/{dsh-home,work}; переход на u<id>/{dsh-home,workspace/} — target, миграции пока нет"
       ]
     },
     {
@@ -610,25 +620,6 @@
         "Проверяет сессию и роль, обслуживает API и шлюзы; в целевой v3-модели лениво запускает через Docker один runtime пользователя.",
         "TTL/reaper останавливает вычисления, но оставляет том. agctl serve не запускает команды агента и не проксирует файловые записи.",
         "dsh и дочерние инструменты читают и пишут напрямую через RW bind mount; фоновые задачи, включая Git autosave, выполняются в Go-процессе как горутины. SQLite и секреты — данные платформы в AGCTL_HOME."
-      ]
-    },
-    {
-      "dot": "orange",
-      "title": "Дерево сервера: 3 пользователя × 3 проекта",
-      "items": [
-        "Пример: u101, u202, u303; у каждого по 3 проекта — всего 9 каталогов, при одновременной активности максимум 3 пользовательских контейнера.",
-        "$AGCTL_HOME/ — общий корень данных сервера (по умолчанию ~/.agctl).",
-        "├── agctl.db — SQLite-метаданные платформы; не Git",
-        "├── secrets.key — ключ шифрования; никогда не Git",
-        "├── u101/ — постоянные данные пользователя (такая же структура у u202/ и u303/)",
-        "│   ├── dsh-home/ — сессии, настройки, credentials, plugins; вне Git",
-        "│   └── workspace/",
-        "│       ├── project-a/ — рабочие файлы под Git/autosave",
-        "│       ├── project-b/ — рабочие файлы под Git/autosave",
-        "│       └── project-c/ — рабочие файлы под Git/autosave",
-        "├── u202/ — такое же dsh-home/ + workspace/ с 3 проектами",
-        "└── u303/ — такое же dsh-home/ + workspace/ с 3 проектами",
-        "История Git хранится под AGCTL_HOME; точное целевое имя/расположение хранилища модель пока не фиксирует."
       ]
     },
     {

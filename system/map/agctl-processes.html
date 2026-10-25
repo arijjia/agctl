@@ -5056,6 +5056,10 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <path data-edge-from="conn" data-edge-to="dshlocal" data-edge-label="HTTP в yamux → :3080" data-edge-key="8" data-edge-id="c12" data-composition-points="246,750.05;420,750.05" data-composition-crossover="halo" data-composition-independent="true" d="M 246 750.05 L 420 750.05" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <path data-edge-from="dshchat" data-edge-to="uvolume" data-edge-label="bind mount RW · host FS" data-edge-key="9" data-edge-id="c13" data-composition-points="1215,182;1140,182;1140,508;1120,508" d="M 1215 182 L 1148 182 Q 1140 182 1140 190 L 1140 500 Q 1140 508 1132 508 L 1120 508" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <g data-graph-role="automatic-crossover" style="--step:10">
+          <path data-graph-role="automatic-crossover-underlay" d="M 700 528 L 772 528 Q 780 528 780 520 L 780 516 Q 780 508 788 508 L 860 508" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="home" data-edge-to="uvolume" data-edge-label="подкаталог · host FS" data-edge-key="10" data-edge-id="c14" data-composition-points="700,528;780,528;780,508;860,508" data-composition-crossover="halo" data-composition-independent="true" d="M 700 528 L 772 528 Q 780 528 780 520 L 780 516 Q 780 508 788 508 L 860 508" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        </g>
 
         <!-- Components -->
         <g id="node-browser" data-node-id="browser" data-node-label="Вкладка браузера" tabindex="0" role="button" aria-label="Focus Вкладка браузера, вход — SPA agctl · чат — dsh SPA, Рабочая машина пользователя" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="вход — SPA agctl · чат — dsh SPA" data-node-context="Рабочая машина пользователя">
@@ -5106,8 +5110,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="context" x="565" y="542" class="t-muted" font-size="9" text-anchor="middle">SQLite WAL · secrets.key · user volumes · Git</text>
         </g>
 
-        <g id="node-uvolume" data-node-id="uvolume" data-node-label="u&lt;id&gt; — volume, файлы не процесс" tabindex="0" role="button" aria-label="Focus u&lt;id&gt; — volume, файлы не процесс, v3: dsh-home вне Git · workspace/&lt;project&gt; под Git, Сервер — один хост" aria-pressed="false" data-node-kind="database" data-node-sublabel="v3: dsh-home вне Git · workspace/&lt;project&gt; под Git" data-node-context="Сервер — один хост">
-          <title>u&lt;id&gt; — volume, файлы не процесс · v3: dsh-home вне Git · workspace/&lt;project&gt; под Git · Сервер — один хост</title>
+        <g id="node-uvolume" data-node-id="uvolume" data-node-label="u&lt;id&gt; — volume, файлы не процесс" tabindex="0" role="button" aria-label="Focus u&lt;id&gt; — volume, файлы не процесс, внутри $AGCTL_HOME · workspace/ под Git, Сервер — один хост" aria-pressed="false" data-node-kind="database" data-node-sublabel="внутри $AGCTL_HOME · workspace/ под Git" data-node-context="Сервер — один хост">
+          <title>u&lt;id&gt; — volume, файлы не процесс · внутри $AGCTL_HOME · workspace/ под Git · Сервер — один хост</title>
           <rect x="860" y="460" width="260" height="96" rx="6" class="c-mask"/>
           <rect x="860" y="460" width="260" height="96" rx="6" class="c-database" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(866 466) scale(0.6875)">
@@ -5115,7 +5119,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="990" y="506" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">u&lt;id&gt; — volume, файлы не процесс</text>
-        <text data-detail="context" x="990" y="522" class="t-muted" font-size="8.4" text-anchor="middle">v3: dsh-home вне Git · workspace/&lt;project&gt; под Git</text>
+        <text data-detail="context" x="990" y="522" class="t-muted" font-size="9" text-anchor="middle">внутри $AGCTL_HOME · workspace/ под Git</text>
         </g>
 
         <g id="node-relayc" data-node-id="relayc" data-node-label="agctl-relay — node" tabindex="0" role="button" aria-label="Focus agctl-relay — node, 0.0.0.0:3080 → пайп :3099, Сервер — один хост › Контейнер пользователя u&lt;id&gt; — ×N, ленивый, TTL 1 ч" aria-pressed="false" data-node-kind="backend" data-node-sublabel="0.0.0.0:3080 → пайп :3099" data-node-context="Сервер — один хост › Контейнер пользователя u&lt;id&gt; — ×N, ленивый, TTL 1 ч">
@@ -5238,6 +5242,10 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <g data-detail="context" data-edge-from="dshchat" data-edge-to="uvolume" data-edge-label="bind mount RW · host FS" data-edge-key="9" data-edge-id="c13">
           <rect x="1079.8" y="325" width="120.39999999999999" height="14" rx="3" class="c-mask"/>
           <text x="1140" y="335" class="t-edge-emphasis" font-size="8" text-anchor="middle">bind mount RW · host FS</text>
+        </g>
+        <g data-detail="context" data-edge-from="home" data-edge-to="uvolume" data-edge-label="подкаталог · host FS" data-edge-key="10" data-edge-id="c14">
+          <rect x="727" y="498" width="106" height="14" rx="3" class="c-mask"/>
+          <text x="780" y="508" class="t-edge-dashed" font-size="8" text-anchor="middle">подкаталог · host FS</text>
         </g>
 
         <!-- Boundary labels (foreground masks keep routes out of titles) -->
@@ -5512,10 +5520,11 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         </div>
         <ul>
           <li>dsh web и процессы-дети читают/пишут файлы напрямую через RW bind mount; записи не проксируются через agctl serve</li>
-          <li>Цель v3: $AGCTL_HOME/u&lt;id&gt;/dsh-home (сессии, настройки) + workspace/&lt;project&gt; (файлы проектов)</li>
+          <li>Том пользователя — подкаталог $AGCTL_HOME на диске хоста, а не Docker-volume внутри демона: сейчас chats/u&lt;id&gt;, цель v3 — u&lt;id&gt;.</li>
+          <li>Цель v3: u&lt;id&gt;/dsh-home (сессии, настройки) и соседний u&lt;id&gt;/workspace/&lt;project&gt; (файлы проектов и их .git)</li>
           <li>agctl serve отдельно ведёт SQLite/secrets и запускает Git autosave в своём Go-процессе</li>
-          <li>Контейнер можно удалить — том остаётся. Git-снимки тоже лежат под AGCTL_HOME; точная целевая раскладка уточняется в MVP</li>
-          <li>Pinned source snapshot всё ещё показывает chats/u&lt;id&gt;/{dsh-home,work}; пути выше — target v3, не заявление о завершённой миграции</li>
+          <li>Контейнер можно удалить — том остаётся. Бэкап платформы = копия $AGCTL_HOME</li>
+          <li>Pinned source snapshot показывает chats/u&lt;id&gt;/{dsh-home,work}; переход на u&lt;id&gt;/{dsh-home,workspace/} — target, миграции пока нет</li>
         </ul>
       </div>
 
@@ -5529,28 +5538,6 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <li>Проверяет сессию и роль, обслуживает API и шлюзы; в целевой v3-модели лениво запускает через Docker один runtime пользователя.</li>
           <li>TTL/reaper останавливает вычисления, но оставляет том. agctl serve не запускает команды агента и не проксирует файловые записи.</li>
           <li>dsh и дочерние инструменты читают и пишут напрямую через RW bind mount; фоновые задачи, включая Git autosave, выполняются в Go-процессе как горутины. SQLite и секреты — данные платформы в AGCTL_HOME.</li>
-        </ul>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <div class="card-dot orange"></div>
-          <h3>Дерево сервера: 3 пользователя × 3 проекта</h3>
-        </div>
-        <ul>
-          <li>Пример: u101, u202, u303; у каждого по 3 проекта — всего 9 каталогов, при одновременной активности максимум 3 пользовательских контейнера.</li>
-          <li>$AGCTL_HOME/ — общий корень данных сервера (по умолчанию ~/.agctl).</li>
-          <li>├── agctl.db — SQLite-метаданные платформы; не Git</li>
-          <li>├── secrets.key — ключ шифрования; никогда не Git</li>
-          <li>├── u101/ — постоянные данные пользователя (такая же структура у u202/ и u303/)</li>
-          <li>│   ├── dsh-home/ — сессии, настройки, credentials, plugins; вне Git</li>
-          <li>│   └── workspace/</li>
-          <li>│       ├── project-a/ — рабочие файлы под Git/autosave</li>
-          <li>│       ├── project-b/ — рабочие файлы под Git/autosave</li>
-          <li>│       └── project-c/ — рабочие файлы под Git/autosave</li>
-          <li>├── u202/ — такое же dsh-home/ + workspace/ с 3 проектами</li>
-          <li>└── u303/ — такое же dsh-home/ + workspace/ с 3 проектами</li>
-          <li>История Git хранится под AGCTL_HOME; точное целевое имя/расположение хранилища модель пока не фиксирует.</li>
         </ul>
       </div>
 
