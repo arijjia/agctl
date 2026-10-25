@@ -3,13 +3,13 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "agctl — физика: процессы, порты, протоколы",
-    "output": ".archify/architecture-agctl-processes-20261024-165956/agctl-processes.html",
+    "output": ".archify/architecture-agctl-processes-20261025-173332/agctl-processes.html",
     "quality_profile": "showcase",
     "repository": {
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "e9d4b5c6c17ecc026d0969876d49c59cfbe8c789"
+      "revision": "1a67fe85be748d6b8ebbc992fd581cec1ba538d1"
     },
     "views": [
       {
@@ -19,9 +19,10 @@
           "browser",
           "serve",
           "dockerd",
-          "home"
+          "home",
+          "uvolume"
         ],
-        "note": "Логин поднимает 0 контейнеров: экран входа — SPA agctl (go:embed), не dsh"
+        "note": "Логин +0 процессов; файлы/том — отдельны от процессов runtime"
       },
       {
         "id": "v-chat",
@@ -32,9 +33,10 @@
           "dockerd",
           "relayc",
           "dshchat",
+          "uvolume",
           "llm"
         ],
-        "note": "+2 процесса; до готовности контейнера agctl отдаёт свой HTML прогрева"
+        "note": "+2 процесса; dsh пишет напрямую через RW mount; том переживает удаление контейнера"
       },
       {
         "id": "v-dev",
@@ -47,9 +49,10 @@
           "dshchat",
           "sshd",
           "home",
+          "uvolume",
           "llm"
         ],
-        "note": "SSH-канал к своим файлам: +1 процесс sshd в том же контейнере"
+        "note": "SSH-канал к файлам того же пользователя; runtime и том общие для всех его проектов"
       },
       {
         "id": "v-local",
@@ -158,7 +161,7 @@
       "id": "home",
       "type": "database",
       "label": "$AGCTL_HOME — файлы, не процесс",
-      "sublabel": "SQLite WAL · secrets.key · chats/ · repos/",
+      "sublabel": "SQLite WAL · secrets.key · user volumes · Git",
       "pos": [
         430,
         480
@@ -175,16 +178,50 @@
           "label": "AGCTL_HOME, ~/.agctl"
         },
         {
-          "path": "internal/provision/provision.go",
-          "line": 22,
-          "end_line": 25,
-          "label": "go-git в процессе, без детей"
+          "path": "cmd/agctl/main.go",
+          "line": 157,
+          "end_line": 167,
+          "label": "master key + agctl.db"
         },
         {
           "path": "internal/provision/provision.go",
           "line": 508,
           "end_line": 544,
           "label": "AutosaveOnce: commit+push"
+        }
+      ]
+    },
+    {
+      "id": "uvolume",
+      "type": "database",
+      "label": "u<id> — volume, файлы не процесс",
+      "sublabel": "target v3: dsh-home/ + workspace/",
+      "pos": [
+        860,
+        460
+      ],
+      "size": [
+        260,
+        96
+      ],
+      "sources": [
+        {
+          "path": "internal/runtime/chat.go",
+          "line": 11,
+          "end_line": 14,
+          "label": "StorageID maps to bind mount/PVC"
+        },
+        {
+          "path": "internal/runtime/dockerrt/chat.go",
+          "line": 24,
+          "end_line": 27,
+          "label": "per-user persistent directories"
+        },
+        {
+          "path": "internal/runtime/dockerrt/docker.go",
+          "line": 288,
+          "end_line": 291,
+          "label": "host dirs mounted into container"
         }
       ]
     },
@@ -415,6 +452,7 @@
         "serve",
         "dockerd",
         "home",
+        "uvolume",
         "relayc",
         "dshchat",
         "sshd"
@@ -442,7 +480,7 @@
       "id": "c3",
       "from": "serve",
       "to": "home",
-      "label": "SQLite WAL · git/go-git",
+      "label": "SQLite WAL · key · Git autosave",
       "variant": "dashed",
       "fromSide": "bottom",
       "toSide": "top"
@@ -499,6 +537,25 @@
       "label": "HTTP в yamux → :3080",
       "fromSide": "right",
       "toSide": "left"
+    },
+    {
+      "id": "c13",
+      "from": "dshchat",
+      "to": "uvolume",
+      "label": "bind mount RW · host FS",
+      "variant": "emphasis",
+      "fromSide": "left",
+      "toSide": "right",
+      "via": [
+        [
+          1140,
+          182
+        ],
+        [
+          1140,
+          508
+        ]
+      ]
     }
   ],
   "cards": [
@@ -531,6 +588,17 @@
         "Браузер↔agctl: HTTP/1.1 + WS/SSE, cookie agctl_*; dsh-auth-* минтит шлюз (401 → серверный ?token=)",
         "agctl↔dockerd: REST over Unix socket; relay↔dsh: сырой TCP, HTTP/WS проходят как есть",
         "dsh→LiteLLM: HTTPS :443, OpenAI-совместимый; local backend: WSS :443 + yamux (HTTP внутри стримов)"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Персистентность: куда идут записи",
+      "items": [
+        "dsh web и процессы-дети читают/пишут файлы напрямую через RW bind mount; записи не проксируются через agctl serve",
+        "Цель v3: $AGCTL_HOME/u<id>/dsh-home (сессии, настройки) + workspace/<project> (файлы проектов)",
+        "agctl serve отдельно ведёт SQLite/secrets и запускает Git autosave в своём Go-процессе",
+        "Контейнер можно удалить — том остаётся. Git-снимки тоже лежат под AGCTL_HOME; точная целевая раскладка уточняется в MVP",
+        "Source pin e9d4b5c показывает старые chats/u<id>/{dsh-home,work}; пути выше — целевая схема, не заявление о завершённой миграции"
       ]
     }
   ]
