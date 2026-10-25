@@ -1,0 +1,610 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "agctl — физика: процессы, порты, протоколы",
+    "output": ".archify/architecture-agctl-processes-20261024-165956/agctl-processes.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "git@github.com:arijjia/agctl.git",
+      "provider": "github",
+      "link_mode": "local-only",
+      "revision": "42620a5d193393dcb472bdab0c7ec583df534bc6"
+    },
+    "views": [
+      {
+        "id": "v-login",
+        "label": "Вход: что запущено",
+        "focus": [
+          "browser",
+          "serve",
+          "dockerd",
+          "home"
+        ],
+        "note": "Логин поднимает 0 контейнеров: экран входа — SPA agctl (go:embed), не dsh"
+      },
+      {
+        "id": "v-chat",
+        "label": "Открылся /chat/",
+        "focus": [
+          "browser",
+          "serve",
+          "dockerd",
+          "relayc",
+          "dshchat",
+          "llm"
+        ],
+        "note": "+2 процесса; до готовности контейнера agctl отдаёт свой HTML прогрева"
+      },
+      {
+        "id": "v-dev",
+        "label": "Dev-workspace",
+        "focus": [
+          "browser",
+          "sshclient",
+          "serve",
+          "relayw",
+          "dshws",
+          "sshd",
+          "home",
+          "llm"
+        ],
+        "note": "+2–3 процесса на место; SSH-порт только на loopback хоста"
+      },
+      {
+        "id": "v-local",
+        "label": "Local backend (experimental)",
+        "focus": [
+          "browser",
+          "serve",
+          "conn",
+          "dshlocal"
+        ],
+        "note": "Ноутбук сам инициирует WSS :443; UI едет по /api/local-backend/ui/*"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "browser",
+      "type": "frontend",
+      "label": "Вкладка браузера",
+      "sublabel": "вход — SPA agctl · чат — dsh SPA",
+      "pos": [
+        24,
+        320
+      ],
+      "size": [
+        214,
+        92
+      ],
+      "sources": [
+        {
+          "path": "internal/server/server.go",
+          "line": 292,
+          "end_line": 308,
+          "label": "корень: вход → /app/, сессия → /chat/"
+        },
+        {
+          "path": "internal/server/chatshell.go",
+          "line": 3,
+          "end_line": 31,
+          "label": "pre-paint чат-шелла"
+        }
+      ]
+    },
+    {
+      "id": "serve",
+      "type": "backend",
+      "label": "agctl serve — 1 Go-процесс",
+      "sublabel": ":8929 · auth · /api · шлюзы /chat /w",
+      "pos": [
+        430,
+        300
+      ],
+      "size": [
+        270,
+        130
+      ],
+      "sources": [
+        {
+          "path": "cmd/agctl/main.go",
+          "line": 118,
+          "end_line": 120,
+          "label": "serve, addr по умолчанию"
+        },
+        {
+          "path": "internal/server/server.go",
+          "line": 217,
+          "end_line": 299,
+          "label": "маршруты /api /w /chat /map"
+        },
+        {
+          "path": "internal/server/server.go",
+          "line": 339,
+          "end_line": 392,
+          "label": "фоновые задачи (горутины)"
+        }
+      ]
+    },
+    {
+      "id": "dockerd",
+      "type": "cloud",
+      "label": "dockerd — 1 процесс",
+      "sublabel": "Unix socket /var/run/docker.sock · REST",
+      "pos": [
+        430,
+        130
+      ],
+      "size": [
+        270,
+        70
+      ],
+      "sources": [
+        {
+          "path": "internal/runtime/dockerrt/docker.go",
+          "line": 54,
+          "label": "docker-клиент (FromEnv)"
+        },
+        {
+          "path": "internal/runtime/dockerrt/docker.go",
+          "line": 272,
+          "end_line": 276,
+          "label": "публикация портов на 127.0.0.1"
+        }
+      ]
+    },
+    {
+      "id": "home",
+      "type": "database",
+      "label": "$AGCTL_HOME — файлы, не процесс",
+      "sublabel": "SQLite WAL · secrets.key · chats/ · repos/",
+      "pos": [
+        430,
+        480
+      ],
+      "size": [
+        270,
+        96
+      ],
+      "sources": [
+        {
+          "path": "cmd/agctl/main.go",
+          "line": 95,
+          "end_line": 108,
+          "label": "AGCTL_HOME, ~/.agctl"
+        },
+        {
+          "path": "internal/provision/provision.go",
+          "line": 22,
+          "end_line": 25,
+          "label": "go-git в процессе, без детей"
+        },
+        {
+          "path": "internal/provision/provision.go",
+          "line": 508,
+          "end_line": 544,
+          "label": "AutosaveOnce: commit+push"
+        }
+      ]
+    },
+    {
+      "id": "relayc",
+      "type": "backend",
+      "label": "agctl-relay — node",
+      "sublabel": "0.0.0.0:3080 → пайп :3099",
+      "pos": [
+        860,
+        140
+      ],
+      "size": [
+        176,
+        72
+      ],
+      "sources": [
+        {
+          "path": "internal/assets/image/entrypoint.sh",
+          "line": 47,
+          "label": "запуск релея"
+        },
+        {
+          "path": "internal/assets/image/relay.mjs",
+          "line": 1,
+          "end_line": 12,
+          "label": "L4-релей"
+        }
+      ]
+    },
+    {
+      "id": "dshchat",
+      "type": "backend",
+      "label": "dsh web — node",
+      "sublabel": "127.0.0.1:3099 · движок+API · раздаёт SPA",
+      "pos": [
+        1215,
+        130
+      ],
+      "size": [
+        240,
+        104
+      ],
+      "sources": [
+        {
+          "path": "internal/assets/image/entrypoint.sh",
+          "line": 48,
+          "label": "exec dsh web --port 3099"
+        },
+        {
+          "path": "internal/runtime/dockerrt/chat.go",
+          "line": 17,
+          "end_line": 62,
+          "label": "EnsureChat: seed + Start"
+        },
+        {
+          "path": "internal/runtime/dockerrt/docker.go",
+          "line": 269,
+          "label": "AGCTL_CHAT_SESSION_ROOT"
+        }
+      ]
+    },
+    {
+      "id": "relayw",
+      "type": "backend",
+      "label": "agctl-relay — node",
+      "sublabel": "0.0.0.0:3080 → пайп :3099",
+      "pos": [
+        860,
+        390
+      ],
+      "size": [
+        176,
+        72
+      ],
+      "sources": [
+        {
+          "path": "internal/assets/image/entrypoint.sh",
+          "line": 47,
+          "label": "запуск релея"
+        },
+        {
+          "path": "internal/assets/image/relay.mjs",
+          "line": 1,
+          "end_line": 12,
+          "label": "L4-релей"
+        }
+      ]
+    },
+    {
+      "id": "dshws",
+      "type": "backend",
+      "label": "dsh web — node",
+      "sublabel": "127.0.0.1:3099 · агент: git, терминал",
+      "pos": [
+        1215,
+        382
+      ],
+      "size": [
+        240,
+        104
+      ],
+      "sources": [
+        {
+          "path": "internal/provision/provision.go",
+          "line": 193,
+          "end_line": 278,
+          "label": "конвейер provision"
+        },
+        {
+          "path": "internal/assets/image/Dockerfile",
+          "line": 24,
+          "label": "пин @deepseek-ai/dsh@0.2.0-rc.2"
+        }
+      ]
+    },
+    {
+      "id": "sshd",
+      "type": "security",
+      "label": "sshd (opt-in при ключе)",
+      "sublabel": ":2222 · public-key only",
+      "pos": [
+        1215,
+        530
+      ],
+      "size": [
+        240,
+        64
+      ],
+      "sources": [
+        {
+          "path": "internal/assets/image/entrypoint.sh",
+          "line": 22,
+          "end_line": 45,
+          "label": "sshd только при AGCTL_SSH_PUBKEY"
+        }
+      ]
+    },
+    {
+      "id": "llm",
+      "type": "external",
+      "label": "LiteLLM корп.",
+      "sublabel": "litellm-dev.utmn.ru · :443",
+      "pos": [
+        1543,
+        140
+      ],
+      "size": [
+        180,
+        72
+      ],
+      "sources": [
+        {
+          "path": "internal/runtime/dockerrt/docker.go",
+          "line": 251,
+          "label": "host.docker.internal:host-gateway"
+        },
+        {
+          "path": "internal/runtime/dockerrt/docker.go",
+          "line": 288,
+          "end_line": 292,
+          "label": "pin провайдера"
+        }
+      ]
+    },
+    {
+      "id": "sshclient",
+      "type": "external",
+      "label": "ssh · Mutagen · VS Code",
+      "sublabel": "удалённо — только через туннель/VPN",
+      "pos": [
+        24,
+        760
+      ],
+      "size": [
+        214,
+        72
+      ],
+      "sources": [
+        {
+          "path": "cmd/agctl/connect.go",
+          "line": 12,
+          "end_line": 20,
+          "label": "agctl connect"
+        },
+        {
+          "path": "internal/assets/image/entrypoint.sh",
+          "line": 22,
+          "end_line": 24,
+          "label": "порт 2222 только loopback"
+        }
+      ]
+    },
+    {
+      "id": "conn",
+      "type": "backend",
+      "label": "agctl local connect — Go",
+      "sublabel": "исходящий WSS :443 · credential 0600",
+      "pos": [
+        24,
+        600
+      ],
+      "size": [
+        222,
+        84
+      ],
+      "sources": [
+        {
+          "path": "cmd/agctl/local.go",
+          "line": 22,
+          "end_line": 42,
+          "label": "connector: --launch-dsh, WSS"
+        }
+      ]
+    },
+    {
+      "id": "dshlocal",
+      "type": "backend",
+      "label": "dsh web — node (локально)",
+      "sublabel": "127.0.0.1:3080 · HTTP+WS",
+      "pos": [
+        420,
+        600
+      ],
+      "size": [
+        232,
+        84
+      ],
+      "sources": [
+        {
+          "path": "cmd/agctl/local.go",
+          "line": 32,
+          "end_line": 42,
+          "label": "dsh-port 3080, loopback"
+        },
+        {
+          "path": "internal/bridge/bridge.go",
+          "line": 32,
+          "end_line": 43,
+          "label": "authority локального dsh"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Рабочая машина пользователя",
+      "wraps": [
+        "browser"
+      ],
+      "pad": 12
+    },
+    {
+      "kind": "region",
+      "label": "Ноутбук (experimental local backend)",
+      "wraps": [
+        "conn",
+        "dshlocal"
+      ],
+      "pad": 12
+    },
+    {
+      "kind": "region",
+      "label": "Контейнер чата u<id> — ×N, ленивый, 2 процесса",
+      "wraps": [
+        "relayc",
+        "dshchat"
+      ],
+      "pad": 12
+    },
+    {
+      "kind": "region",
+      "label": "Контейнер dev-workspace — ×M, 2–3 процесса",
+      "wraps": [
+        "relayw",
+        "dshws",
+        "sshd"
+      ],
+      "pad": 12
+    },
+    {
+      "kind": "region",
+      "label": "Сервер — один хост",
+      "wraps": [
+        "serve",
+        "dockerd",
+        "home",
+        "relayc",
+        "dshchat",
+        "relayw",
+        "dshws",
+        "sshd"
+      ],
+      "pad": 6
+    }
+  ],
+  "connections": [
+    {
+      "id": "c1",
+      "from": "browser",
+      "to": "serve",
+      "label": "HTTP + WS/SSE · :8929",
+      "variant": "emphasis"
+    },
+    {
+      "id": "c2",
+      "from": "serve",
+      "to": "dockerd",
+      "label": "REST over Unix socket",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "c3",
+      "from": "serve",
+      "to": "home",
+      "label": "SQLite WAL · git/go-git",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "c4",
+      "from": "serve",
+      "to": "relayc",
+      "label": "HTTP → port-fwd :3080",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "c5",
+      "from": "relayc",
+      "to": "dshchat",
+      "label": "raw TCP → 127.0.0.1:3099"
+    },
+    {
+      "id": "c6",
+      "from": "dshchat",
+      "to": "llm",
+      "label": "HTTPS :443",
+      "variant": "emphasis"
+    },
+    {
+      "id": "c7",
+      "from": "serve",
+      "to": "relayw",
+      "label": "HTTP → port-fwd :3080",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "c8",
+      "from": "relayw",
+      "to": "dshws",
+      "label": "raw TCP → 127.0.0.1:3099"
+    },
+    {
+      "id": "c9",
+      "from": "dshws",
+      "to": "llm",
+      "label": "HTTPS :443",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "c10",
+      "from": "sshclient",
+      "to": "sshd",
+      "label": "SSH-2 → 127.0.0.1:<dyn>"
+    },
+    {
+      "id": "c11",
+      "from": "conn",
+      "to": "serve",
+      "label": "WSS :443 · yamux",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "c12",
+      "from": "conn",
+      "to": "dshlocal",
+      "label": "HTTP в yamux → :3080",
+      "fromSide": "right",
+      "toSide": "left"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Сколько процессов, когда я захожу",
+      "items": [
+        "Сервер всегда: 2 — agctl serve + dockerd; SQLite и git — файлы и библиотека в процессе, не процессы",
+        "Вход/логин: +0 — экран рисует SPA agctl (go:embed), dsh ещё не существует",
+        "Открылся /chat/: +2 — agctl-relay и dsh web; до готовности agctl отдаёт свой HTML прогрева",
+        "Агент работает: + недолговечные дети dsh web (bash, python3, git, npx MCP)",
+        "Каждое dev-место: +2–3 (relay, dsh web, sshd при ключе); сон чата по TTL = оба процесса удаляются"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Порты и полный путь",
+      "items": [
+        "Наружу — только 127.0.0.1:8929 — единственный порт (TLS agctl не терминирует: впереди ingress)",
+        "Хост-порты контейнеров — динамические, только на loopback: web :3080, ssh :2222",
+        "Путь чата: браузер → :8929 → proxy + mint ?token= → relay :3080 → dsh :3099 → LLM :443",
+        "Внутри контейнера dsh слушает только 127.0.0.1:3099 — наружу его отдаёт relay :3080"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Протоколы",
+      "items": [
+        "Браузер↔agctl: HTTP/1.1 + WS/SSE, cookie agctl_*; dsh-auth-* минтит шлюз (401 → серверный ?token=)",
+        "agctl↔dockerd: REST over Unix socket; relay↔dsh: сырой TCP, HTTP/WS проходят как есть",
+        "dsh→LiteLLM: HTTPS :443, OpenAI-совместимый; local backend: WSS :443 + yamux (HTTP внутри стримов)"
+      ]
+    }
+  ]
+}

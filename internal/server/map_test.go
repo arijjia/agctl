@@ -11,7 +11,7 @@ func TestMapPageAuthAndServing(t *testing.T) {
 	if code, _ := e.do(e.newClient(), "GET", "/map", nil); code != 401 {
 		t.Fatalf("anonymous /map = %d, want 401", code)
 	}
-	if code, _ := e.do(e.newClient(), "GET", "/map/overview.html", nil); code != 401 {
+	if code, _ := e.do(e.newClient(), "GET", "/map/agctl-processes.html", nil); code != 401 {
 		t.Fatalf("anonymous file = %d, want 401", code)
 	}
 	e.register(e.admin, "anna", "secret1")
@@ -19,12 +19,12 @@ func TestMapPageAuthAndServing(t *testing.T) {
 	if code != 200 || !contains(body, "Карта системы agctl") {
 		t.Fatalf("map index = %d %q", code, firstLine(body))
 	}
-	if !contains(body, "/map/overview.html") {
-		t.Fatalf("index must link overview.html, got %q", firstLine(body))
+	if !contains(body, "/map/agctl-processes.html") {
+		t.Fatalf("index must link agctl-processes.html, got %q", firstLine(body))
 	}
-	code, body = e.do(e.admin, "GET", "/map/overview.html", nil)
+	code, body = e.do(e.admin, "GET", "/map/agctl-processes.html", nil)
 	if code != 200 || !contains(body, "archify") {
-		t.Fatalf("overview.html = %d, want 200 archify page", code)
+		t.Fatalf("agctl-processes.html = %d, want 200 archify page", code)
 	}
 	// Имя вне белого списка — 404 даже авторизованным.
 	if code, _ := e.do(e.admin, "GET", "/map/..%2Fsecrets.html", nil); code != 404 {

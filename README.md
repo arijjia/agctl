@@ -31,7 +31,7 @@ flowchart LR
 | [docs/architecture-roadmap.md](docs/architecture-roadmap.md) | **Архитектурный роадмап**: где мы сейчас, горизонты 1–3, принципы |
 | [docs/capacity.md](docs/capacity.md) | Оценка ресурсов по числу пользователей |
 | [docs/secure-gateway.md](docs/secure-gateway.md) | Схема шлюза и cookie-mint |
-| Карта системы — `make map` | Открывает собранную archify-карту (`system/map/overview.html`); на работающем сервере она же — страница `/map` за сессией |
+| Карта системы — `make map` | Открывает физическую карту (процессы, порты, протоколы — `system/map/agctl-processes.html`); на работающем сервере она же — страница `/map` за сессией |
 
 ## Быстрый старт (ноутбук, ~10 минут)
 

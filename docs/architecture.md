@@ -7,10 +7,12 @@
 > `agctl-hq/docs/agctl-platform-concept-v2.md`; предыдущая версия этого
 > файла (с дословными требованиями и статусами на 2026-10-19) — в истории git.
 >
-> **Этот документ и карта системы описывают одно и то же.** Карта:
-> `system/map/overview.html` — в репозитории; на работающем сервере —
-> страница `/map` (за сессией agctl, `internal/server/map.go:34`). Разделы
-> ниже повторяют узлы и рамки карты; таблица соответствия — §10.
+> **Карта и документ — два слоя одной системы.** Карта — физическая:
+> процессы, адреса прослушивания, протоколы проводов
+> (`system/map/agctl-processes.html`; на работающем сервере — страница
+> `/map` за сессией, `internal/server/map.go:34`). Этот документ —
+> продуктовый слой: режимы, компоненты, контракты. Соответствие слоёв,
+> разделов и кода — §10.
 
 ## 1. Система одним абзацем
 
@@ -219,19 +221,27 @@ chat-session-files), pre-paint чат-шелл на шлюзе и поддерж
 `internal/assets/image/Dockerfile:24`), обновление — `scripts/dsh-bump.sh` +
 e2e. Bump до 0.2.1-rc.2 заблокирован очисткой Docker storage (роадмап §4).
 
-## 10. Соответствие карты и документа
+## 10. Карта и документ: соответствие слоёв и кода
 
-| Узел/рамка карты | Раздел | Код |
-|---|---|---|
-| Браузер | §3 | — |
-| agctl serve (auth · гейты · mint · reaper) | §2 | `internal/server` |
-| SPA /app | §3 | `web/` |
-| SQLite + secrets.key | §2, §8 | `internal/store`, `internal/secrets` |
-| /map — карта системы | §3 | `internal/server/map.go`, `system/embed.go` |
-| Chat runtime (Docker, lazy) | §4 | `internal/server/chat.go`, `internal/runtime/dockerrt/chat.go` |
-| chat-brand + session-files | §4.1 | `dsh-plugins/chat-brand`, `dsh-plugins/chat-session-files` |
-| LiteLLM корп. | §4, §5 | провайдеры: `chat.go:403-419`, `provision.go:460-498` |
-| Dev-workspace (Docker) | §5 | `internal/provision`, `internal/runtime/dockerrt` |
-| Плагин «Кабинет» | §5 | `dsh-plugins/cabinet` |
-| agctl local connect + dsh на ноутбуке | §6 | `internal/bridge`, `cmd/agctl/local.go` |
-| K8s ChatProvider | §7 | `internal/runtime/k8srt` |
+Физическая карта показывает процессы, адреса прослушивания и протоколы
+проводов. Продуктовые сущности этого документа соотносятся с ней один-в-один:
+**«Chat runtime»** = relay + dsh web в рамке контейнера чата; **шлюзы
+`/chat`, `/w/{id}`, `/api`** — не процесс, а код внутри `agctl serve`;
+**«chat-brand»** — JS в браузере; **«chat-session-files»** — host-плагин
+внутри процесса dsh; **«Dev-workspace»** = рамка контейнера с relay, dsh web
+и sshd; **SQLite** и **git при autosave** — не процессы (файл и go-git внутри
+`agctl serve`).
+
+| Раздел | Код |
+|---|---|
+| Браузер, SPA /app | §3 · `web/` |
+| `agctl serve` (auth · гейты · mint · reaper) | §2 · `internal/server` |
+| SQLite + secrets.key | §2, §8 · `internal/store`, `internal/secrets` |
+| `/map` — карта системы | §3 · `internal/server/map.go`, `system/embed.go` |
+| Chat runtime (Docker, lazy) | §4 · `internal/server/chat.go`, `internal/runtime/dockerrt/chat.go` |
+| chat-brand + chat-session-files | §4.1 · `dsh-plugins/chat-brand`, `dsh-plugins/chat-session-files` |
+| LiteLLM корп. | §4, §5 · провайдеры: `chat.go:403-419`, `provision.go:460-498` |
+| Dev-workspace (Docker) | §5 · `internal/provision`, `internal/runtime/dockerrt` |
+| Плагин «Кабинет» | §5 · `dsh-plugins/cabinet` |
+| Local backend (коннектор + dsh на ноутбуке) | §6 · `internal/bridge`, `cmd/agctl/local.go` |
+| K8s ChatProvider | §7 · `internal/runtime/k8srt` |
