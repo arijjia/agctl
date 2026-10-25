@@ -127,6 +127,42 @@ func TestReaperStopsIdleChatButKeepsPersistentVolume(t *testing.T) {
 	}
 }
 
+func TestReaperExtendsLeaseForActiveSSHSession(t *testing.T) {
+	e := newTestEnv(t, 3)
+	e.register(e.admin, "anna", "secret1")
+	e.srv.cfg.ChatTTL = time.Second
+	if err := e.db.SettingSet("dev-ssh-pubkey-u1", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfDB4Nvu/3y+9tkkL4Z76eLpfEL65KBaWrWtApCmP21 test@host"); err != nil {
+		t.Fatal(err)
+	}
+	chat, err := e.srv.ensureChat(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if chat.handle.SSHPort == 0 {
+		t.Fatal("developer test runtime has no SSH port")
+	}
+	e.rt.sshActive[chat.handle.RuntimeID] = true
+	chat.lastSeen = time.Now().Add(-2 * time.Second)
+	e.srv.reapIdleChats()
+	if e.srv.chats[1] != chat {
+		t.Fatal("runtime with active SSH session was evicted")
+	}
+	if got := e.rt.chatStops[chat.handle.RuntimeID]; got != 0 {
+		t.Fatalf("active SSH runtime stopped %d times", got)
+	}
+	if time.Since(chat.lastSeen) > time.Second {
+		t.Fatalf("SSH activity did not refresh lastSeen: %v", chat.lastSeen)
+	}
+
+	// После закрытия SSH следующая проверка снова усыпляет бездействующий runtime.
+	e.rt.sshActive[chat.handle.RuntimeID] = false
+	chat.lastSeen = time.Now().Add(-2 * time.Second)
+	e.srv.reapIdleChats()
+	if e.srv.chats[1] != nil || e.rt.chatStops[chat.handle.RuntimeID] != 1 {
+		t.Fatal("runtime without SSH activity should sleep after TTL")
+	}
+}
+
 func TestChatUsesPlatformDefaultProviderWhenNoPersonalSecret(t *testing.T) {
 	e := newTestEnv(t, 3)
 	e.srv.cfg.DefaultLLM = provision.Provider{

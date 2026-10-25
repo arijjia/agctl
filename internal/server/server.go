@@ -35,7 +35,7 @@ import (
 type Config struct {
 	Home                    string // $AGCTL_HOME
 	Addr                    string // слушающий адрес основного UI/API
-	MaxPerUser              int
+	MaxPerUser              int    // legacy seat limit; no effect in v3
 	MemoryBytes             int64
 	NanoCPUs                int64
 	Image                   string
@@ -44,8 +44,8 @@ type Config struct {
 	AutosaveEvery           time.Duration
 	CORSOrigins             []string           // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
 	Tier0                   bool               // корень платформы ведёт в персональный чат (/chat/)
-	ChatTTL                 time.Duration      // простой чат-контейнера до сна (по умолчанию 15 мин)
-	RequireApproval         bool               // создание dev-мест только через заявку с апрувом админа
+	ChatTTL                 time.Duration      // idle TTL персонального runtime (по умолчанию 60 мин)
+	RequireApproval         bool               // legacy workspace flag; create endpoint is tombstoned in v3
 	ExperimentalLocalBridge bool               // opt-in pairing/status/revoke API for local connector
 	DefaultLLM              provision.Provider // платформенный провайдер чата по умолчанию (корп. LiteLLM); личный секрет пользователя его перекрывает
 }
@@ -71,7 +71,7 @@ type Server struct {
 	tokMu  sync.Mutex // кэш boot-токенов dsh web по воркспейсам
 	tokens map[string]string
 
-	chatMu       sync.Mutex             // персональные чаты (режим 1): ленивые рантаймы
+	chatMu       sync.Mutex             // персональные per-user runtime: ленивое создание и TTL
 	chats        map[int64]*chatRuntime // userID → живой runtime handle
 	chatLocks    map[int64]*sync.Mutex  // сериализация первого старта per-user
 	chatProvider agctlrt.ChatProvider   // Docker now; K8s adapter can return a Service DNS endpoint
@@ -86,8 +86,8 @@ var (
 	assetsSkel = assets.DshSkel
 )
 
-// New builds the development default (Docker for both workspace and Chat
-// runtimes). Kubernetes deployments should inject their runtime providers.
+// New builds the development default (Docker for the unified per-user runtime).
+// Kubernetes deployments should inject their runtime providers.
 func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 	rt, err := dockerrt.New(dockerrt.Config{
 		Image:       cfg.Image,
@@ -105,7 +105,7 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 
 // NewWithRuntimeProviders is the injection point for orchestrated deployments.
 // ChatProvider is endpoint/storage-neutral; the workspace RuntimeIface still
-// needs a Kubernetes adapter before Mode 2 can run without Docker.
+// legacy workspace RuntimeIface still has Docker-only host-path assumptions.
 func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, workspaceRuntime RuntimeIface, chatProvider agctlrt.ChatProvider) (*Server, error) {
 	if db == nil || sec == nil || workspaceRuntime == nil || chatProvider == nil {
 		return nil, fmt.Errorf("server: db, secrets and both runtime providers are required")

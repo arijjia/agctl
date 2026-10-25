@@ -431,6 +431,13 @@ func (p *Provider) LogsChat(ctx context.Context, handle agctlrt.ChatHandle, tail
 	return string(data), nil
 }
 
+// HasActiveSSH is a no-op for the current K8s prototype: EnsureChat does not
+// publish an SSH port (ChatHandle.SSHPort remains zero). Implement process
+// inspection before enabling SSH for this provider.
+func (p *Provider) HasActiveSSH(ctx context.Context, handle agctlrt.ChatHandle) (bool, error) {
+	return false, nil
+}
+
 func resourceName(runtimeID string) string {
 	sum := sha256.Sum256([]byte(runtimeID))
 	return "agctl-chat-" + hex.EncodeToString(sum[:8])

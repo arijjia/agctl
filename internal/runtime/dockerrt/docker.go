@@ -27,6 +27,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/arijjia/agctl/internal/provision"
+	agctlrt "github.com/arijjia/agctl/internal/runtime"
 )
 
 // Контекст образа приходит из internal/assets (fs.FS с префиксом "image").
@@ -266,8 +267,8 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		"XDG_CACHE_HOME=/tmp/cache",
 	}
 	if ws.ChatSessionScoped {
-		// Только режим 1: скрытая persistent dir на каждую беседу.
-		// Dev-workspaces сохраняют общий cwd корня Git-репозитория.
+		// Fallback cwd для Session без выбранного проектного Workspace.
+		// Проектные Session сохраняют реальный cwd /workspace/<project>.
 		env = append(env, "AGCTL_CHAT_SESSION_ROOT=/workspace/.sessions")
 	}
 	portBindings := network.PortMap{
@@ -458,6 +459,35 @@ func (rt *Runtime) Logs(ctx context.Context, containerID string, tailN string) (
 		return "", err
 	}
 	return stripDockerStream(b), nil
+}
+
+// HasActiveSSH checks Docker's process snapshot only for developer containers.
+// sshd's master/listener is baseline; a per-connection `sshd: user@...` child
+// means the developer is actively using the runtime through SSH.
+func (rt *Runtime) HasActiveSSH(ctx context.Context, handle agctlrt.ChatHandle) (bool, error) {
+	if handle.SSHPort == 0 || handle.InstanceID == "" {
+		return false, nil
+	}
+	top, err := rt.cli.ContainerTop(ctx, handle.InstanceID, client.ContainerTopOptions{Arguments: []string{"-eo", "pid,args"}})
+	if err != nil {
+		return false, err
+	}
+	return hasActiveSSHProcess(top.Processes), nil
+}
+
+func hasActiveSSHProcess(processes [][]string) bool {
+	for _, row := range processes {
+		if len(row) == 0 {
+			continue
+		}
+		// ContainerTop's `pid,args` result keeps the full ps command in its last
+		// column; preceding cells (PID) are intentionally ignored.
+		cmd := strings.TrimSpace(strings.ToLower(row[len(row)-1]))
+		if strings.HasPrefix(cmd, "sshd:") && !strings.Contains(cmd, "[listener]") {
+			return true
+		}
+	}
+	return false
 }
 
 // stripDockerStream убирает multiplexed-заголовки демона, если они есть.

@@ -13,7 +13,7 @@
 | Волна | Содержание | Статус |
 |---|---|---|
 | **A. Роль + единый runtime** | `role_requests` → admin approve → постоянная `users.role=developer`; SSH key-only в том же личном контейнере; TTL default 60 min; HEALTHCHECK :3099 + reconcile unhealthy | ✅ done |
-| **B. Проекты-папки + invisible Git** | `/api/projects`; реальный каталог + локальная `.git`; Cabinet/chat tree регистрируют DSH Workspace; новые сессии в проектном cwd; go-git autosave раз в 2 мин, без remote/push | ✅ done |
+| **B. Проекты-папки + invisible Git** | `/api/projects`; реальный каталог + локальная `.git`; Cabinet/chat tree регистрируют DSH Workspace; новые сессии в проектном cwd; go-git autosave раз в 2 мин без push (GitHub-клон сохраняет origin) | ✅ done |
 | **C. Кабинет v3** | заявка developer, очередь admin, SSH key/port, список/создание проектов; единое `/chat/` дерево Workspace-проектов; Git обычной роли user скрыт | ✅ done |
 | **D. Демонтаж seats** | UI создания мест/local-backend убран; создание/мутации legacy workspace и workspace-request → 410; CLI `agctl workspace create` отключена | ✅ done |
 
@@ -23,10 +23,11 @@ compat-proxy пока оставлены; это не пользовательс
 
 ## 2. Следующий горизонт — надёжность и UX (P1/P2)
 
-1. **Activity-aware TTL** (P1, эпик `v3-unified-runtime`). Reaper сейчас
-   считает HTTP/WS-активность `/chat/`; работа только по SSH (IDE, длинная
-   сборка) не продлевает lease, поэтому часовой сон может оборвать задачу.
-   Добавить heartbeat/учёт SSH-сессий и длительных процессов.
+1. **Activity-aware TTL — active SSH sessions** (P1, `chat-activity-aware-ttl`):
+   ✅ done. В последнюю минуту перед TTL Docker `ContainerTop` ищет sshd child;
+   активная SSH/IDE-сессия продлевает lease, ошибка проверки fail-closed на тик.
+   Detached-процесс, оставленный после закрытия SSH, не считается активным —
+   отдельная возможная задача.
 2. **Prewarm-пул** (P2, `chat-prewarm-pool`): подогрев к входу/началу занятий;
    сегодня контейнер создаётся лениво при `/chat/`, лимит тёплого пула,
    планировщик прогрева ещё не реализованы.

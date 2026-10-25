@@ -42,4 +42,7 @@ type ChatProvider interface {
 	EnsureChat(ctx context.Context, spec ChatSpec) (ChatHandle, error)
 	StopChat(ctx context.Context, handle ChatHandle) error
 	LogsChat(ctx context.Context, handle ChatHandle, tail string) (string, error)
+	// HasActiveSSH reports a live authenticated/connecting sshd child process.
+	// Implementations without SSH can always return false.
+	HasActiveSSH(ctx context.Context, handle ChatHandle) (bool, error)
 }

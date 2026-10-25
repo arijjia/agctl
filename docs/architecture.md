@@ -105,10 +105,11 @@ target layout, not a completed migration; the pilot starts on a clean volume.
    `/chat/` пересоздаёт контейнер на прежнем томе (`Dockerfile`,
    `dockerrt.HealthStatus`, `server.go` `reconcile`).
 
-**Ограничение:** idle/TTL пока учитывает активность шлюза `/chat/`. Если
-developer работает только через SSH/IDE и не делает HTTP/WS-запросов, SSH
-heartbeat ещё не продлевает lease; до долгой IDE-сессии это надо закрыть
-activity-aware механизмом.
+**Ограничение:** active SSH-сессия продлевает `lastSeen`: в последнюю минуту
+до TTL Docker `ContainerTop` проверяет sshd child в процессе контейнера.
+Если проверка Docker временно падает, reaper пропускает этот тик (fail-closed),
+чтобы не оборвать сессию вслепую. Detached-процесс после закрытия SSH не
+обнаруживается; его учёт — отдельная задача.
 
 ## 4. Проекты-папки, DSH Workspace и Git
 
@@ -118,7 +119,7 @@ Host-путь проекта:
 
 ```
 $AGCTL_HOME/chats/u<ID>/work/<project-name>/
-  .git/                    локальная история (без remote)
+  .git/                    локальная история; у созданного с нуля нет remote
   .gitignore               .env*, .credentials*, .ssh исключены
   README.md
   AGENTS.local.md          управляемые инструкции проекта
@@ -162,11 +163,12 @@ Project instructions записываются в `AGENTS.local.md` корня п
 ### 4.3 Невидимое Git-версионирование
 
 `CreateProject` и `AutosaveLocalProject` реализованы на go-git
-(`internal/provision/projects.go`): Git инициализируется локально, autosave
-раз в две минуты делает коммит только при изменениях. Bare-origin, push и
-дочерний `git` процесс не создаются. `.env*`, `.credentials*`, `.ssh` не
-попадают в историю. В интерфейсе user роль не показывает Git; developer
-может работать с Git через файловую систему/терминал SSH.
+(`internal/provision/projects.go`): проект с нуля получает локальный `.git`
+без remote; `CloneProject` сохраняет `origin` публичного GitHub-клона. Autosave
+раз в две минуты делает commit локально и **никогда не push-ит**. Отдельного
+Git-процесса нет. Для `user` Git не показывается; developer может работать
+с `origin` вручную из SSH/терминала, но credentials и автопуш не настраиваются.
+`.env*`, `.credentials*`, `.ssh` не попадают в autosave-историю.
 
 ## 5. Порты и сетевой путь
 

@@ -91,3 +91,4 @@ RAM (кластер), TTL 60 мин = 12–19 ГБ (один сервер). По
 - 2026-10-25: документация сведена к v3 (README, architecture, roadmap,
   capacity, secure-gateway); физическая карта не менялась — волны B–D не
   добавляют процессов/портов (go-git — внутри agctl, проекты — файлы тома).
+- 2026-10-25: Follow-up после волн A–D: реализован P1 chat-activity-aware-ttl — активная SSH-сессия продлевает lease через Docker ContainerTop, detached-job detection после разрыва SSH пока не входит в scope.

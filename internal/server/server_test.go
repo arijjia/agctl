@@ -38,6 +38,7 @@ type fakeRuntime struct {
 	chatStarts map[string]int
 	chatStops  map[string]int
 	chatSpecs  map[string]agctlrt.ChatSpec
+	sshActive  map[string]bool
 	chatHome   string
 	failNext   error             // если задано — Start возвращает ошибку
 	health     map[string]string // containerID → Docker health ("unhealthy"…)
@@ -50,7 +51,7 @@ func newFakeRuntime() *fakeRuntime {
 	return &fakeRuntime{
 		started: map[string]int{}, startOpts: map[string]dockerrt.StartOpts{}, resumed: map[string]int{},
 		stopped: map[string]int{}, removed: map[string]int{}, logs: map[string]string{}, logTails: map[string]string{}, providers: map[string]provision.Provider{},
-		chatStarts: map[string]int{}, chatStops: map[string]int{}, chatSpecs: map[string]agctlrt.ChatSpec{},
+		chatStarts: map[string]int{}, chatStops: map[string]int{}, chatSpecs: map[string]agctlrt.ChatSpec{}, sshActive: map[string]bool{},
 		health: map[string]string{},
 	}
 }
@@ -139,6 +140,10 @@ func (f *fakeRuntime) StopChat(ctx context.Context, handle agctlrt.ChatHandle) e
 
 func (f *fakeRuntime) LogsChat(ctx context.Context, handle agctlrt.ChatHandle, tail string) (string, error) {
 	return f.logs[handle.InstanceID], nil
+}
+
+func (f *fakeRuntime) HasActiveSSH(ctx context.Context, handle agctlrt.ChatHandle) (bool, error) {
+	return f.sshActive[handle.RuntimeID], nil
 }
 
 // testEnv — сервер на временных каталогах + httptest.

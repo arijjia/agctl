@@ -100,8 +100,9 @@ source snapshot, а не финальная миграция. Целевой в�
 `$AGCTL_HOME/u<ID>/{dsh-home,workspace/<project>}` обсуждается как раскладка
 тома; в обоих вариантах `dsh-home` и `workspace` — отдельные каталоги-соседи,
 а не workspace внутри DSH_HOME. Autosave использует локальный `go-git` в процессе agctl: commit остаётся внутри проекта,
-remote/push нет, пользовательского Git UI нет. Это не отдельный git-процесс,
-workspace или container ([project API](../internal/server/projects.go#L14-L50),
+в процессе agctl: autosave-коммит остаётся в проекте и не push-ится. Проект,
+созданный с нуля, не имеет remote; GitHub-клон сохраняет свой `origin`. Это не
+отдельный git-процесс, workspace или container ([project API](../internal/server/projects.go#L14-L50),
 [путь и каталог проекта](../internal/provision/projects.go#L45-L65),
 [локальный autosave](../internal/provision/projects.go#L210-L273),
 [autosave goroutine внутри agctl](../internal/server/projects.go#L52-L72)).
@@ -133,6 +134,11 @@ workspace или container ([project API](../internal/server/projects.go#L14-L50
 
 ## Проверки и остаточные риски
 
+- **SSH activity продлевает idle lease.** В последнюю минуту TTL Docker
+  `ContainerTop` ищет дочерний `sshd` process и обновляет `lastSeen` для активной
+  SSH/IDE-сессии. Если process inspection временно ошибается, reaper пропускает
+  один тик, чтобы не оборвать работу. Detached-задачи после закрытия SSH не
+  учитываются; это отдельный остаток.
 - В образ добавлен healthcheck DSH на `127.0.0.1:3099`; reconcile останавливает
   и выселяет unhealthy personal runtime из кэша, после чего `/chat/` пересоздаёт
   его на сохранённом томе ([Docker HEALTHCHECK](../internal/assets/image/Dockerfile#L49-L55),

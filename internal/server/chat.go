@@ -1,8 +1,8 @@
 package server
 
-// chat.go — режим 1 «Чат»: lazy per-user runtime behind the agctl gateway.
-// The server depends on runtime.ChatProvider, not Docker ports or host mounts;
-// Docker is one adapter and a Kubernetes adapter can return Service DNS + PVC.
+// chat.go — единый lazy per-user runtime behind the agctl gateway.
+// Roles add capabilities (for example SSH) without creating another runtime.
+// The server depends on runtime.ChatProvider, not Docker ports or host mounts.
 
 import (
 	"context"
@@ -32,7 +32,10 @@ const chatNamePrefix = "chat"
 // chatDownGrace — сколько endpoint рантайма может не отвечать (dial-ошибками),
 // прежде чем кэш признается мёртвым. Меньший порог ломает нормальный прогрев:
 // dsh в свежесозданном контейнере начинает слушать порт не мгновенно.
-const chatDownGrace = 45 * time.Second
+const (
+	chatDownGrace              = 45 * time.Second
+	chatSSHActivityProbeWindow = time.Minute
+)
 
 // chatRuntime — живой персональный чат runtime пользователя. downSince — время
 // первого dial-отказа прокси (ноль = живой); лечит вечное «запускается…» после
@@ -568,23 +571,70 @@ func (s *Server) developerSSHPubKey(userID int64) string {
 	return key
 }
 
-// reapIdleChats stops per-user compute after the idle TTL. The ChatProvider
-// contract requires persistent StorageID data to survive StopChat.
+// reapIdleChats stops per-user compute after the idle TTL. Before sleeping a
+// developer runtime, it checks whether an SSH connection is still alive; web
+// streaming requests are already covered by rt.active.
 func (s *Server) reapIdleChats() {
-	now := time.Now()
+	type candidate struct {
+		userID int64
+		rt     *chatRuntime
+	}
 	type expiredChat struct {
 		userID int64
 		handle agctlrt.ChatHandle
 	}
+	var probes []candidate
 	var expired []expiredChat
+	now := time.Now()
+	probeAfter := s.cfg.ChatTTL - chatSSHActivityProbeWindow
+
 	s.chatMu.Lock()
 	for uid, rt := range s.chats {
-		if rt.active == 0 && shouldSleepChat(rt.lastSeen, now, s.cfg.ChatTTL) {
+		if rt.active != 0 {
+			continue
+		}
+		if rt.handle.SSHPort > 0 && now.Sub(rt.lastSeen) >= probeAfter {
+			probes = append(probes, candidate{userID: uid, rt: rt})
+			continue
+		}
+		if shouldSleepChat(rt.lastSeen, now, s.cfg.ChatTTL) {
 			expired = append(expired, expiredChat{userID: uid, handle: rt.handle})
 			delete(s.chats, uid)
 		}
 	}
 	s.chatMu.Unlock()
+
+	// Docker top is only queried near the TTL boundary for runtimes with sshd.
+	// On an inspection error we fail closed for this tick: interrupting a live
+	// SSH session is worse than keeping the container for one extra minute.
+	for _, item := range probes {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		activeSSH, err := s.chatProvider.HasActiveSSH(ctx, item.rt.handle)
+		cancel()
+		if err != nil {
+			log.Printf("[chat] reaper: SSH activity check user %d: %v; defer sleep", item.userID, err)
+			continue
+		}
+
+		s.chatMu.Lock()
+		current := s.chats[item.userID]
+		if current != item.rt || current.active != 0 {
+			s.chatMu.Unlock()
+			continue
+		}
+		now = time.Now()
+		if activeSSH {
+			current.lastSeen = now
+			s.chatMu.Unlock()
+			continue
+		}
+		if shouldSleepChat(current.lastSeen, now, s.cfg.ChatTTL) {
+			expired = append(expired, expiredChat{userID: item.userID, handle: current.handle})
+			delete(s.chats, item.userID)
+		}
+		s.chatMu.Unlock()
+	}
+
 	for _, item := range expired {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		s.forgetToken(chatTokenCacheKey(item.handle))
@@ -735,7 +785,7 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 				resp.Header.Set("Location", rewriteLocation(loc, prefix, authority))
 			}
 			// dsh-auth cookie ограничивается /chat/, чтобы не пересылаться
-			// на кабинет API и dev-workspaces /w/<id>/.
+			// на API и legacy `/w/{id}` compat-proxy.
 			cookies := resp.Cookies()
 			if len(cookies) > 0 {
 				resp.Header.Del("Set-Cookie")
