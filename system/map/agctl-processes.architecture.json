@@ -183,7 +183,7 @@
       "label": "secrets.key — вне Git",
       "sublabel": "мастер-ключ AES-256-GCM · 0600",
       "pos": [
-        1190,
+        1170,
         430
       ],
       "size": [
@@ -382,7 +382,7 @@
       "label": "LiteLLM корп.",
       "sublabel": "litellm-dev.utmn.ru · :443",
       "pos": [
-        1543,
+        1555,
         140
       ],
       "size": [
@@ -410,7 +410,7 @@
       "sublabel": "удалённо — только через туннель/VPN",
       "pos": [
         24,
-        984
+        996
       ],
       "size": [
         214,
@@ -508,7 +508,7 @@
         "dshchat",
         "sshd"
       ],
-      "pad": 12
+      "pad": 32
     },
     {
       "kind": "region",
@@ -546,7 +546,7 @@
         "dshchat",
         "sshd"
       ],
-      "pad": 72
+      "pad": 80
     }
   ],
   "connections": [
@@ -612,7 +612,7 @@
       "via": [
         [
           1500,
-          1020
+          1032
         ],
         [
           1500,

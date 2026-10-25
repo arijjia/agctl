@@ -7,13 +7,13 @@
   "quality": "showcase",
   "specification": {
     "path": "/Users/masha/src/arijjia/cit/agctl-map-persistence/system/map/agctl-processes.architecture.json",
-    "sha256": "4c3993a0b1becdd6233610db1cacf4d0ff4863e6430d0194a0218688fa55b602",
+    "sha256": "0364e4110545eb6f4327c9b89a79616833f68854f2e35b55dc9d19f161cbe955",
     "bytes": 20424
   },
   "artifact": {
     "path": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/agctl-processes.html",
-    "sha256": "9720486bdc249d2e1ce1a759ba22e3a947f054d42158e25c1f2e7d87bc929e0d",
-    "bytes": 789035
+    "sha256": "b2a82802ed6233859b99307504b322e03f1f7905bdb43e875cbb11e6249094ce",
+    "bytes": 789033
   },
   "gates": {
     "validate": "pass",
@@ -28,9 +28,9 @@
     "truncated": false
   },
   "evidence": {
-    "receipt": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/review-5/agctl-processes.finalize.json",
-    "summaryReceipt": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/review-5/agctl-processes.finalize-summary.json",
-    "browserCheckReceipt": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/review-5/agctl-processes.browser-check.json"
+    "receipt": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/review-6/agctl-processes.finalize.json",
+    "summaryReceipt": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/review-6/agctl-processes.finalize-summary.json",
+    "browserCheckReceipt": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/review-6/agctl-processes.browser-check.json"
   },
   "update": {
     "status": "update_available",
@@ -45,7 +45,7 @@
     "eventKey": "archify@sha256:70e210265c59f24dcbdf2a502ff671104b5454e7ee7d3554aecd86bad32384f5"
   },
   "visualReview": "not-requested",
-  "durationMs": 1391,
+  "durationMs": 1402,
   "visualReviewRecommendation": {
     "action": "inspect-route-readability",
     "signals": {

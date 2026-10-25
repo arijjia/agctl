@@ -5,16 +5,16 @@
   "status": "pass",
   "type": "architecture",
   "quality": "showcase",
-  "startedAt": "2026-10-25T13:49:47.131Z",
+  "startedAt": "2026-10-25T13:57:32.238Z",
   "specification": {
     "path": "/Users/masha/src/arijjia/cit/agctl-map-persistence/system/map/agctl-processes.architecture.json",
-    "sha256": "4c3993a0b1becdd6233610db1cacf4d0ff4863e6430d0194a0218688fa55b602",
+    "sha256": "0364e4110545eb6f4327c9b89a79616833f68854f2e35b55dc9d19f161cbe955",
     "bytes": 20424
   },
   "artifact": {
     "path": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/agctl-processes.html",
-    "sha256": "9720486bdc249d2e1ce1a759ba22e3a947f054d42158e25c1f2e7d87bc929e0d",
-    "bytes": 789035
+    "sha256": "b2a82802ed6233859b99307504b322e03f1f7905bdb43e875cbb11e6249094ce",
+    "bytes": 789033
   },
   "stages": {
     "validate": {
@@ -40,7 +40,7 @@
         "ok": true,
         "command": "validate",
         "specification": {
-          "sha256": "4c3993a0b1becdd6233610db1cacf4d0ff4863e6430d0194a0218688fa55b602",
+          "sha256": "0364e4110545eb6f4327c9b89a79616833f68854f2e35b55dc9d19f161cbe955",
           "bytes": 20424
         },
         "validation": {
@@ -56,7 +56,7 @@
     "deliver": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 295,
+      "durationMs": 239,
       "command": [
         "/opt/homebrew/Cellar/node/25.2.1/bin/node",
         "/Users/masha/.agents/skills/archify/bin/archify.mjs",
@@ -72,19 +72,19 @@
       ],
       "receipt": {
         "schemaVersion": 1,
-        "receiptId": "baf6cc6b-c74d-4854-ac8b-1d8e16cedb0c",
+        "receiptId": "705f12c7-da59-4533-8394-a5693a5e1605",
         "ok": true,
         "command": "deliver",
         "type": "architecture",
         "input": "/Users/masha/src/arijjia/cit/agctl-map-persistence/system/map/agctl-processes.architecture.json",
         "output": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/agctl-processes.html",
         "specification": {
-          "sha256": "4c3993a0b1becdd6233610db1cacf4d0ff4863e6430d0194a0218688fa55b602",
+          "sha256": "0364e4110545eb6f4327c9b89a79616833f68854f2e35b55dc9d19f161cbe955",
           "bytes": 20424
         },
         "artifact": {
-          "sha256": "9720486bdc249d2e1ce1a759ba22e3a947f054d42158e25c1f2e7d87bc929e0d",
-          "bytes": 789035
+          "sha256": "b2a82802ed6233859b99307504b322e03f1f7905bdb43e875cbb11e6249094ce",
+          "bytes": 789033
         },
         "validation": {
           "checksPassed": 9,
@@ -117,7 +117,7 @@
     "check": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 83,
+      "durationMs": 133,
       "command": [
         "/opt/homebrew/Cellar/node/25.2.1/bin/node",
         "/Users/masha/.agents/skills/archify/bin/archify.mjs",
@@ -129,8 +129,8 @@
         "ok": true,
         "file": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/agctl-processes.html",
         "artifact": {
-          "sha256": "9720486bdc249d2e1ce1a759ba22e3a947f054d42158e25c1f2e7d87bc929e0d",
-          "bytes": 789035
+          "sha256": "b2a82802ed6233859b99307504b322e03f1f7905bdb43e875cbb11e6249094ce",
+          "bytes": 789033
         },
         "checks": [
           {
@@ -200,7 +200,7 @@
             "minLabelRouteClearance": 8.5,
             "desktopReadabilityIssues": 0,
             "viewportHeightIssues": 0,
-            "minProjectedNodeTextPx": 6.107770845150312,
+            "minProjectedNodeTextPx": 6.066478873239436,
             "maxBends": 3,
             "routesOverSuggestedBends": 1,
             "maxStretch": 1.109,
@@ -237,11 +237,11 @@
           },
           "leadingSpace": {
             "measured": true,
-            "emptyTopPx": 58,
-            "emptyTopRatio": 0.052,
-            "occupiedTop": 58,
+            "emptyTopPx": 50,
+            "emptyTopRatio": 0.044,
+            "occupiedTop": 50,
             "viewBoxTop": 0,
-            "canvasHeight": 1124,
+            "canvasHeight": 1136,
             "typicalNodeHeight": 88,
             "reviewSuggested": false
           },
@@ -251,7 +251,7 @@
             "availableDiagramWidth": 1346,
             "actualBudgetPx": 1346,
             "actualReaderWidth": 1376,
-            "desiredReaderWidth": 1682.8125,
+            "desiredReaderWidth": 1694.0625,
             "viewportCap": 1376,
             "limit": "viewport-cap",
             "requestedTargetPx": 7.5,
@@ -265,19 +265,19 @@
               "to": "serve"
             },
             "minimumSourceTextPx": 8,
-            "minimumProjectedTextPx": 6.107770845150312,
+            "minimumProjectedTextPx": 6.066478873239436,
             "semanticTextCount": 48
           },
           "issues": []
         },
         "provenance": "current",
-        "deliveryReceiptId": "baf6cc6b-c74d-4854-ac8b-1d8e16cedb0c"
+        "deliveryReceiptId": "705f12c7-da59-4533-8394-a5693a5e1605"
       }
     },
     "browser-check": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 877,
+      "durationMs": 899,
       "command": [
         "/opt/homebrew/Cellar/node/25.2.1/bin/node",
         "/Users/masha/.agents/skills/archify/bin/archify.mjs",
@@ -286,7 +286,7 @@
         "--json",
         "--require-provenance",
         "--out-dir",
-        "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/review-5"
+        "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/review-6"
       ],
       "execution": "in-process",
       "receipt": {
@@ -297,11 +297,11 @@
         "status": "pass",
         "visualReview": "not-requested",
         "provenance": "current",
-        "deliveryReceiptId": "baf6cc6b-c74d-4854-ac8b-1d8e16cedb0c",
+        "deliveryReceiptId": "705f12c7-da59-4533-8394-a5693a5e1605",
         "artifact": {
           "path": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/agctl-processes.html",
-          "sha256": "9720486bdc249d2e1ce1a759ba22e3a947f054d42158e25c1f2e7d87bc929e0d",
-          "bytes": 789035
+          "sha256": "b2a82802ed6233859b99307504b322e03f1f7905bdb43e875cbb11e6249094ce",
+          "bytes": 789033
         },
         "state": {
           "detail": "read",
@@ -323,7 +323,7 @@
               "innerWidth": 1440,
               "innerHeight": 900,
               "scrollWidth": 1440,
-              "scrollHeight": 1001,
+              "scrollHeight": 1004,
               "overflowX": false,
               "overflowY": true,
               "verticalScrollAccepted": true,
@@ -338,14 +338,14 @@
                 "bodyPaddingPx": 12,
                 "headerPx": 52,
                 "diagramChromePx": 78,
-                "svgPx": 858,
+                "svgPx": 861,
                 "cardsPx": 0,
-                "viewBoxHeight": 1124
+                "viewBoxHeight": 1136
               },
-              "viewBoxWidth": 1763,
-              "minimumProjectedNodeTextPx": 6.107770845150312,
-              "minimumProjectedNonEdgeTextPx": 6.871242200794101,
-              "minimumProjectedEdgeTextPx": 6.107770845150312,
+              "viewBoxWidth": 1775,
+              "minimumProjectedNodeTextPx": 6.066478873239436,
+              "minimumProjectedNonEdgeTextPx": 6.8247887323943655,
+              "minimumProjectedEdgeTextPx": 6.066478873239436,
               "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -375,7 +375,7 @@
               "innerWidth": 1600,
               "innerHeight": 1000,
               "scrollWidth": 1600,
-              "scrollHeight": 1168,
+              "scrollHeight": 1172,
               "overflowX": false,
               "overflowY": true,
               "verticalScrollAccepted": true,
@@ -390,14 +390,14 @@
                 "bodyPaddingPx": 64,
                 "headerPx": 60,
                 "diagramChromePx": 84,
-                "svgPx": 960,
+                "svgPx": 964,
                 "cardsPx": 0,
-                "viewBoxHeight": 1124
+                "viewBoxHeight": 1136
               },
-              "viewBoxWidth": 1763,
-              "minimumProjectedNodeTextPx": 6.833806012478729,
-              "minimumProjectedNonEdgeTextPx": 7.688031764038571,
-              "minimumProjectedEdgeTextPx": 6.833806012478729,
+              "viewBoxWidth": 1775,
+              "minimumProjectedNodeTextPx": 6.787605633802817,
+              "minimumProjectedNonEdgeTextPx": 7.636056338028169,
+              "minimumProjectedEdgeTextPx": 6.787605633802817,
               "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -427,7 +427,7 @@
               "innerWidth": 1920,
               "innerHeight": 1080,
               "scrollWidth": 1920,
-              "scrollHeight": 1263,
+              "scrollHeight": 1274,
               "overflowX": false,
               "overflowY": true,
               "verticalScrollAccepted": true,
@@ -436,20 +436,20 @@
               "readerOverflow": "authored",
               "readerFit": "intrinsic-height",
               "ok": true,
-              "readerWidth": 1683,
-              "diagramWidth": 1653,
+              "readerWidth": 1695,
+              "diagramWidth": 1665,
               "pageComposition": {
                 "bodyPaddingPx": 64,
                 "headerPx": 60,
                 "diagramChromePx": 84,
-                "svgPx": 1054,
+                "svgPx": 1066,
                 "cardsPx": 0,
-                "viewBoxHeight": 1124
+                "viewBoxHeight": 1136
               },
-              "viewBoxWidth": 1763,
-              "minimumProjectedNodeTextPx": 7.500850822461713,
-              "minimumProjectedNonEdgeTextPx": 8.438457175269427,
-              "minimumProjectedEdgeTextPx": 7.500850822461713,
+              "viewBoxWidth": 1775,
+              "minimumProjectedNodeTextPx": 7.504225352112676,
+              "minimumProjectedNonEdgeTextPx": 8.44225352112676,
+              "minimumProjectedEdgeTextPx": 7.504225352112676,
               "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -488,20 +488,20 @@
               "readerOverflow": null,
               "readerFit": "intrinsic-height",
               "ok": true,
-              "readerWidth": 1747,
-              "diagramWidth": 1697,
+              "readerWidth": 1741,
+              "diagramWidth": 1691,
               "pageComposition": {
                 "bodyPaddingPx": 64,
                 "headerPx": 68,
                 "diagramChromePx": 94,
                 "svgPx": 1082,
                 "cardsPx": 0,
-                "viewBoxHeight": 1124
+                "viewBoxHeight": 1136
               },
-              "viewBoxWidth": 1763,
-              "minimumProjectedNodeTextPx": 7.700510493477028,
-              "minimumProjectedNonEdgeTextPx": 8.663074305161656,
-              "minimumProjectedEdgeTextPx": 7.700510493477028,
+              "viewBoxWidth": 1775,
+              "minimumProjectedNodeTextPx": 7.621408450704226,
+              "minimumProjectedNonEdgeTextPx": 8.574084507042254,
+              "minimumProjectedEdgeTextPx": 7.621408450704226,
               "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -584,7 +584,7 @@
               "innerWidth": 1440,
               "innerHeight": 900,
               "scrollWidth": 1440,
-              "scrollHeight": 1001,
+              "scrollHeight": 1004,
               "overflowX": false,
               "overflowY": true,
               "verticalScrollAccepted": true,
@@ -599,14 +599,14 @@
                 "bodyPaddingPx": 12,
                 "headerPx": 52,
                 "diagramChromePx": 78,
-                "svgPx": 858,
+                "svgPx": 861,
                 "cardsPx": 0,
-                "viewBoxHeight": 1124
+                "viewBoxHeight": 1136
               },
-              "viewBoxWidth": 1763,
-              "minimumProjectedNodeTextPx": 6.107770845150312,
-              "minimumProjectedNonEdgeTextPx": 6.871242200794101,
-              "minimumProjectedEdgeTextPx": 6.107770845150312,
+              "viewBoxWidth": 1775,
+              "minimumProjectedNodeTextPx": 6.066478873239436,
+              "minimumProjectedNonEdgeTextPx": 6.8247887323943655,
+              "minimumProjectedEdgeTextPx": 6.066478873239436,
               "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -636,7 +636,7 @@
               "innerWidth": 1600,
               "innerHeight": 1000,
               "scrollWidth": 1600,
-              "scrollHeight": 1168,
+              "scrollHeight": 1172,
               "overflowX": false,
               "overflowY": true,
               "verticalScrollAccepted": true,
@@ -651,14 +651,14 @@
                 "bodyPaddingPx": 64,
                 "headerPx": 60,
                 "diagramChromePx": 84,
-                "svgPx": 960,
+                "svgPx": 964,
                 "cardsPx": 0,
-                "viewBoxHeight": 1124
+                "viewBoxHeight": 1136
               },
-              "viewBoxWidth": 1763,
-              "minimumProjectedNodeTextPx": 6.833806012478729,
-              "minimumProjectedNonEdgeTextPx": 7.688031764038571,
-              "minimumProjectedEdgeTextPx": 6.833806012478729,
+              "viewBoxWidth": 1775,
+              "minimumProjectedNodeTextPx": 6.787605633802817,
+              "minimumProjectedNonEdgeTextPx": 7.636056338028169,
+              "minimumProjectedEdgeTextPx": 6.787605633802817,
               "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -688,7 +688,7 @@
               "innerWidth": 1920,
               "innerHeight": 1080,
               "scrollWidth": 1920,
-              "scrollHeight": 1263,
+              "scrollHeight": 1274,
               "overflowX": false,
               "overflowY": true,
               "verticalScrollAccepted": true,
@@ -697,20 +697,20 @@
               "readerOverflow": "authored",
               "readerFit": "intrinsic-height",
               "ok": true,
-              "readerWidth": 1683,
-              "diagramWidth": 1653,
+              "readerWidth": 1695,
+              "diagramWidth": 1665,
               "pageComposition": {
                 "bodyPaddingPx": 64,
                 "headerPx": 60,
                 "diagramChromePx": 84,
-                "svgPx": 1054,
+                "svgPx": 1066,
                 "cardsPx": 0,
-                "viewBoxHeight": 1124
+                "viewBoxHeight": 1136
               },
-              "viewBoxWidth": 1763,
-              "minimumProjectedNodeTextPx": 7.500850822461713,
-              "minimumProjectedNonEdgeTextPx": 8.438457175269427,
-              "minimumProjectedEdgeTextPx": 7.500850822461713,
+              "viewBoxWidth": 1775,
+              "minimumProjectedNodeTextPx": 7.504225352112676,
+              "minimumProjectedNonEdgeTextPx": 8.44225352112676,
+              "minimumProjectedEdgeTextPx": 7.504225352112676,
               "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -749,20 +749,20 @@
               "readerOverflow": null,
               "readerFit": "intrinsic-height",
               "ok": true,
-              "readerWidth": 1747,
-              "diagramWidth": 1697,
+              "readerWidth": 1741,
+              "diagramWidth": 1691,
               "pageComposition": {
                 "bodyPaddingPx": 64,
                 "headerPx": 68,
                 "diagramChromePx": 94,
                 "svgPx": 1082,
                 "cardsPx": 0,
-                "viewBoxHeight": 1124
+                "viewBoxHeight": 1136
               },
-              "viewBoxWidth": 1763,
-              "minimumProjectedNodeTextPx": 7.700510493477028,
-              "minimumProjectedNonEdgeTextPx": 8.663074305161656,
-              "minimumProjectedEdgeTextPx": 7.700510493477028,
+              "viewBoxWidth": 1775,
+              "minimumProjectedNodeTextPx": 7.621408450704226,
+              "minimumProjectedNonEdgeTextPx": 8.574084507042254,
+              "minimumProjectedEdgeTextPx": 7.621408450704226,
               "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -797,7 +797,7 @@
               "innerWidth": 1440,
               "innerHeight": 900,
               "scrollWidth": 1440,
-              "scrollHeight": 1001,
+              "scrollHeight": 1004,
               "overflowX": false,
               "overflowY": true,
               "verticalScrollAccepted": true,
@@ -812,14 +812,14 @@
                 "bodyPaddingPx": 12,
                 "headerPx": 52,
                 "diagramChromePx": 78,
-                "svgPx": 858,
+                "svgPx": 861,
                 "cardsPx": 0,
-                "viewBoxHeight": 1124
+                "viewBoxHeight": 1136
               },
-              "viewBoxWidth": 1763,
-              "minimumProjectedNodeTextPx": 6.107770845150312,
-              "minimumProjectedNonEdgeTextPx": 6.871242200794101,
-              "minimumProjectedEdgeTextPx": 6.107770845150312,
+              "viewBoxWidth": 1775,
+              "minimumProjectedNodeTextPx": 6.066478873239436,
+              "minimumProjectedNonEdgeTextPx": 6.8247887323943655,
+              "minimumProjectedEdgeTextPx": 6.066478873239436,
               "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -849,7 +849,7 @@
               "innerWidth": 1600,
               "innerHeight": 1000,
               "scrollWidth": 1600,
-              "scrollHeight": 1168,
+              "scrollHeight": 1172,
               "overflowX": false,
               "overflowY": true,
               "verticalScrollAccepted": true,
@@ -864,14 +864,14 @@
                 "bodyPaddingPx": 64,
                 "headerPx": 60,
                 "diagramChromePx": 84,
-                "svgPx": 960,
+                "svgPx": 964,
                 "cardsPx": 0,
-                "viewBoxHeight": 1124
+                "viewBoxHeight": 1136
               },
-              "viewBoxWidth": 1763,
-              "minimumProjectedNodeTextPx": 6.833806012478729,
-              "minimumProjectedNonEdgeTextPx": 7.688031764038571,
-              "minimumProjectedEdgeTextPx": 6.833806012478729,
+              "viewBoxWidth": 1775,
+              "minimumProjectedNodeTextPx": 6.787605633802817,
+              "minimumProjectedNonEdgeTextPx": 7.636056338028169,
+              "minimumProjectedEdgeTextPx": 6.787605633802817,
               "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -901,7 +901,7 @@
               "innerWidth": 1920,
               "innerHeight": 1080,
               "scrollWidth": 1920,
-              "scrollHeight": 1263,
+              "scrollHeight": 1274,
               "overflowX": false,
               "overflowY": true,
               "verticalScrollAccepted": true,
@@ -910,20 +910,20 @@
               "readerOverflow": "authored",
               "readerFit": "intrinsic-height",
               "ok": true,
-              "readerWidth": 1683,
-              "diagramWidth": 1653,
+              "readerWidth": 1695,
+              "diagramWidth": 1665,
               "pageComposition": {
                 "bodyPaddingPx": 64,
                 "headerPx": 60,
                 "diagramChromePx": 84,
-                "svgPx": 1054,
+                "svgPx": 1066,
                 "cardsPx": 0,
-                "viewBoxHeight": 1124
+                "viewBoxHeight": 1136
               },
-              "viewBoxWidth": 1763,
-              "minimumProjectedNodeTextPx": 7.500850822461713,
-              "minimumProjectedNonEdgeTextPx": 8.438457175269427,
-              "minimumProjectedEdgeTextPx": 7.500850822461713,
+              "viewBoxWidth": 1775,
+              "minimumProjectedNodeTextPx": 7.504225352112676,
+              "minimumProjectedNonEdgeTextPx": 8.44225352112676,
+              "minimumProjectedEdgeTextPx": 7.504225352112676,
               "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -962,20 +962,20 @@
               "readerOverflow": null,
               "readerFit": "intrinsic-height",
               "ok": true,
-              "readerWidth": 1747,
-              "diagramWidth": 1697,
+              "readerWidth": 1741,
+              "diagramWidth": 1691,
               "pageComposition": {
                 "bodyPaddingPx": 64,
                 "headerPx": 68,
                 "diagramChromePx": 94,
                 "svgPx": 1082,
                 "cardsPx": 0,
-                "viewBoxHeight": 1124
+                "viewBoxHeight": 1136
               },
-              "viewBoxWidth": 1763,
-              "minimumProjectedNodeTextPx": 7.700510493477028,
-              "minimumProjectedNonEdgeTextPx": 8.663074305161656,
-              "minimumProjectedEdgeTextPx": 7.700510493477028,
+              "viewBoxWidth": 1775,
+              "minimumProjectedNodeTextPx": 7.621408450704226,
+              "minimumProjectedNonEdgeTextPx": 8.574084507042254,
+              "minimumProjectedEdgeTextPx": 7.621408450704226,
               "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -1006,7 +1006,7 @@
           "contactSheet": null
         },
         "sidecars": {
-          "directory": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/review-5",
+          "directory": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/review-6",
           "receipt": "agctl-processes.browser-check.json",
           "files": []
         }
@@ -1015,13 +1015,13 @@
   },
   "diagnostics": [],
   "evidence": {
-    "receipt": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/review-5/agctl-processes.finalize.json",
-    "summaryReceipt": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/review-5/agctl-processes.finalize-summary.json",
-    "browserCheckReceipt": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/review-5/agctl-processes.browser-check.json"
+    "receipt": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/review-6/agctl-processes.finalize.json",
+    "summaryReceipt": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/review-6/agctl-processes.finalize-summary.json",
+    "browserCheckReceipt": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-183853/review-6/agctl-processes.browser-check.json"
   },
   "visualReview": "not-requested",
-  "finishedAt": "2026-10-25T13:49:48.523Z",
-  "durationMs": 1391,
+  "finishedAt": "2026-10-25T13:57:33.641Z",
+  "durationMs": 1402,
   "update": {
     "status": "update_available",
     "installedVersion": "3.0.1",
