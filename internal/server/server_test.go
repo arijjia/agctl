@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -393,266 +392,10 @@ func TestAuthRequired(t *testing.T) {
 
 // ── воркспейсы: полный жизненный цикл ───────────────────────────────────────
 
-// TestWorkspaceLifecycle — создание → running → stop → start → delete,
-// с проверкой файловой раскладки и аудита.
-func TestWorkspaceLifecycle(t *testing.T) {
-	e := newTestEnv(t, 3)
-	e.register(e.admin, "anna", "secret1")
-
-	code, body := e.do(e.admin, "POST", "/api/workspaces", validCreate("demo ws"))
-	if code != http.StatusAccepted {
-		t.Fatalf("create: %d %s", code, body)
-	}
-	wsID := wsIDof(t, body)
-	ws := e.waitStatus(wsID, "running")
-	if ws.ContainerID == "" || ws.HostPort == 0 {
-		t.Fatalf("runtime не записан: %+v", ws)
-	}
-	if e.rt.started[wsID] != 1 {
-		t.Fatalf("Start вызван %d раз, ждали 1", e.rt.started[wsID])
-	}
-
-	// файловая часть: bare + клон + dsh-home
-	paths := provision.Paths(e.home, "anna", ws.ID, ws.Name)
-	for _, f := range []string{
-		filepath.Join(paths.Repo, "HEAD"),
-		filepath.Join(paths.Work, "AGENTS.md"),
-		filepath.Join(paths.DshHome, "settings.yaml"),
-	} {
-		if _, err := os.Stat(f); err != nil {
-			t.Errorf("нет %s: %v", f, err)
-		}
-	}
-
-	// токен не утекает в API
-	code, body = e.do(e.admin, "GET", "/api/workspaces/"+wsID, nil)
-	if code != 200 {
-		t.Fatalf("get: %d", code)
-	}
-	if strings.Contains(body, "sk-it-test-token") {
-		t.Fatal("API-токен LLM утёк в ответе GET воркспейса")
-	}
-
-	// logs: boot-token редактируется, хвост ограничен сверху.
-	code, body = e.do(e.admin, "GET", "/api/workspaces/"+wsID+"/logs?tail=999999", nil)
-	if code != 200 || strings.Contains(body, "fake-boot-token") || !strings.Contains(body, "[redacted]") {
-		t.Fatalf("logs must redact dsh boot token: %d %s", code, body)
-	}
-	if got := e.rt.logTails[ws.ContainerID]; got != strconv.Itoa(maxWorkspaceLogTail) {
-		t.Fatalf("runtime logs tail = %q, want capped %d", got, maxWorkspaceLogTail)
-	}
-
-	// stop → stopped
-	if code, _ := e.do(e.admin, "POST", "/api/workspaces/"+wsID+"/stop", nil); code != http.StatusAccepted {
-		t.Fatalf("stop: %d", code)
-	}
-	e.waitStatus(wsID, "stopped")
-	if e.rt.stopped["ctr-"+wsID] != 1 {
-		t.Fatal("runtime.Stop не вызван")
-	}
-
-	// повторный stop уже остановленного — конфликт/идемпотентность
-	code, _ = e.do(e.admin, "POST", "/api/workspaces/"+wsID+"/stop", nil)
-	if code != http.StatusAccepted && code != http.StatusOK {
-		t.Fatalf("повторный stop: %d", code)
-	}
-
-	// start → running снова (контейнер есть — Resume)
-	if code, _ := e.do(e.admin, "POST", "/api/workspaces/"+wsID+"/start", nil); code != http.StatusAccepted {
-		t.Fatalf("start: %d", code)
-	}
-	e.waitStatus(wsID, "running")
-	if e.rt.resumed["ctr-"+wsID] == 0 && e.rt.started[wsID] < 2 {
-		t.Fatal("ожидали Resume или повторный Start")
-	}
-
-	// delete → записи нет, данные с диска убраны (решение владельца
-	// 2026-10-14: удаление чистит bare-репку, клон и дом dsh)
-	if code, _ := e.do(e.admin, "DELETE", "/api/workspaces/"+wsID, nil); code != http.StatusAccepted {
-		t.Fatalf("delete: %d", code)
-	}
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := e.db.WorkspaceByID(wsID); err == store.ErrNotFound {
-			break
-		}
-		time.Sleep(30 * time.Millisecond)
-	}
-	if _, err := e.db.WorkspaceByID(wsID); err != store.ErrNotFound {
-		t.Fatal("воркспейс не удалён из БД")
-	}
-	diskDeadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(diskDeadline) {
-		if _, err := os.Stat(paths.Repo); os.IsNotExist(err) {
-			break
-		}
-		time.Sleep(30 * time.Millisecond)
-	}
-	for _, p := range []string{paths.Repo, paths.Work, paths.DshHome} {
-		if _, err := os.Stat(p); !os.IsNotExist(err) {
-			t.Errorf("данные воркспейса должны быть удалены с диска: %s (%v)", p, err)
-		}
-	}
-
-	// аудит: ключевые события зафиксированы
-	events, _ := e.db.AuditList(100)
-	seen := map[string]bool{}
-	for _, ev := range events {
-		seen[ev.Action] = true
-	}
-	for _, want := range []string{"register", "workspace.create", "workspace.running", "workspace.stop", "workspace.delete"} {
-		if !seen[want] {
-			t.Errorf("в аудите нет события %q", want)
-		}
-	}
-}
-
-// TestWorkspaceCreateValidation — некорректные параметры создания отклоняются.
-func TestWorkspaceCreateValidation(t *testing.T) {
-	e := newTestEnv(t, 3)
-	e.register(e.admin, "anna", "secret1")
-
-	bad := []map[string]any{
-		{"name": "x", "baseURL": "https://l/v1", "models": []string{"m"}, "apiKey": "sk"},                              // короткое имя
-		{"name": "ok-name", "template": "no-such", "baseURL": "https://l/v1", "models": []string{"m"}, "apiKey": "sk"}, // нет шаблона
-		{"name": "ok-name", "baseURL": "litellm.example/v1", "models": []string{"m"}, "apiKey": "sk"},                  // без схемы
-		{"name": "ok-name", "baseURL": "https://l/v1", "models": []string{}, "apiKey": "sk"},                           // без моделей
-		{"name": "ok-name", "baseURL": "https://l/v1", "models": []string{"m"}},                                        // без токена
-	}
-	for i, req := range bad {
-		if code, body := e.do(e.admin, "POST", "/api/workspaces", req); code != 400 {
-			t.Fatalf("кейс %d: %d %s, ждали 400", i, code, body)
-		}
-	}
-	// корректный запрос проходит; ждём завершения фонового provision,
-	// чтобы временный каталог не разбирали под работающей горутиной
-	code, body := e.do(e.admin, "POST", "/api/workspaces", validCreate("good"))
-	if code != http.StatusAccepted {
-		t.Fatalf("валидное создание отклонено: %d %s", code, body)
-	}
-	e.waitStatus(wsIDof(t, body), "running")
-}
-
-// TestWorkspaceQuota — лимит воркспейсов на пользователя соблюдается.
-func TestWorkspaceQuota(t *testing.T) {
-	e := newTestEnv(t, 2)
-	e.register(e.admin, "anna", "secret1")
-	for i := 0; i < 2; i++ {
-		code, body := e.do(e.admin, "POST", "/api/workspaces", validCreate(fmt.Sprintf("ws-%d", i)))
-		if code != http.StatusAccepted {
-			t.Fatalf("ws-%d: %d %s", i, code, body)
-		}
-		e.waitStatus(wsIDof(t, body), "running")
-	}
-	code, body := e.do(e.admin, "POST", "/api/workspaces", validCreate("third"))
-	if code != 400 || !strings.Contains(body, "лимит") {
-		t.Fatalf("третий воркспейс: %d %s, ждали 400 «лимит»", code, body)
-	}
-}
-
-// TestWorkspaceIsolation — чужой воркспейс недоступен, админу виден всё.
-func TestWorkspaceIsolation(t *testing.T) {
-	e := newTestEnv(t, 3)
-	e.register(e.admin, "anna", "secret1") // админ
-	bob := e.newClient()
-	e.register(bob, "bob", "secret1")
-
-	code, body := e.do(e.admin, "POST", "/api/workspaces", validCreate("annas-ws"))
-	if code != http.StatusAccepted {
-		t.Fatalf("create: %d %s", code, body)
-	}
-	wsID := wsIDof(t, body)
-	e.waitStatus(wsID, "running")
-
-	// bob не видит воркспейс anny (403 «не ваш» — существование не скрывается,
-	// но доступ закрыт; wsID непредсказуем, поэтому перебор невозможен)
-	if code, _ := e.do(bob, "GET", "/api/workspaces/"+wsID, nil); code != 403 {
-		t.Fatalf("чужой GET: %d, ждали 403", code)
-	}
-	if code, _ := e.do(bob, "POST", "/api/workspaces/"+wsID+"/stop", nil); code != 403 {
-		t.Fatalf("чужой stop: %d, ждали 403", code)
-	}
-	if code, _ := e.do(bob, "DELETE", "/api/workspaces/"+wsID, nil); code != 403 {
-		t.Fatalf("чужой delete: %d, ждали 403", code)
-	}
-	// в списке bob — пусто
-	_, body = e.do(bob, "GET", "/api/workspaces", nil)
-	if strings.Contains(body, wsID) {
-		t.Fatal("воркспейс anny виден в списке bob")
-	}
-	// админ видит
-	_, body = e.do(e.admin, "GET", "/api/workspaces", nil)
-	if !strings.Contains(body, wsID) {
-		t.Fatal("админ не видит воркспейс в списке всех")
-	}
-}
-
-// TestWorkspaceDockerFail — ошибка рантайма переводит воркспейс в failed.
-func TestWorkspaceDockerFail(t *testing.T) {
-	e := newTestEnv(t, 3)
-	e.register(e.admin, "anna", "secret1")
-	e.rt.failNext = fmt.Errorf("docker: no such image")
-	code, body := e.do(e.admin, "POST", "/api/workspaces", validCreate("doomed"))
-	if code != http.StatusAccepted {
-		t.Fatalf("create: %d %s", code, body)
-	}
-	wsID := wsIDof(t, body)
-	ws := e.waitStatus(wsID, "failed")
-	if !strings.Contains(ws.Error, "docker") {
-		t.Fatalf("ошибка статуса без упоминания docker: %q", ws.Error)
-	}
-	events, _ := e.db.AuditList(50)
-	found := false
-	for _, ev := range events {
-		if ev.Action == "workspace.fail" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("workspace.fail не попал в аудит")
-	}
-}
-
-// TestProviderPatch — смена моделей без пересоздания: settings.yaml обновляется,
-// токен в ответе не светится, при running статус уходит в provisioning.
-func TestProviderPatch(t *testing.T) {
-	e := newTestEnv(t, 3)
-	e.register(e.admin, "anna", "secret1")
-	code, body := e.do(e.admin, "POST", "/api/workspaces", validCreate("patched"))
-	if code != http.StatusAccepted {
-		t.Fatalf("create: %d %s", code, body)
-	}
-	wsID := wsIDof(t, body)
-	ws := e.waitStatus(wsID, "running")
-	paths := provision.Paths(e.home, "anna", ws.ID, ws.Name)
-
-	code, body = e.do(e.admin, "PATCH", "/api/workspaces/"+wsID+"/provider", map[string]any{
-		"models": []string{"new-model-x"},
-	})
-	if code != 200 {
-		t.Fatalf("patch: %d %s", code, body)
-	}
-	if strings.Contains(body, "sk-it-test-token") {
-		t.Fatal("токен LLM утёк в ответе PATCH")
-	}
-	data, err := os.ReadFile(filepath.Join(paths.DshHome, "settings.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "new-model-x") {
-		t.Fatal("settings.yaml не обновлён новой моделью")
-	}
-	// воркспейс был running → контейнер пересоздаётся → снова running
-	e.waitStatus(wsID, "running")
-	fresh, _ := e.db.WorkspaceByID(wsID)
-	if fresh.Model != "new-model-x" {
-		t.Fatalf("модель в БД = %q, ждали new-model-x", fresh.Model)
-	}
-}
-
-// TestKitsEndpointAndSelection — версия манифеста и selected components доступны
-// в API/SQLite, а снятая галочка не создаёт файлы компонента.
-func TestKitsEndpointAndSelection(t *testing.T) {
+// TestKitsCatalogRemainsButLegacyProvisionIsRetired — каталог шаблонов
+// сохраняется как источник для будущих v3-проектов, но отдельные места
+// создавать больше нельзя.
+func TestKitsCatalogRemainsButLegacyProvisionIsRetired(t *testing.T) {
 	e := newTestEnv(t, 3)
 	e.register(e.admin, "anna", "secret1")
 	if code, _ := e.do(&http.Client{}, "GET", "/api/kits", nil); code != http.StatusUnauthorized {
@@ -662,39 +405,11 @@ func TestKitsEndpointAndSelection(t *testing.T) {
 	if code != http.StatusOK || !strings.Contains(body, `"version":"1.0.0"`) || !strings.Contains(body, "1c-tooling") {
 		t.Fatalf("kits: %d %s", code, body)
 	}
-
-	req := validCreate("components")
-	req["kit"] = "1c-vibe"
-	// Порядок JSON произвольный; сервер нормализует по manifest.
-	req["components"] = []string{"core-instructions", "core-workspace"}
-	code, body = e.do(e.admin, "POST", "/api/workspaces", req)
-	if code != http.StatusAccepted {
-		t.Fatalf("create selected kit: %d %s", code, body)
+	if code, body = e.do(e.admin, "POST", "/api/workspaces", validCreate("components")); code != http.StatusGone {
+		t.Fatalf("legacy provision = %d %s, want 410", code, body)
 	}
-	wsID := wsIDof(t, body)
-	ws := e.waitStatus(wsID, "running")
-	if got := strings.Join(ws.Components, ","); got != "core-workspace,core-instructions" {
-		t.Fatalf("persisted components=%q", got)
-	}
-	if _, err := os.Stat(filepath.Join(ws.WorkPath, "AGENTS.md")); err != nil {
-		t.Fatalf("core instructions missing: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(ws.WorkPath, "scripts/jira_client.py")); !os.IsNotExist(err) {
-		t.Fatalf("deselected 1C tooling was copied, stat err=%v", err)
-	}
-}
-
-// TestKitRejectsInvalidSelection — сервер запрещает пустой и чужой component ID.
-func TestKitRejectsInvalidSelection(t *testing.T) {
-	e := newTestEnv(t, 3)
-	e.register(e.admin, "anna", "secret1")
-	for _, components := range [][]string{{}, {"not-in-this-kit"}} {
-		req := validCreate("invalid-kit")
-		req["components"] = components
-		code, _ := e.do(e.admin, "POST", "/api/workspaces", req)
-		if code != http.StatusBadRequest {
-			t.Fatalf("components=%v: got %d, want 400", components, code)
-		}
+	if len(e.rt.started) != 0 {
+		t.Fatal("legacy endpoint запустил отдельный runtime")
 	}
 }
 
@@ -708,47 +423,6 @@ func TestTemplatesEndpoint(t *testing.T) {
 	}
 }
 
-// TestEntryRedirectRequiresRunning — /w/{id} ведёт на канонический /w/{id}/
-// (шлюз) и не отвечает для не-running воркспейса.
-func TestRedirectRequiresRunning(t *testing.T) {
-	e := newTestEnv(t, 3)
-	e.register(e.admin, "anna", "secret1")
-	code, body := e.do(e.admin, "POST", "/api/workspaces", validCreate("redir"))
-	if code != http.StatusAccepted {
-		t.Fatalf("create: %d", code)
-	}
-	wsID := wsIDof(t, body)
-	e.waitStatus(wsID, "running")
-
-	req, _ := http.NewRequest("GET", e.api.URL+"/w/"+wsID+"?token=should-not-leak&view=full", nil)
-	resp, err := e.admin.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusPermanentRedirect {
-		t.Fatalf("/w/{id}: %d, ждали 308", resp.StatusCode)
-	}
-	if loc := resp.Header.Get("Location"); loc != "/w/"+wsID+"/?view=full" {
-		t.Fatalf("Location %q — токен не должен сохраняться, query view должен остаться", loc)
-	}
-
-	// не-running: останавливаем и ждём 409 от шлюза
-	if code, _ := e.do(e.admin, "POST", "/api/workspaces/"+wsID+"/stop", nil); code != 200 && code != 202 {
-		t.Fatalf("stop: %d", code)
-	}
-	e.waitStatus(wsID, "stopped")
-	req, _ = http.NewRequest("GET", e.api.URL+"/w/"+wsID+"/", nil)
-	resp, err = e.admin.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusConflict {
-		t.Fatalf("/w/{id}/ stopped: %d, ждали 409", resp.StatusCode)
-	}
-}
-
 // TestWsTokenTakesLastMatch — регрессия баг-фикса: при docker start того же
 // контейнера в журнале накапливаются несколько boot-строк; сервер обязан
 // отдавать ПОСЛЕДНИЙ токен (первый к этому моменту устарел — dsh печатает
@@ -756,13 +430,14 @@ func TestRedirectRequiresRunning(t *testing.T) {
 func TestWsTokenTakesLastMatch(t *testing.T) {
 	e := newTestEnv(t, 3)
 	e.register(e.admin, "anna", "secret1")
-	code, body := e.do(e.admin, "POST", "/api/workspaces", validCreate("retok"))
-	if code != http.StatusAccepted {
-		t.Fatalf("create: %d %s", code, body)
+	// Чистая запись для регрессии шлюза: новые legacy-места создавать нельзя,
+	// но wsToken остаётся нужна для совместимости со старыми данными.
+	wsID := "retok-fixture"
+	ws := store.Workspace{ID: wsID, OwnerID: 1, Name: "retok", Status: "running",
+		ContainerID: "ctr-" + wsID, HostPort: 43210, BaseURL: "https://llm.example/v1", Model: "m1"}
+	if err := e.db.InsertWorkspace(ws); err != nil {
+		t.Fatal(err)
 	}
-	wsID := wsIDof(t, body)
-	e.waitStatus(wsID, "running")
-
 	// эмулируем рестарт контейнера: в журнале две boot-строки
 	e.rt.logs[wsID] = "dsh web: http://0.0.0.0:3080/?token=OLD-stale-token\n" +
 		"dsh web: http://0.0.0.0:3080/?token=NEW-fresh-token"
@@ -787,52 +462,5 @@ func TestWsTokenTakesLastMatch(t *testing.T) {
 	// ссылка воркспейса не содержит токена (он не покидает сервер)
 	if u := workspaceURL(ws); strings.Contains(u, "token") || !strings.HasPrefix(u, "/w/") {
 		t.Fatalf("workspaceURL %q — токен не должен попадать в URL", u)
-	}
-}
-
-// TestWorkspaceNameReuse — с 2026-10-14 удаление воркспейса чистит диск,
-// поэтому то же имя свободно сразу; отдельный случай — брошенные на диске
-// файлы от воркспейсов, удалённых старой версией: повторное имя даёт
-// понятную ошибку, а не падение provision на «bare init».
-func TestWorkspaceNameReuse(t *testing.T) {
-	e := newTestEnv(t, 5)
-	e.register(e.admin, "anna", "secret1")
-	code, body := e.do(e.admin, "POST", "/api/workspaces", validCreate("twice"))
-	if code != http.StatusAccepted {
-		t.Fatalf("create #1: %d %s", code, body)
-	}
-	wsID := wsIDof(t, body)
-	e.waitStatus(wsID, "running")
-	paths := provision.Paths(e.home, "anna", wsID, "twice")
-	if code, _ := e.do(e.admin, "DELETE", "/api/workspaces/"+wsID, nil); code != http.StatusAccepted {
-		t.Fatal("delete")
-	}
-	// ждём, пока фоновая уборка уберёт файлы с диска
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(paths.Repo); os.IsNotExist(err) {
-			break
-		}
-		time.Sleep(30 * time.Millisecond)
-	}
-	if _, err := os.Stat(paths.Repo); !os.IsNotExist(err) {
-		t.Fatalf("репка удалённого воркспейса осталась на диске: %v", err)
-	}
-
-	// то же имя теперь свободно
-	code, body = e.do(e.admin, "POST", "/api/workspaces", validCreate("twice"))
-	if code != http.StatusAccepted {
-		t.Fatalf("повторное имя: %d %s, ждали 202", code, body)
-	}
-	e.waitStatus(wsIDof(t, body), "running")
-
-	// страховка для остатков от удаления старой версии: занятая репка — 400
-	leftover := provision.Paths(e.home, "anna", "w-legacy000000", "twice")
-	if err := os.MkdirAll(leftover.Repo, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	code, body = e.do(e.admin, "POST", "/api/workspaces", validCreate("twice"))
-	if code != 400 || !strings.Contains(body, "уже есть на диске") {
-		t.Fatalf("занятое имя: %d %s, ждали 400 с понятной ошибкой", code, body)
 	}
 }

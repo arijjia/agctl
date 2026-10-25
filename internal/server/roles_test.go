@@ -8,8 +8,8 @@ import (
 
 // ── роль developer: заявка → апрув → привязка к учётке (v3 unified runtime) ──
 
-// Полный поток: обычный пользователь подаёт заявку (dev-места ему закрыты),
-// админ апрувит — роль привязывается к учётке и открывает создание мест.
+// Полный поток: пользователь подаёт заявку, админ апрувит — роль
+// привязывается к учётке и открывает developer-функции, но не legacy seats.
 func TestRoleRequestFlow(t *testing.T) {
 	e := newTestEnv(t, 3)
 	e.register(e.admin, "anna", "secret1")
@@ -20,8 +20,8 @@ func TestRoleRequestFlow(t *testing.T) {
 	code, body := e.do(env2, "POST", "/api/workspaces", map[string]any{
 		"name": "bob-seat", "baseURL": "https://llm.example/v1", "model": "m1", "apiKey": "sk-test",
 	})
-	if code != http.StatusForbidden {
-		t.Fatalf("create без роли = %d (%s), want 403", code, body)
+	if code != http.StatusGone {
+		t.Fatalf("legacy create = %d (%s), want 410", code, body)
 	}
 
 	// заявка на роль
@@ -50,27 +50,11 @@ func TestRoleRequestFlow(t *testing.T) {
 		t.Fatalf("после апрува роль не developer: %d %s", code, body)
 	}
 
-	// роль открывает создание dev-мест (provision асинхронный — ждём running,
-	// чтобы TempDir-чистка не убегала вперёд горутины)
-	code, _ = e.do(env2, "POST", "/api/workspaces", map[string]any{
-		"name": "bob-seat", "baseURL": "https://llm.example/v1", "model": "m1", "apiKey": "sk-test",
-	})
-	if code != http.StatusAccepted {
-		t.Fatalf("create с ролью = %d, want 202", code)
+	// Developer расширяет возможности того же контейнера, но не выдаёт
+	// разрешения создавать дополнительные legacy-контейнеры.
+	if code, _ = e.do(env2, "POST", "/api/workspaces", nil); code != http.StatusGone {
+		t.Fatalf("developer legacy create = %d, want 410", code)
 	}
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		wss, err := e.db.WorkspacesAll()
-		if err == nil {
-			for _, w := range wss {
-				if w.Name == "bob-seat" && w.Status == "running" {
-					goto provisioned
-				}
-			}
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-provisioned:
 
 	// повторное решение по закрытой заявке — конфликт
 	if code, _ = e.do(e.admin, "POST", "/api/role-requests/1/approve", nil); code != http.StatusConflict {

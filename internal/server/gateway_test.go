@@ -19,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/arijjia/agctl/internal/store"
 )
 
 // newFakeDsh — upstream, повторяющий контракт dsh web: без cookie — 401;
@@ -119,16 +121,17 @@ func pointUpstream(t *testing.T, e *testEnv, wsID, upstreamURL string) {
 	}
 }
 
-// runningWorkspace — создаёт воркспейс и ждёт running.
+// runningWorkspace — историческая запись для регрессий шлюза. HTTP API v3
+// больше не создаёт отдельные контейнеры; фикстура не вызывает provision.
 func runningWorkspace(t *testing.T, e *testEnv, name string) string {
 	t.Helper()
-	code, body := e.do(e.admin, "POST", "/api/workspaces", validCreate(name))
-	if code != http.StatusAccepted {
-		t.Fatalf("create %s: %d %s", name, code, body)
+	id := "fixture-" + name
+	if err := e.db.InsertWorkspace(store.Workspace{ID: id, OwnerID: 1, Name: name,
+		Status: "running", ContainerID: "ctr-" + id, HostPort: 40001,
+		BaseURL: "https://llm.example/v1", Model: "m1"}); err != nil {
+		t.Fatal(err)
 	}
-	wsID := wsIDof(t, body)
-	e.waitStatus(wsID, "running")
-	return wsID
+	return id
 }
 
 // TestGatewayMintChain — первый вход без dsh-cookie: upstream 401 → прокси
@@ -425,12 +428,7 @@ func TestGatewayProxyMethods(t *testing.T) {
 func TestGatewayManifestPublic(t *testing.T) {
 	e := newTestEnv(t, 3)
 	e.register(e.admin, "anna", "secret1")
-	code, body := e.do(e.admin, "POST", "/api/workspaces", validCreate("gw-manifest"))
-	if code != http.StatusAccepted {
-		t.Fatalf("create: %d %s", code, body)
-	}
-	wsID := wsIDof(t, body)
-	e.waitStatus(wsID, "running")
+	wsID := runningWorkspace(t, e, "gw-manifest")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/manifest.webmanifest" {
 			http.NotFound(w, r)

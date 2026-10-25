@@ -81,10 +81,10 @@ func usage() {
 	fmt.Fprint(os.Stderr, `agctl — платформа агентских рабочих мест (один бинарь)
 
 Команды:
-  serve [--home DIR] [--addr H:P] [--image T] [--bin-dir D] [--max-per-user N]
+  serve [--home DIR] [--addr H:P] [--image T] [--bin-dir D]
   migrate [--home DIR]
   backlog <new|list|top|check|start|done|cancel|note|migrate> [флаги]
-  workspace create --user ЛОГИН --name ИМЯ --template 1c-vibe --base-url URL --model M --api-key KEY
+  workspace (legacy create отключён в v3)
   connect --port SSH_PORT [--host HOST] [--user root] [--identity KEY] [--print]
   local connect --server URL --grant TOKEN [--local 127.0.0.1:3080] [--launch-dsh]
       [--dsh-bin dsh] [--dsh-port 3080] [--dsh-token TOKEN]
@@ -122,11 +122,9 @@ func cmdServe(args []string) {
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
 	experimentalLocalBridge := fsSet.Bool("experimental-local-bridge", false, "experimental local connector pairing API (requires trusted TLS ingress and --secure-cookies)")
-	requireApproval := fsSet.Bool("require-approval", false, "создание dev-мест только через заявку с апрувом администратора")
 	chatTTLMin := fsSet.Int("chat-ttl-min", 60, "минуты простоя персонального контейнера до сна (том пользователя сохраняется)")
 	corsOrigins := fsSet.String("cors-origin", envOr("AGCTL_CORS_ORIGINS", ""), "точные origins через запятую, которым разрешён кросс-доменный /api (кабинет-плагин dsh web); пусто = CORS выключен")
 	tier0 := fsSet.Bool("tier0", true, "поднимать общий чат (Tier 0) и отдавать корень платформы в него")
-	maxPerUser := fsSet.Int("max-per-user", 3, "лимит воркспейсов на пользователя")
 	memGB := fsSet.Float64("mem-gb", 2, "лимит памяти контейнера, ГБ")
 	cpus := fsSet.Float64("cpus", 2, "лимит CPU контейнера")
 	// Платформенный LLM по умолчанию для режима Chat: пользователь без личного
@@ -169,7 +167,6 @@ func cmdServe(args []string) {
 	srv, err := server.New(db, sec, server.Config{
 		Home:                    absHome,
 		Addr:                    *addr,
-		MaxPerUser:              *maxPerUser,
 		MemoryBytes:             int64(*memGB * 1024 * 1024 * 1024),
 		NanoCPUs:                int64(*cpus * 1e9),
 		Image:                   *image,
@@ -178,7 +175,6 @@ func cmdServe(args []string) {
 		ExperimentalLocalBridge: *experimentalLocalBridge,
 		CORSOrigins:             splitCSV(*corsOrigins),
 		Tier0:                   *tier0,
-		RequireApproval:         *requireApproval,
 		ChatTTL:                 time.Duration(*chatTTLMin) * time.Minute,
 		DefaultLLM:              defaultLLM,
 	})
