@@ -5,16 +5,19 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/arijjia/agctl/internal/provision"
 )
 
 func TestChatFolderInstructionsPreserveUserInstructions(t *testing.T) {
 	e := newTestEnv(t, 3)
 	e.register(e.admin, "anna", "secret1")
 	sessionID := "session-8a6c4fe1-1eed-4cd8-93ce-54542017176c"
-	dir := filepath.Join(e.home, "chats", "u1", "work", ".sessions", sessionID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	project, err := provision.CreateProject(e.home, 1, "Работа")
+	if err != nil {
 		t.Fatal(err)
 	}
+	dir := filepath.Join(e.home, "chats", "u1", "work", project.Name)
 	path := filepath.Join(dir, "AGENTS.local.md")
 	if err := os.WriteFile(path, []byte("User's own instructions.\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -45,7 +48,7 @@ func TestChatFolderInstructionsPreserveUserInstructions(t *testing.T) {
 		t.Fatalf("managed block wasn't replaced atomically: %s", got)
 	}
 
-	code, body = e.do(e.admin, "PATCH", "/api/chat/sessions/"+sessionID+"/folder-instructions", map[string]string{"folder": "", "instructions": ""})
+	code, body = e.do(e.admin, "PUT", "/api/projects/Работа/instructions", map[string]string{"instructions": ""})
 	if code != 200 {
 		t.Fatalf("remove folder instructions: %d %s", code, body)
 	}
@@ -58,8 +61,8 @@ func TestChatFolderInstructionsPreserveUserInstructions(t *testing.T) {
 func TestChatFolderInstructionsPrecreateNewSessionWorkspace(t *testing.T) {
 	e := newTestEnv(t, 3)
 	e.register(e.admin, "anna", "secret1")
-	workRoot := filepath.Join(e.home, "chats", "u1", "work")
-	if err := os.MkdirAll(workRoot, 0o755); err != nil {
+	project, err := provision.CreateProject(e.home, 1, "Работа")
+	if err != nil {
 		t.Fatal(err)
 	}
 	sessionID := "session-new-uuid-1234"
@@ -69,7 +72,7 @@ func TestChatFolderInstructionsPrecreateNewSessionWorkspace(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("precreate session instructions: %d %s", code, body)
 	}
-	path := filepath.Join(e.home, "chats", "u1", "work", ".sessions", sessionID, "AGENTS.local.md")
+	path := filepath.Join(e.home, "chats", "u1", "work", project.Name, "AGENTS.local.md")
 	data, err := os.ReadFile(path)
 	if err != nil || !strings.Contains(string(data), "Перед ответом составь план") {
 		t.Fatalf("precreated instructions file missing: %q err=%v", data, err)

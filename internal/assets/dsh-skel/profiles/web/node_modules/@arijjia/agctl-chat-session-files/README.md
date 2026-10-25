@@ -1,21 +1,25 @@
 # @arijjia/agctl-chat-session-files
 
-Host-side DSH plugin for the default agctl Chat mode. It wraps the Host
-`sessionController.create` call and gives each new DSH Session a hidden,
-persistent working directory at `/workspace/.sessions/<sessionId>`. A matching
-internal DSH Workspace is created at that path so the Session remains attached
-and the composer works. The chat-brand client hides Workspace rows and presents
-a flat session list; directory paths are not shown to Chat users.
+Host-side DSH plugin for the personal agctl Chat runtime. It wraps the Host
+`sessionController.create` call and keeps the DSH Workspace selected by the
+client when it points to a real project directory such as
+`/workspace/<project>`.
 
-The per-session folders are **not a security boundary** between sessions of
-the same user: that user's shell can navigate to siblings.
+For a new Session created in the default `/workspace` (or in a legacy hidden
+session Workspace), the plugin creates a persistent per-session directory at
+`/workspace/.sessions/<sessionId>` and an internal Workspace for that path.
+This keeps the composer attached without exposing DSH's internal session
+folders as project folders.
+
+The chat-brand client registers project directories as real DSH Workspaces and
+starts folder sessions with that Workspace ID. Those sessions must keep their
+project cwd; they must not be redirected to `.sessions/<id>`.
+
+Session and project directories are **not security boundaries** inside one
+user's container: that user's shell can navigate to sibling paths. Containers
+and volumes are isolated between users. The `/workspace` volume persists over
+container sleep/recreation.
 
 The plugin activates only when `AGCTL_CHAT_SESSION_ROOT` is set by agctl on the
-personal Chat container. Server dev-workspaces do not receive the variable and
-keep their repository root as the shared project working directory.
-
-These directories are session-associated storage, **not a security boundary
-between sessions of the same user**: the user owns the whole container and may
-navigate to sibling paths. Containers remain isolated between users. The
-`/workspace` volume is persistent, so session files survive chat-container
-sleep/recreation.
+personal runtime. It does not create or manage the retired legacy dev-workspace
+seats.

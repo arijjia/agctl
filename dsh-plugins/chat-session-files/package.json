@@ -1,7 +1,7 @@
 {
   "name": "@arijjia/agctl-chat-session-files",
-  "description": "Assign a persistent hidden working directory to each default-chat DSH session",
-  "version": "0.1.1",
+  "description": "Use per-session cwd by default and preserve real project Workspace cwd when selected",
+  "version": "0.2.0",
   "type": "module",
   "main": "lib/index.js",
   "scripts": {

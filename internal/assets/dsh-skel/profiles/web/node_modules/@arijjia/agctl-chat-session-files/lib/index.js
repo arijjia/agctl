@@ -9,10 +9,10 @@ export const name = "agctl-chat-session-files";
 export const inject = ["sessionController", "workspaceRegistry"];
 
 /**
- * Host plugin for agctl Chat containers. Each new DSH Session gets a hidden
- * per-session directory and an internal Workspace whose path equals that cwd.
- * The chat-brand client flattens/hides those Workspace folders in the UI, while
- * DSH still sees a valid Workspace and keeps the composer enabled.
+ * Host plugin for agctl Chat containers. Sessions in the default Workspace get
+ * a hidden per-session directory. Sessions explicitly started in a project
+ * Workspace keep that real project cwd, so folder=project is physical on disk.
+ * The chat-brand client controls which project Workspace starts a new Session.
  */
 export function apply(ctx) {
 	const rootValue = process.env.AGCTL_CHAT_SESSION_ROOT;
@@ -33,7 +33,18 @@ export function apply(ctx) {
 		const sessionId = `session-${randomUUID()}`;
 
 		const requestedWorkspaceId = request.workspaceId;
-		if (requestedWorkspaceId !== undefined && !registry.get(requestedWorkspaceId)) return callOriginal(request);
+		const requestedWorkspace = requestedWorkspaceId !== undefined ? registry.get(requestedWorkspaceId) : undefined;
+		if (requestedWorkspaceId !== undefined && !requestedWorkspace) return callOriginal(request);
+		// v3: проект-папка является настоящим DSH Workspace. Сессию в нём
+		// оставляем в каталоге проекта; скрытый .sessions/<id> создаём только
+		// для обычного чата/default /workspace.
+		const workspaceRoot = path.dirname(root);
+		const requestedPath = requestedWorkspace && path.resolve(requestedWorkspace.path);
+		const sessionRoot = path.resolve(root);
+		const isPerSessionPath = requestedPath === sessionRoot || requestedPath.startsWith(sessionRoot + path.sep);
+		if (requestedWorkspace && requestedPath !== workspaceRoot && !isPerSessionPath) {
+			return callOriginal(request);
+		}
 
 		const cwd = sessionDirectory(root, sessionId);
 		await mkdir(cwd, { recursive: true, mode: 0o700 });

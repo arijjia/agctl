@@ -76,15 +76,16 @@ type chatFolderPending struct {
 }
 
 type chatFoldersState struct {
-	Folders       []string                     `json:"folders"`
-	Assign        map[string]string            `json:"assign"`
-	Settings      map[string]chatFolderSetting `json:"settings"`
-	Active        string                       `json:"active"`
-	PendingFolder *chatFolderPending           `json:"pendingFolder,omitempty"`
+	Folders        []string                     `json:"folders"`
+	Assign         map[string]string            `json:"assign"`
+	Settings       map[string]chatFolderSetting `json:"settings"`
+	HiddenProjects []string                     `json:"hiddenProjects,omitempty"`
+	Active         string                       `json:"active"`
+	PendingFolder  *chatFolderPending           `json:"pendingFolder,omitempty"`
 }
 
 func emptyChatFoldersState() chatFoldersState {
-	return chatFoldersState{Folders: []string{}, Assign: map[string]string{}, Settings: map[string]chatFolderSetting{}}
+	return chatFoldersState{Folders: []string{}, Assign: map[string]string{}, Settings: map[string]chatFolderSetting{}, HiddenProjects: []string{}}
 }
 
 func chatFoldersSettingKey(userID int64) string {
@@ -147,14 +148,28 @@ func normalizeChatFoldersState(state *chatFoldersState) {
 	if state.Settings == nil {
 		state.Settings = map[string]chatFolderSetting{}
 	}
+	if state.HiddenProjects == nil {
+		state.HiddenProjects = []string{}
+	}
 }
 
 func normalizeAndValidateChatFoldersState(state *chatFoldersState) error {
 	normalizeChatFoldersState(state)
-	if len(state.Folders) > maxChatFoldersPerUser || len(state.Assign) > maxChatFolderAssignments {
+	if len(state.Folders) > maxChatFoldersPerUser || len(state.Assign) > maxChatFolderAssignments || len(state.HiddenProjects) > maxChatFoldersPerUser {
 		return fmt.Errorf("слишком много папок или сессий")
 	}
 	seen := map[string]bool{}
+	hiddenSeen := map[string]bool{}
+	for i, name := range state.HiddenProjects {
+		name = strings.TrimSpace(name)
+		if name == "" || len(name) > 80 || strings.ContainsAny(name, "\r\n") {
+			return fmt.Errorf("некорректное скрытое имя проекта")
+		}
+		if !hiddenSeen[name] {
+			state.HiddenProjects[i] = name
+			hiddenSeen[name] = true
+		}
+	}
 	for i, name := range state.Folders {
 		name = strings.TrimSpace(name)
 		if name == "" || len(name) > 80 || strings.ContainsAny(name, "\r\n") {
@@ -205,10 +220,10 @@ const (
 	maxFolderInstructionBytes = 16 << 10
 )
 
-// handleChatFolderInstructions stores virtual-project instructions in each
-// session's AGENTS.local.md. DSH's built-in agent-instructions plugin loads the
-// file as workspace context on first request/resume; folder grouping itself
-// remains browser-local and does not create a DSH workspace directory.
+// handleChatFolderInstructions stores project instructions in the real project
+// directory (folder name = project name) for v3; empty folder is retained as a
+// compatibility path for old hidden per-session directories. DSH loads
+// AGENTS.local.md from the Workspace cwd on the next read/resume.
 func (s *Server) handleChatFolderInstructions(w http.ResponseWriter, r *http.Request, id identity) {
 	sessionID := r.PathValue("sessionID")
 	if !validChatSessionID(sessionID) {
@@ -235,51 +250,114 @@ func (s *Server) handleChatFolderInstructions(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	sessionDir, err := safeChatSessionDir(s.cfg.Home, id.ID, sessionID, req.Instructions != "")
+	var (
+		projectDir string
+		err        error
+	)
+	if req.Folder != "" {
+		// v3: folder is a real project directory /workspace/<name>.
+		projectDir, err = provision.ProjectDirectory(s.cfg.Home, id.ID, req.Folder)
+	} else {
+		// Compatibility for old per-session .sessions directories.
+		projectDir, err = safeChatSessionDir(s.cfg.Home, id.ID, sessionID, req.Instructions != "")
+	}
 	if err != nil {
 		code := http.StatusNotFound
-		if strings.Contains(err.Error(), "symlink") || errors.Is(err, errInvalidChatSessionPath) {
+		if strings.Contains(err.Error(), "symlink") || errors.Is(err, errInvalidChatSessionPath) || errors.Is(err, provision.ErrInvalidProject) {
 			code = http.StatusBadRequest
 		}
-		writeErr(w, code, "не удалось безопасно разрешить каталог чат-сессии")
+		writeErr(w, code, "не удалось безопасно разрешить каталог проекта/чат-сессии")
 		return
 	}
-	path := filepath.Join(sessionDir, "AGENTS.local.md")
-	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
-		writeErr(w, http.StatusBadRequest, "AGENTS.local.md не должен быть символической ссылкой")
-		return
-	}
-	old, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		writeErr(w, http.StatusInternalServerError, "не удалось прочитать инструкции: "+err.Error())
-		return
-	}
-	updated, err := mergeFolderInstructions(old, req.Folder, req.Instructions)
+	updated, err := writeManagedFolderInstructions(projectDir, req.Folder, req.Instructions)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if string(updated) == string(old) {
-		writeJSON(w, http.StatusOK, map[string]any{"sessionId": sessionID, "folder": req.Folder, "updated": false})
-		return
-	}
-	if strings.TrimSpace(string(updated)) == "" {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			writeErr(w, http.StatusInternalServerError, "не удалось удалить пустой файл инструкций")
-			return
-		}
-	} else if err := atomicWriteFile(sessionDir, path, updated, 0o644); err != nil {
-		writeErr(w, http.StatusInternalServerError, "не удалось сохранить инструкции: "+err.Error())
-		return
-	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"sessionId": sessionID, "folder": req.Folder, "updated": true,
+		"sessionId": sessionID, "folder": req.Folder, "updated": updated,
 		"instructionsFile": "AGENTS.local.md",
+		"scope":            map[bool]string{true: "project", false: "session"}[req.Folder != ""],
 		"refreshHint":      "инструкции подхватятся при следующем чтении файлов или повторном открытии сессии",
 	})
 }
 
-var errInvalidChatSessionPath = errors.New("invalid chat session path")
+var (
+	errInvalidChatSessionPath    = errors.New("invalid chat session path")
+	errUnsafeProjectInstructions = errors.New("AGENTS.local.md must be a regular file, not a symlink")
+)
+
+// handleProjectInstructions writes the managed folder/project block once at
+// the project root. It is the canonical v3 path; session-scoped PATCH above
+// delegates here whenever folder is non-empty.
+func (s *Server) handleProjectInstructions(w http.ResponseWriter, r *http.Request, id identity) {
+	name := r.PathValue("name")
+	if !provision.ValidProjectName(name) {
+		writeErr(w, http.StatusBadRequest, "некорректное имя проекта")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxFolderInstructionBytes+1024)
+	var req struct {
+		Instructions string `json:"instructions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "неверный JSON инструкций проекта")
+		return
+	}
+	req.Instructions = strings.TrimSpace(req.Instructions)
+	if len(req.Instructions) > maxFolderInstructionBytes || strings.Contains(req.Instructions, folderInstructionStart) || strings.Contains(req.Instructions, folderInstructionEnd) {
+		writeErr(w, http.StatusBadRequest, "инструкции слишком длинные или содержат служебный маркер")
+		return
+	}
+	dir, err := provision.ProjectDirectory(s.cfg.Home, id.ID, name)
+	if err != nil {
+		code := http.StatusNotFound
+		if errors.Is(err, provision.ErrInvalidProject) || strings.Contains(err.Error(), "symlink") {
+			code = http.StatusBadRequest
+		}
+		writeErr(w, code, "не удалось безопасно разрешить каталог проекта")
+		return
+	}
+	updated, err := writeManagedFolderInstructions(dir, name, req.Instructions)
+	if err != nil {
+		code := http.StatusInternalServerError
+		if errors.Is(err, errUnsafeProjectInstructions) {
+			code = http.StatusBadRequest
+		}
+		writeErr(w, code, "не удалось сохранить инструкции проекта: "+err.Error())
+		return
+	}
+	_ = s.db.Audit(id.Login, "project.instructions.update", name, fmt.Sprintf("updated=%t", updated))
+	writeJSON(w, http.StatusOK, map[string]any{"project": name, "updated": updated, "instructionsFile": "AGENTS.local.md"})
+}
+
+func writeManagedFolderInstructions(dir, folder, instructions string) (bool, error) {
+	path := filepath.Join(dir, "AGENTS.local.md")
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return false, errUnsafeProjectInstructions
+	} else if err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	old, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	updated, err := mergeFolderInstructions(old, folder, instructions)
+	if err != nil {
+		return false, err
+	}
+	if string(updated) == string(old) {
+		return false, nil
+	}
+	if strings.TrimSpace(string(updated)) == "" {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return false, err
+		}
+	} else if err := atomicWriteFile(dir, path, updated, 0o644); err != nil {
+		return false, err
+	}
+	return true, nil
+}
 
 func safeChatSessionDir(home string, userID int64, sessionID string, create bool) (string, error) {
 	if !validChatSessionID(sessionID) {

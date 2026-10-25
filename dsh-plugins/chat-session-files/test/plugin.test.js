@@ -15,7 +15,11 @@ test("new Session gets a hidden per-session Workspace and persistent cwd", async
 		const createdWorkspaces = [];
 		const attached = [];
 		const existing = new Map();
-		const workspaces = new Map([["ws-agctl", { id: "ws-agctl", path: "/workspace" }]]);
+		const workspaceRoot = path.dirname(root);
+		const workspaces = new Map([
+			["ws-agctl", { id: "ws-agctl", path: workspaceRoot }],
+			["ws-project", { id: "ws-project", path: path.join(workspaceRoot, "Project") }],
+		]);
 		const registry = {
 			get: (id) => workspaces.get(id),
 			create: async (cwd, title) => {
@@ -62,6 +66,14 @@ test("new Session gets a hidden per-session Workspace and persistent cwd", async
 		assert.equal(createdWorkspaces.length, 1);
 		assert.equal(created[1].sessionId, "session-caller-owned");
 		assert.equal(created[1].workspaceId, "ws-agctl");
+
+		// v3 project Workspace stays the real cwd; no hidden .sessions dir is made.
+		const projectResult = await controller.create({ workspaceId: "ws-project", agentPreset: "default" });
+		assert.equal(projectResult.sessionId, undefined); // DSH generates the id
+		assert.equal(created.length, 3);
+		assert.equal(createdWorkspaces.length, 1);
+		assert.equal(created[2].workspaceId, "ws-project");
+		assert.equal(created[2].cwd, undefined);
 
 		for (const dispose of disposers) dispose?.();
 		assert.equal(controller.create, originalCreate);

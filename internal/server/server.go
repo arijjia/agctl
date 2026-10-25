@@ -218,6 +218,8 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.handleMe)
+	mux.HandleFunc("GET /api/projects", s.requireUser(s.handleProjectsList))
+	mux.HandleFunc("POST /api/projects", s.requireUser(s.handleProjectCreate))
 	mux.HandleFunc("GET /api/chat/folders", s.requireUser(s.handleChatFoldersGet))
 	mux.HandleFunc("PUT /api/chat/folders", s.requireUser(s.handleChatFoldersPut))
 	mux.HandleFunc("GET /api/templates", s.requireUser(s.handleTemplates)) // legacy
@@ -229,7 +231,8 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/workspaces/{id}/stop", s.requireUser(s.handleWorkspaceStop))
 	mux.HandleFunc("DELETE /api/workspaces/{id}", s.requireUser(s.handleWorkspaceDelete))
 	mux.HandleFunc("GET /api/workspaces/{id}/logs", s.requireUser(s.handleWorkspaceLogs))
-	mux.HandleFunc("PATCH /api/chat/sessions/{sessionID}/folder-instructions", s.requireUser(s.handleChatFolderInstructions))
+	mux.HandleFunc("PATCH /api/chat/sessions/{sessionID}/folder-instructions", s.requireUser(s.handleChatFolderInstructions)) // legacy session scope / project sync
+	mux.HandleFunc("PUT /api/projects/{name}/instructions", s.requireUser(s.handleProjectInstructions))
 	mux.HandleFunc("PATCH /api/workspaces/{id}/provider", s.requireUser(s.handleWorkspaceProvider))
 	mux.HandleFunc("PATCH /api/workspaces/{id}/ssh", s.requireUser(s.handleWorkspaceSSH))
 	mux.HandleFunc("GET /api/config", s.handleConfig)
@@ -370,6 +373,7 @@ func (s *Server) StartBackground(ctx context.Context) {
 				return
 			case <-t.C:
 				s.autosaveAll()
+				s.autosaveLocalProjects()
 			}
 		}
 	}()

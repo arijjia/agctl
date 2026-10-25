@@ -211,11 +211,12 @@ window.__ModuleLoader__.load({
 				const s = JSON.parse(localStorage.getItem(FOLDERS_KEY));
 				if (s && Array.isArray(s.folders) && s.assign) {
 					if (!s.settings || typeof s.settings !== "object") s.settings = {};
+					if (!Array.isArray(s.hiddenProjects)) s.hiddenProjects = [];
 					if (typeof s.active !== "string") s.active = "";
 					return s;
 				}
 			} catch (e) {}
-			return { folders: [], assign: {}, settings: {}, active: "" };
+			return { folders: [], assign: {}, settings: {}, hiddenProjects: [], active: "" };
 		}
 
 		async function putFoldersState(state) {
@@ -247,7 +248,7 @@ window.__ModuleLoader__.load({
 		}
 
 		async function syncAssignedFolderInstructions(state) {
-			for (const [session, name] of Object.entries(state.assign || {})) syncFolderInstructions(session, name, state);
+			for (const name of state.folders || []) syncFolderInstructions("", name, state);
 		}
 
 		async function hydrateFolderState() {
@@ -265,11 +266,13 @@ window.__ModuleLoader__.load({
 					if (!migrated && local.folders.length && remote.folders.length === 0) {
 						localStorage.setItem(FOLDERS_MIGRATED_KEY, "1");
 						await putFoldersState(local);
+						await syncFolderProjects(local);
 						await syncAssignedFolderInstructions(local);
 						return;
 					}
 					localStorage.setItem(FOLDERS_KEY, JSON.stringify(remote));
 					localStorage.setItem(FOLDERS_MIGRATED_KEY, "1");
+					await syncFolderProjects(remote);
 					await syncAssignedFolderInstructions(remote);
 				} catch (e) {
 					folderServerAvailable = false; // older agctl server: keep browser-local mode
@@ -316,6 +319,80 @@ window.__ModuleLoader__.load({
 			return null;
 		}
 
+		const projectWorkspacePromises = new Map();
+
+		async function projectRequest(method = "GET", body) {
+			const res = await fetch("/api/projects", {
+				method, credentials: "include",
+				headers: { Accept: "application/json", ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
+				body: body === undefined ? undefined : JSON.stringify(body),
+			});
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error((data && data.error) || ("projects HTTP " + res.status));
+			return data;
+		}
+
+		// Папка чата = реальный project dir + DSH Workspace. workspaces.create
+		// — официальный remote-контракт dsh; он же сохраняет registry на Host.
+		function ensureProjectWorkspace(name) {
+			if (projectWorkspacePromises.has(name)) return projectWorkspacePromises.get(name);
+			const pending = (async () => {
+				const workspaces = svc("workspaces");
+				if (!workspaces || typeof workspaces.create !== "function") throw new Error("DSH Workspace service недоступен");
+				const snapshot = workspacesSnapshot();
+				const existing = snapshot && snapshot.items.find((w) => w.path === "/workspace/" + name);
+				if (existing) return { name, directory: existing.path, workspaceId: existing.workspaceId || existing.id };
+				let data = await projectRequest("GET");
+				let project = (data.projects || []).find((p) => p.name === name);
+				if (!project) {
+					try {
+						data = await projectRequest("POST", { name });
+						project = data.project;
+					} catch (error) {
+						// Проект мог параллельно создать Кабинет/другая вкладка.
+						data = await projectRequest("GET");
+						project = (data.projects || []).find((p) => p.name === name);
+						if (!project) throw error;
+					}
+				}
+				if (!project || !project.directory) throw new Error("agctl не вернул каталог проекта");
+				const workspace = await workspaces.create({ path: project.directory });
+				let workspaceId = workspace && (workspace.workspaceId || workspace.id);
+				if (!workspaceId) throw new Error("DSH не вернул Workspace проекта");
+				// Remote create durably writes the Host registry; wait for the client
+				// snapshot stream before uiWorkspace.startSession reads that registry.
+				for (let i = 0; i < 30; i++) {
+					const current = workspacesSnapshot();
+					const item = current && current.items.find((w) => w.path === project.directory);
+					if (item) { workspaceId = item.workspaceId || item.id || workspaceId; break; }
+					await new Promise((resolve) => setTimeout(resolve, 50));
+				}
+				return { name, directory: project.directory, workspaceId };
+			})();
+			projectWorkspacePromises.set(name, pending);
+			pending.catch(() => projectWorkspacePromises.delete(name));
+			return pending;
+		}
+
+		async function syncFolderProjects(state) {
+			try {
+				const data = await projectRequest("GET");
+				let changed = false;
+				const hidden = new Set(state.hiddenProjects || []);
+				for (const project of data.projects || []) {
+					if (!hidden.has(project.name) && !state.folders.includes(project.name)) {
+						state.folders.push(project.name);
+						state.settings[project.name] = state.settings[project.name] || { instructions: "" };
+						changed = true;
+					}
+				}
+				for (const name of state.folders) await ensureProjectWorkspace(name);
+				if (changed) saveFoldersState(state);
+			} catch (e) {
+				console.warn("[agctl] не удалось связать папки с проектами:", e);
+			}
+		}
+
 		// Открытая сейчас сессия: официальный признак dsh — retainedBy.mainView>0
 		// (тот же предикат, что в SearchResults браузера воркспейсов).
 		function currentSessionId() {
@@ -340,6 +417,14 @@ window.__ModuleLoader__.load({
 				const archived = new Set((workspaces && workspaces.archivedSessionIds) || []);
 				const pinned = (workspaces && workspaces.pinnedSessionIds) || [];
 				const pinRank = new Map(pinned.map((id, i) => [id, i]));
+				const projectBySession = new Map();
+				for (const workspace of (workspaces && workspaces.items) || []) {
+					const path = workspace.path || "";
+					if (!path.startsWith("/workspace/") || path.startsWith("/workspace/.sessions/")) continue;
+					const name = path.slice("/workspace/".length).split("/")[0];
+					if (!name) continue;
+					for (const sid of workspace.sessionIds || []) projectBySession.set(sid, name);
+				}
 				const rows = [];
 				for (const id of snap.ids) {
 					const s = snap.byId[id];
@@ -350,6 +435,8 @@ window.__ModuleLoader__.load({
 						ts: s.updatedAt || 0,
 						running: !!s.running,
 						blank: !!s.blank,
+						projectName: projectBySession.get(id) || "",
+						cwd: s.cwd || "",
 						pin: pinRank.has(id) ? pinRank.get(id) : -1,
 					});
 				}
@@ -393,26 +480,22 @@ window.__ModuleLoader__.load({
 			return false;
 		}
 
-		let folderMenu = null;
-
-		function closeFolderMenu() {
-			if (folderMenu) { folderMenu.remove(); folderMenu = null; }
-		}
-
-		function syncFolderInstructions(session, folderName, state) {
-			if (!session || !session.startsWith("session-")) return;
-			const instructions = folderName ? ((state.settings[folderName] || {}).instructions || "") : "";
-			void fetch("/api/chat/sessions/" + encodeURIComponent(session) + "/folder-instructions", {
-				method: "PATCH",
+		function syncFolderInstructions(_session, folderName, state) {
+			// v3: инструкции принадлежат проекту (каталогу), не отдельной сессии.
+			// Скрытие папки не удаляет ни каталог, ни git-историю, ни AGENTS.local.md.
+			if (!folderName) return;
+			const instructions = ((state.settings[folderName] || {}).instructions || "");
+			void fetch("/api/projects/" + encodeURIComponent(folderName) + "/instructions", {
+				method: "PUT",
 				credentials: "include",
 				headers: { Accept: "application/json", "Content-Type": "application/json" },
-				body: JSON.stringify({ folder: folderName || "", instructions }),
+				body: JSON.stringify({ instructions }),
 			}).then(async (res) => {
-				if (!res.ok) console.warn("[agctl] folder instructions were not applied (HTTP " + res.status + ")");
-			}).catch((e) => console.warn("[agctl] folder instructions were not applied:", e));
+				if (!res.ok) console.warn("[agctl] project instructions were not applied (HTTP " + res.status + ")");
+			}).catch((e) => console.warn("[agctl] project instructions were not applied:", e));
 		}
 
-		function editFolderSettings(oldName, allowRename = true) {
+		function editFolderSettings(oldName, allowRename = false) {
 			const state = foldersState();
 			const current = (state.settings[oldName] || {}).instructions || "";
 			const overlay = document.createElement("div");
@@ -446,7 +529,7 @@ window.__ModuleLoader__.load({
 			instructionsLabel.appendChild(instructions);
 			card.appendChild(instructionsLabel);
 			const note = document.createElement("p");
-			note.textContent = "Инструкции сохраняются в AGENTS.local.md назначенных сессий и подхватываются при следующем чтении файлов или переоткрытии сессии.";
+			note.textContent = "Инструкции хранятся в AGENTS.local.md корня проекта и подхватываются его сессиями; имя проекта совпадает с именем каталога.";
 			note.style.cssText = "margin:0;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-tertiary,#777)";
 			card.appendChild(note);
 			const status = document.createElement("p");
@@ -458,14 +541,16 @@ window.__ModuleLoader__.load({
 			left.style.cssText = "display:flex;gap:8px;flex-wrap:wrap";
 			const remove = document.createElement("button");
 			remove.type = "button";
-			remove.textContent = "Удалить папку";
+			remove.textContent = "Скрыть папку";
 			remove.style.cssText = "padding:8px 12px;border:1px solid #c33;border-radius:8px;background:transparent;color:#c33;cursor:pointer;font:inherit";
 			remove.addEventListener("click", () => {
-				if (!window.confirm("Удалить папку «" + oldName + "»? Сессии останутся в чате без папки.")) return;
+				if (!window.confirm("Скрыть проект «" + oldName + "» из дерева? Каталог, Git-история и файлы останутся в персональном томе.")) return;
 				for (const [session, assigned] of Object.entries(state.assign)) {
-					if (assigned === oldName) { delete state.assign[session]; syncFolderInstructions(session, "", state); }
+					if (assigned === oldName) delete state.assign[session];
 				}
 				state.folders = state.folders.filter((name) => name !== oldName);
+				state.hiddenProjects = Array.isArray(state.hiddenProjects) ? state.hiddenProjects : [];
+				if (!state.hiddenProjects.includes(oldName)) state.hiddenProjects.push(oldName);
 				delete state.settings[oldName];
 				if (state.active === oldName) state.active = "";
 				saveFoldersState(state);
@@ -497,7 +582,7 @@ window.__ModuleLoader__.load({
 				delete state.settings[oldName];
 				state.settings[nextName] = { instructions: cleanInstructions };
 				saveFoldersState(state);
-				for (const [session, assigned] of Object.entries(state.assign)) if (assigned === nextName) syncFolderInstructions(session, assigned, state);
+				syncFolderInstructions("", nextName, state);
 				overlay.remove();
 				fixAll();
 			});
@@ -505,43 +590,6 @@ window.__ModuleLoader__.load({
 			overlay.appendChild(card);
 			document.body.appendChild(overlay);
 			nameInput.focus();
-		}
-
-		function openFolderMenu(x, y, row, key) {
-			closeFolderMenu();
-			const state = foldersState();
-			const assigned = state.assign[key] || "";
-			const items = [
-				...state.folders.map((name) => ({ label: (assigned === name ? "✓ " : "") + name, color: folderColor(name), act: () => { state.assign[key] = name; saveFoldersState(state); syncFolderInstructions(key, name, state); } })),
-				{ label: "＋ Новая папка…", act: () => {
-					const name = (window.prompt("Имя папки сессий:") || "").trim();
-					if (!name) return;
-					if (!state.folders.includes(name)) state.folders.push(name);
-					state.assign[key] = name;
-					state.settings[name] = state.settings[name] || { instructions: "" };
-					saveFoldersState(state);
-					syncFolderInstructions(key, name, state);
-					setTimeout(() => editFolderSettings(name, false), 0);
-				} },
-			];
-			if (assigned) items.push({ label: "Убрать из папки", act: () => { delete state.assign[key]; saveFoldersState(state); syncFolderInstructions(key, "", state); } });
-			folderMenu = document.createElement("div");
-			folderMenu.dataset.agctlFolderContextMenu = "1";
-			folderMenu.style.cssText = "position:fixed;z-index:9999;min-width:180px;padding:6px;border-radius:10px;background:var(--dsw-specific-menu,#fff);box-shadow:0 8px 24px rgba(0,0,0,.25);border:1px solid var(--dsw-alias-border-l1,#ddd);display:flex;flex-direction:column;gap:2px";
-			for (const item of items) {
-				const btn = document.createElement("button");
-				btn.type = "button";
-				btn.textContent = item.label;
-				btn.style.cssText = "display:flex;align-items:center;gap:8px;border:none;background:transparent;color:inherit;font:inherit;font-size:13px;padding:7px 10px;border-radius:8px;cursor:pointer;text-align:left";
-				btn.addEventListener("mouseenter", () => { btn.style.background = "var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.07))"; });
-				btn.addEventListener("mouseleave", () => { btn.style.background = "transparent"; });
-				btn.addEventListener("click", () => { item.act(); closeFolderMenu(); fixAll(); });
-				folderMenu.appendChild(btn);
-			}
-			document.body.appendChild(folderMenu);
-			const rect = folderMenu.getBoundingClientRect();
-			folderMenu.style.left = Math.min(x, window.innerWidth - rect.width - 8) + "px";
-			folderMenu.style.top = Math.min(y, window.innerHeight - rect.height - 8) + "px";
 		}
 
 		function bindFolderNewSession() {
@@ -552,18 +600,11 @@ window.__ModuleLoader__.load({
 				if (!button || !/^new session$/i.test((button.getAttribute("aria-label") || "").trim())) return;
 				const state = foldersState();
 				if (!state.active) return;
-				const rows = [...document.querySelectorAll('.YDXeBa_sessionRow')];
-				const blank = rows.find((row) => sessionId(row) && (row.textContent || "").trim().toLowerCase().startsWith("new session"));
-				if (blank) {
-					const id = sessionId(blank);
-					state.assign[id] = state.active;
-					state.settings[state.active] = state.settings[state.active] || { instructions: "" };
-					syncFolderInstructions(id, state.active, state);
-				}
-				const known = rows.map(sessionId).filter(Boolean);
-				state.pendingFolder = { name: state.active, known, at: Date.now() };
-				saveFoldersState(state);
-				setTimeout(() => fixAll(), 80);
+				// Активна папка-проект: перехватываем штатную кнопку и создаём
+				// Session именно в её DSH Workspace (/workspace/<project>).
+				ev.preventDefault();
+				ev.stopImmediatePropagation();
+				void newSessionInFolder(state.active).catch((e) => window.alert("Не удалось открыть проект: " + e.message));
 			}, true);
 		}
 
@@ -629,10 +670,17 @@ window.__ModuleLoader__.load({
 			}
 		}
 
-		function createFolderFlow() {
-			const name = (window.prompt("Имя папки сессий:") || "").trim();
+		async function createFolderFlow() {
+			const name = (window.prompt("Имя проекта / папки:") || "").trim();
 			if (!name) return;
+			try {
+				await ensureProjectWorkspace(name);
+			} catch (e) {
+				window.alert("Не удалось создать каталог проекта: " + e.message);
+				return;
+			}
 			const fresh = foldersState();
+			fresh.hiddenProjects = (fresh.hiddenProjects || []).filter((n) => n !== name);
 			if (!fresh.folders.includes(name)) fresh.folders.push(name);
 			fresh.settings[name] = fresh.settings[name] || { instructions: "" };
 			fresh.active = name;
@@ -642,9 +690,9 @@ window.__ModuleLoader__.load({
 			setTimeout(() => editFolderSettings(name, false), 0);
 		}
 
-		// «＋» на папке: создаёт сессию немедленно (uiWorkspace.startSession —
-		// штатное поведение родной кнопки New session) и привязывает её к папке.
-		function newSessionInFolder(name) {
+		// «＋» на папке создаёт Session в настоящем DSH Workspace проекта.
+		async function newSessionInFolder(name) {
+			const project = await ensureProjectWorkspace(name);
 			const state = foldersState();
 			const snap = sessionsSnapshot();
 			const known = snap ? [...snap.ids] : [...document.querySelectorAll(".YDXeBa_sessionRow")].map(sessionId).filter(Boolean);
@@ -653,12 +701,13 @@ window.__ModuleLoader__.load({
 			state.pendingFolder = { name, known, at: Date.now() };
 			saveFoldersState(state);
 			setFolderOpen(name, true);
-			// Пустая (draft) сессия переиспользуется, а не создаётся заново — её id
-			// уже в known, поэтому свежим diff по pendingFolder её не поймает.
-			if (snap) {
-				const workspaces = workspacesSnapshot();
-				const archived = new Set((workspaces && workspaces.archivedSessionIds) || []);
-				const blank = snap.ids.map((id) => snap.byId[id]).find((s) => s && s.blank && !archived.has(s.id));
+			const workspaces = workspacesSnapshot();
+			const projectWorkspace = workspaces && workspaces.items.find((w) => w.workspaceId === project.workspaceId);
+			// Пустая draft-сессия в ТОМ ЖЕ проекте может переиспользоваться
+			// uiWorkspace.startSession; назначаем её папке до обновления списка.
+			if (snap && projectWorkspace) {
+				const archived = new Set(workspaces.archivedSessionIds || []);
+				const blank = snap.ids.map((id) => snap.byId[id]).find((s) => s && s.blank && s.cwd === project.directory && !archived.has(s.id));
 				if (blank) {
 					state.assign[blank.id] = name;
 					syncFolderInstructions(blank.id, name, state);
@@ -667,18 +716,13 @@ window.__ModuleLoader__.load({
 			}
 			const ui = svc("uiWorkspace");
 			if (ui && typeof ui.startSession === "function") {
-				const workspaces = workspacesSnapshot();
-				const current = currentSessionId();
-				const host = workspaces && (workspaces.items.find((w) => current && w.sessionIds.includes(current)) || workspaces.items[0]);
-				try {
-					if (host) ui.startSession(host.workspaceId);
-					else ui.startSession();
-				} catch (e) { console.warn("[agctl] новая сессия не создана:", e); }
+				ui.startSession(project.workspaceId);
 			} else {
-				// Фолбэк: родная кнопка New session — bindFolderNewSession привяжет
-				// следующую сессию к активной папке.
-				const button = [...document.querySelectorAll("button[aria-label]")].find((b) => /^new session$/i.test((b.getAttribute("aria-label") || "").trim()));
-				if (button) button.click();
+				const sessions = svc("sessions");
+				if (!sessions || typeof sessions.create !== "function") throw new Error("DSH session service недоступен");
+				const created = await sessions.create({ workspaceId: project.workspaceId });
+				const id = created && (created.sessionId || created.id);
+				if (id) openSessionRow(id);
 			}
 			setTimeout(() => fixAll(), 120);
 		}
@@ -707,7 +751,9 @@ window.__ModuleLoader__.load({
 			time.textContent = fmtRowTime(row.ts);
 			el.appendChild(time);
 			el.addEventListener("click", () => openSessionRow(row.id));
-			el.addEventListener("contextmenu", (ev) => { ev.preventDefault(); openFolderMenu(ev.clientX, ev.clientY, null, row.id); });
+			// Workspace принадлежность задаётся реальным cwd при создании Session;
+			// перетаскивать существующую сессию в другой каталог без миграции файлов
+			// нельзя. Переassign остаётся только для legacy-состояния до чистого пилота.
 			return el;
 		}
 
@@ -844,6 +890,36 @@ window.__ModuleLoader__.load({
 			if (!root) return;
 			const state = foldersState();
 			const rows = collectSessions();
+			let folderStateChanged = false;
+			const hiddenProjects = new Set(state.hiddenProjects || []);
+			// Project Workspace может быть создан из Кабинета и пока не иметь
+			// сессий. Всё равно показываем его папкой; стандартный /workspace и
+			// скрытые .sessions/<id> в дерево проектов не попадают.
+			const wsSnapshot = workspacesSnapshot();
+			for (const workspace of (wsSnapshot && wsSnapshot.items) || []) {
+				const path = workspace.path || "";
+				if (!path.startsWith("/workspace/") || path.startsWith("/workspace/.sessions/")) continue;
+				const name = path.slice("/workspace/".length).split("/")[0];
+				if (name && !hiddenProjects.has(name) && !state.folders.includes(name)) {
+					state.folders.push(name);
+					state.settings[name] = state.settings[name] || { instructions: "" };
+					folderStateChanged = true;
+				}
+			}
+			for (const row of rows) {
+				if (row.projectName && !hiddenProjects.has(row.projectName)) {
+					if (!state.folders.includes(row.projectName)) {
+						state.folders.push(row.projectName);
+						state.settings[row.projectName] = state.settings[row.projectName] || { instructions: "" };
+						folderStateChanged = true;
+					}
+					if (!state.assign[row.id]) {
+						state.assign[row.id] = row.projectName;
+						folderStateChanged = true;
+					}
+				}
+			}
+			if (folderStateChanged) saveFoldersState(state);
 			const pending = state.pendingFolder;
 			if (pending && Date.now() - pending.at < 2 * 60 * 1000) {
 				const fresh = rows.find((row) => !pending.known.includes(row.id));
@@ -870,10 +946,6 @@ window.__ModuleLoader__.load({
 			}
 			renderFolderTree(root, label, state, rows);
 		}
-
-		document.addEventListener("click", (ev) => {
-			if (folderMenu && !folderMenu.contains(ev.target)) closeFolderMenu();
-		});
 
 		function fixAll() {
 			try { closePreviewNotice(); } catch (e) {}

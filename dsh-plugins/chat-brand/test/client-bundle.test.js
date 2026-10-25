@@ -58,12 +58,14 @@ test("открытие сессии идёт через uiWorkspace, натив�
 	assert.doesNotMatch(src, /chips\.dataset\.agctlFolders/);
 });
 
-test("серверный контракт папок не расширен, синк инструкций на месте", async () => {
+test("папка соответствует реальному project Workspace и сохраняет инструкции в каталоге", async () => {
 	const src = await readFile(clientPath, "utf8");
-	assert.match(src, /"agctl-chat-folders\.v1"/, "ключ state не меняется — это контракт миграции");
-	assert.match(src, /api\/chat\/folders/, "GET/PUT синк с сервером на месте");
-	assert.match(src, /folder-instructions/, "PATCH инструкций AGENTS.local.md на месте");
-	assert.match(src, /pendingFolder/, "автопривязка новых сессий на месте");
-	// UI-состояние дерева живёт отдельно в localStorage.
-	assert.match(src, /agctl-chat-folders-ui\.v1/);
+	assert.match(src, /"agctl-chat-folders\.v1"/, "серверное состояние папок сохраняется совместимым");
+	assert.match(src, /api\/chat\/folders/, "GET/PUT синк папок на месте");
+	assert.match(src, /api\/projects/, "папка создаёт/находит реальный проектный каталог");
+	assert.match(src, /workspaces\.create\(\{ path: project\.directory \}\)/, "проект регистрируется настоящим DSH Workspace");
+	assert.match(src, /ui\.startSession\(project\.workspaceId\)/, "новая сессия стартует в выбранном каталоге проекта");
+	assert.match(src, /api\/projects\/.*instructions/, "AGENTS.local.md сохраняется в корне проекта");
+	assert.match(src, /pendingFolder/, "автопривязка сессии к проектной папке на месте");
+	assert.match(src, /hiddenProjects/, "скрытие проекта не теряет каталог и Git-историю");
 });
