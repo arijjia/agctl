@@ -47,4 +47,9 @@ COPY relay.mjs /usr/local/bin/agctl-relay
 RUN chmod +x /usr/local/bin/agctl /usr/local/bin/agctl-entrypoint /usr/local/bin/agctl-relay && mkdir -p /home/dsh /workspace
 WORKDIR /workspace
 EXPOSE 3080 2222
+# Живость dsh: любой HTTP-ответ (в т.ч. 401/303 без cookie) = процесс жив и
+# слушает :3099; обрыв/таймаут/5xx = unhealthy. Start-period — с запасом на
+# первый прогрев (MCP-кэш уже вшит). Статус читает agctl (reconcile).
+HEALTHCHECK --interval=30s --timeout=6s --start-period=150s --retries=3 \
+  CMD node -e "const h=require('http'),r=h.get('http://127.0.0.1:3099/',x=>process.exit(x.statusCode<500?0:1));r.on('error',()=>process.exit(1));r.setTimeout(5000,()=>{r.destroy();process.exit(1)})"
 ENTRYPOINT ["agctl-entrypoint"]

@@ -52,6 +52,37 @@ func TestStoppedWorkspacePage(t *testing.T) {
 	}
 }
 
+// TestReconcileUnhealthyWorkspace — reconcile помечает stopped dev-место,
+// чей контейнер Docker считает unhealthy (dsh завис, healthcheck не отвечает).
+func TestReconcileUnhealthyWorkspace(t *testing.T) {
+	e := newTestEnv(t, 3)
+	e.register(e.admin, "anna", "secret1")
+	ws := store.Workspace{ID: "wun", OwnerID: 1, Name: "hangs", Status: "running",
+		ContainerID: "ctr-wun", BaseURL: "https://llm.example/v1", Model: "m"}
+	if err := e.db.InsertWorkspace(ws); err != nil {
+		t.Fatal(err)
+	}
+	e.rt.health["ctr-wun"] = "unhealthy"
+	oldGrace := reconcileGrace
+	reconcileGrace = 0
+	defer func() { reconcileGrace = oldGrace }()
+	e.srv.reconcile()
+	w, err := e.db.WorkspaceByID("wun")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Status != "stopped" {
+		t.Fatalf("status = %q, want stopped (unhealthy)", w.Status)
+	}
+	// живой контейнер без health-проблем остаётся running
+	e.rt.health["ctr-wun"] = "healthy"
+	_ = e.db.UpdateWorkspaceStatus("wun", "running", "")
+	e.srv.reconcile()
+	if w, _ = e.db.WorkspaceByID("wun"); w.Status != "running" {
+		t.Fatalf("healthy-контейнер не должен помечаться stopped: %q", w.Status)
+	}
+}
+
 // TestProxyWorkspaceStoppedPage — браузер по /w/{id}/ остановленного места
 // получает брендированную HTML-страницу с кнопкой запуска, API-клиент —
 // прежний JSON. владелец места — авторизованный пользователь.

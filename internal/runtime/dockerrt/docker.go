@@ -425,6 +425,20 @@ func (rt *Runtime) Remove(ctx context.Context, containerID string) error {
 }
 
 // Logs — журнал контейнера (для кнопки «Логи»).
+// HealthStatus возвращает Docker-health контейнера ("healthy"/"unhealthy"/
+// "starting"); пустая строка — healthcheck в образе не задан. Нужен reconcile:
+// «процесс жив» и «сервис отвечает» — не одно и то же (зависший dsh web).
+func (rt *Runtime) HealthStatus(ctx context.Context, containerID string) (string, error) {
+	insp, err := rt.cli.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+	if err != nil {
+		return "", err
+	}
+	if insp.Container.State == nil || insp.Container.State.Health == nil {
+		return "", nil
+	}
+	return string(insp.Container.State.Health.Status), nil
+}
+
 func (rt *Runtime) Logs(ctx context.Context, containerID string, tailN string) (string, error) {
 	res, err := rt.cli.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
 		ShowStdout: true, ShowStderr: true, Tail: tailN,

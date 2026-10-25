@@ -408,7 +408,14 @@ func (s *Server) autosaveAll() {
 	}
 }
 
-// reconcile помечает running-воркспейсы, чьих контейнеров больше нет.
+// reconcileGrace — грейс-период для свежезапущенных контейнеров при сверке
+// (dsh грузится не мгновенно). Переменная (не const) — чтобы тесты ставили 0.
+var reconcileGrace = 2 * time.Minute
+
+// reconcile помечает running-воркспейсы, чьих контейнеров больше нет, и
+// выкидывает unhealthy-рантаймы: healthcheck образа (:3099) не отвечает —
+// процесс жив, а сервис завис. Контейнер будет пересоздан при следующем
+// обращении (ensureChat идемпотентен, тома сохраняются).
 func (s *Server) reconcile() {
 	wss, err := s.db.WorkspacesAll()
 	if err != nil {
@@ -420,17 +427,74 @@ func (s *Server) reconcile() {
 		}
 		// грэйс-период: свежезапущенные контейнеры ещё грузятся
 		if upd, err := time.Parse("2006-01-02 15:04:05", w.UpdatedAt); err == nil {
-			if time.Since(upd) < 2*time.Minute {
+			if time.Since(upd) < reconcileGrace {
 				continue
 			}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, err := s.rt.Logs(ctx, w.ContainerID, "1")
-		cancel()
 		if err != nil {
+			cancel()
 			_ = s.db.UpdateWorkspaceStatus(w.ID, "stopped", "контейнер не отвечает (сверка)")
+			continue
+		}
+		unhealthy := s.containerUnhealthy(ctx, w.ContainerID)
+		cancel()
+		if unhealthy {
+			_ = s.db.UpdateWorkspaceStatus(w.ID, "stopped", "контейнер unhealthy: healthcheck не видит dsh :3099 — место пересоздастся при старте")
 		}
 	}
+	// unhealthy чат-рантаймы: забыть кэш и остановить compute; /chat/ лениво
+	// пересоздаст контейнер на том же volume.
+	hr, hasHealth := s.chatProvider.(healthReporter)
+	if !hasHealth {
+		return
+	}
+	type deadChat struct {
+		userID int64
+		rt     *chatRuntime
+	}
+	var dead []deadChat
+	s.chatMu.Lock()
+	for uid, rt := range s.chats {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		st, err := hr.HealthStatus(ctx, rt.handle.InstanceID)
+		cancel()
+		if err == nil && st == "unhealthy" {
+			dead = append(dead, deadChat{userID: uid, rt: rt})
+		}
+	}
+	s.chatMu.Unlock()
+	for _, d := range dead {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		s.forgetToken(chatTokenCacheKey(d.rt.handle))
+		err := s.chatProvider.StopChat(ctx, d.rt.handle)
+		cancel()
+		s.evictChat(d.userID, d.rt)
+		if err != nil {
+			log.Printf("[chat] reconcile: останов unhealthy-рантайма пользователя %d: %v", d.userID, err)
+		} else {
+			log.Printf("[chat] reconcile: пользователь %d — контейнер unhealthy (dsh не отвечает), среда пересоздастся при следующем открытии", d.userID)
+		}
+	}
+}
+
+// healthReporter — необязательная возможность рантайма сообщать Docker-health
+// контейнера (HEALTHCHECK образа agctl-dsh). Рантаймы без healthcheck просто
+// не реализуют интерфейс — тогда reconcile считает контейнер живым.
+type healthReporter interface {
+	HealthStatus(ctx context.Context, containerID string) (string, error)
+}
+
+// containerUnhealthy — Docker пометил контейнер unhealthy (завис/не отвечает
+// dsh :3099). Ошибка чтения или отсутствие healthcheck = не unhealthy.
+func (s *Server) containerUnhealthy(ctx context.Context, containerID string) bool {
+	hr, ok := s.rt.(healthReporter)
+	if !ok {
+		return false
+	}
+	st, err := hr.HealthStatus(ctx, containerID)
+	return err == nil && st == "unhealthy"
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────

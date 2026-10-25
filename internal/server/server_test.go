@@ -40,7 +40,8 @@ type fakeRuntime struct {
 	chatStops  map[string]int
 	chatSpecs  map[string]agctlrt.ChatSpec
 	chatHome   string
-	failNext   error // если задано — Start возвращает ошибку
+	failNext   error             // если задано — Start возвращает ошибку
+	health     map[string]string // containerID → Docker health ("unhealthy"…)
 	// chatEndpointOverride — endpoint для следующего handle от EnsureChat;
 	// по умолчанию фейковый мёртвый порт 40000+userID.
 	chatEndpointOverride string
@@ -51,7 +52,13 @@ func newFakeRuntime() *fakeRuntime {
 		started: map[string]int{}, startOpts: map[string]dockerrt.StartOpts{}, resumed: map[string]int{},
 		stopped: map[string]int{}, removed: map[string]int{}, logs: map[string]string{}, logTails: map[string]string{}, providers: map[string]provision.Provider{},
 		chatStarts: map[string]int{}, chatStops: map[string]int{}, chatSpecs: map[string]agctlrt.ChatSpec{},
+		health: map[string]string{},
 	}
+}
+
+// HealthStatus — fake для healthReporter (Docker health из HEALTHCHECK).
+func (f *fakeRuntime) HealthStatus(ctx context.Context, containerID string) (string, error) {
+	return f.health[containerID], nil
 }
 
 func (f *fakeRuntime) Start(ctx context.Context, ws provision.Layout, wsID string, opts dockerrt.StartOpts, p provision.Provider) (dockerrt.StartResult, error) {
