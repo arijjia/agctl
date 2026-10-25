@@ -1,8 +1,8 @@
 package server
 
 // roles.go — роль developer (v3 unified runtime): заявка → апрув админом →
-// привязка к учётке (users.role = 'developer'). Роль открывает: sshd в
-// персональном контейнере, создание dev-мест (legacy), git-контролы (волна C).
+// привязка к учётке (users.role = 'developer'). Роль открывает sshd и developer
+// controls в персональном контейнере; отдельные seats в v3 не создаются.
 
 import (
 	"encoding/json"
@@ -144,15 +144,15 @@ func (s *Server) handleMeSSHPut(w http.ResponseWriter, r *http.Request, id ident
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if key == "" {
-		writeErr(w, http.StatusBadRequest, "пустой ключ")
-		return
-	}
 	if err := s.db.SettingSet(fmt.Sprintf("dev-ssh-pubkey-u%d", id.ID), key); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_ = s.db.Audit(id.Login, "ssh-key", id.Login, "pubkey сохранён")
+	auditAction := "pubkey saved"
+	if key == "" {
+		auditAction = "pubkey cleared"
+	}
+	_ = s.db.Audit(id.Login, "ssh-key", id.Login, auditAction)
 	port := s.chatSSHPort(id.ID)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":      true,

@@ -107,6 +107,26 @@ func TestDeveloperSSHInChatContainer(t *testing.T) {
 	if got != pub {
 		t.Fatalf("SSHPubKey не доехал до спецификации рантайма: %q", got)
 	}
+
+	// Пустой ключ снимает SSH при следующем старте; текущая сессия не ломается.
+	code, body = e.do(e.admin, "PUT", "/api/me/ssh", map[string]string{"pubKey": ""})
+	if code != http.StatusOK || !contains(body, "следующем старте") {
+		t.Fatalf("clear ssh key = %d %s", code, body)
+	}
+	code, body = e.do(e.admin, "GET", "/api/me/ssh", nil)
+	if code != http.StatusOK || !contains(body, `"pubKey":""`) {
+		t.Fatalf("get cleared ssh key = %d %s", code, body)
+	}
+	if code, body = e.do(e.admin, "POST", "/api/me/runtime/stop", nil); code != http.StatusOK {
+		t.Fatalf("stop to apply key removal = %d %s", code, body)
+	}
+	next, err := e.srv.ensureChat(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.handle.SSHPort != 0 {
+		t.Fatalf("cleared key still enabled sshd on next boot: %+v", next.handle)
+	}
 }
 
 // Обычный пользователь (роль user) SSH-канал не получает вовсе.
