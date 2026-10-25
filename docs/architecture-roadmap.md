@@ -23,6 +23,7 @@ W1–W4 ночной смены 2026-10-22/23 (чат-шелл без миган
 
 | Блок | Статус | Что осталось |
 |---|---|---|
+| **v3 волна A: роль developer (заявка→апрув, привязка к учётке) + SSH в едином контейнере + TTL 1 час** | ✅ done | волны B–D: проекты-каталоги, единый сайдбар, миграция мест — эпик `v3-unified-runtime` |
 | R1.1 корень → `/chat/`, SPA на `/app/` | ✅ done | — |
 | R1.2 per-user lazy chat runtime + TTL reaper | ✅ done | — |
 | R1.3 per-session cwd (`chat-session-files`) | ✅ done | квоты томов, retention, prewarm-пул (M) |
