@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: dev-workspace-clone-url
 title: "Dev-воркспейс: добавление клона git-репозитория по URL из Кабинета"
-status: open
+status: done
 priority: P3
 size: M
 area: platform
@@ -23,3 +23,5 @@ depends: []
 ## Журнал
 
 - 2026-10-25: создано (`gitctl backlog new`).
+- 2026-10-25: Сделано: POST /api/projects cloneUrl (http/https, developer/admin) — go-git клон в /workspace/<name>; без креденшелов; автопуш вынесен в git-remote-push-optin
+- 2026-10-25: done — клон по URL реализован

@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: chat-session-status-native
 title: "Статусы сессий как в dsh: спиннер во время работы → зелёная точка слева от названия"
-status: open
+status: done
 priority: P2
 size: S
 area: plugin
@@ -23,3 +23,5 @@ depends: []
 ## Журнал
 
 - 2026-10-25: создано (`gitctl backlog new`).
+- 2026-10-25: Сделано: статус из стора сессий — спиннер agctl-running во время работы, зелёная точка после
+- 2026-10-25: done — реализовано вместе с нативным видом дерева

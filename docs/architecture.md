@@ -129,6 +129,9 @@ $AGCTL_HOME/chats/u<ID>/work/<project-name>/
 `GET/POST /api/projects` возвращает только имя и контейнерный путь, не
 раскрывая host path; имя валидируется как один компонент пути, симлинки
 запрещены (`internal/provision/projects.go`, `internal/server/projects.go`).
+Developer/admin при создании может передать `cloneUrl` (только http/https):
+репозиторий клонируется в воркспейс без креденшелов; remote остаётся
+настроенным клоном, но автопуш не выполняется.
 
 ### 4.2 Folder → настоящий cwd
 
@@ -150,6 +153,11 @@ $AGCTL_HOME/chats/u<ID>/work/<project-name>/
 Project instructions записываются в `AGENTS.local.md` корня проекта через
 `PUT /api/projects/{name}/instructions` (и совместимый PATCH endpoint чата).
 Скрытие папки из дерева не удаляет каталог, Git-историю и инструкции.
+
+Личным рантаймом управляет developer из Кабинета: `GET /api/me/runtime`
+(статус/sshPort), `POST /api/me/runtime/start|stop`, хвост логов
+`GET /api/me/runtime/logs?tail=N`. Стоп — то же, что делает TTL-reaper:
+удаляет compute, том и сессии остаются; старт — ленивый `ensureChat`.
 
 ### 4.3 Невидимое Git-версионирование
 

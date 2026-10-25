@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: chat-sidebar-native-look
 title: "Сайдбар чата: вид сессий как у родных Workspaces dsh — папки-иконки, сессии без иконок"
-status: open
+status: done
 priority: P2
 size: M
 area: plugin
@@ -27,3 +27,5 @@ epic: v3-unified-runtime
 ## Журнал
 
 - 2026-10-25: создано (`gitctl backlog new`).
+- 2026-10-25: Сделано: папки — родная иконка, сессии без иконок; причина кривого вида — кастомный рендер, он приведён к нативному стилю
+- 2026-10-25: done — chat-brand 0.4: нативный вид дерева

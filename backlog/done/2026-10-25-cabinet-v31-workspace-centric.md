@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: cabinet-v31-workspace-centric
 title: "Кабинет: убрать «Подключение к agctl», «Личный чат» и «Проекты»; настройки переехали в воркспейсы"
-status: open
+status: done
 priority: P2
 size: M
 area: plugin
@@ -26,3 +26,5 @@ depends: []
 ## Журнал
 
 - 2026-10-25: создано (`gitctl backlog new`).
+- 2026-10-25: Сделано: URL-поле, «Личный чат» и «Проекты» удалены; «Воркспейсы» + «Мой рантайм» (статус/старт/стоп/логи, /api/me/runtime)
+- 2026-10-25: done — Кабинет 0.8.0 workspace-центричный
