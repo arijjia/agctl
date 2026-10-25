@@ -1,9 +1,9 @@
-# @arijjia/agctl-cabinet — кабинет v3 (0.7.0)
+# @arijjia/agctl-cabinet — кабинет v3 (0.8.0)
 
-Клиент-плагин dsh web: единый личный runtime `/chat/`, проекты, заявки на
-роль developer и персональный SSH. Режимов и переходов между workspace нет.
-Legacy workspace API и experimental local backend UI не используются.
-Серверные реализации этих возможностей плагин не изменяет.
+Клиент-плагин dsh web: workspace-центричный кабинет — роли, заявки на
+developer, персональный SSH и настройки воркспейсов. Режимов, «Личного чата»
+и отдельной вкладки «Проекты» нет: воркспейсы и есть работа в чате.
+Поле «Подключение к agctl» удалено — плагин всегда работает с текущим origin.
 
 ## Контракты
 
@@ -18,14 +18,19 @@ Legacy workspace API и experimental local backend UI не используют�
   кнопки решений доступны только admin для pending-заявок.
 - Developer/admin: `GET /api/me/ssh`, `PUT /api/me/ssh` с `{pubKey}`;
   ответ `{pubKey,sshPort}`. Пустой ключ отключает SSH. Порт 0 означает сон
-  runtime; открыть чат и обновить кабинет. Команда:
-  `ssh root@127.0.0.1 -p PORT`. Loopback относится к серверу: для удалённого
-  доступа необходим SSH-туннель. Приватные ключи не отправляются.
+  runtime. Команда: `ssh root@127.0.0.1 -p PORT`. Loopback относится к
+  серверу: для удалённого доступа необходим SSH-туннель. Приватные ключи
+  не отправляются.
+- Developer/admin, управление своим рантаймом: `GET /api/me/runtime` →
+  `{status,sshPort}`; `POST /api/me/runtime/start|stop`; хвост логов
+  `GET /api/me/runtime/logs?tail=300` (text/plain). Стоп удаляет compute,
+  том и сессии остаются.
 - Всем ролям: `GET /api/projects` → `{projects:[{name,directory}]}`,
-  `POST /api/projects` с `{name}`. `directory` — контейнерный путь
-  `/workspace/<name>`, не host path. После создания Кабинет регистрирует его
-  через официальный DSH `workspaces.create({path})`, чтобы чат мог запускать
-  новые сессии в каталоге проекта.
+  `POST /api/projects` с `{name}`; developer/admin дополнительно передают
+  `cloneUrl` (только http/https) — репозиторий клонируется в воркспейс.
+  `directory` — контейнерный путь `/workspace/<name>`, не host path. Кабинет
+  регистрирует воркспейс официальным DSH `workspaces.create({path})`, чтобы
+  новые сессии получали cwd проекта. Автопуш во внешний Git не выполняется.
 
 ## Регистрация и оформление
 

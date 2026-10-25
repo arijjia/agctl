@@ -9,7 +9,6 @@ window.__ModuleLoader__.load({
 		const h = React.createElement;
 
 		const PANEL_ID = "agctl-cabinet";
-		const URL_KEY = "agctl-cabinet.url";
 		let pluginCtx = null;
 
 		function CabinetIcon() {
@@ -118,7 +117,6 @@ window.__ModuleLoader__.load({
 		}
 
 		function CabinetPage() {
-			const [url, setUrl] = React.useState(() => { try { return localStorage.getItem(URL_KEY) || ""; } catch { return ""; } });
 			const [phase, setPhase] = React.useState("connecting");
 			const [me, setMe] = React.useState(null);
 			const [login, setLogin] = React.useState("");
@@ -127,14 +125,17 @@ window.__ModuleLoader__.load({
 			const [requests, setRequests] = React.useState([]);
 			const [projects, setProjects] = React.useState([]);
 			const [name, setName] = React.useState("");
+			const [cloneUrl, setCloneUrl] = React.useState("");
 			const [pubKey, setPubKey] = React.useState("");
 			const [sshPort, setSSHPort] = React.useState(0);
 			const [sshLoaded, setSSHLoaded] = React.useState(false);
+			const [runtime, setRuntime] = React.useState(null);
+			const [runtimeLogs, setRuntimeLogs] = React.useState("");
 			const [busy, setBusy] = React.useState(false);
 			const [msg, setMsg] = React.useState("");
-			const base = () => url.trim().replace(/\/+$/, "");
+			const isDev = me && ["developer", "admin"].includes(me.role);
 			const api = async (path, method = "GET", body) => {
-				const res = await fetch(base() + path, {
+				const res = await fetch(path, {
 					credentials: "include", method,
 					headers: { Accept: "application/json", ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
 					body: body === undefined ? undefined : JSON.stringify(body),
@@ -146,6 +147,19 @@ window.__ModuleLoader__.load({
 					throw new Error("HTTP " + res.status + ": " + ((data && data.error) || "Запрос не выполнен"));
 				}
 				return data;
+			};
+			const runtimeApi = async (path, method = "GET", body) => {
+				const res = await fetch(path, {
+					credentials: "include", method,
+					headers: { Accept: "text/plain", ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
+					body: body === undefined ? undefined : JSON.stringify(body),
+				});
+				if (!res.ok) {
+					let data = null;
+					try { data = await res.json(); } catch { data = null; }
+					throw new Error("HTTP " + res.status + ": " + ((data && data.error) || "Запрос не выполнен"));
+				}
+				return res.text();
 			};
 			const refresh = async () => {
 				setMe(null);
@@ -167,23 +181,28 @@ window.__ModuleLoader__.load({
 					const result = await api("/api/projects");
 					const list = Array.isArray(result && result.projects) ? result.projects : [];
 					setProjects(list);
-					// Проектный каталог должен стать и настоящим DSH Workspace, чтобы
-					// session.create(workspaceId) получил cwd=/workspace/<name>.
+					// Воркспейс = каталог проекта; регистрируем его настоящим DSH
+					// Workspace, чтобы новые сессии получали cwd=/workspace/<name>.
 					const workspaces = pluginCtx && pluginCtx.get && pluginCtx.get("workspaces");
 					if (workspaces && typeof workspaces.create === "function") {
 						for (const project of list) {
 							if (project && project.directory) {
 								try { await workspaces.create({ path: project.directory }); }
-								catch (err) { console.warn("[agctl] DSH Workspace для проекта не зарегистрирован:", project.name, err); }
+								catch (err) { console.warn("[agctl] DSH Workspace для воркспейса не зарегистрирован:", project.name, err); }
 							}
 						}
 					}
-				} catch (err) { errors.push("Проекты: " + err.message); }
+				} catch (err) { errors.push("Воркспейсы: " + err.message); }
 				if (["developer", "admin"].includes(user.role)) {
 					try {
 						const ssh = await api("/api/me/ssh");
 						setPubKey(ssh.pubKey || ""); setSSHPort(ssh.sshPort || 0); setSSHLoaded(true);
 					} catch (err) { errors.push("SSH: " + err.message); }
+					try {
+						setRuntime(await api("/api/me/runtime"));
+					} catch (err) { errors.push("Рантайм: " + err.message); }
+				} else {
+					setRuntime(null);
 				}
 				if (errors.length) throw new Error(errors.join("\n"));
 			};
@@ -207,17 +226,26 @@ window.__ModuleLoader__.load({
 					}),
 				}))),
 			);
+			const runtimeControls = isDev && h("section", { style: styles.card }, h("h2", { style: styles.cardTitle }, "Мой рантайм"),
+				h("p", { style: styles.note }, runtime ? (runtime.status === "running" ? "Работает." + (runtime.sshPort > 0 ? " SSH-порт: " + runtime.sshPort : "") : "Спит (том и сессии сохранены).") : "Статус недоступен."),
+				h("div", { style: styles.row },
+					button("Запустить", { "aria-label": "Запустить рантайм", onClick: () => run(async () => {
+						await api("/api/me/runtime/start", "POST", {}); setRuntime({ status: "running", sshPort: runtime && runtime.sshPort }); setMsg("Рантайм запущен.");
+					}) }),
+					button("Остановить", { "aria-label": "Остановить рантайм", onClick: () => run(async () => {
+						await api("/api/me/runtime/stop", "POST", {}); setRuntime({ status: "sleeping", sshPort: 0 }); setRuntimeLogs(""); setMsg("Рантайм остановлен; данные сохранены.");
+					}) }),
+					button("Логи", { "aria-label": "Логи рантайма", onClick: () => run(async () => {
+						setRuntimeLogs(await runtimeApi("/api/me/runtime/logs?tail=300")); setMsg("");
+					}) }),
+				),
+				runtimeLogs && h("pre", { style: styles.logs, "aria-label": "Логи контейнера" }, runtimeLogs),
+			);
 			return h("div", { style: styles.wrap, "data-agctl-cabinet-root": "1" },
 				h("h1", { style: styles.title }, "Кабинет agctl"),
 				h("p", { style: styles.subtitle }, me ? me.login + " · " + me.role : "Личный кабинет"),
-				h("section", { style: styles.card },
-					h("h2", { style: styles.cardTitle }, "Подключение к agctl"),
-					h("div", { style: styles.row }, h("input", { style: styles.input, "aria-label": "URL agctl", placeholder: "URL agctl (пусто = тот же origin)", value: url,
-						onChange: (e) => { setUrl(e.target.value); try { localStorage.setItem(URL_KEY, e.target.value.trim()); } catch {} },
-					}), button("Обновить", { onClick: () => run(refresh) })),
-				),
 				msg && h("p", { style: styles.status, role: "status" }, msg),
-				phase === "connecting" && h("p", { style: styles.note }, "Подключение к agctl: нажми «Обновить», если сервер недоступен."),
+				phase === "connecting" && h("p", { style: styles.note }, "Подключаюсь…"),
 				phase === "login" && h("form", { style: styles.card, onSubmit: submit(async () => {
 					await api("/api/login", "POST", { login, password }); setPassword(""); await refresh();
 				}) }, h("h2", { style: styles.cardTitle }, "Вход"),
@@ -225,9 +253,6 @@ window.__ModuleLoader__.load({
 					field("Пароль", h("input", { style: styles.input, type: "password", value: password, required: true, autoComplete: "current-password", onChange: (e) => setPassword(e.target.value) })),
 					button("Войти", { type: "submit" })),
 				phase === "ready" && me && h(React.Fragment, null,
-					h("section", { style: styles.card }, h("h2", { style: styles.cardTitle }, "Личный runtime"),
-						h("a", { href: base() + "/chat/", style: { ...styles.button, display: "inline-block", textDecoration: "none" } }, "Открыть личный чат"),
-						h("p", { style: styles.note }, "Один личный runtime для чата и работы с проектами.")),
 					me.role === "user" && h("form", { style: styles.card, onSubmit: submit(async () => {
 						if (!motivation.trim()) throw new Error("Укажи мотивацию.");
 						await api("/api/role-requests", "POST", { motivation: motivation.trim() }); setMotivation(""); await refresh(); setMsg("Заявка на роль developer отправлена.");
@@ -237,130 +262,39 @@ window.__ModuleLoader__.load({
 					["user", "admin"].includes(me.role) && h("section", null,
 						h("h2", { style: styles.cardTitle }, me.role === "admin" ? "Заявки на роль developer" : "Мои заявки"),
 						requests.length ? requests.map((r) => requestCard(r, me.role === "admin")) : h("p", { style: styles.note }, "Заявок нет.")),
-					["developer", "admin"].includes(me.role) && h("form", { style: styles.card, onSubmit: submit(async () => {
+					isDev && h("form", { style: styles.card, onSubmit: submit(async () => {
 						const ssh = await api("/api/me/ssh", "PUT", { pubKey: pubKey.trim() });
 						setPubKey(ssh.pubKey || ""); setSSHPort(ssh.sshPort || 0); setSSHLoaded(true); setMsg("SSH-ключ сохранён.");
 					}) }, h("h2", { style: styles.cardTitle }, "SSH"),
 						field("Публичный SSH-ключ (пусто — отключить SSH)", h("textarea", { style: { ...styles.input, minHeight: 90 }, value: pubKey, disabled: !sshLoaded, placeholder: "ssh-ed25519 …", onChange: (e) => setPubKey(e.target.value) })),
 						button("Сохранить ключ", { type: "submit", disabled: busy || !sshLoaded }),
-						sshLoaded && (sshPort > 0 ? h("pre", { style: styles.logs }, "ssh root@127.0.0.1 -p " + sshPort) : h("p", { style: styles.note }, "Runtime спит (sshPort = 0). Открой личный чат и обнови кабинет.")),
+						sshLoaded && (sshPort > 0 ? h("pre", { style: styles.logs }, "ssh root@127.0.0.1 -p " + sshPort) : h("p", { style: styles.note }, "Рантайм спит (sshPort = 0). Запусти его в «Моём рантайме» или открой чат.")),
 						h("p", { style: styles.note }, "SSH слушает только loopback 127.0.0.1 сервера, не твоего компьютера. Для удалённого подключения нужен SSH-туннель. Приватный ключ не отправляй.")),
-					h("section", { style: styles.card }, h("h2", { style: styles.cardTitle }, "Проекты"),
-						h("form", { style: styles.row, onSubmit: submit(async () => {
-							if (!name.trim()) throw new Error("Укажи имя проекта.");
-							await api("/api/projects", "POST", { name: name.trim() }); setName(""); await refresh(); setMsg("Проект создан.");
-						}) }, h("input", { style: styles.input, "aria-label": "Имя проекта", placeholder: "Имя проекта", value: name, required: true, onChange: (e) => setName(e.target.value) }), button("Создать проект", { type: "submit" })),
+					runtimeControls,
+					h("section", { style: styles.card }, h("h2", { style: styles.cardTitle }, "Воркспейсы"),
+						h("form", { style: styles.formStack, onSubmit: submit(async () => {
+							if (!name.trim()) throw new Error("Укажи имя воркспейса.");
+							const body = { name: name.trim() };
+							if (isDev && cloneUrl.trim()) body.cloneUrl = cloneUrl.trim();
+							await api("/api/projects", "POST", body);
+							setName(""); setCloneUrl(""); await refresh(); setMsg("Воркспейс создан.");
+						}) },
+							field("Имя", h("input", { style: styles.input, "aria-label": "Имя воркспейса", placeholder: "Имя воркспейса", value: name, required: true, onChange: (e) => setName(e.target.value) })),
+							isDev && field("Git-репозиторий (необязательно; клонируется в воркспейс)", h("input", { style: styles.input, "aria-label": "Git URL воркспейса", placeholder: "https://github.com/user/repo.git", value: cloneUrl, onChange: (e) => setCloneUrl(e.target.value) })),
+							h("div", { style: styles.row }, button("Добавить воркспейс", { type: "submit" }))),
+						h("p", { style: styles.note }, "Воркспейсы появляются деревом в боковой панели чата; каждый — каталог /workspace/<имя> с локальной Git-историей. Автопуш во внешний Git не выполняется."),
 						projects.length ? projects.map((project) => h("div", { key: project.name, style: { marginTop: 12 } },
-							h("strong", null, project.name), h("div", { style: { ...styles.placeMeta, overflowWrap: "anywhere" } }, project.git || ""))) : h("p", { style: styles.note }, "Проектов пока нет.")),
+							h("strong", null, project.name),
+							h("div", { style: { ...styles.placeMeta, overflowWrap: "anywhere" } }, project.directory || ""))) : h("p", { style: styles.note }, "Воркспейсов пока нет.")),
 				),
 			);
 		}
 
 		const inject = ["slots", "layout"];
 
-		const CHAT_ACCENT = "#1676df";
-		const FOLDER_PATH = "M1.5 4.2c0-.9.7-1.6 1.6-1.6h3l1.6 1.8h5.2c.9 0 1.6.7 1.6 1.6v6c0 .9-.7 1.6-1.6 1.6H3.1c-.9 0-1.6-.7-1.6-1.6v-7.8z";
-
-		function el(tag, style, text) {
-			const node = document.createElement(tag);
-			if (style) node.style.cssText = style;
-			if (text !== undefined) node.textContent = text;
-			return node;
-		}
-
-		function folderIcon(color) {
-			const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-			svg.setAttribute("width", "15");
-			svg.setAttribute("height", "15");
-			svg.setAttribute("viewBox", "0 0 16 16");
-			svg.setAttribute("fill", "none");
-			svg.setAttribute("aria-hidden", "true");
-			for (const [fill, stroke] of [[color, "none"], ["none", color]]) {
-				const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-				path.setAttribute("d", FOLDER_PATH);
-				path.setAttribute("fill", fill);
-				path.setAttribute("stroke", stroke);
-				path.setAttribute("stroke-width", "1.3");
-				path.setAttribute("stroke-linejoin", "round");
-				if (fill !== "none") path.setAttribute("opacity", "0.22");
-				svg.appendChild(path);
-			}
-			return svg;
-		}
-
-		function navRow(href, label, color, extra) {
-			const active = decodeURIComponent(location.pathname) === href || (href !== "/chat/" && location.pathname.startsWith(href));
-			const row = el("a", "display:flex;align-items:center;gap:8px;padding:5px 10px;margin-left:4px;border-radius:8px;text-decoration:none;font-size:13px;color:inherit;cursor:pointer;background:" + (active ? "var(--dsw-alias-interactive-bg-hover, rgba(0,0,0,.06))" : "transparent") + ";font-weight:" + (active ? 650 : 400));
-			row.dataset.agctlNavRow = "1";
-			row.href = href;
-			row.title = label;
-			row.appendChild(folderIcon(color));
-			const text = el("span", "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap", label);
-			text.dataset.agctlNavLabel = "1";
-			row.appendChild(text);
-			if (extra) row.appendChild(extra);
-			return row;
-		}
-
-		function refreshNav(root) {
-			const nav = el("div", "display:flex;flex-direction:column;gap:2px;padding:6px 4px 10px;min-width:0");
-			nav.setAttribute("data-agctl-nav", "1");
-			nav.appendChild(navRow("/chat/", "Личный чат", CHAT_ACCENT));
-			root.replaceChildren(nav);
-			syncNavWidth(root);
-		}
-
-		function syncNavWidth(root) {
-			const nav = root && root.querySelector('[data-agctl-nav]');
-			if (!nav) return;
-			const sidebar = document.querySelector('[class*="hHd-Xa_root"]');
-			const collapsed = !!(sidebar && sidebar.classList.contains('hHd-Xa_collapsed'));
-			nav.dataset.collapsed = collapsed ? "1" : "0";
-			nav.style.alignItems = collapsed ? "center" : "stretch";
-			nav.style.padding = collapsed ? "6px 0 10px" : "6px 4px 10px";
-			const heading = nav.querySelector('[data-agctl-nav-heading]');
-			if (heading) heading.style.display = collapsed ? "none" : "block";
-			for (const row of nav.querySelectorAll('[data-agctl-nav-row]')) {
-				row.style.width = collapsed ? "38px" : "auto";
-				row.style.height = collapsed ? "36px" : "auto";
-				row.style.padding = collapsed ? "7px 0" : "5px 10px";
-				row.style.margin = collapsed ? "0 auto" : "0 4px";
-				row.style.justifyContent = collapsed ? "center" : "flex-start";
-				const label = row.querySelector('[data-agctl-nav-label]');
-				if (label) label.style.display = collapsed ? "none" : "block";
-			}
-		}
-
-		function mountNav() {
-			if (document.querySelector('[data-agctl-nav-host]')) return;
-			const tree = document.querySelector('[role="tree"]');
-			if (!tree) return;
-			const host = tree.closest('[class*="root"]') || tree.parentElement;
-			if (!host || !host.parentElement) return;
-			// Сырой DOM (не React): слот живёт вне React-дерева dsh.
-			const slot = document.createElement("div");
-			slot.setAttribute("data-agctl-nav-host", "1");
-			host.parentElement.insertBefore(slot, host);
-			refreshNav(slot);
-			const sidebar = tree.closest('[class*="hHd-Xa_root"]');
-			if (sidebar && !window.__agctlNavWidthObserver) {
-				window.__agctlNavWidthObserver = new MutationObserver(() => syncNavWidth(slot));
-				window.__agctlNavWidthObserver.observe(sidebar, { attributes: true, attributeFilter: ["class"] });
-			}
-		}
-
 		function apply(ctx) {
 			pluginCtx = ctx;
 			ensureCabinetStyles();
-			const startNav = () => {
-				mountNav();
-				if (!window.__agctlNavObserver) {
-					window.__agctlNavObserver = new MutationObserver(() => mountNav());
-					window.__agctlNavObserver.observe(document.body, { childList: true, subtree: true });
-				}
-			};
-			if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", startNav);
-			else startNav();
 			ctx.slots.inject("main", () =>
 				ctx.slots.register(
 					{

@@ -1,7 +1,7 @@
 {
   "name": "@arijjia/agctl-cabinet",
-  "description": "agctl cabinet for dsh web: personal runtime, projects, role requests and SSH",
-  "version": "0.7.0",
+  "description": "agctl cabinet for dsh web: workspace settings, roles and SSH",
+  "version": "0.8.0",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
