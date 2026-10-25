@@ -14,8 +14,10 @@ MAP_FILE := system/map/overview.html
 map:
 	@if [ -f "$(MAP_FILE)" ]; then \
 	  stamp=$$(date -r "$(MAP_FILE)" '+%Y-%m-%d %H:%M' 2>/dev/null || stat -c '%y' "$(MAP_FILE)" 2>/dev/null | cut -d. -f1 || echo '?'); \
-	  if command -v open >/dev/null 2>&1; then open "$(MAP_FILE)#$$(date +%s)"; \
-	  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$(MAP_FILE)#$$(date +%s)"; \
+	  esc=$$(printf '%s' "$(CURDIR)/$(MAP_FILE)" | sed 's/ /%20/g'); \
+	  if command -v open >/dev/null 2>&1; then \
+	    open "file://$$esc#$$(date +%s)" 2>/dev/null || open "$(MAP_FILE)"; \
+	  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "file://$$esc#$$(date +%s)"; \
 	  else echo "$(CURDIR)/$(MAP_FILE)"; fi; \
 	  echo "карта: сборка от $$stamp (если вкладка выглядит старой — Cmd+Shift+R)"; \
 	else echo "$(MAP_FILE) не найден — карта собирается archify (см. system/embed.go)"; exit 1; fi
