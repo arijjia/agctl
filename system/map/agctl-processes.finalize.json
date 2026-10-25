@@ -5,15 +5,15 @@
   "status": "pass",
   "type": "architecture",
   "quality": "showcase",
-  "startedAt": "2026-10-25T11:20:14.044Z",
+  "startedAt": "2026-10-25T13:01:56.932Z",
   "specification": {
     "path": "/Users/masha/src/arijjia/cit/agctl/system/map/agctl-processes.architecture.json",
-    "sha256": "ceae9873d3024dbbd3b4c5ee31bb6f3b40cd56972e898527a2521805a6b8753e",
-    "bytes": 13893
+    "sha256": "ce1e14c198f845a1d7ace12eafdc57b26e2ea4ae4e98cf27f729a5694e268e2c",
+    "bytes": 13892
   },
   "artifact": {
     "path": "/Users/masha/src/arijjia/cit/agctl/system/map/agctl-processes.html",
-    "sha256": "0d9ab3f9010eda3bda54e0d8a98ad6fc242709cdf15ea0cf0058df51753a1258",
+    "sha256": "cee8c57e8b052468fd0355c2c176cce2884028af96829c20ec7413f8b5da2946",
     "bytes": 775001
   },
   "stages": {
@@ -40,8 +40,8 @@
         "ok": true,
         "command": "validate",
         "specification": {
-          "sha256": "ceae9873d3024dbbd3b4c5ee31bb6f3b40cd56972e898527a2521805a6b8753e",
-          "bytes": 13893
+          "sha256": "ce1e14c198f845a1d7ace12eafdc57b26e2ea4ae4e98cf27f729a5694e268e2c",
+          "bytes": 13892
         },
         "validation": {
           "checksPassed": 9,
@@ -56,7 +56,7 @@
     "deliver": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 280,
+      "durationMs": 264,
       "command": [
         "/opt/homebrew/Cellar/node/25.2.1/bin/node",
         "/Users/masha/.agents/skills/archify/bin/archify.mjs",
@@ -72,18 +72,18 @@
       ],
       "receipt": {
         "schemaVersion": 1,
-        "receiptId": "6e3d21ea-91c9-4031-b1ca-e2dfa021bdba",
+        "receiptId": "f6ea6a3c-4f71-4c0f-aa9d-4204477ccc2c",
         "ok": true,
         "command": "deliver",
         "type": "architecture",
         "input": "/Users/masha/src/arijjia/cit/agctl/system/map/agctl-processes.architecture.json",
         "output": "/Users/masha/src/arijjia/cit/agctl/system/map/agctl-processes.html",
         "specification": {
-          "sha256": "ceae9873d3024dbbd3b4c5ee31bb6f3b40cd56972e898527a2521805a6b8753e",
-          "bytes": 13893
+          "sha256": "ce1e14c198f845a1d7ace12eafdc57b26e2ea4ae4e98cf27f729a5694e268e2c",
+          "bytes": 13892
         },
         "artifact": {
-          "sha256": "0d9ab3f9010eda3bda54e0d8a98ad6fc242709cdf15ea0cf0058df51753a1258",
+          "sha256": "cee8c57e8b052468fd0355c2c176cce2884028af96829c20ec7413f8b5da2946",
           "bytes": 775001
         },
         "validation": {
@@ -97,7 +97,7 @@
         "evidence": {
           "verified": true,
           "repository": "git@github.com:arijjia/agctl",
-          "revision": "e9d4b5c6c17ecc026d0969876d49c59cfbe8c789",
+          "revision": "10b76be2e218d0a1a0e80fc120df081c47b263e0",
           "references": 24,
           "linkMode": "local-only"
         },
@@ -117,7 +117,7 @@
     "check": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 91,
+      "durationMs": 90,
       "command": [
         "/opt/homebrew/Cellar/node/25.2.1/bin/node",
         "/Users/masha/.agents/skills/archify/bin/archify.mjs",
@@ -129,7 +129,7 @@
         "ok": true,
         "file": "/Users/masha/src/arijjia/cit/agctl/system/map/agctl-processes.html",
         "artifact": {
-          "sha256": "0d9ab3f9010eda3bda54e0d8a98ad6fc242709cdf15ea0cf0058df51753a1258",
+          "sha256": "cee8c57e8b052468fd0355c2c176cce2884028af96829c20ec7413f8b5da2946",
           "bytes": 775001
         },
         "checks": [
@@ -258,7 +258,7 @@
           "issues": []
         },
         "provenance": "current",
-        "deliveryReceiptId": "6e3d21ea-91c9-4031-b1ca-e2dfa021bdba"
+        "deliveryReceiptId": "f6ea6a3c-4f71-4c0f-aa9d-4204477ccc2c"
       }
     },
     "browser-check": {
@@ -282,10 +282,10 @@
         "status": "pass",
         "visualReview": "not-requested",
         "provenance": "current",
-        "deliveryReceiptId": "6e3d21ea-91c9-4031-b1ca-e2dfa021bdba",
+        "deliveryReceiptId": "f6ea6a3c-4f71-4c0f-aa9d-4204477ccc2c",
         "artifact": {
           "path": "/Users/masha/src/arijjia/cit/agctl/system/map/agctl-processes.html",
-          "sha256": "0d9ab3f9010eda3bda54e0d8a98ad6fc242709cdf15ea0cf0058df51753a1258",
+          "sha256": "cee8c57e8b052468fd0355c2c176cce2884028af96829c20ec7413f8b5da2946",
           "bytes": 775001
         },
         "state": {
@@ -1004,8 +1004,8 @@
     "browserCheckReceipt": "/Users/masha/src/arijjia/cit/agctl/system/map/agctl-processes.browser-check.json"
   },
   "visualReview": "not-requested",
-  "finishedAt": "2026-10-25T11:20:15.352Z",
-  "durationMs": 1308,
+  "finishedAt": "2026-10-25T13:01:58.257Z",
+  "durationMs": 1325,
   "update": {
     "status": "update_available",
     "installedVersion": "3.0.1",

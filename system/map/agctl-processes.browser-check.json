@@ -6,10 +6,10 @@
   "status": "pass",
   "visualReview": "not-requested",
   "provenance": "current",
-  "deliveryReceiptId": "6e3d21ea-91c9-4031-b1ca-e2dfa021bdba",
+  "deliveryReceiptId": "f6ea6a3c-4f71-4c0f-aa9d-4204477ccc2c",
   "artifact": {
     "path": "/Users/masha/src/arijjia/cit/agctl/system/map/agctl-processes.html",
-    "sha256": "0d9ab3f9010eda3bda54e0d8a98ad6fc242709cdf15ea0cf0058df51753a1258",
+    "sha256": "cee8c57e8b052468fd0355c2c176cce2884028af96829c20ec7413f8b5da2946",
     "bytes": 775001
   },
   "state": {
