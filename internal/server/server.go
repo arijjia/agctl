@@ -248,6 +248,11 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/role-requests/{id}/reject", s.requireAdmin(s.handleRoleRequestDecision(false)))
 	mux.HandleFunc("GET /api/me/ssh", s.requireUser(s.handleMeSSHGet))
 	mux.HandleFunc("PUT /api/me/ssh", s.requireUser(s.handleMeSSHPut))
+	// Developer-настройки личного рантайма: статус/старт/стоп/логи контейнера.
+	mux.HandleFunc("GET /api/me/runtime", s.requireUser(s.handleMyRuntimeGet))
+	mux.HandleFunc("POST /api/me/runtime/start", s.requireUser(s.handleMyRuntimeStart))
+	mux.HandleFunc("POST /api/me/runtime/stop", s.requireUser(s.handleMyRuntimeStop))
+	mux.HandleFunc("GET /api/me/runtime/logs", s.requireUser(s.handleMyRuntimeLogs))
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
 	// /map — карта системы за сессией; росток будущей админ-панели (1.md).
