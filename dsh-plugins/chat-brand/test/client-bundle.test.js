@@ -50,12 +50,28 @@ test("открытие сессии идёт через uiWorkspace, натив�
 	// Нативное дерево прячется, но не удаляется (фолбэк-клик по скрытой строке).
 	assert.match(src, /function hideNativeSessionList/);
 	assert.doesNotMatch(src, /\.remove\(\)[^\n]*YDXeBa_sessionRow|YDXeBa_sessionRow[^\n]*\.remove\(\)/);
+	// Плоский режим dsh рендерит [role=list] — без скрытия строки протекают.
+	assert.match(src, /\[role=tree\], \[role=list\]/, "прячется и плоский нативный список");
 	// Дерево-аккордеон вместо чипсов.
 	assert.match(src, /data-agctl-folders-tree/);
 	assert.match(src, /agctl-folder-section/);
 	assert.match(src, /Без папки/);
 	// Чипсов больше нет: создание чипс-контейнера не должно вернуться.
 	assert.doesNotMatch(src, /chips\.dataset\.agctlFolders/);
+});
+
+test("сайдбар выглядит как родные Workspaces dsh: иконки папок, статусы, свёрнутая панель", async () => {
+	const src = await readFile(clientPath, "utf8");
+	assert.match(src, /AGCTL_FOLDER_PATH/, "папки — родная иконка папки, не цветные точки");
+	assert.doesNotMatch(src, /agctl-folder-dot/, "цветные точки папок убраны");
+	assert.doesNotMatch(src, /folderColor/, "раскраска папок хэшем больше не нужна");
+	assert.match(src, /agctl-row-status/, "у сессии статус-индикатор слева от названия");
+	assert.match(src, /agctl-row-status.*agctl-running/s, "во время работы — спиннер");
+	assert.match(src, /@keyframes agctl-spin/, "спиннер анимирован как в dsh");
+	// Сессии — без иконок: статус + название + время.
+	assert.match(src, /status\.className = "agctl-row-status"/);
+	// Свёрнутая панель: дерево прячется целиком, не ломая рельсу.
+	assert.match(src, /getBoundingClientRect\(\)\.width < 120/, "свёрнутая рельса скрывает дерево");
 });
 
 test("папка соответствует реальному project Workspace и сохраняет инструкции в каталоге", async () => {

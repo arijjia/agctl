@@ -140,12 +140,15 @@ window.__ModuleLoader__.load({
 			}
 			// Прячем именно дерево сессий, не дерево поиска: у результатов поиска
 			// свой [role=tree] с классом *_searchTree, и на время поиска нативное
-			// дерево сессий вообще размонтируется.
-			const trees = [...(root?.querySelectorAll('[role=tree]') || [])];
-			const tree = trees.find((t) => !(t.getAttribute('class') || '').includes('searchTree'));
-			if (!tree) return;
-			tree.setAttribute('aria-label', 'Сессии');
-			tree.style.setProperty('display', 'none', 'important');
+			// дерево сессий вообще размонтируется. Плоский режим группировки
+			// рендерит [role=list] — его тоже прячем вне поиска, иначе строки
+			// «протекают» под кастомным деревом.
+			const trees = [...(root?.querySelectorAll('[role=tree], [role=list]') || [])];
+			for (const t of trees) {
+				if ((t.getAttribute('class') || '').includes('searchTree')) continue;
+				t.setAttribute('aria-label', 'Сессии');
+				t.style.setProperty('display', 'none', 'important');
+			}
 			for (const action of root.querySelectorAll('button')) {
 				const a = action.getAttribute('aria-label') || '';
 				if (/^new session in /i.test(a) || /^workspace actions for /i.test(a)) action.style.setProperty('display', 'none', 'important');
@@ -279,12 +282,6 @@ window.__ModuleLoader__.load({
 				}
 			})();
 			return folderStateLoadPromise;
-		}
-
-		function folderColor(name) {
-			let hash = 0;
-			for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-			return `hsl(${hash % 360}, 68%, 42%)`;
 		}
 
 		function sessionId(row) {
@@ -608,7 +605,9 @@ window.__ModuleLoader__.load({
 			}, true);
 		}
 
-		// ── вертикальное дерево-аккордеон папок (замена горизонтальных чипсов) ──
+		// ── вертикальное дерево-аккордеон папок: визуал родного dsh ─────────────
+		// Папки — родная иконка папки, сессии — без иконок, статус как в dsh:
+		// спиннер во время работы и зелёная точка, когда сессия завершилась.
 		function ensureFolderStyles() {
 			if (document.querySelector("style[data-agctl-folder-tree]")) return;
 			const style = document.createElement("style");
@@ -620,7 +619,8 @@ window.__ModuleLoader__.load({
 				'.agctl-folder-head:hover,.agctl-folder-head:focus-visible{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.07));outline:none}',
 				'.agctl-folder-chevron{width:14px;height:20px;display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--dsw-alias-label-caption,#999);font-size:9px;transition:transform .15s var(--ds-ease-in-out,ease)}',
 				'.agctl-folder-section.agctl-open>.agctl-folder-head .agctl-folder-chevron{transform:rotate(90deg)}',
-				'.agctl-folder-dot{width:8px;height:8px;border-radius:999px;flex:none}',
+				'.agctl-folder-icon{width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--dsw-alias-label-secondary,#666)}',
+				'.agctl-folder-section.agctl-open>.agctl-folder-head .agctl-folder-icon{color:var(--dsw-alias-label-primary,#222)}',
 				'.agctl-folder-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px}',
 				'.agctl-folder-count{flex:none;color:var(--dsw-alias-label-tertiary,#888);font-size:12px;line-height:16px}',
 				'.agctl-folder-actions{flex:none;display:none;align-items:center;gap:2px;margin-left:4px}',
@@ -633,13 +633,38 @@ window.__ModuleLoader__.load({
 				'.agctl-tree-row:hover,.agctl-tree-row.agctl-selected{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.07))}',
 				'.agctl-row-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px}',
 				'.agctl-row-time{flex:none;color:var(--dsw-alias-label-tertiary,#888);font-size:10px;line-height:16px}',
-				'.agctl-row-run{width:7px;height:7px;border-radius:999px;background:#2fae62;flex:none}',
+				// Статус сессии как в родном dsh: зелёная точка; во время работы — спиннер.
+				'.agctl-row-status{width:10px;height:10px;flex:none;border-radius:999px;background:#2fae62}',
+				'.agctl-row-status.agctl-running{background:transparent;border:1.5px solid var(--dsw-alias-label-caption,#9aa0a6);border-top-color:transparent;animation:agctl-spin .8s linear infinite}',
+				'@keyframes agctl-spin{to{transform:rotate(360deg)}}',
 				'.agctl-tree-row.agctl-running .agctl-row-title{font-weight:600}',
 				'.agctl-folder-empty{color:var(--dsw-alias-label-tertiary,#888);font-size:12px;line-height:18px;padding:3px 8px 5px 30px}',
 				'.agctl-add-folder{display:flex;align-items:center;gap:6px;margin:4px 8px 0;padding:5px 10px;border:1px dashed var(--dsw-alias-border-l1,#bbb);border-radius:999px;background:transparent;color:var(--dsw-alias-label-secondary,#555);cursor:pointer;font:inherit;font-size:12px;align-self:flex-start}',
 				'.agctl-add-folder:hover{color:var(--dsw-alias-label-primary,#222);background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.07))}',
 			].join("\n");
 			document.head.appendChild(style);
+		}
+
+		const AGCTL_FOLDER_PATH = "M1.5 4.2c0-.9.7-1.6 1.6-1.6h3l1.6 1.8h5.2c.9 0 1.6.7 1.6 1.6v6c0 .9-.7 1.6-1.6 1.6H3.1c-.9 0-1.6-.7-1.6-1.6v-7.8z";
+
+		function folderIcon() {
+			const wrap = document.createElement("span");
+			wrap.className = "agctl-folder-icon";
+			const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+			svg.setAttribute("width", "15");
+			svg.setAttribute("height", "15");
+			svg.setAttribute("viewBox", "0 0 16 16");
+			svg.setAttribute("fill", "none");
+			svg.setAttribute("aria-hidden", "true");
+			const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+			path.setAttribute("d", AGCTL_FOLDER_PATH);
+			path.setAttribute("stroke", "currentColor");
+			path.setAttribute("stroke-width", "1.4");
+			path.setAttribute("stroke-linecap", "round");
+			path.setAttribute("stroke-linejoin", "round");
+			svg.appendChild(path);
+			wrap.appendChild(svg);
+			return wrap;
 		}
 
 		function fmtRowTime(ts) {
@@ -728,24 +753,18 @@ window.__ModuleLoader__.load({
 		}
 
 		function folderTreeRow(row, state, currentId) {
-			const assigned = state.assign[row.id] || "";
 			const el = document.createElement("div");
 			el.className = "agctl-tree-row" + (row.id === currentId ? " agctl-selected" : "") + (row.running ? " agctl-running" : "");
 			el.dataset.agctlSessionId = row.id;
-			const dot = document.createElement("span");
-			dot.className = "agctl-folder-dot";
-			dot.style.background = assigned ? folderColor(assigned) : "var(--dsw-alias-label-caption,#b6bac0)";
-			el.appendChild(dot);
+			// Родной статус dsh: спиннер во время работы, зелёная точка после.
+			const status = document.createElement("span");
+			status.className = "agctl-row-status" + (row.running ? " agctl-running" : "");
+			el.appendChild(status);
 			const title = document.createElement("span");
 			title.className = "agctl-row-title";
 			title.textContent = row.title;
 			title.title = row.title;
 			el.appendChild(title);
-			if (row.running) {
-				const run = document.createElement("span");
-				run.className = "agctl-row-run";
-				el.appendChild(run);
-			}
 			const time = document.createElement("span");
 			time.className = "agctl-row-time";
 			time.textContent = fmtRowTime(row.ts);
@@ -772,10 +791,7 @@ window.__ModuleLoader__.load({
 			chevron.className = "agctl-folder-chevron";
 			chevron.textContent = "▶";
 			head.appendChild(chevron);
-			const dot = document.createElement("span");
-			dot.className = "agctl-folder-dot";
-			dot.style.background = isUnassigned ? "var(--dsw-alias-label-caption,#b6bac0)" : folderColor(section.name);
-			head.appendChild(dot);
+			head.appendChild(folderIcon());
 			const title = document.createElement("span");
 			title.className = "agctl-folder-title";
 			title.textContent = isUnassigned ? "Без папки" : section.name;
@@ -839,14 +855,16 @@ window.__ModuleLoader__.load({
 				host.setAttribute("aria-label", "Сессии");
 				const header = label.closest("[class*=sectionHeader]");
 				(header || label).parentElement.insertBefore(host, header ? header.nextSibling : label.nextSibling);
-				// Хвосты прежней версии (чипсы и точки в нативных строках) больше
-				// не нужны — дерево их заменяет.
-				for (const legacy of root.querySelectorAll("[data-agctl-folders],[data-agctl-folder-dot]")) legacy.remove();
 			}
 			// Пока активен родной поиск сессий, дерево папок убираем с глаз.
 			const searching = !!root.querySelector('[class*="searchTree"], [class*="searchResultRow"]');
-			host.style.display = searching ? "none" : "";
-			if (searching) {
+			// Свёрнутая панель: нативная рельса показывает только иконки —
+			// кастомное дерево в неё не влезает и ломает вёрстку (скриншот
+			// владельца 2026-10-25). Прячем дерево целиком, fixAll вернёт его
+			// при разворачивании.
+			const collapsed = root.getBoundingClientRect().width < 120;
+			host.style.display = searching || collapsed ? "none" : "";
+			if (searching || collapsed) {
 				delete host.dataset.agctlTreeSig;
 				return;
 			}
