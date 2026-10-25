@@ -78,3 +78,16 @@ RAM (кластер), TTL 60 мин = 12–19 ГБ (один сервер). По
 - 2026-10-25: волна A реализована (роль developer + заявки/апрув + SSH в
   едином контейнере + TTL 60 мин + healthcheck/reconcile unhealthy); карта
   системы перестроена под единую модель (visual-check чисто).
+- 2026-10-25: волна B — `/api/projects`, каталоги `chats/u<ID>/work/<name>`
+  с локальным go-git autosave (2 мин, без remote); папка чата регистрируется
+  настоящим DSH Workspace, host-плагин сохраняет проектный cwd вместо
+  `.sessions/<id>`; инструкции проекта — `AGENTS.local.md` корня каталога.
+- 2026-10-25: волна C — Кабинет v3: заявка/очередь роли developer, SSH
+  ключ/порт, проекты; legacy-навигация и local-backend UI убраны.
+- 2026-10-25: волна D — демонтаж legacy seats: создание/мутации workspace и
+  workspace-request API → 410, `agctl workspace create` и флаги
+  `--max-per-user`/`--require-approval` отключены; GET старых записей и
+  `/w/{id}` compat-proxy временно оставлены.
+- 2026-10-25: документация сведена к v3 (README, architecture, roadmap,
+  capacity, secure-gateway); физическая карта не менялась — волны B–D не
+  добавляют процессов/портов (go-git — внутри agctl, проекты — файлы тома).

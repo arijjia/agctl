@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: container-healthcheck-canary
 title: "Healthcheck и relay-канарейка: убирать полумёртвые контейнеры"
-status: open
+status: done
 priority: P2
 size: M
 area: infra
@@ -54,3 +54,4 @@ Healthcheck нет; `RestartPolicy: no` (`internal/runtime/dockerrt/docker.go:29
   «контейнер на процесс» (agctl-hq/docs/v3/architecture-explained.md §14):
   выбран вариант «статус-кво + канарейка», вариант K8s Pod — в карточках
   k8s-*-adapter.
+- 2026-10-25: done — HEALTHCHECK :3099 + reconcile unhealthy вошли в волну A (main)
