@@ -180,11 +180,25 @@ func CreateProject(home string, userID int64, name string) (Project, error) {
 	return projectDescriptor(name), nil
 }
 
-// ValidCloneURL accepts only http(s) URLs with a host: cloning is a server-side
-// network fetch, so other schemes (file://, ssh://, local paths) are refused.
+// ValidCloneURL accepts only an unauthenticated HTTPS GitHub repository URL.
+// The clone runs from the agctl host, so accepting arbitrary URLs would expose
+// local/private services through an SSRF-like server-side fetch. Private repo
+// credentials and other hosts require a separate explicit design.
 func ValidCloneURL(raw string) bool {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+	if err != nil || u.Scheme != "https" || !strings.EqualFold(u.Hostname(), "github.com") || u.User != nil || u.Port() != "" || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	parts := strings.Split(strings.Trim(u.EscapedPath(), "/"), "/")
+	if len(parts) != 2 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." || strings.Contains(part, "\\") {
+			return false
+		}
+	}
+	return true
 }
 
 // CloneProject creates the project directory by cloning a remote repository.
@@ -192,8 +206,6 @@ func ValidCloneURL(raw string) bool {
 // remote origin is configured by the clone itself, while autosave stays
 // local-only. Existing directories are never overwritten or adopted.
 func CloneProject(home string, userID int64, name, cloneURL string) (Project, error) {
-	projectMu.Lock()
-	defer projectMu.Unlock()
 	if !ValidProjectName(name) || !ValidCloneURL(cloneURL) {
 		return Project{}, ErrInvalidProject
 	}
@@ -201,16 +213,39 @@ func CloneProject(home string, userID int64, name, cloneURL string) (Project, er
 	if err != nil {
 		return Project{}, err
 	}
-	path := filepath.Join(root, name)
-	if err := os.Mkdir(path, 0o700); err != nil {
-		if os.IsExist(err) {
-			return Project{}, ErrProjectExists
-		}
+	dest := filepath.Join(root, name)
+	if _, err := os.Lstat(dest); err == nil {
+		return Project{}, ErrProjectExists
+	} else if !os.IsNotExist(err) {
 		return Project{}, err
 	}
-	// On failure keep the new directory for diagnosis; never recursively remove
-	// paths in a volume concurrently writable by the user's container.
-	if _, err := cloneInto(path, strings.TrimSpace(cloneURL)); err != nil {
+
+	// Clone outside the mounted work/ tree so the user never sees a partial
+	// checkout and a slow network fetch does not block autosaves for other users.
+	// The parent chats/u<ID> is not mounted into the container.
+	tmp, err := os.MkdirTemp(filepath.Dir(root), ".agctl-clone-*")
+	if err != nil {
+		return Project{}, err
+	}
+	defer os.RemoveAll(tmp)
+	if _, err := cloneInto(tmp, strings.TrimSpace(cloneURL)); err != nil {
+		return Project{}, err
+	}
+	if err := validateProjectTree(tmp); err != nil {
+		return Project{}, err
+	}
+
+	projectMu.Lock()
+	defer projectMu.Unlock()
+	if _, err := os.Lstat(dest); err == nil {
+		return Project{}, ErrProjectExists
+	} else if !os.IsNotExist(err) {
+		return Project{}, err
+	}
+	if err := os.Rename(tmp, dest); err != nil {
+		if _, statErr := os.Lstat(dest); statErr == nil {
+			return Project{}, ErrProjectExists
+		}
 		return Project{}, err
 	}
 	return projectDescriptor(name), nil

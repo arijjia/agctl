@@ -217,12 +217,12 @@ func TestProjectListingRealDirectories(t *testing.T) {
 }
 
 func TestValidCloneURL(t *testing.T) {
-	for _, raw := range []string{"https://github.com/u/r.git", "http://example.com/repo.git"} {
+	for _, raw := range []string{"https://github.com/u/r.git", "https://github.com/organization/repo"} {
 		if !ValidCloneURL(raw) {
 			t.Errorf("rejected %q", raw)
 		}
 	}
-	for _, raw := range []string{"", "file:///etc", "ssh://git@host/x", "ftp://h/x", "https://", "//host/x", "https://h\x00/x"} {
+	for _, raw := range []string{"", "file:///etc", "ssh://git@host/x", "ftp://h/x", "http://github.com/u/r", "https://", "//host/x", "https://example.com/u/r", "https://user@github.com/u/r", "https://github.com:443/u/r", "https://github.com/u/r?token=x", "https://github.com/u/../x", "https://h\x00/x"} {
 		if ValidCloneURL(raw) {
 			t.Errorf("accepted %q", raw)
 		}
@@ -268,7 +268,7 @@ func TestCloneProjectFromLocalRepo(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
 		t.Fatalf("cloned .git missing: %v", err)
 	}
-	if _, err := CloneProject(home, 7, "Демо", "https://example.com/x.git"); !errors.Is(err, ErrProjectExists) {
+	if _, err := CloneProject(home, 7, "Демо", "https://github.com/u/r.git"); !errors.Is(err, ErrProjectExists) {
 		t.Fatalf("duplicate clone = %v, want ErrProjectExists", err)
 	}
 	if _, err := CloneProject(home, 7, "Другой", "file://"+src); !errors.Is(err, ErrInvalidProject) {

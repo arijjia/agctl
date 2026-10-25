@@ -36,13 +36,14 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request, id 
 		writeErr(w, http.StatusBadRequest, "ожидался один JSON объект")
 		return
 	}
+	clone := strings.TrimSpace(req.CloneUrl) != ""
 	// Клонирование по URL — developer-настройка: это сетевой запрос с сервера,
 	// обычному режиму user он не нужен (карточка dev-workspace-clone-url).
 	var (
 		project provision.Project
 		err     error
 	)
-	if strings.TrimSpace(req.CloneUrl) != "" {
+	if clone {
 		if id.Role != "developer" && id.Role != "admin" {
 			writeErr(w, http.StatusForbidden, "клонирование репозитория по URL доступно роли developer")
 			return
@@ -54,11 +55,16 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request, id 
 	if err != nil {
 		switch {
 		case errors.Is(err, provision.ErrInvalidProject):
-			writeErr(w, http.StatusBadRequest, "недопустимое имя проекта или URL репозитория (только http/https)")
+			writeErr(w, http.StatusBadRequest, "недопустимое имя проекта; клон — только публичный HTTPS URL github.com/owner/repository")
 		case errors.Is(err, provision.ErrProjectExists):
-			writeErr(w, http.StatusConflict, "проект уже существует")
+			writeErr(w, http.StatusConflict, "воркспейс уже существует")
 		default:
-			writeErr(w, http.StatusBadGateway, "не удалось клонировать репозиторий: "+err.Error())
+			log.Printf("[projects] u%d create failed (clone=%t)", id.ID, clone)
+			if clone {
+				writeErr(w, http.StatusBadGateway, "не удалось клонировать публичный GitHub-репозиторий")
+			} else {
+				writeErr(w, http.StatusInternalServerError, "не удалось создать воркспейс")
+			}
 		}
 		return
 	}
