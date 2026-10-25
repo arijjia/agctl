@@ -230,10 +230,10 @@ window.__ModuleLoader__.load({
 				h("p", { style: styles.note }, runtime ? (runtime.status === "running" ? "Работает." + (runtime.sshPort > 0 ? " SSH-порт: " + runtime.sshPort : "") : "Спит (том и сессии сохранены).") : "Статус недоступен."),
 				h("div", { style: styles.row },
 					button("Запустить", { "aria-label": "Запустить рантайм", onClick: () => run(async () => {
-						await api("/api/me/runtime/start", "POST", {}); setRuntime({ status: "running", sshPort: runtime && runtime.sshPort }); setMsg("Рантайм запущен.");
+						await api("/api/me/runtime/start", "POST", {}); await refresh(); setMsg("Рантайм запущен.");
 					}) }),
 					button("Остановить", { "aria-label": "Остановить рантайм", onClick: () => run(async () => {
-						await api("/api/me/runtime/stop", "POST", {}); setRuntime({ status: "sleeping", sshPort: 0 }); setRuntimeLogs(""); setMsg("Рантайм остановлен; данные сохранены.");
+						await api("/api/me/runtime/stop", "POST", {}); setRuntimeLogs(""); await refresh(); setMsg("Рантайм остановлен; данные сохранены.");
 					}) }),
 					button("Логи", { "aria-label": "Логи рантайма", onClick: () => run(async () => {
 						setRuntimeLogs(await runtimeApi("/api/me/runtime/logs?tail=300")); setMsg("");
@@ -264,7 +264,7 @@ window.__ModuleLoader__.load({
 						requests.length ? requests.map((r) => requestCard(r, me.role === "admin")) : h("p", { style: styles.note }, "Заявок нет.")),
 					isDev && h("form", { style: styles.card, onSubmit: submit(async () => {
 						const ssh = await api("/api/me/ssh", "PUT", { pubKey: pubKey.trim() });
-						setPubKey(ssh.pubKey || ""); setSSHPort(ssh.sshPort || 0); setSSHLoaded(true); setMsg("SSH-ключ сохранён.");
+						setPubKey(ssh.pubKey || ""); setSSHPort(ssh.sshPort || 0); setSSHLoaded(true); setMsg(ssh.note || "SSH-ключ сохранён.");
 					}) }, h("h2", { style: styles.cardTitle }, "SSH"),
 						field("Публичный SSH-ключ (пусто — отключить SSH)", h("textarea", { style: { ...styles.input, minHeight: 90 }, value: pubKey, disabled: !sshLoaded, placeholder: "ssh-ed25519 …", onChange: (e) => setPubKey(e.target.value) })),
 						button("Сохранить ключ", { type: "submit", disabled: busy || !sshLoaded }),
@@ -280,7 +280,7 @@ window.__ModuleLoader__.load({
 							setName(""); setCloneUrl(""); await refresh(); setMsg("Воркспейс создан.");
 						}) },
 							field("Имя", h("input", { style: styles.input, "aria-label": "Имя воркспейса", placeholder: "Имя воркспейса", value: name, required: true, onChange: (e) => setName(e.target.value) })),
-							isDev && field("Git-репозиторий (необязательно; клонируется в воркспейс)", h("input", { style: styles.input, "aria-label": "Git URL воркспейса", placeholder: "https://github.com/user/repo.git", value: cloneUrl, onChange: (e) => setCloneUrl(e.target.value) })),
+							isDev && field("Публичный GitHub HTTPS URL (необязательно)", h("input", { style: styles.input, "aria-label": "Git URL воркспейса", placeholder: "https://github.com/user/repo.git", value: cloneUrl, onChange: (e) => setCloneUrl(e.target.value) })),
 							h("div", { style: styles.row }, button("Добавить воркспейс", { type: "submit" }))),
 						h("p", { style: styles.note }, "Воркспейсы появляются деревом в боковой панели чата; каждый — каталог /workspace/<имя> с локальной Git-историей. Автопуш во внешний Git не выполняется."),
 						projects.length ? projects.map((project) => h("div", { key: project.name, style: { marginTop: 12 } },

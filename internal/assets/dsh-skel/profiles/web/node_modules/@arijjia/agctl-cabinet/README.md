@@ -27,10 +27,12 @@ developer, персональный SSH и настройки воркспейс
   том и сессии остаются.
 - Всем ролям: `GET /api/projects` → `{projects:[{name,directory}]}`,
   `POST /api/projects` с `{name}`; developer/admin дополнительно передают
-  `cloneUrl` (только http/https) — репозиторий клонируется в воркспейс.
-  `directory` — контейнерный путь `/workspace/<name>`, не host path. Кабинет
-  регистрирует воркспейс официальным DSH `workspaces.create({path})`, чтобы
-  новые сессии получали cwd проекта. Автопуш во внешний Git не выполняется.
+  `cloneUrl` (только публичный HTTPS `github.com/owner/repository`) — репозиторий
+  клонируется в воркспейс. `directory` — контейнерный путь `/workspace/<name>`,
+  не host path. Кабинет регистрирует его через официальный DSH
+  `workspaces.create({path})`, чтобы сессии получали cwd проекта. Private
+  credentials пока не запрашиваются; autosave не push-ит и автопуш остаётся
+  отдельной opt-in карточкой.
 
 ## Регистрация и оформление
 
