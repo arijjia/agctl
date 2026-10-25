@@ -1,255 +1,205 @@
-# agctl — текущая архитектура
+# agctl v3 — текущая архитектура
 
-> Дата: 2026-10-25. Состояние `main`: **v3 волна A реализована** — единый
-> персональный контейнер на пользователя (TTL простоя 1 час), роль
-> developer (заявка → апрув → привязана к учётке) с sshd/шаблонами, git
-> обычным пользователям невидим; пилот с чистого тома. Что дальше —
-> [architecture-roadmap.md](architecture-roadmap.md); рассуждение —
-> `agctl-hq/docs/v3/unified-runtime-model.md`.
+> Срез `main`: объединённый персональный runtime, роль `developer`, проекты
+> в персональном томе. Решения владельца: TTL 1 час; developer получает SSH
+> после заявки и апрува, роль закрепляется за учёткой; пилот — на чистом томе;
+> Git для обычного пользователя невидим; локальный backend отложен.
 >
-> **Карта и документ — два слоя одной системы.** Карта — физическая:
-> процессы, адреса прослушивания, протоколы проводов
-> (`system/map/agctl-processes.html`; на работающем сервере — страница
-> `/map` за сессией, `internal/server/map.go:34`). Этот документ —
-> продуктовый слой: режимы, компоненты, контракты. Соответствие слоёв,
-> разделов и кода — §10.
->
-> **v3 волна A — что уже в коде:** роль `developer` — заявка → апрув
-> админом → привязана к учётке (`internal/server/roles.go`, миграция 011
-> role_requests); SSH-канал разработчика в персональном контейнере
-> (`/api/me/ssh` → `ChatSpec.SSHPubKey` → sshd key-only, порт на loopback);
-> TTL контейнера по умолчанию 1 час; создание dev-мест — только
-> developer/admin. Волны B–D — эпик `v3-unified-runtime`.
+> **Карта и документ — два слоя:** карта физическая (процессы, адреса и
+> протоколы) — `system/map/agctl-processes.html`, в браузере `make map`, на
+> сервере `/map`; этот документ объясняет продуктовые сущности и их связь с
+> кодом. Подробное обучение — `agctl-hq/docs/v3/architecture-explained.md`,
+> сравнение вариантов и решений — `agctl-hq/docs/v3/unified-runtime-model.md`.
 
-## 1. Система одним абзацем
+## 1. Модель v3 одним абзацем
 
-`agctl serve` — один Go-бинарь, который на одном домене и под одной
-cookie-сессией ведёт **два режима**: после входа пользователь сразу попадает
-в **личный чат DeepSeek Harness** (режим 1: ленивый per-user контейнер dsh
-web, персистентный том, Git не нужен), а разработчик из dsh-плагина
-**«Кабинет»** создаёт **git-backed рабочие места** (режим 2: bare-репа +
-клон + свой контейнер, опционально за апрувом администратора; локальный
-backend — experimental). Состояние — файлы на диске `$AGCTL_HOME` (SQLite +
-тома), контейнеры расходные. Внешние зависимости: Docker и
-OpenAI-совместимый LLM-провайдер (корп. LiteLLM).
+`agctl serve` — один Go-процесс, единый домен и точка входа. **Каждый
+пользователь** получает ровно один персональный dsh-контейнер: он лениво
+поднимается при открытии `/chat/`, засыпает после 60 минут простоя, а том с
+DSH_HOME, сессиями и проектами остаётся на диске. Папка в боковом дереве —
+реальный каталог проекта `/workspace/<name>` и настоящий DSH Workspace.
+Создание проекта делает локальный Git-репозиторий; go-git выполняет
+автосохранение каждые две минуты внутри процесса agctl, без Git-процесса,
+remote и push. Обычный пользователь Git не видит. Роль `developer` добавляет
+sshd в тот же контейнер — отдельный dev-контейнер не создаётся.
 
-## 2. `agctl serve` — управляющий слой (рамка карты «один бинарь»)
+## 2. Роли и возможности
 
-| Часть | Что делает | Код |
+| Роль | Как появляется | Runtime/capabilities |
 |---|---|---|
-| REST API | пользователи, чат-папки, воркспейсы, заявки, админка, local-backend, `/map` | `internal/server/server.go:214-293` |
-| Auth | argon2id, cookie-сессии, rate-limit логина; первый пользователь = админ | `internal/server/handlers.go:56-117`, `server.go:128-141` |
-| Секреты | AES-256-GCM, мастер-ключ `secrets.key` 0600; заявки и провайдеры хранятся шифротекстом | `internal/secrets`, `handlers.go:923` |
-| Store | SQLite (WAL) + авто-миграции 001–010 (requests, local_connectors, settings, base_urls) | `internal/store/migrations/` |
-| Фоновые задачи | Jira-поллер (1 мин, если настроен), chat-reaper (1 мин), autosave (2 мин), reconcile (30 c), чистка сессий (1 ч) | `server.go:341-392` |
-| Платформенный LLM | `--llm-*` сохраняется зашифрованным в settings и восстанавливается после рестарта | `server.go:146,152-183` |
+| `user` | регистрация | персональный чат, проекты-папки, invisible local git-autosave |
+| `developer` | `POST /api/role-requests` → решение admin → `users.role=developer` | всё user + SSH key-only в том же контейнере; SSH-порт loopback |
+| `admin` | первый аккаунт или назначение | админ-панель, пользователи/аудит, очередь заявок developer; технически имеет developer-capabilities |
 
-## 3. Один домен — три пути (стрелка «HTTPS / сессия» на карте)
+Код заявки/апрува: `internal/server/roles.go`, store-методы —
+`internal/store/roles.go`, схема — `internal/store/migrations/011_role_requests.sql`.
+Роль постоянна и читается из записи пользователя при каждом запросе — это
+не cookie-роль, не отдельный контейнер и не переключаемый режим.
 
-| Путь | Куда ведёт | Код |
-|---|---|---|
-| `/` | без сессии → `/app/` (SPA входа); с сессией → `/chat/` (флаг `--tier0`, по умолчанию вкл) | `server.go:295-308` |
-| `/chat/*` | режим 1: reverse proxy в **личный** dsh-контейнер пользователя + pre-paint чат-шелл + cookie-mint | `internal/server/chat.go:568-675` |
-| `/w/{id}/*` | режим 2: reverse proxy в контейнер выбранного dev-места (owner/admin, mint, WS/SSE) | `internal/server/gateway.go:73-162` |
-| `/api/*` | управление: регистрация/сессии, папки чата, CRUD мест, заявки/апрув, провайдеры, SSH, local-backend | `server.go:217-272` |
-| `/map` | карта системы (росток будущей админ-панели), за сессией | `internal/server/map.go` |
+SSH-ключ задаётся через `PUT /api/me/ssh`, хранится в SQLite settings по
+ключу `dev-ssh-pubkey-u<ID>`. При следующем старте `ensureChat` передаёт
+его в `ChatSpec.SSHPubKey`; `dockerrt.EnsureChat` просит Docker опубликовать
+`:2222` только на `127.0.0.1` и возвращает `SSHPort`. Entry-point запускает
+sshd только при непустом ключе (`internal/assets/image/entrypoint.sh:22-45`).
+GET `/api/me/ssh` возвращает `sshPort=0`, если персональный контейнер спит.
 
-CORS включается только явным `--cors-origin` (allow-list, без wildcard с
-credentials) — `server.go:289-292,313-335`.
+## 3. `agctl serve` и жизненный цикл runtime
 
-## 4. Режим 1 «Чат» — ленивый per-user dsh runtime
+### 3.1 Управляющий процесс
 
-Рамка карты «Режим 1 · Чат (per-user, lazy)»: узлы *Chat runtime (Docker,
-lazy)* и *chat-brand + session-files*.
+`cmd/agctl/main.go` → `cmdServe` загружает конфигурацию, мастер-ключ и
+SQLite, создаёт `server.Server`, запускает фоновые горутины и слушает адрес
+(по умолчанию `127.0.0.1:8929`). Это **один процесс**; reaper, autosave,
+reconcile и очистка сессий — горутины внутри него, не дочерние процессы
+(`internal/server/server.go:352-402`).
 
-- **ensure-on-request**: при обращении к `/chat/` под личным мьютексом
-  поднимается контейнер пользователя (`ensureChat`, `chat.go:423-475`);
-  пока прогрев — HTML-страница авто-ретрая (`chat.go:545-549`). Имя
-  рантайма включает hash `$AGCTL_HOME` + user id (`chat.go:55-58`),
-  StorageID = `u<id>` (`chat.go:60`).
-- **TTL reaper**: контейнер засыпает после 60 минут простоя (v3; флаг
-  `--chat-ttl-min`)
-  (`--chat-ttl-min`, reaper `chat.go:479-505`); `StopChat` удаляет только
-  compute — **том переживает сон и удаление контейнера**.
-- **Тома**: `$AGCTL_HOME/chats/u<id>/{dsh-home,work}`
-  (`internal/runtime/dockerrt/chat.go:24-25`); сид скелета и плагинов при
-  первом буте, `RefreshProvider` на каждом ленивом старте
-  (`dockerrt/chat.go:31-49`).
-- **Per-session cwd**: контейнеру задаётся
-  `AGCTL_CHAT_SESSION_ROOT=/workspace/.sessions` (`docker.go:266-269`);
-  host-плагин **chat-session-files** создаёт на каждую DSH-сессию папку
-  `.sessions/<sessionId>` и внутренний Workspace с этим cwd
-  (`dsh-plugins/chat-session-files/lib/index.js:25-54`); сервер проверяет
-  пути symlink-safe (`safeChatSessionDir`, `chat.go:284-340`). Это привязка
-  файлов, **не security boundary** между сессиями одного пользователя.
-- **Папки сессий и инструкции проекта** (с `6635f04`): состояние папок
-  per-user хранится на сервере в settings KV — `GET/PUT /api/chat/folders`
-  (`chat.go:78-136`; лимиты 256 КиБ / 64 папки / 5000 назначений);
-  инструкции папки управляемым блоком пишутся в `AGENTS.local.md` каждой
-  назначенной сессии — `PATCH /api/chat/sessions/{id}/folder-instructions`
-  (`chat.go:202-280`); новые сессии привязываются к активной папке. Папка —
-  группировка в UI, не каталог-граница.
-- **Trajectory**: возвращена включением штатной настройки developerTools dsh
-  (chat-brand `client.js:588-596`), без DOM-патчей.
-- **Провайдер LLM**: приоритет — личный секрет пользователя → платформенный
-  по умолчанию → если пусты оба, dsh показывает свой модал «Add an API key»
-  (`userProvider`, `chat.go:403-419`).
-- **ChatProvider-контракт** (шов под K8s): `ChatSpec{RuntimeID, StorageID}` /
-  `ChatHandle{Endpoint}` / `EnsureChat, StopChat, LogsChat`
-  (`internal/runtime/chat.go:15-40`); Docker-реализация —
-  `dockerrt/chat.go:17-74`, порт публикуется только на 127.0.0.1
-  (`docker.go:272`).
+Основные части `Server` (`internal/server/server.go`):
 
-### 4.1 UX-слой чата (почему не «мигает»)
-
-- **Чат-шелл на шлюзе**: pre-paint инъекция CSS/JS в HTML `/chat/` до
-  первой отрисовки — университетский бренд, скрытие dev-панелей и пикеров,
-  только agctl-квинсы в выборщике моделей; пользовательский контент не
-  переписывается, лимит 1 МиБ, при ошибке поток идёт как есть
-  (`internal/server/chatshell.go:3-31,127-213,291-314`).
-- **chat-brand** (v0.2.6): бренд, русские плейсхолдеры, плоский список
-  «Сессии», скрытие workspace-панелей, **папки сессий** (чипсы, контекстное
-  меню, настройки папки-проекта, автопривязка, синк с сервером)
-  (`dsh-plugins/chat-brand/lib/client.js:122-572,588-596`).
-- **Кабинет-навигация**: секция «РЕЖИМЫ» в сайдбаре — «Личный чат» (синяя)
-  и дев-воркспейсы (оранжевые, статус-точки), same-origin переходы,
-  collapse-aware рельс иконок
-  (`dsh-plugins/cabinet/lib/client.js:752-867`).
-- Плагины сеются только в **chat**-домашки через `EnsureChatPlugins`
-  (`provision.go:320-401`); в dev-местах бренд-плагина нет.
-
-## 5. Режим 2 «Разработка» — git-backed рабочие места
-
-Рамка карты «Режим 2 · Разработка (апрув админа)»: узлы *Dev-workspace
-(Docker)* и *Плагин «Кабинет»*.
-
-- **Кабинет** (v0.6.3): создание места (комплект `base`/`1c-vibe` +
-  компоненты, **несколько Base URL и несколько моделей**, SSH-ключ), «Мои
-  заявки», админ-очередь апрува, логи контейнера, настройки существующего
-  места (`dsh-plugins/cabinet/lib/client.js:171-475,582-728`).
-- **Заявки и апрув**: с флагом `--require-approval` создание места идёт
-  через `POST /api/workspace-requests` — провайдер шифруется, админ
-  апрувит/отклоняет, квота перепроверяется при апруве, затем запускается
-  provision (`handlers.go:843-1093`; миграция `007_workspace_requests.sql`).
-- **Provision-конвейер** (`internal/provision/provision.go:193-278`):
-  bare-репа `repos/<owner>/<имя>.git` («эмуляция GitLab») → рабочий клон
-  `work/<id>/repo` + компоненты комплекта + манифест `agctl-kit.json` +
-  первый push → `SeedDshHome` (скелет, `workspace.json`, `settings.yaml` с
-  алиасами провайдеров `agctl`, `agctl-2`…, `.credentials.yaml` 0600) →
-  контейнер. Каталог комплектов — `internal/provision/kits.go:35-58`.
-- **Шлюз `/w/{id}/`**: проверка owner/admin на каждом запросе; boot-токен
-  dsh в браузер не отдаётся (cookie-mint: upstream-401 → серверный повтор с
-  `?token=`, `gateway.go:3-13,193-221`); `dsh-auth-*` cookie скоупится на
-  `/w/<id>/` (`gateway.go:130-144`); WS/SSE без буферизации
-  (`gateway.go:113`).
-- **Брендинг dev-мест**: тот же pre-paint-приём, что чат-шелл, но
-  брендинг-only — заголовок вкладки, строка идентичности с логотипом вместо
-  кита, тэглайн «Тюмень на правильном пути»; панели, Workspaces и выборщик
-  моделей разработчика не трогаются. Инъекция на шлюзе в HTML-ответы
-  (dev-шелл в `internal/server/chatshell.go`, проводка — `gateway.go`);
-  плагин chat-brand в dev-домашки не сеется.
-- **Остановленное место**: клик по stopped-месту в «РЕЖИМАХ» открывает
-  брендированную страницу «рабочее место остановлено» с кнопкой «Запустить»
-  и поллингом статуса до возврата в `/w/<id>/` вместо голого JSON
-  (`internal/server/workspace_page.go`); API-клиентам — прежний JSON.
-- **Смена провайдера**: multi-URL (до 8) и мульти-модели,
-  `PATCH /api/workspaces/{id}/provider` → `RefreshProvider` + пересоздание
-  контейнера (`server.go:660-725`, `handlers.go:653-757`; миграция `010`).
-- **SSH/IDE-петля**: sshd в контейнере только при переданном ключе,
-  key-only, порт только на 127.0.0.1 хоста; `agctl connect`, `agctl sync`
-  (Mutagen two-way-safe), VS Code Remote-SSH
-  (`handlers.go:545-649`; `cmd/agctl/connect.go`, `cmd/agctl/sync.go`).
-- **Autosave**: каждые 2 минуты и при стопе — commit+push в bare
-  (`provision.go:508-544`, `server.go:356-367`); reconcile помечает
-  умершие контейнеры stopped (`server.go:368-379,412-434`).
-
-## 6. Local backend (experimental) — «бэк локально, фронт на сервере»
-
-Рамка карты «Local backend (experimental)»: узлы *agctl local connect* и
-*dsh web на ноутбуке*. Схема: браузер → `/api/local-backend/ui/*` на agctl →
-outbound WSS (`/api/local-backend/connect`, yamux-стримы) → коннектор на
-ноутбуке → локальный `dsh web` на loopback; Host/Origin переписываются на
-authority коннектора (`internal/bridge/bridge.go:151-373`).
-
-- Включается флагом `--experimental-local-bridge` (только с
-  `--secure-cookies` вне loopback); маршруты при выключенном флаге честно
-  отдают 404 (`server.go:245-272`, `local_bridge.go:23-25`).
-- Pairing: одноразовый грант (TTL 2 мин) → при первом подключении выдаётся
-  durable credential `agctl-conn-1-…`; на сервере хранится только SHA-256
-  hash (SQLite `local_connectors`, миграция `008`), raw — в файле 0600 на
-  ноутбуке (`local_bridge.go:15-95`, `cmd/agctl/local.go:144-178`).
-- `agctl local connect --server … --grant … [--launch-dsh]`: переподключение
-  с backoff, 401/403 без ретраев (`cmd/agctl/local.go:28-137`); revoke
-  удаляет запись и живую сессию (`local_bridge.go:107-118`).
-- **Статус: experimental, готов к пилоту, не production** — до продакшена
-  нужны rate-limit на `/connect`, доверенный TLS ingress и ops-ревью.
-  Проверка: `scripts/e2e-local-bridge.sh`.
-
-## 7. K8s — prototype (узел карты «K8s ChatProvider»)
-
-`internal/runtime/k8srt`: per-user Pod + ClusterIP Service + PVC/Secret от
-StorageID (Pod/Service — от RuntimeID), init-container
-`agctl init-chat-home`, non-root + seccomp + без SA-token, ingress
-NetworkPolicy (`k8srt/provider.go:127-386`). **Не подключён**: `server.New`
-по-прежнему выбирает Docker; не ждётся readiness, нет live-cluster smoke,
-egress открыт; K8s-адаптера для dev-workspaces (режим 2) нет
-(`server.go:106-108`; ограничения и ёмкость — `docs/capacity.md:100-105`).
-
-## 8. Данные на диске — `$AGCTL_HOME` (по коду)
-
-```
-$AGCTL_HOME/                     # ~/.agctl или --home (main.go:99-108)
-  agctl.db                       # SQLite WAL; миграции 001-010
-  secrets.key                    # мастер-ключ AES-256-GCM (0600)
-  chats/u<userID>/dsh-home       # режим 1: DSH_HOME (переживает контейнер)
-  chats/u<userID>/work           # режим 1: рабочий том; .sessions/<sessionId>
-  repos/<owner>/<name>.git       # режим 2: bare-origin («эмуляция GitLab»)
-  work/<id>/repo                 # режим 2: рабочий клон (в контейнере)
-  work/<id>/dsh-home             # режим 2: DSH_HOME места
-```
-
-В settings-таблице БД лежат платформенный провайдер (`chat_default_llm`) и
-папки сессий per-user (`server.go:146`, `chat.go:90-92`). Бэкап платформы —
-снимок каталога.
-
-## 9. Безопасность и обновляемость
-
-**Границы доверия (карточка карты «Границы доверия»):** boot-токен dsh ходит
-только сервер↔runtime и не попадает в браузер (`gateway.go:5-13`);
-`agctl_*` cookie не проходят в контейнеры (`gateway.go:243-255`); `dsh-auth-*`
-cookie скоупятся на путь режима (`gateway.go:130-144`, `chat.go:645-659`);
-same-origin fence на обоих шлюзах (`gateway.go:78-81,166-184`,
-`chat.go:596-599`); credential коннектора — hash на сервере, raw 0600 на
-ноутбуке; revoke удаляет запись и живую сессию. Изоляция пользователей —
-контейнеры и тома per-user; файловые папки сессий — не граница (§4).
-
-**Обновляемость dsh**: ядро не форкаем — плагины (cabinet, chat-brand,
-chat-session-files), pre-paint чат-шелл на шлюзе и поддерживаемые конфиги;
-версия пинится в Dockerfile (`@deepseek-ai/dsh@0.2.0-rc.2`,
-`internal/assets/image/Dockerfile:24`), обновление — `scripts/dsh-bump.sh` +
-e2e. Bump до 0.2.1-rc.2 заблокирован очисткой Docker storage (роадмап §4).
-
-## 10. Карта и документ: соответствие слоёв и кода
-
-Физическая карта показывает процессы, адреса прослушивания и протоколы
-проводов. Продуктовые сущности этого документа соотносятся с ней один-в-один:
-**«Chat runtime»** = relay + dsh web в рамке контейнера чата; **шлюзы
-`/chat`, `/w/{id}`, `/api`** — не процесс, а код внутри `agctl serve`;
-**«chat-brand»** — JS в браузере; **«chat-session-files»** — host-плагин
-внутри процесса dsh; **«Dev-workspace»** = рамка контейнера с relay, dsh web
-и sshd; **SQLite** и **git при autosave** — не процессы (файл и go-git внутри
-`agctl serve`).
-
-| Раздел | Код |
+| Ответственность | Реализация |
 |---|---|
-| Браузер, SPA /app | §3 · `web/` |
-| `agctl serve` (auth · гейты · mint · reaper) | §2 · `internal/server` |
-| SQLite + secrets.key | §2, §8 · `internal/store`, `internal/secrets` |
-| `/map` — карта системы | §3 · `internal/server/map.go`, `system/embed.go` |
-| Chat runtime (Docker, lazy) | §4 · `internal/server/chat.go`, `internal/runtime/dockerrt/chat.go` |
-| chat-brand + chat-session-files | §4.1 · `dsh-plugins/chat-brand`, `dsh-plugins/chat-session-files` |
-| LiteLLM корп. | §4, §5 · провайдеры: `chat.go:403-419`, `provision.go:460-498` |
-| Dev-workspace (Docker) | §5 · `internal/provision`, `internal/runtime/dockerrt` |
-| Плагин «Кабинет» | §5 · `dsh-plugins/cabinet` |
-| Local backend (коннектор + dsh на ноутбуке) | §6 · `internal/bridge`, `cmd/agctl/local.go` |
-| K8s ChatProvider | §7 · `internal/runtime/k8srt` |
+| HTTP routes + middleware | `Routes` (`server.go:214-315`) |
+| Auth, cookie sessions, roles | `internal/auth`, `handlers.go`, `roles.go` |
+| Персональные chat-runtimes: ensure/locks/TTL/eviction | `internal/server/chat.go` |
+| Проекты + локальный autosave | `internal/server/projects.go`, `internal/provision/projects.go` |
+| Старый provisioner workspaces | `internal/provision/provision.go` (вызывающий HTTP/CLI create выключен) |
+| Docker runtime + image health | `internal/runtime/dockerrt` |
+| SQLite / secret encryption | `internal/store`, `internal/secrets` |
+
+Логическая изоляция: все пользовательские API проходят `requireUser`,
+админские — `requireAdmin`; SSH pubkey/project path выбираются по ID
+аутентифицированного аккаунта, а не по произвольному `userID` из JSON.
+OS-граница между аккаунтами — их отдельные контейнеры и тома. Каталоги
+проектов внутри одного аккаунта — **не** граница безопасности.
+
+### 3.2 Запуск и сон
+
+Container storage uses two RW bind mounts:
+
+- `$AGCTL_HOME/chats/u<ID>/dsh-home` → `/home/dsh` (`DSH_HOME`);
+- `$AGCTL_HOME/chats/u<ID>/work` → `/workspace`.
+
+Image sets `DSH_HOME=/home/dsh`; Docker also sets `HOME=/workspace` for tool
+processes and redirects npm/XDG caches to `/tmp`. Thus DSH state/settings go to
+`/home/dsh`, project files and any tools that write under `$HOME` go to
+`/workspace`, while configured caches are ephemeral. DSH Web and its child
+processes read/write the RW mounts directly; file I/O is not proxied through
+`agctl serve`. The Go server separately provisions project folders and runs
+local go-git autosave against the host path. This is the
+**current source layout**. `$AGCTL_HOME/u<ID>/{dsh-home,workspace}` is a possible
+target layout, not a completed migration; the pilot starts on a clean volume.
+
+1. Пользователь открывает `/`. Без сессии получает `/app/` — React SPA agctl
+   из `go:embed`; при входе корень ведёт в `/chat/` (`server.go`, функция
+   `registerTier0Routes`).
+2. Сам логин контейнер не создаёт. Первый `/chat/` вызывает `ensureChat`
+   (`internal/server/chat.go`, сейчас около строк 501–555): per-user lock,
+   стабильный `StorageID=u<ID>`, `ChatProvider.EnsureChat`.
+3. Пока dsh web стартует, agctl отдаёт собственную HTML-страницу прогрева
+   `writeWarmChatPage`; после готовности `/chat/*` проксируется в контейнер.
+4. Reaper проверяет runtime раз в минуту. При `active==0` и idle ≥ TTL
+   (по умолчанию 60 мин; `--chat-ttl-min`) удаляется контейнер compute;
+   DSH_HOME/work volume не удаляются (`chat.go`, `reapIdleChats`).
+5. Docker HEALTHCHECK проверяет HTTP на `127.0.0.1:3099`. Reconcile раз в
+   30 секунд видит статус `unhealthy`: legacy workspace помечает stopped,
+   unhealthy chat-runtime останавливает и выкидывает из кэша; следующий
+   `/chat/` пересоздаёт контейнер на прежнем томе (`Dockerfile`,
+   `dockerrt.HealthStatus`, `server.go` `reconcile`).
+
+**Ограничение:** idle/TTL пока учитывает активность шлюза `/chat/`. Если
+developer работает только через SSH/IDE и не делает HTTP/WS-запросов, SSH
+heartbeat ещё не продлевает lease; до долгой IDE-сессии это надо закрыть
+activity-aware механизмом.
+
+## 4. Проекты-папки, DSH Workspace и Git
+
+### 4.1 Где проект живёт
+
+Host-путь проекта:
+
+```
+$AGCTL_HOME/chats/u<ID>/work/<project-name>/
+  .git/                    локальная история (без remote)
+  .gitignore               .env*, .credentials*, .ssh исключены
+  README.md
+  AGENTS.local.md          управляемые инструкции проекта
+  ...                      файлы пользователя/агента
+```
+
+В контейнере этот же каталог виден как `/workspace/<project-name>`. API
+`GET/POST /api/projects` возвращает только имя и контейнерный путь, не
+раскрывая host path; имя валидируется как один компонент пути, симлинки
+запрещены (`internal/provision/projects.go`, `internal/server/projects.go`).
+
+### 4.2 Folder → настоящий cwd
+
+1. Создание папки из дерева chat-brand вызывает `POST /api/projects` —
+   создаются каталог и локальный Git.
+2. Клиент DSH регистрирует Workspace по `path` через официальный
+   `workspaces.create({path})`; этот метод создаёт/переиспользует запись в
+   workspace registry dsh.
+3. «＋» на папке вызывает `uiWorkspace.startSession(workspaceId)`.
+4. Host-плагин `agctl-chat-session-files` видит явно заданный project
+   `workspaceId` и **не** заменяет его скрытым cwd `.sessions/<sessionId>`.
+   Поэтому новый Session реально запускается в `/workspace/<project>`.
+
+Сессии, созданные без проекта, сохраняют старое поведение — отдельный
+`.sessions/<sessionId>` и внутренний Workspace «Chat». Переназначение старой
+сессии в другую папку меняет UI-группировку, но не переносит её файлы между
+каталогами; пилот рассчитан на чистый том, миграции нет.
+
+Project instructions записываются в `AGENTS.local.md` корня проекта через
+`PUT /api/projects/{name}/instructions` (и совместимый PATCH endpoint чата).
+Скрытие папки из дерева не удаляет каталог, Git-историю и инструкции.
+
+### 4.3 Невидимое Git-версионирование
+
+`CreateProject` и `AutosaveLocalProject` реализованы на go-git
+(`internal/provision/projects.go`): Git инициализируется локально, autosave
+раз в две минуты делает коммит только при изменениях. Bare-origin, push и
+дочерний `git` процесс не создаются. `.env*`, `.credentials*`, `.ssh` не
+попадают в историю. В интерфейсе user роль не показывает Git; developer
+может работать с Git через файловую систему/терминал SSH.
+
+## 5. Порты и сетевой путь
+
+| Порт | Кто слушает | Где доступен |
+|---|---|---|
+| `127.0.0.1:8929` | `agctl serve` | только loopback хоста |
+| `127.0.0.1:<dynamic>` | опубликованный Docker `:3080` relay | loopback хоста; agctl reverse-proxy |
+| `0.0.0.0:3080` | `agctl-relay` внутри контейнера | интерфейсы контейнера; dsh наружу через него |
+| `127.0.0.1:3099` | `dsh web` внутри контейнера | только loopback контейнера |
+| `127.0.0.1:<dynamic>` → `:2222` | Docker → sshd developer | только loopback хоста |
+| исходящий `:443` | dsh/connector → LiteLLM или локальный backend tunnel | исходящие соединения |
+
+Путь чата: browser → `:8929` → auth/gateway `/chat/` → опубликованный
+loopback host port → relay `:3080` → raw TCP `127.0.0.1:3099` → dsh web →
+LiteLLM `:443`. Публикация Docker выбирает случайный свободный host port;
+это не «слушать всю LAN». Подробности релея — в
+`agctl-hq/docs/v3/architecture-explained.md` §5–7.
+
+## 6. Legacy compatibility и отложенное
+
+- Создание/изменение отдельных workspace seats и workspace request API
+  отвечает HTTP 410; CLI `agctl workspace create` отключена.
+- GET старых workspace-записей и `/w/{id}` proxy пока оставлены для
+  совместимости с записями старого тома/низкоуровневых тестов; новых seats
+  на чистом пилоте нет. Полное удаление кода/таблиц — cleanup backlog.
+- `/api/kits` и `internal/provision/kits.go` пока legacy-каталог: проекты v3
+  создаются с базовым README, комплекты `base`/`1c-vibe` ещё не подключены.
+- Local backend — experimental code behind flag; пользовательский flow
+  отложен владельцем.
+- Kubernetes `ChatProvider` создаёт Pod/Service/PVC в prototype
+  (`internal/runtime/k8srt`), но `cmd serve` выбирает Docker; readiness/live
+  cluster smoke, selector, egress policy, PVC backup/encryption и HA ещё не
+  реализованы. Production K8s пока не заявляется.
+- MFA/SSO и egress allowlist не реализованы; текущие остаточные риски —
+  `docs/secure-gateway.md`.
+
+## 7. Физическая карта и код
+
+Физическая карта — `system/map/agctl-processes.html`; источник —
+`system/map/agctl-processes.architecture.json` (улики проверяются `archify`
+против revision в meta). Узлы — процессы или файлы/внешние сущности, рамки —
+реальные host/container границы. Один персональный контейнер v3 содержит
+relay + dsh web и, для developer, sshd; `agctl serve` и go-git autosave —
+один Go-процесс, горутины не отдельные процессы.

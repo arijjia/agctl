@@ -1,112 +1,163 @@
-# Защищённый шлюз к DSH Web
+# Защищённый шлюз к DSH Web: модель v3
 
-Статус: реализовано в main (ветка `agent/secure-gateway` слита ранее; досмотрена
-ночью 2026-10-18/19 — cookie-mint, Playwright-пакет). Документ описывает
-текущую реализацию, а не сертификацию.
+Описывает единую целевую схему v3 и текущие security boundaries, не является
+сертификацией. У пользователя один персональный runtime независимо от роли;
+`developer` добавляет SSH-канал в тот же контейнер, но не отдельное dev-место.
 
 ## Поток запроса
 
 ```text
-Browser -- HTTPS --> trusted ingress -- HTTP/loopback --> agctl serve
-                                                   |
-                                  /w/{id}/ --------+-- owner/admin check
-                                                   |
-                                        ReverseProxy + WS/SSE
-                                                   |
-                    127.0.0.1:<published-port> --> container:3080 relay
-                                                   --> dsh web 127.0.0.1:3099
+Browser -- HTTPS --> trusted ingress -- HTTP --> agctl serve :8929
+                                                     |
+                                      /chat/ + cookie session check
+                                                     |
+                               agctl reverse proxy / boot-token mint
+                                                     |
+                      127.0.0.1:<dynamic host port> -> same user container :3080 relay
+                                                                     -> 127.0.0.1:3099 DSH Web
+                                                                     -> optional sshd :2222 (developer)
 ```
 
-1. Сотрудник открывает `https://<адрес-agctl>/w/<id>/`. Ссылка не содержит
-   boot-токен DSH. Маршрут `/w/{id}` без слэша делает 308 на канонический путь.
-2. `requireUser` проверяет cookie-сессию agctl на каждом HTTP-запросе, включая
-   WebSocket Upgrade; handler проверяет, что место принадлежит пользователю
-   или запрос выполняет администратор.
-3. Reverse proxy пересылает запрос на опубликованный loopback-порт контейнера.
-   Префикс `/w/{id}` снимается; DSH получает обычные пути `/`, `/assets/...`,
-   API и WebSocket. SSE flush-ится без буферизации.
-4. На первом запросе DSH отвечает 401. Сервер agctl берёт boot-токен из
-   журнала контейнера и повторяет upstream-запрос с `?token=...` **только
-   сервер-сервер**. DSH 0.2.0-rc.2 отвечает 303 + `Set-Cookie: dsh-auth-*`
-   (HttpOnly, SameSite=Strict). Шлюз переписывает `Location` обратно на
-   `/w/{id}/`, ограничивает cookie путём этого воркспейса и передаёт её
-   браузеру. Следующий запрос с cookie получает 200. После пересоздания
-   контейнера старую cookie DSH отклонит; новый 401 запускает mint заново.
-5. Cookie DSH не заменяет cookie agctl: для доступа к workspace нужны обе
-   проверки — сессия платформы и владелец/администратор.
-6. Перед upstream proxy удаляет `agctl_*` cookies, включая платформенную
-   `agctl_session`; DSH получает собственные runtime cookies и остальные cookies
-   запроса, но не платформенный bearer.
+1. После входа пользователь открывает `/chat/`. Этот маршрут аутентифицируется
+   сессией agctl и лениво обеспечивает runtime текущего пользователя; браузер не
+   выбирает отдельный workspace. Путь корня после входа тоже ведёт в `/chat/`
+   ([регистрация маршрутов](../internal/server/server.go#L306-L319),
+   [проверка сессии](../internal/server/server.go#L541-L549),
+   [ensure-on-request](../internal/server/chat.go#L499-L553)).
+2. Один runtime и один постоянный storage ID соответствуют пользователю;
+   `user`, `developer` и `admin` не создают параллельные chat/dev контейнеры.
+   Idle TTL по умолчанию — 60 минут для всех; остановка удаляет контейнер, не
+   данные на volume ([настройка `serve`](../cmd/agctl/main.go#L117-L129),
+   [reaper](../internal/server/chat.go#L571-L599),
+   [Docker volume и lifecycle](../internal/runtime/dockerrt/chat.go#L13-L79)).
+3. Agctl проксирует `/chat/` в endpoint персонального runtime, срезает префикс,
+   поддерживает streaming/WebSocket и запрещает cross-origin `Origin`. При
+   upstream 401 boot token подставляется сервер-сервер; путь с токеном в
+   браузер не передаётся ([chat proxy](../internal/server/chat.go#L660-L769),
+   [серверный mint transport](../internal/server/gateway.go#L208-L236)).
+4. Сессия agctl и DSH auth-cookie — разные credentials. При mint DSH выдаёт
+   свою HttpOnly/SameSite=Strict cookie; перед upstream agctl удаляет `agctl_*`
+   cookies, DSH-cookie ограничивается `/chat/`, а последующие запросы всё равно
+   проходят проверку платформенной сессии ([очистка cookies](../internal/server/gateway.go#L255-L270),
+   [scoping DSH-cookie](../internal/server/chat.go#L726-L754)).
+5. DSH внутри контейнера слушает `127.0.0.1:3099`; relay принимает внутри
+   контейнера `:3080` и передаёт трафик на DSH. Docker публикует web-порт только
+   на `127.0.0.1` хоста; на macOS контейнерные процессы исполняются в Linux VM
+   Docker Desktop, а не как отдельные процессы macOS
+   ([relay и DSH запуск](../internal/assets/image/entrypoint.sh#L47-L48),
+   [relay bind/target](../internal/assets/image/relay.mjs#L2-L12),
+   [host port bindings](../internal/runtime/dockerrt/docker.go#L273-L279)).
 
-## TLS и запуск
+## TLS и запуск agctl
 
-`agctl serve` сам TLS не терминирует. Для сетевого пилота используйте доверенный
-HTTPS ingress/reverse proxy, который направляет UI, `/api/*` и `/w/*` в один
-origin, проксирует WebSocket и SSE и не пишет секреты в access-логи. Backend
-agctl следует слушать только на loopback/внутренней сети. Запускайте его с
-`--secure-cookies`, чтобы cookie agctl и DSH имели флаг `Secure`:
+`agctl serve` по умолчанию слушает `127.0.0.1:8929`; это обычный HTTP listener,
+он **не терминирует TLS**. Для сетевого пилота поставьте доверенный HTTPS
+ingress/reverse proxy перед agctl, направьте UI, `/api/*` и `/chat/*` в один
+origin, проксируйте WebSocket и streaming/SSE, не записывайте секреты в access-
+логи и держите backend во внутренней сети. `--secure-cookies` выставляет атрибут
+`Secure`, но сам HTTPS не включает
+([serve flags](../cmd/agctl/main.go#L117-L129),
+[HTTP listener](../cmd/agctl/main.go#L197-L213)). Не публикуйте незащищённый
+backend на внешнем интерфейсе.
 
-```sh
-agctl serve --addr 127.0.0.1:8929 --secure-cookies
-```
+По умолчанию CORS выключен. Если отдельному клиенту действительно нужен
+cross-origin доступ, `--cors-origin` принимает только точные origins с
+credentials; wildcard не используется
+([CORS allow-list](../internal/server/server.go#L321-L345)). Для обычного same-
+origin интерфейса `/chat/` этот режим не нужен.
 
-Не выставляйте незащищённый `agctl serve --addr 0.0.0.0:8929` в сеть. Для
-локального ноутбучного демо `--secure-cookies` не нужен.
+## SSH для developer в том же runtime
 
-## Кабинет-плагин и CORS
+Роль `developer` запрашивается через `/api/role-requests`; после решения
+администратора она назначается учётной записи. Роль даёт SSH-возможности в том
+же личном runtime, не право создавать workspace seat
+([обработка заявки и назначение роли](../internal/server/roles.go#L22-L50),
+[апрув и привязка к аккаунту](../internal/server/roles.go#L79-L121)).
 
-Кабинет-панель dsh web ходит к agctl двумя способами: same-origin (workspace
-открыт через `/w/{id}/` — cookie agctl уже стоит) или кросс-доменно (панель
-в прямом dsh, agctl на другом порту/домене). Для второго случая serve принимает
-`--cors-origin` (allow-list точных origins, `Access-Control-Allow-Credentials`,
-preflight 204). По умолчанию список пуст — CORS полностью выключен; wildcard
-с credentials не поддерживается принципиально (`internal/server/cors_test.go`).
+`GET`/`PUT /api/me/ssh` доступны только developer/admin. `PUT` сохраняет
+публичный ключ; он применяется при следующем старте контейнера. Если у
+developer нет ключа, sshd не запускается. При наличии ключа sshd работает внутри
+личного контейнера на `:2222`, только key-auth; root password login, password
+и forwarding отключены. Docker публикует порт на динамический `127.0.0.1` host
+port; `sshPort` API равен 0, когда runtime спит. Для подключения с другой
+машины требуется доверенный туннель/VPN, а не прямое подключение к контейнеру
+([routes `GET`/`PUT /api/me/ssh`](../internal/server/server.go#L243-L251),
+[role check и API](../internal/server/roles.go#L124-L184),
+[key передаётся в общий runtime](../internal/server/chat.go#L536-L568),
+[условный sshd и ограничения](../internal/assets/image/entrypoint.sh#L22-L45),
+[публикация только loopback](../internal/runtime/dockerrt/docker.go#L273-L279)).
 
-## SSH-канал и публикации
+## Проекты, mounts и локальное сохранение
 
-SSH-порт контейнера (2222) публикуется Docker **только на 127.0.0.1 хоста** и
-только когда владелец задал ключ; без ключа биндинга нет вовсе (проверено в
-`scripts/e2e-cabinet.sh`). root-вход — исключительно по public-key,
-forwarding/X11/tunnel запрещены в `/etc/ssh/sshd_config.d/agctl.conf`.
-Удалённый клиент требует доверенного туннеля/VPN — детальнее в README
-«SSH-канал воркспейса».
+Контейнер получает два RW bind mounts: `$AGCTL_HOME/chats/u<ID>/dsh-home` в
+`/home/dsh` (DSH_HOME) и `$AGCTL_HOME/chats/u<ID>/work` в `/workspace`.
+DSH Web и его процессы-дети читают и пишут файлы напрямую в эти mounts;
+операции с файлами не проходят через `agctl serve` и его HTTP API.
 
-## Что проверено автоматически
+Проекты располагаются в общем user volume как
+`chats/u<ID>/work/<name>` (в контейнере — `/workspace/<name>`). Это текущий
+source snapshot, а не финальная миграция. Целевой вариант
+`$AGCTL_HOME/u<ID>/{dsh-home,workspace/<project>}` обсуждается как раскладка
+тома; в обоих вариантах `dsh-home` и `workspace` — отдельные каталоги-соседи,
+а не workspace внутри DSH_HOME. Autosave использует локальный `go-git` в процессе agctl: commit остаётся внутри проекта,
+remote/push нет, пользовательского Git UI нет. Это не отдельный git-процесс,
+workspace или container ([project API](../internal/server/projects.go#L14-L50),
+[путь и каталог проекта](../internal/provision/projects.go#L45-L65),
+[локальный autosave](../internal/provision/projects.go#L210-L273),
+[autosave goroutine внутри agctl](../internal/server/projects.go#L52-L72)).
 
-- анонимный запрос к `/w/{id}/` получает 401;
-- чужой пользователь получает 403, владелец может пройти;
-- boot-token не включён в `workspace.url`; при mint браузер получает 303,
-  workspace-scoped `dsh-auth-*` cookie и переписанный Location;
-- повторный запрос с cookie попадает в upstream; под-путь правильно снимается;
-- WebSocket Upgrade проходит через `httputil.ReverseProxy` (сырой HTTP 101);
-- отсутствие boot-токена оставляет честный upstream 401;
-- DSH port по-прежнему публикуется Docker только на `127.0.0.1`.
+## Legacy routes и локальный backend
 
-Точные тесты: `internal/server/gateway_test.go`, E2E: `scripts/e2e-smoke.sh`.
+- Целевой v3 UI использует `/chat/`; `/w/{id}` и модель workspace seats —
+  legacy, не часть новой пользовательской навигации. Создание/изменение старых
+  мест и все `/api/workspace-requests` endpoints отвечают `410 Gone`; чтение
+  старых workspace-строк сохранено, но workspace-request API больше не читает
+  старые заявки. Низкоуровневый `/w` proxy и его маршруты оставлены для
+  legacy-записей и compat/tests:
+  **текущий код всё ещё обслуживает старые `/w/{id}` записи через защищённый
+  proxy — это не означает, что `/w` является целевым v3 UX**. Для legacy-записи
+  `GET /w/{id}/manifest.webmanifest` остаётся публичным (статический manifest),
+  остальные UI/API proxy routes требуют agctl session и проверку owner/admin
+  ([manifest и `/w` registrations](../internal/server/server.go#L284-L293),
+  [public manifest handler](../internal/server/gateway.go#L57-L70),
+  [410 на создание места](../internal/server/handlers.go#L179-L181),
+  [workspace-request tombstones](../internal/server/handlers.go#L488-L502),
+  [compat proxy](../internal/server/gateway.go#L39-L55),
+  [tombstone tests](../internal/server/approval_test.go#L8-L29)).
+- Экспериментальный local-backend/connector код ещё существует, но владелица
+  отложила это направление на осмысление. Это не часть целевого v3 UX.
+  `--experimental-local-bridge` выключен по умолчанию; флаг включает отдельный
+  pairing/transport путь, а не второй штатный режим для пользователя
+  ([experimental flag](../cmd/agctl/main.go#L120-L139),
+  [flag-gated routes](../internal/server/server.go#L256-L283)).
 
-## Residual risks и ограничения
+## Проверки и остаточные риски
 
-- Чужой воркспейс отвечает 403 (решено: не 404). ID — 12 hex-символов,
-  перебор непрактичен; 403 согласован с остальным API (`/api/workspaces/{id}`),
-  а 404 оставлен для действительно несуществующих id — админка различает
-  «нет» и «не твоё».
-
-- Сам DSH печатает boot URL с токеном в `docker logs`; agctl читает его оттуда.
-  Gateway не удаляет эту запись из Docker daemon. Поэтому доступ к Docker
-  socket, daemon logs и каталогу данных сервера — привилегированный доступ;
-  ограничьте его администраторами. Не пересылайте логи без редактирования.
-- Docker порт привязан к loopback хоста, а не к отдельному Unix socket. Удалённый
-  клиент к нему не подключится, но другой локальный процесс/пользователь на том
-  же сервере потенциально сможет обратиться к случайному loopback-порту.
-  Для многопользовательского кластера это требует сетевой изоляции (например,
-  Kubernetes NetworkPolicy/Service без host-публикации) и отдельной проверки.
-- В одном браузерном профиле DSH-cookie — HttpOnly и path-scoped, но доступна
-  всем вкладкам того же workspace; XSS внутри DSH остаётся угрозой.
-- TLS обязан быть включён на ingress; `--secure-cookies` не включает TLS сам.
-  Не доверяйте произвольным `X-Forwarded-*` от клиентов и не включайте
-  secure-cookie режим без HTTPS-доставки.
-- Все workspaces одного origin разделяют cookie store браузера; path и уникальное
-  имя DSH-cookie уменьшают ненужную пересылку, но полное разделение origin
-  (поддомен на workspace) может быть предпочтительно при расширении пилота.
-- Настройка не равна соответствию требованиям ФСТЭК/152-ФЗ и не заменяет
-  модель угроз/проверку ЦИТ до подключения реальных данных.
+- В образ добавлен healthcheck DSH на `127.0.0.1:3099`; reconcile останавливает
+  и выселяет unhealthy personal runtime из кэша, после чего `/chat/` пересоздаёт
+  его на сохранённом томе ([Docker HEALTHCHECK](../internal/assets/image/Dockerfile#L49-L55),
+  [reconcile unhealthy chat](../internal/server/server.go#L459-L490)).
+- **Boot token остаётся в Docker logs.** Agctl читает его оттуда для серверного
+  mint; gateway не удаляет запись из Docker daemon. Доступ к Docker socket,
+  daemon logs и каталогу данных сервера — привилегированный доступ; ограничьте
+  его администраторами и не пересылайте логи без редактирования
+  ([чтение логов runtime](../internal/runtime/dockerrt/chat.go#L81-L84),
+  [извлечение boot token](../internal/server/server.go#L596-L635)).
+- **Egress открыт / не ограничен gateway-политикой.** K8s prototype задаёт
+  ingress-only NetworkPolicy на relay port и не ограничивает egress; она не
+  gateway-specific, а target CNI не валидирован для production
+  ([K8s policy prototype](../internal/runtime/k8srt/provider.go#L251-L279)).
+- Host-порты привязаны к loopback, но не к отдельному Unix socket: другой
+  локальный процесс/пользователь на том же хосте может обратиться к
+  опубликованному порту. На macOS учитывайте границу Docker Desktop Linux VM и
+  публикацию порта обратно на loopback хоста
+  ([Docker port bindings](../internal/runtime/dockerrt/docker.go#L273-L279)).
+- Для старого `/w/{id}` proxy остаётся различимость `403` (чужая запись) и
+  `404` (несуществующая запись), то есть legacy gateway раскрывает факт
+  существования старого ID авторизованному пользователю. Прямой доступ к
+  legacy-строкам и proxy нужно удалить отдельной миграцией, если compat/tests
+  больше не потребуются ([legacy owner check](../internal/server/gateway.go#L39-L55)).
+- DSH-cookie остаётся доступна вкладкам того же workspace/origin; XSS внутри
+  DSH остаётся угрозой. `Secure` защищает cookie только при HTTPS, реально
+  завершаемом на доверенном ingress. Схема не является сертификатом ФСТЭК/152-ФЗ
+  и не заменяет модель угроз и security review до работы с реальными данными.

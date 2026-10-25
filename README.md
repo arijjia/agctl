@@ -6,32 +6,33 @@ Harness — он лениво поднимается при открытии ч�
 простоя, а данные (сессии, файлы, настройки) живут на постоянном томе
 независимо от контейнера. Папки в чате — это каталоги рабочей области.
 
-Роль **developer** (по заявке, с апрувом администратора; привязана к
-учётке) добавляет к персональному контейнеру: sshd (SSH-канал к своим
-файлам, IDE-петля), шаблоны проектов с git и создание отдельных рабочих
-мест (legacy-режим для особых случаев).
+Роль **developer** (заявка → апрув администратора → постоянная привязка к
+учётке) добавляет к тому же контейнеру sshd (key-only SSH к `127.0.0.1`),
+IDE-канал и доступ к проектным каталогам. Отдельные dev-контейнеры и создание
+legacy-рабочих мест в v3 демонтированы. Git/autosave хранит локальную
+историю проектов, обычному пользователю git-интерфейс не показывается; выбор
+шаблона проекта пока остался в legacy-каталоге комплектов.
 
-Плагин «Кабинет» вшит в скелет каждого dsh-home: можно создавать места,
-передавать LLM-провайдер и SSH public key из интерфейса DSH.
+Плагин «Кабинет» теперь управляет заявкой на developer, SSH-ключом и
+проектами. Experimental local-backend-код сохранён, но не входит в текущий
+пользовательский поток — его архитектуру владелец решила рассмотреть позже.
 
 ```mermaid
 flowchart LR
-    U[Пользователь] -->|один домен + cookie| B["agctl serve<br/>auth + control plane + gateway"]
-    B -->|/chat/: user ID| T["Личный ленивый dsh runtime<br/>контейнер + DSH_HOME том"]
-    B -->|/w/id/: approval + owner check| D["Dev workspace<br/>контейнер + git clone"]
-    D -->|git| R[("bare origin")]
-    T -->|объекты DSH| S[("per-user DSH_HOME")]
-    D -->|repo + dsh-home| V[("persistent volumes")]
-    T -->|LLM API| L[LiteLLM / Z.AI / local]
-    D -->|LLM API| L
-    U -->|«Кабинет» plugin| T
+    U[Пользователь] -->|один домен + cookie| B["agctl serve<br/>auth + API + шлюз /chat"]
+    B -->|ленивый runtime| T["Персональный контейнер u<ID><br/>relay + dsh web; developer + sshd"]
+    T -->|том пользователя| V[("chats/u<ID><br/>dsh-home + work/projects")]
+    T -->|git autosave в процессе agctl| V
+    T -->|LLM API :443| L[LiteLLM]
+    U -->|«Кабинет»| B
+    U -->|SSH :2222, роль developer| T
 ```
 
 ## Документация
 
 | Документ | О чём |
 |---|---|
-| [docs/architecture.md](docs/architecture.md) | **Текущая архитектура**: два режима, шлюзы, чат-runtime, режим разработки, local backend, K8s-прототип — с точными ссылками на код. Этому документу соответствует карта системы |
+| [docs/architecture.md](docs/architecture.md) | **Текущая архитектура v3**: единый runtime пользователя, роли, проекты, SSH, шлюзы и healthcheck — с точными ссылками на код. Физической карте соответствует файл `system/map/agctl-processes.html` |
 | [docs/architecture-roadmap.md](docs/architecture-roadmap.md) | **Архитектурный роадмап**: где мы сейчас, горизонты 1–3, принципы |
 | [docs/capacity.md](docs/capacity.md) | Оценка ресурсов по числу пользователей |
 | [docs/secure-gateway.md](docs/secure-gateway.md) | Схема шлюза и cookie-mint |
@@ -98,63 +99,62 @@ make restart   # stop + up
 `.runtime/`); сервер, запущенный вручную в терминале, останавливается своим
 Ctrl+C так же корректно.
 
-### Режимы, папки и кабинет
+### Персональный контейнер, проекты и Кабинет
 
-- Сайдбар чата содержит секцию **РЕЖИМЫ**: «Личный чат» (синяя папка) и
-  дев-воркспейсы (оранжевые, со статус-точкой). Переходы — same-origin,
-  адрес фронта не меняется; в дев-воркспейсе доступна та же навигация.
-- Сессии чата раскладываются по **папкам** — в виде дерева, как родные
-  Workspaces: секции друг под другом, каждая разворачивается и показывает
-  свои сессии, клик по сессии открывает её. Шестерёнка на папке — имя и
-  инструкции проекта (пишутся в `AGENTS.local.md` сессий), «＋» — новая
-  сессия в папке, правый клик по сессии — переназначить. Сессии без папки —
-  в секции «Без папки». Папки синхронизируются с agctl (переживают браузер).
-- В **Кабинете** (`Кабинет` в боковой панели): «Новое рабочее место»
-  принимает **несколько Base URL и несколько моделей** (по значению на
-  строку/через запятую — модели общие для всех URL); у каждого места —
-  «Логи» (хвост логов контейнера, секреты редактируются) и «Настройки»
-  (правка URL/моделей/токена и SSH-ключа с пересозданием контейнера).
-- Брендинг платформы — везде: заголовок, тэглайн и логотип одинаковы в
-  личном чате и в dev-местах. Клик по остановленному месту открывает
-  страницу «рабочее место остановлено» с кнопкой «Запустить рабочее место»
-  (после запуска браузер сам вернётся в интерфейс места).
+- Каждый аккаунт работает в **одном персональном dsh-контейнере**. Он
+  поднимается лениво при открытии `/chat/`, засыпает через 60 минут простоя;
+  `dsh-home` и рабочий том остаются на диске.
+- Дерево в боковой панели — реальные **проекты-папки**: каждая папка
+  соответствует каталогу `/workspace/<имя>` и DSH Workspace. Новая сессия,
+  созданная внутри папки, получает cwd этого проекта. Инструкции проекта
+  лежат в его `AGENTS.local.md`; локальный Git-автосейв коммитит изменения
+  каждые две минуты. Для роли `user` Git-интерфейс не показывается.
+  «Скрыть папку» прячет её из дерева, но не удаляет каталог, файлы или историю.
+- В **Кабинете**: подача заявки на роль developer; для developer/admin —
+  SSH-ключ и проекты (создание/список). Отдельные рабочие места и режим
+  `/w/{id}` в v3 демонтированы; старые записи пока доступны только для
+  совместимости, новые не создаются.
+- Роль **developer** выдаётся после апрува администратором и привязана к
+  учётке. Она включает sshd в том же контейнере; порт публикуется только на
+  `127.0.0.1` хоста. Local backend-код остаётся experimental, но его
+  пользовательский сценарий отложен.
 
 Откройте **http://127.0.0.1:8929**:
 
-1. **Регистрация** — первый пользователь становится админом.
-2. После входа корень автоматически направляет в **личный чат DSH** (`/chat/`)
-   — никакого промежуточного создания места. Runtime поднимается лениво на
-   пользователя; DSH_HOME остаётся на диске после остановки контейнера.
-3. Для разработки открой **«Кабинет»** в боковой панели DSH. Создание
-   серверного места выполняется напрямую в демо-режиме; с
-   `--require-approval` отправляется администратору на апрув.
+1. Первый пользователь становится администратором.
+2. После входа корень направляет в `/chat/`. Личный dsh-runtime лениво
+   поднимается при первом открытии; сессии и файлы переживают сон.
+3. Чтобы получить SSH и developer-инструменты, откройте «Кабинет» →
+   «Заявка на роль developer». После апрува задайте публичный SSH-ключ.
+4. Создайте проект в Кабинете или добавьте папку в дереве чата. Новые
+   сессии в этой папке работают в каталоге проекта; файлы и локальная
+   Git-история хранятся в персональном томе.
 
-В dev-workspace пользователь задаёт Base URL, модель и API-токен
-(OpenAI-совместимый API: корпоративный LiteLLM, Z.AI, локальная модель);
-опционально — SSH public key. После provision появляются Git-репозиторий,
-терминал и команда подключения. В чате режима 1 Git нет.
-
-Агент умеет вести задачи утилитой `agctl backlog` (gitctl-совместимый формат),
-править скиллы и коммитить работу; dev-workspace сохраняет bare origin и клон.
+Агент ведёт задачи через `agctl backlog`; Git-автосейв проектов выполняется
+внутри процесса agctl (go-git), отдельный Git-процесс и bare-origin не нужны.
 
 Данные живут в `$AGCTL_HOME` (по умолчанию `~/.agctl`):
 
 ```
-agctl.db                  SQLite: пользователи, чаты, заявки, воркспейсы, аудит
-secrets.key               мастер-ключ шифрования токенов (0600)
-chats/u<userID>/dsh-home  личные сессии/файлы режима «Чат» (том переживает контейнер)
-chats/u<userID>/work      рабочая директория личного dsh runtime
-repos/<owner>/<name>.git  bare-репозитории dev-workspaces — «эмуляция GitLab»
-work/<id>/repo            клоны dev-workspaces (смонтированы в контейнеры)
-work/<id>/dsh-home        DSH_HOME dev-workspace (сессии, креды)
+agctl.db                            SQLite: учётки/роли, настройки, заявки
+secrets.key                         мастер-ключ шифрования (0600)
+chats/u<userID>/dsh-home            сессии, настройки, плагины DSH
+chats/u<userID>/work/.sessions/     скрытые каталоги неклассифицированных сессий
+chats/u<userID>/work/<project>/     проектный каталог + локальная .git-история
+repos/ и work/<id>/                 только остатки legacy-рабочих мест; новый v3 их не создаёт
 ```
+
+DSH и процессы-дети работают через RW bind mounts напрямую: файлы DSH —
+`/home/dsh`, проекты — `/workspace`; файловые записи не проксируются через
+`agctl serve`. Предложенный target layout `$AGCTL_HOME/u<ID>/{dsh-home,workspace}`
+пока не мигрирован: source snapshot всё ещё использует `chats/u<ID>/{dsh-home,work}`.
 
 ## Роли: user / developer / admin
 
 | Роль | Что видит | Runtime и данные |
 |---|---|---|
 | **user** (по умолчанию) | личный чат dsh через `/chat/`, папки-проекты | один ленивый персональный контейнер; `chats/u<ID>/dsh-home` переживает сон/удаление; git не показывается |
-| **developer** (по заявке + апрув админа, привязана к учётке) | то же + SSH-канал к своим файлам, шаблоны проектов с git, создание отдельных рабочих мест | тот же персональный контейнер + sshd (key-only, порт на loopback); при необходимости отдельное место: bare origin + git clone |
+| **developer** (по заявке + апрув админа, привязана к учётке) | то же + SSH-канал, проекты и локальная Git-история | тот же персональный контейнер + sshd (key-only, порт на loopback); без дополнительных контейнеров на проекты |
 | **admin** | всё + админка (пользователи, заявки, аудит) | — |
 
 Заявка на роль: `POST /api/role-requests` (в Кабинете — волна C UI); апрув —
@@ -162,40 +162,33 @@ work/<id>/dsh-home        DSH_HOME dev-workspace (сессии, креды)
 /api/me/ssh` — контейнер поднимет sshd при следующем старте, порт в ответе
 (`sshPort`, публикуется только на loopback хоста).
 
-Панель «Кабинет» — dsh client-plugin в боковой панели. Для однодоменной
-маршрутизации браузер остаётся на одном origin: `/chat/` ведёт в персональный
-чат-контейнер, `/w/{id}/` — в отдельное рабочее место (legacy, роль
-developer), `/api/*` обслуживает control plane agctl. Исходник плагина:
-`dsh-plugins/cabinet/`.
+Панель «Кабинет» — dsh client-plugin в боковой панели. Основной origin один:
+`/chat/` ведёт в персональный контейнер, `/api/*` обслуживает auth, заявки,
+проекты и SSH. Старый `/w/{id}/` оставлен как compat-proxy для уже
+существующих записей, но создание/изменение legacy-workspaces возвращает 410.
+Исходник плагина: `dsh-plugins/cabinet/`.
 
-**Важно:** в режиме 1 каждый DSH Session получает скрытый persistent cwd
-`/workspace/.sessions/<sessionId>` внутри личного тома. Host создаёт внутренний
-Workspace на этот путь, а chat-brand скрывает директории и показывает плоский
-список сессий. Это привязка файлов, но не security boundary: пользователь
-может перейти в соседнюю папку своим shell. Квоты томов, retention и
-prewarm-пул — следующий шаг. Детали — [docs/architecture.md](docs/architecture.md).
+**Папка = проектный каталог.** Новая сессия внутри секции проекта получает
+реальный DSH Workspace с cwd `/workspace/<project>`; session-files оставляет
+этот cwd, а не создаёт `.sessions/<id>`. Сессии, которые не привязаны к
+проекту, по-прежнему получают скрытый `.sessions/<sessionId>`. Локальный
+Git-autosave проекта выполняется внутри go-процесса agctl каждые две минуты;
+для роли user история не показывается. Квоты томов и activity-aware сон —
+следующие эксплуатационные шаги. Детали — [docs/architecture.md](docs/architecture.md).
 
-## Стартовые комплекты и компоненты
+## Комплекты (остаток legacy)
 
-При создании выбирается комплект и конкретные компоненты — чекбоксы включены
-по умолчанию, поэтому типовой путь остаётся «одна кнопка»:
-
-| Комплект | Компоненты по умолчанию |
-|---|---|
-| `base` | `core-workspace` (git-основа, бэклог, навык) + `core-instructions` (AGENTS.md, README) |
-| `1c-vibe` | core-компоненты + инструкции 1С, tooling Jira/GitLab/BSL, демо-проект, навык 1C Vibe |
-
-Встроенный versioned manifest v1 описан в `internal/provision/kits.go`; файлы
-компонентов берутся из `internal/assets/templates/` и копируются в рабочую репу
-в порядке комплекта (предметные правила накладываются на базовые). Выбранные IDs
-сохраняются в SQLite и API. `/api/kits` — актуальный каталог комплектов,
-`/api/templates` оставлен для legacy-клиентов. Пользовательская публикация новых
-компонентов/маркетплейс пока не реализованы — см. design-карточку в agctl-hq.
+Каталог комплектов `/api/kits` и код provision (`internal/provision/kits.go`)
+пока сохранены для совместимости/переноса шаблонов. **Новый проект v3 сейчас
+создаётся как каталог с README и локальным Git**; старые `base`/`1c-vibe`
+комплекты ещё не подключены к созданию проектов. Подключение шаблонов
+разработчика к проектному API — следующий шаг, а не создание отдельного
+контейнера/рабочего места.
 
 ## Команды бинарника
 
 ```
-agctl serve     # UI + API + provision
+agctl serve     # UI + API + личные runtime пользователей
 agctl migrate   # накатить миграции SQLite
 agctl backlog <new|list|top|check|start|done|cancel|note|migrate>
 agctl connect --port SSH_PORT [--host HOST] [--identity KEY] [--print]
@@ -203,8 +196,8 @@ agctl local connect --server URL --grant TOKEN [--launch-dsh] [--dsh-token TOKEN
 agctl init-chat-home --home DSH_HOME   # внутренний: init-container K8s-чата
 agctl sync create --name NAME --local DIR --port SSH_PORT [--host HOST] [--user root] [--print]
 agctl sync list|pause|resume|flush|terminate [mutagen args]
-agctl workspace create --user ЛОГИН --name ИМЯ --template base --base-url URL --model M --api-key KEY
 agctl version
+# agctl workspace create — legacy-команда отключена в v3
 ```
 
 `agctl serve` — основные флаги:
@@ -213,64 +206,64 @@ agctl version
 |---|---|
 | `--home DIR` | каталог данных (по умолчанию `~/.agctl`) |
 | `--addr H:P` | слушающий адрес (по умолчанию `127.0.0.1:8929`) |
-| `--image T` | тег образа воркспейса (по умолчанию `agctl-dsh:0.2.0`) |
+| `--image T` | тег образа персонального runtime (по умолчанию `agctl-dsh:0.2.0`) |
 | `--bin-dir D` | каталог linux-сборок agctl для образа (по умолчанию `./dist`) |
-| `--max-per-user N` | лимит dev-workspaces на пользователя (по умолчанию 3) |
-| `--mem-gb N` / `--cpus N` | лимиты контейнеров (по умолчанию 2 ГБ / 2 CPU) |
+| `--mem-gb N` / `--cpus N` | лимиты персонального контейнера (по умолчанию 2 ГБ / 2 CPU) |
 | `--chat-ttl-min N` | idle TTL персонального контейнера, минуты (по умолчанию 60) |
 | `--tier0=false` | отключить корневой маршрут в личный чат (для админ-only стенда) |
-| `--require-approval` | новые dev-workspaces создаются заявкой, до admin approve контейнер не выдаётся |
 | `--secure-cookies` | флаг Secure у cookies (за HTTPS-ingress) |
-| `--experimental-local-bridge` | experimental pairing API + UI-proxy локального connector (требует `--secure-cookies` и доверенного TLS ingress); подключение — `agctl local connect` (см. раздел «Локальный бэкенд» ниже) |
+| `--experimental-local-bridge` | experimental API-коннектора (по решению владельца локальный backend UX отложен; флаг по умолчанию выключен) |
 | `--cors-origin LIST` | точные origins для панели Кабинета, через запятую; пусто = CORS выключен |
 | `--llm-base-url URL` | OpenAI-совместимый провайдер чата по умолчанию (напр. корпоративный LiteLLM) |
 | `--llm-models LIST` | модели чата по умолчанию через запятую; `--llm-model M` — какая из них основная |
 | `--llm-api-key KEY` | ключ провайдера (лучше через env `AGCTL_LLM_API_KEY`); личный секрет пользователя перекрывает платформенный. Провайдер сохраняется зашифрованным в SQLite — при следующих рестартах без env/platform-флагов восстанавливается автоматически |
 
-`agctl backlog` работает и на хосте, и **внутри контейнера** (бинар
-вшит в образ) — им агент ведёт задачи воркспейса.
+`agctl backlog` работает на хосте и **внутри персонального контейнера**
+(бинарь в образе) — агент ведёт задачи проекта.
 
-### SSH-канал воркспейса (opt-in)
+### SSH-канал роли developer (персональный контейнер)
 
-При создании рабочего места можно передать `sshPubKey` (OpenSSH public key)
-в `POST /api/workspaces`; для существующего — `PATCH /api/workspaces/{id}/ssh`
-с `{ "pubKey": "ssh-ed25519 ..." }`. Ключ валидируется (`golang.org/x/crypto/ssh`)
-и меняется только владельцем места. Публичный ключ хранится в SQLite;
-приватный остаётся у пользователя. Контейнер запускает `sshd` только при
-наличии ключа; root-вход — только public-key, пароли и forwarding запрещены.
-SSH-порт контейнера публикуется Docker **только на 127.0.0.1 хоста** и виден
-в поле `sshPort` ответа workspace. Изменение ключа на работающем месте
-пересоздаёт контейнер.
+1. Пользователь подаёт `POST /api/role-requests`; администратор подтверждает
+   заявку. Роль `developer` сохраняется в учётной записи.
+2. В Кабинете developer задаёт OpenSSH public key (`PUT /api/me/ssh`).
+   Ключ сохраняется в SQLite; приватный ключ остаётся только у пользователя.
+3. При следующем старте его **персонального** контейнера entrypoint запускает
+   sshd только при наличии ключа. Root-вход — только public-key; пароль и
+   forwarding запрещены. Порт `:2222` контейнера публикуется Docker только
+   на `127.0.0.1` хоста; `GET /api/me/ssh` показывает `sshPort` (0, пока
+   контейнер спит).
 
-Подключиться с самого сервера/хоста:
+Подключение с сервера/хоста:
 
 ```sh
 agctl connect --port <sshPort> --identity ~/.ssh/id_ed25519
 ```
 
-Для удалённой машины сначала нужен доверенный TCP-путь до хоста (например,
-администраторский SSH-туннель/VPN); `sshPort` намеренно не открыт в LAN или
-Internet. Пример ручного туннеля: `ssh -L 22222:127.0.0.1:<sshPort> user@agctl-host`,
-затем `agctl connect --host 127.0.0.1 --port 22222 --identity KEY`.
+С удалённой машины нужен доверенный туннель/VPN — `sshPort` не открыт в LAN
+или Internet. Пример ручного туннеля:
 
-Локальную папку можно подключить к той же среде в real time через
+```sh
+ssh -L 22222:127.0.0.1:<sshPort> user@agctl-host
+agctl connect --host 127.0.0.1 --port 22222 --identity KEY
+```
+
+Локальную папку можно синхронизировать с персональным `/workspace` через
 [Mutagen](https://mutagen.io/documentation/synchronization/) (нужен установленный
 [Mutagen CLI](https://mutagen.io/documentation/introduction/installation/)):
 
 ```sh
-agctl sync create --name my-workspace --local ./repo \
+agctl sync create --name my-project --local ./project \
   --host 127.0.0.1 --port <sshPort> --user root
 agctl sync list
-agctl sync pause my-workspace
-agctl sync terminate my-workspace
+agctl sync pause my-project
+agctl sync terminate my-project
 ```
 
-Создаётся `two-way-safe` сессия (конфликты без потери данных остаются для
-разрешения); VCS-метаданные, `node_modules`, `.env*`, `.credentials.*` и `.ssh`
-исключены по умолчанию. Git остаётся источником истории/review. Для удалённой
-машины сначала подними SSH-туннель, затем укажи его локальные host/port.
-Проверь остальные проектные секреты и при необходимости настрой ignore-правила
-Mutagen до запуска синхронизации.
+Сессия Mutagen — `two-way-safe`; `.git`, `node_modules`, `.env*`,
+`.credentials.*` и `.ssh` исключены по умолчанию. Проекты хранятся в
+`/workspace/<project>`; локальный Git-autosave версии проекта, но обычный
+пользователь не видит Git-интерфейс. Для удалённой машины сначала подними
+SSH-туннель и укажи его локальные host/port.
 
 ## Сборка и проверки
 
@@ -279,96 +272,86 @@ Mutagen до запуска синхронизации.
 | Цель | Что делает |
 |---|---|
 | `make hooks` | установить pre-commit hook: gofmt + go vet, node --check, тест синка плагинов ↔ dsh-skel, блок случайного коммита `.env` |
-| `make go_build` / `go test` | бинар / тесты (`go test -race ./...` — полный прогон) |
+| `make go_build` / `go test ./...` | бинарь / полный Go-suite (включая роли, проекты, autosave, legacy tombstones) |
 | `make web_build` | React SPA → `web/dist` → `go:embed` |
-| `make img_build` | linux-сборка agctl + docker-образ `agctl-dsh:0.2.0` (`IMG=agctl-dsh:X make img_build`) |
+| `make img_build` | linux-сборка agctl + Docker-образ `agctl-dsh:0.2.0` (`IMG=agctl-dsh:X make img_build`) |
 | `make release_local` | матрица darwin/linux/windows × arm64/amd64 в `dist/` |
-| `IMG=… scripts/e2e-cabinet.sh` | Docker e2e: два пользователя → два личных `/chat/` runtime + workspace-панель; SSH off by default |
-| `IMG=… scripts/e2e-ssh.sh` | Docker e2e SSH: ключ → sshd → shell → снятие/ротация; optional real-Mutagen round-trip |
-| `scripts/e2e-local-bridge.sh` | Docker e2e local bridge: настоящий локальный dsh через outbound connector, reconnect, revoke |
-| `scripts/e2e-smoke.sh` | быстрый smoke-прогон всего цикла |
-| `scripts/e2e-cabinet-playwright.sh` | Playwright: root → регистрация → личный dsh chat → Кабинет → заявка → admin approve → dev-workspace |
+| `node --test dsh-plugins/chat-brand/test/*.test.js` | smoke структуры дерева папок → DSH Workspace проекта |
+| `node --test dsh-plugins/cabinet/test/*.test.cjs` | mock-тесты роли developer, SSH, проекты и отсутствия legacy UI |
+| `node --test dsh-plugins/chat-session-files/test/*.test.js` | default-session cwd и сохранение cwd реального project Workspace |
+| `scripts/e2e-local-bridge.sh` | experimental-тест локального backend (сценарий отложен; не часть v3 user flow) |
+| `scripts/e2e-cabinet*.sh`, `scripts/e2e-ssh.sh` | старые e2e отдельных workspace/seat; требуют переписывания под v3, не текущий smoke |
 
-Первый запуск браузерного теста:
-
-```sh
-cd tests/e2e-ui && npm ci && npx playwright install chromium
-cd ../..
-IMG=agctl-dsh:0.2.0 scripts/e2e-cabinet-playwright.sh
-```
+`tests/e2e-ui` пока содержит сценарии до v3 (отдельное workspace + апрув).
+Перед запуском их нужно переписать на поток «роль developer → проект-папка →
+сессия в проектном cwd»; в CI сейчас проверяются unit/smoke-контракты выше.
 
 Релизы по тегу — [goreleaser](.goreleaser.yaml) (CI: `.github/workflows/ci.yml`).
 
-## Безопасность (MVP-базис)
+## Безопасность v3 и границы
 
-- изоляция: агент работает в контейнере, наружу монтируется только его репа;
-- токены LLM: вводятся в личном кабинете, хранятся **зашифрованными**
-  (AES-256-GCM, мастер-ключ 0600), передаются в контейнер через env,
-  не попадают в Git и образы;
-- пароли — argon2id, сессии — HttpOnly-cookie, первый пользователь — админ;
-  `--secure-cookies` включает флаг Secure за HTTPS ingress;
-- доступ к личному DSH UI идёт через `/chat/`, к dev-workspace — через
-  `/w/{id}/`: gateway проверяет сессию/владельца, проксирует HTTP и WebSocket,
-  boot-токен DSH не попадает в ссылку;
-- SSH: root — только public-key, пароли/forwarding запрещены, порт —
-  только loopback хоста;
-- CORS: allow-list точных origins (по умолчанию выключен), wildcard с
-  credentials не поддерживается;
-- аудит действий — журнал в админке; лимиты — память/CPU контейнеров и число
-  воркспейсов на пользователя.
+- Изоляция — **контейнер на пользователя**; контейнер видит только его
+  `dsh-home` и общий личный `work/` (проекты внутри одного аккаунта не
+  являются отдельной security boundary).
+- LLM-токен шифруется AES-256-GCM ключом `secrets.key` (0600), передаётся
+  контейнеру через env, не попадает в Git или образ.
+- Пароль — argon2id; сессии — HttpOnly-cookie; первый аккаунт — admin.
+  `/api/*` проверяет сессию и роль на сервере: отсутствие кнопки никогда
+  не считается защитой.
+- `/chat/` — шлюз к персональному runtime; `/w/{id}` оставлен только для
+  чтения/доступа к старым записям (новые места и их мутации — 410).
+  Boot-токен dsh браузеру не отдаётся.
+- SSH существует только для developer/admin с публичным ключом; sshd —
+  key-only, порт :2222 контейнера опубликован только на loopback хоста.
+- CORS — точный allow-list; wildcard с credentials запрещён.
+- **Известные остаточные риски:** egress контейнеров пока открыт; нет MFA/SSO
+  и HA control-plane; DSH boot-токен попадает в Docker logs (доступ к Docker
+  daemon фактически равен правам администратора); agctl не терминирует TLS —
+  production требует доверенный HTTPS ingress.
 
-Подробная модель шлюза и остаточные риски — [docs/secure-gateway.md](docs/secure-gateway.md).
-Архитектура v2 (два режима) — [docs/architecture.md](docs/architecture.md).
-Оценка ресурсов по числу пользователей — [docs/capacity.md](docs/capacity.md).
-Стратегия (уровни платформы, теория сред) — штаб `agctl-hq/docs/agctl-platform-concept-v2.md`.
+Подробно: [docs/secure-gateway.md](docs/secure-gateway.md),
+[docs/architecture.md](docs/architecture.md),
+[docs/capacity.md](docs/capacity.md), а сравнение целевой модели —
+`agctl-hq/docs/v3/unified-runtime-model.md`. Стратегическая рамка — штаб
+`agctl-hq/docs/agctl-platform-concept-v2.md`.
 
-## Ограничения MVP (честно)
+## Ограничения v3 (честно)
 
-- Режим 1 использует **персональный lazy dsh runtime на пользователя**;
-  DSH_HOME и work volume переживают остановку контейнера. Новые Session
-  получают скрытый cwd `/workspace/.sessions/<sessionId>`; это файловая
-  привязка, но не security boundary между сессиями одного пользователя.
-- В режиме 2 серверный workspace может быть закрыт через `--require-approval`;
-  без флага демо создаёт место напрямую.
-- «Локальный backend + frontend на сервере» пока не реализован end-to-end.
-  Панель показывает fallback-команду, которая запускает локальный dsh web
-  вместе с его UI. Experimental-контур уже в бинаре: на сервере
-  `--experimental-local-bridge`, на ноутбуке
-
-  ```sh
-  agctl local connect --server https://agctl.example --grant ТОКЕН \
-    --launch-dsh            # или --local 127.0.0.1:3080 --dsh-token ТОКЕН
-  ```
-
-  Pairing API, UI-proxy `/api/local-backend/ui/…`, mint boot-токена через
-  туннель, reconnect по durable-credential, Cabinet UX и security review
-  готовы; `scripts/e2e-local-bridge.sh` прогоняет **настоящий локальный dsh
-  web** (host-бинарь, изолированный HOME) через outbound connector: grant →
-  pairing → UI на origin agctl → reconnect по сохранённой credential → revoke.
-  credential хранится локально (0600), на сервере — только хеш; revoke удаляет
-  запись и сессию. Известные residuals: нет rate-limit на `/connect`,
-  production rollout требует доверенного TLS ingress и ops-ревью — режим
-  experimental, готов к пилоту по решению владельца.
-- DSH UI проходит через same-origin gateway; Docker web/SSH порты привязаны
-  к `127.0.0.1:<порт>`. Для удалённого браузера нужен доверенный TLS ingress
-  на agctl и `--secure-cookies`. Сам agctl TLS не терминирует; доступ
-  локальных процессов к loopback-портам остаётся residual risk.
-- SSH-порт также loopback-only: для удалённой машины нужен доверенный
-  туннель/VPN.
-- **Это ещё не Kubernetes-native deployment**: ChatProvider отделяет
-  endpoint/StorageID; prototype `internal/runtime/k8srt` создаёт Pod/Service/PVC
-  и прошёл fake-client tests (Pod non-root/seccomp, ClusterIP без hostPort,
-  ingress-only prototype NetworkPolicy, PVC переживает stop); PVC/Secret
-  именуются от стабильного `StorageID`, Pod/Service — от `RuntimeID`. Policy
-  пока разрешает любой Pod namespace к relay-порту, egress открыт и target-CNI
-  не проверен. `server.New`/`cmd serve` пока выбирают Docker, live-cluster smoke
-  не запускался. Workspace RuntimeIface всё ещё содержит Docker HostPort/
-  host-path assumptions; нет K8s runtime selector/controller, distributed runtime
-  leases или multi-replica DB. До этого этапа запускать как single-control-plane
-  Docker deployment, не как production K8s. Для K8s нужны gateway-specific
-  NetworkPolicy/egress hardening, RBAC и encryption-at-rest для Secret/PVC.
-- Автосохранение git выполняет agctl каждые 2 минуты и при остановке: агент
-  коммитит часто, agctl доставляет до bare-origin.
+- Один контейнер на аккаунт; роль developer лишь добавляет sshd в тот же
+  контейнер. SSH-порт `:2222` доступен только на loopback хоста — удалённой
+  машине нужен доверенный туннель/VPN.
+- TTL по умолчанию — 60 минут без HTTP/WS-активности через dsh. Открытая
+  сессия браузера удерживает активный запрос; **активность исключительно по
+  SSH сейчас не является отдельным heartbeat** — это риск для долгой IDE/
+  терминальной работы, который нужно закрыть до расширенного пилота.
+- Сессия без проектной папки получает `.sessions/<sessionId>`; сессия,
+  созданная в папке-проекте, получает DSH Workspace с cwd
+  `/workspace/<project>`. Файловые границы между проектами одного пользователя
+  не являются границами безопасности.
+- Git-проект создаётся с локальным `.git`; go-git делает autosave-коммиты
+  каждые две минуты **без remote/push**. Для `user` Git остаётся невидимым.
+  Каталог комплектов `/api/kits` пока legacy: выбор шаблона при создании
+  проекта в v3 ещё не подключён.
+- Перекидывание существующей сессии в другую папку меняет организацию в UI,
+  но не переносит её файлы между каталогами. Пилот принят с чистого тома;
+  миграции старых `chats/` и `work/` нет.
+- Legacy `/w/{id}` и GET старых workspace-записей пока оставлены для
+  совместимости/низкоуровневых тестов; создание/изменение seats и весь API
+  заявок на места — 410. CLI `agctl workspace create` отключён.
+- «Локальный backend» владелец решила осмыслить позже. Код остаётся за
+  `--experimental-local-bridge` (выключен по умолчанию); это не текущий
+  сценарий developer.
+- **Kubernetes — только prototype:** `ChatProvider`/`StorageID` отделяют
+  стабильный PVC от pod, но `cmd serve` выбирает Docker; нет live-cluster
+  smoke, runtime selector, controller/leases, HA БД; NetworkPolicy prototype
+  не ограничивает egress. Не считать production-ready.
+- Прочие остаточные риски: egress Docker-контейнеров открыт; MFA/SSO и HA
+  control-plane отсутствуют; boot-токен dsh виден в Docker logs (доступ к
+  Docker daemon равен правам администратора); TLS завершается внешним ingress,
+  не agctl.
+- Персистентность проекта обеспечивается пользовательским томом; квоты томов,
+  retention, activity-aware TTL/продление lease по SSH и полноценный prewarm
+  остаются следующими шагами (эпик `v3-unified-runtime`).
 
 ## Лицензия
 

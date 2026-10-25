@@ -1,113 +1,85 @@
-# agctl — архитектурный роадмап
+# agctl v3 — архитектурный роадмап
 
-> Дата: 2026-10-23, срез состояния `main` на коммите `6635f04`
-> (ветка `agent/full-mvp-two-modes` влита в `main` fast-forward).
-> Этот файл отвечает на вопрос «что дальше и в каком порядке». Как система
-> устроена фактически — [architecture.md](architecture.md) («Текущая
-> архитектура»); карта системы — `system/map/agctl-processes.html`, в работающем
-> сервере — страница `/map`. Живой источник задач — `backlog/open|done`
-> этого репозитория (формат v1, эпик `two-mode-mvp`); при расхождении
-> роадмапа с карточками правдивее карточки.
+> Срез: 2026-10-25, ветка `main`. Целевая модель владельца: один персональный
+> рантайм на аккаунт, роли вместо двух режимов, проекты-папки, TTL 1 час.
+> Фактическое устройство — [architecture.md](architecture.md); подробное
+> обоснование — `agctl-hq/docs/v3/unified-runtime-model.md`; физика —
+> `system/map/agctl-processes.html` (`make map`, `/map`). Живой список задач —
+> `backlog/open|done` и эпик `v3-unified-runtime`; при расхождении правдивее
+> карточки.
 
----
+## 1. Реализовано: волны A–D
 
-## 1. Где мы сейчас
-
-Двухрежимная платформа v2 работает end-to-end и проверена e2e: после входа
-пользователь попадает в личный чат DSH (ленивый per-user контейнер, том
-переживает сон), разработчик из плагина «Кабинет» создаёт git-backed
-рабочие места (с апрувом админа по флагу), SSH/IDE-петля и локальный
-backend-коннектор — в статусе experimental. Волны продуктового шлифа
-W1–W4 ночной смены 2026-10-22/23 (чат-шелл без миганий, кабинет,
-папки сессий, trajectory) реализованы и закрыты коммитом `6635f04`.
-
-| Блок | Статус | Что осталось |
+| Волна | Содержание | Статус |
 |---|---|---|
-| **v3 волна A: роль developer (заявка→апрув, привязка к учётке) + SSH в едином контейнере + TTL 1 час** | ✅ done | волны B–D: проекты-каталоги, единый сайдбар, миграция мест — эпик `v3-unified-runtime` |
-| R1.1 корень → `/chat/`, SPA на `/app/` | ✅ done | — |
-| R1.2 per-user lazy chat runtime + TTL reaper | ✅ done | — |
-| R1.3 per-session cwd (`chat-session-files`) | ✅ done | квоты томов, retention, prewarm-пул (M) |
-| Папки сессий + инструкции проекта (`AGENTS.local.md`) | ✅ done (6635f04) | продуктовой шлиф по фидбеку |
-| Чат-шелл W1 (pre-paint брендинг, квинсы-only) | ✅ done | composer-hint локализация (S) |
-| R2.1 заявки + admin approve (`--require-approval`) | ✅ done | — |
-| Кабинет W2 (мульти-URL/модели, логи, настройки места) | ✅ done | личные провайдеры поверх платформенных (M) |
-| R2.3 SSH/Mutagen/VS Code-петля | ✅ prototype done | CI-полировка, подсказки в панели (S) |
-| R2.2 local backend (outbound bridge) | ⚠️ experimental | пилот: rate-limit, TLS ingress, ops-ревью (L) |
-| K8s ChatProvider (`internal/runtime/k8srt`) | 🔶 prototype | opt-in селектор, readiness, live-cluster smoke (L) |
-| K8s dev-workspace runtime | ❌ не начат | карточка `k8s-dev-workspace-adapter` (L) |
-| DSH bump 0.2.0-rc.2 → 0.2.1-rc.2 | ⏸ заблокирован | очистка Docker storage, e2e (M) |
+| **A. Роль + единый runtime** | `role_requests` → admin approve → постоянная `users.role=developer`; SSH key-only в том же личном контейнере; TTL default 60 min; HEALTHCHECK :3099 + reconcile unhealthy | ✅ done |
+| **B. Проекты-папки + invisible Git** | `/api/projects`; реальный каталог + локальная `.git`; Cabinet/chat tree регистрируют DSH Workspace; новые сессии в проектном cwd; go-git autosave раз в 2 мин, без remote/push | ✅ done |
+| **C. Кабинет v3** | заявка developer, очередь admin, SSH key/port, список/создание проектов; единое `/chat/` дерево Workspace-проектов; Git обычной роли user скрыт | ✅ done |
+| **D. Демонтаж seats** | UI создания мест/local-backend убран; создание/мутации legacy workspace и workspace-request → 410; CLI `agctl workspace create` отключена | ✅ done |
 
-## 2. Принципы, которые не меняем
+Пилот стартует с **чистого тома** — перенос старых `chats/` и `work/` не
+выполняется. Для диагностических тестов/старых записей GET и `/w/{id}`
+compat-proxy пока оставлены; это не пользовательский поток v3.
 
-1. **Не форкаем ядро dsh.** Все доработки — клиент-плагины (cabinet,
-   chat-brand, chat-session-files), pre-paint чат-шелл на шлюзе и
-   поддерживаемые конфиги (developerTools). Обновление dsh — пин +
-   `scripts/dsh-bump.sh` + e2e.
-2. **Один бинарь, данные на диске.** `$AGCTL_HOME` = SQLite + секреты +
-   тома пользователей; бэкап = снимок каталога.
-3. **Персистентность — том, рантайм — расходник.** Контейнеры ленивые и
-   убиваемые; `DSH_HOME`/`work` переживают сон, удаление и пересоздание.
-4. **Изоляция — OS-граница на пользователя.** Ленивый контейнер per-user
-   вместо общих процессов; файловая привязка сессий — не security boundary.
-5. **Всё через бэклог-карточки**: одна карточка = одна задача, волны
-   night-shift фиксируются журналом карточки.
+## 2. Следующий горизонт — надёжность и UX (P1/P2)
 
-## 3. Горизонт 1 — довести режим 1 «Чат» (P1/P2, S–M)
+1. **Activity-aware TTL** (P1, эпик `v3-unified-runtime`). Reaper сейчас
+   считает HTTP/WS-активность `/chat/`; работа только по SSH (IDE, длинная
+   сборка) не продлевает lease, поэтому часовой сон может оборвать задачу.
+   Добавить heartbeat/учёт SSH-сессий и длительных процессов.
+2. **Prewarm-пул** (P2, `chat-prewarm-pool`): подогрев к входу/началу занятий;
+   сегодня контейнер создаётся лениво при `/chat/`, лимит тёплого пула,
+   планировщик прогрева ещё не реализованы.
+3. **Квоты тома и retention** (P2): ограничить диск/число проектов на
+   пользователя, политика архивации/удаления и восстановления.
+4. **Project templates** (P2): связать legacy `base`/`1c-vibe` kits с
+   созданием v3-проектов; сегодня API создаёт каталог с README + Git, комплект
+   ещё не применяется.
+5. **Живой Playwright v3 smoke** (P2): роль→проект→сессия в project cwd→SSH;
+   текущие проверки — Go tests, plugin mocks и одноразовая browser-проверка.
+6. **Полное удаление legacy-кода** (P3, `legacy-workspace-code-cleanup`):
+   выпилить dormant provision/seat tables и `/w` compat после срока пилота.
 
-Ближайшая продуктовая работа, всё поверх текущего кода без смены архитектуры.
+## 3. Безопасность (P1/P2)
 
-- **Деплой на живой стенд**: собранный `dist/agctl` уже включает волны W1–W4;
-  нужен контролируемый рестарт `agctl serve` на :8929 (владелец) + проверка
-  `Cmd+R` — свежий DSH runtime и gateway shell. Полусловена, из ночного
-  журнала `night-chat-polish`.
-- **Composer-локализация** (S, `chat-composer-copy`): русский placeholder
-  после открытия сессии — через поддерживаемый locale/slot-override dsh,
-  не DOM-патчи.
-- **Квоты, retention, prewarm** (M, хвост R1.3): квота тома per-user,
-  политика хранения сессий `.sessions/`, prewarm-пул контейнеров для
-  плотных утренних стартов.
-- **Личные провайдеры в Кабинете** (M, `personal-providers-cabinet`):
-  `PATCH /api/me/provider` + форма (baseURL/модели/ключ), показ активного
-  провайдера, применение к живому чат-контейнеру после сна.
+- **Egress allowlist** (P2, `egress-allowlist`): сейчас egress Docker
+  контейнеров открыт. Вводить opt-in правила только для LLM host/DNS и
+  необходимых зависимостей; не менять глобальную Docker-сеть пользователя.
+- **MFA/SSO** (P2/P3): сегодня argon2id + cookie; интеграция с корпоративным
+  IdP — отдельная продуктовая волна.
+- **Boot-token в Docker logs**: dsh сам печатает одноразовый token, agctl
+  считывает его для mint. Docker daemon access равен админским правам; убрать
+  секрет из upstream stdout без dsh-контракта/апстрим-изменения нельзя.
+- **Control-plane HA** (P3): сейчас один `agctl serve` + SQLite; несколько
+  replicas потребуют PostgreSQL, leases и согласованного runtime ownership.
 
-## 4. Горизонт 2 — режим 2 и рантаймы (P2/P3, L)
+## 4. Kubernetes и отложенные интеграции
 
-- **Local backend: experimental → пилот** (`local-backend-websocket-bridge`,
-  L): rate-limit на `POST /api/local-backend/connect`, доверенный TLS
-  ingress, ops-ревью; после — решение владельца о включении флага на стенде.
-- **K8s dev-workspace adapter** (L, `k8s-dev-workspace-adapter`): Pod +
-  Service + PVC (repo и DSH_HOME), персистентный bare-origin, service-DNS
-  шлюз вместо HostPort/bind-mounts.
-- **K8s chat runtime adapter** (L, `k8s-chat-runtime-adapter`): opt-in
-  селектор рантайма (`--runtime=docker|k8s`), readiness/boot-token, тот же
-  StorageID переживает пересоздание Pod; live kind/cluster smoke.
-- **DSH bump до 0.2.1-rc.2** (M, `dsh-image-021-rc2-rollout`): после очистки
-  Docker build cache прогнать `scripts/dsh-bump.sh --update` + полный e2e;
-  тег 0.2.1 не считать верифицированным до этого.
+- `internal/runtime/k8srt` — prototype одного Chat Pod/Service/PVC на user.
+  Общий контракт `StorageID` сохраняет пользовательский том при смене Pod;
+  `cmd serve` пока выбирает Docker, live cluster/readiness/NetworkPolicy
+  не прошли production validation.
+- K8s-путь v3: один Pod на пользователя (relay + dsh web + sshd для роли
+  developer как sidecars в общей pod-сети) и один PVC; не Pod на проект.
+- **Local backend** (DSH на ноутбуке) владелец решила осмыслить позже:
+  серверный experimental code за выключенным флагом остаётся в репо, но
+  UX/rollout не планировать без отдельного решения.
 
-## 5. Горизонт 3 — платформа v2 (рамка из концепции штаба)
+## 5. Принципы
 
-Стратегическая рамка — `agctl-hq/docs/agctl-platform-concept-v2.md`
-(«Open WebUI + Open Terminal на своём железе»). Когда горизонты 1–2 закрыты:
+1. Один контейнер на пользователя; role developer добавляет возможности,
+   не множит runtime.
+2. Персистентность в томе, контейнер — расходник с TTL 60 min и healthcheck.
+3. Папка = реальный каталог проекта = DSH Workspace; новые сессии получают
+   cwd проекта; существующие файлы между проектами автоматически не двигаются.
+4. Git для user невидим, history локальная; remote/push появится только при
+   отдельном решении.
+5. dsh не форкаем; plugins/gateway/config — интеграционный слой.
+6. Задачи — через backlog, код + тесты + статусы + документация в отдельных
+   коммитах, без push без явной команды.
 
-- **Общий каталог знаний и RAG** для чата (регламенты, методички) с правами
-  owner — следующая крупная ценность режима 1.
-- **MCP-шлюз платформы**: коннекторы (LMS, календарь, почта) с
-  capability-токенами и лимитами — инструменты для «кабинетного» тира без
-  терминала.
-- **Эфемерные серверные среды на задачу** (`dsh headless`) для очень высокой
-  плотности Tier 0 — оптимизация после замеров реальной нагрузки.
-- **HA и горизонтальное масштабирование control-plane**: общая PostgreSQL и
-  распределённые lease — только при появлении потребности в нескольких
-  репликах `agctl serve`.
+## 6. Работа по эпикам
 
-## 6. Как работать с этим роадмапом
-
-1. Взятие задачи — через карточку в `backlog/open` (скилл backlog), статус
-   и журнал ведутся в карточке; этот файл обновляется на вехах (merge волн,
-   смена статусов таблицы §1).
-2. Порядок внутри горизонта — по приоритетам P1→P3 и зависимостям карточек
-   (`depends`, `epic: two-mode-mvp`).
-3. Критерий закрытия горизонта 1: чат-режим выдерживает продуктовую
-   демонстрацию без ручных вмешательств; горизонта 2: второй рантайм
-   (K8s или локальный backend) включается флагом без изменения UI/API.
+Эпик `v3-unified-runtime` фиксирует решение и журнал волн. Следующая
+реализация начинается с самой ранней открытой карточки с высоким приоритетом,
+а статус в этом документе обновляется при закрытии волны.
