@@ -127,3 +127,29 @@ func TestProjectsAutosaveIncludesSleepingChats(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectsCloneURLPolicy(t *testing.T) {
+	e := newTestEnv(t, 3)
+	e.register(e.admin, "anna", "secret1")
+	env2 := e.newClient()
+	e.register(env2, "bob", "secret2")
+
+	// user: клонирование — developer-настройка.
+	if code, body := e.do(env2, "POST", "/api/projects", map[string]string{
+		"name": "bob-clone", "cloneUrl": "https://github.com/u/r.git",
+	}); code != http.StatusForbidden {
+		t.Fatalf("user clone = %d %s, want 403", code, body)
+	}
+	// Небезопасные схемы отклоняются до сети.
+	for _, raw := range []string{"file:///etc", "ssh://git@host/x", "https://"} {
+		if code, body := e.do(e.admin, "POST", "/api/projects", map[string]string{
+			"name": "adm-" + strings.SplitN(raw, ":", 1)[0], "cloneUrl": raw,
+		}); code != http.StatusBadRequest {
+			t.Fatalf("clone %q = %d %s, want 400", raw, code, body)
+		}
+	}
+	// Обычное создание без cloneUrl продолжает работать.
+	if code, body := e.do(e.admin, "POST", "/api/projects", map[string]string{"name": "plain"}); code != http.StatusCreated {
+		t.Fatalf("plain create = %d %s", code, body)
+	}
+}

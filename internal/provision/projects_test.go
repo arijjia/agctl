@@ -215,3 +215,66 @@ func TestProjectListingRealDirectories(t *testing.T) {
 		t.Fatalf("adopted existing directory: %v", err)
 	}
 }
+
+func TestValidCloneURL(t *testing.T) {
+	for _, raw := range []string{"https://github.com/u/r.git", "http://example.com/repo.git"} {
+		if !ValidCloneURL(raw) {
+			t.Errorf("rejected %q", raw)
+		}
+	}
+	for _, raw := range []string{"", "file:///etc", "ssh://git@host/x", "ftp://h/x", "https://", "//host/x", "https://h\x00/x"} {
+		if ValidCloneURL(raw) {
+			t.Errorf("accepted %q", raw)
+		}
+	}
+}
+
+func TestCloneProjectFromLocalRepo(t *testing.T) {
+	home := t.TempDir()
+	// Готовим источник: локальный репо с одним коммитом (транспорт file://).
+	src := t.TempDir()
+	repo, err := git.PlainInit(src, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectTestWrite(t, filepath.Join(src, "README.md"), "# demo\n")
+	if _, err := wt.Add("README.md"); err != nil {
+		t.Fatal(err)
+	}
+	sig := &object.Signature{Name: "t", Email: "t@example"}
+	if _, err := wt.Commit("init", &git.CommitOptions{Author: sig, Committer: sig}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Транспорт file:// проходит через cloneInto напрямую: политика схем
+	// (только http/https) — в ValidCloneURL и CloneProject.
+	dir := filepath.Join(home, "chats", "u7", "work", "Демо")
+	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cloneInto(dir, "file://"+src); err != nil {
+		t.Fatalf("clone: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "README.md")); err != nil {
+		t.Fatalf("cloned file missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		t.Fatalf("cloned .git missing: %v", err)
+	}
+	if _, err := CloneProject(home, 7, "Демо", "https://example.com/x.git"); !errors.Is(err, ErrProjectExists) {
+		t.Fatalf("duplicate clone = %v, want ErrProjectExists", err)
+	}
+	if _, err := CloneProject(home, 7, "Другой", "file://"+src); !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("file:// past ValidCloneURL = %v, want ErrInvalidProject", err)
+	}
+	if _, err := CloneProject(home, 7, "Ещё", "https://"); !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("bad URL = %v, want ErrInvalidProject", err)
+	}
+}

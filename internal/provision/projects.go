@@ -1,9 +1,11 @@
 package provision
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -176,6 +178,53 @@ func CreateProject(home string, userID int64, name string) (Project, error) {
 		return Project{}, err
 	}
 	return projectDescriptor(name), nil
+}
+
+// ValidCloneURL accepts only http(s) URLs with a host: cloning is a server-side
+// network fetch, so other schemes (file://, ssh://, local paths) are refused.
+func ValidCloneURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+}
+
+// CloneProject creates the project directory by cloning a remote repository.
+// No credentials are used or stored — only public/pre-authorized URLs; the
+// remote origin is configured by the clone itself, while autosave stays
+// local-only. Existing directories are never overwritten or adopted.
+func CloneProject(home string, userID int64, name, cloneURL string) (Project, error) {
+	projectMu.Lock()
+	defer projectMu.Unlock()
+	if !ValidProjectName(name) || !ValidCloneURL(cloneURL) {
+		return Project{}, ErrInvalidProject
+	}
+	root, err := ProjectWorkRoot(home, userID, true)
+	if err != nil {
+		return Project{}, err
+	}
+	path := filepath.Join(root, name)
+	if err := os.Mkdir(path, 0o700); err != nil {
+		if os.IsExist(err) {
+			return Project{}, ErrProjectExists
+		}
+		return Project{}, err
+	}
+	// On failure keep the new directory for diagnosis; never recursively remove
+	// paths in a volume concurrently writable by the user's container.
+	if _, err := cloneInto(path, strings.TrimSpace(cloneURL)); err != nil {
+		return Project{}, err
+	}
+	return projectDescriptor(name), nil
+}
+
+// cloneInto performs the actual go-git clone; scheme policy lives in
+// ValidCloneURL so tests can exercise the local file:// transport directly.
+func cloneInto(path, cloneURL string) (Project, error) {
+	if _, err := git.PlainCloneContext(context.Background(), path, false, &git.CloneOptions{
+		URL: cloneURL,
+	}); err != nil {
+		return Project{}, err
+	}
+	return projectDescriptor(filepath.Base(path)), nil
 }
 
 func projectSecret(path string) bool {

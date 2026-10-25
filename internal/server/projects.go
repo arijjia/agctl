@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/arijjia/agctl/internal/provision"
 )
@@ -22,7 +23,8 @@ func (s *Server) handleProjectsList(w http.ResponseWriter, r *http.Request, id i
 
 func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request, id identity) {
 	var req struct {
-		Name string `json:"name"`
+		Name     string `json:"name"`
+		CloneUrl string `json:"cloneUrl"`
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	dec.DisallowUnknownFields()
@@ -34,15 +36,29 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request, id 
 		writeErr(w, http.StatusBadRequest, "ожидался один JSON объект")
 		return
 	}
-	project, err := provision.CreateProject(s.cfg.Home, id.ID, req.Name)
+	// Клонирование по URL — developer-настройка: это сетевой запрос с сервера,
+	// обычному режиму user он не нужен (карточка dev-workspace-clone-url).
+	var (
+		project provision.Project
+		err     error
+	)
+	if strings.TrimSpace(req.CloneUrl) != "" {
+		if id.Role != "developer" && id.Role != "admin" {
+			writeErr(w, http.StatusForbidden, "клонирование репозитория по URL доступно роли developer")
+			return
+		}
+		project, err = provision.CloneProject(s.cfg.Home, id.ID, req.Name, req.CloneUrl)
+	} else {
+		project, err = provision.CreateProject(s.cfg.Home, id.ID, req.Name)
+	}
 	if err != nil {
 		switch {
 		case errors.Is(err, provision.ErrInvalidProject):
-			writeErr(w, http.StatusBadRequest, "недопустимое имя или путь проекта")
+			writeErr(w, http.StatusBadRequest, "недопустимое имя проекта или URL репозитория (только http/https)")
 		case errors.Is(err, provision.ErrProjectExists):
 			writeErr(w, http.StatusConflict, "проект уже существует")
 		default:
-			writeErr(w, http.StatusInternalServerError, "не удалось создать проект")
+			writeErr(w, http.StatusBadGateway, "не удалось клонировать репозиторий: "+err.Error())
 		}
 		return
 	}
