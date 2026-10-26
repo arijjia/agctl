@@ -197,7 +197,16 @@ window.__ModuleLoader__.load({
 			const avatar = el("div", "width:84px;height:84px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#8a9a5b;color:#fff;font-size:30px;font-weight:700", initials(displayName));
 			const name = el("div", "font-size:22px;font-weight:700", displayName);
 			const handle = el("div", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888)", "@" + me.login);
-			head.append(avatar, name, handle);
+			// выход из учётки: гасит agctl-сессию и возвращает на страницу входа
+			const logout = el("button", "padding:7px 16px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1,#555);background:transparent;color:inherit;font:inherit;font-size:13px;cursor:pointer", "Выйти из аккаунта");
+			logout.addEventListener("click", async () => {
+				logout.disabled = true;
+				try {
+					await apiFactory()("/api/logout", "POST", {});
+				} catch (e) { /* даже если запрос не дошёл — на входе сессии уже нет */ }
+				window.location.replace("/");
+			});
+			head.append(avatar, name, handle, logout);
 			sheet.append(head);
 
 			// роль
@@ -471,6 +480,10 @@ window.__ModuleLoader__.load({
 			popup.append(
 				item("Профиль", () => openProfileOverlay(me)),
 				item("Справка", () => openHelpOverlay()),
+				item("Выйти", async () => {
+					try { await apiFactory()("/api/logout", "POST", {}); } catch (e) {}
+					window.location.replace("/");
+				}),
 			);
 			document.body.appendChild(popup);
 			const rect = anchor.getBoundingClientRect();

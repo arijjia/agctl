@@ -32,6 +32,7 @@ function makeEl(tag) {
     querySelectorAll(sel) { return sel === 'span' ? this.children.filter((c) => c.tag === 'span') : []; },
     isConnected: true,
     parentElement: null,
+    getBoundingClientRect() { return { left: 0, top: 800, width: 42, height: 42 }; },
   };
   return node;
 }
@@ -59,7 +60,12 @@ function harness({ me, unauthorized = false } = {}) {
   };
   let exports;
   const modules = { react: { createElement: (t, p) => ({ tag: t, props: p }), useRef: () => ({ current: null }), useEffect: () => {} } };
-  const windowStub = { __ModuleLoader__: { load: (def) => { exports = def.factory((name) => modules[name]); } } };
+  const windowStub = {
+    __ModuleLoader__: { load: (def) => { exports = def.factory((name) => modules[name]); } },
+    innerWidth: 1280,
+    innerHeight: 900,
+    location: { replace() {} },
+  };
   const ctx = {
     slots,
     get(name) {
@@ -80,7 +86,7 @@ function harness({ me, unauthorized = false } = {}) {
     },
   });
   exports.apply(ctx);
-  return { calls, registrations, exports, slots };
+  return { calls, registrations, exports, slots, documentStub };
 }
 
 test('чип регистрируется в нативном слоте sidebar.footer.action', async () => {
@@ -144,6 +150,22 @@ test('без авторизации пользователь не резолви
   const { exports } = harness({ unauthorized: true });
   const user = await exports.ensureAgctlUser();
   assert.equal(user, null, '401 не даёт пользователя');
+});
+
+test('попап и профиль содержат выход: клик гасит agctl-сессию', async () => {
+  const { calls, exports, documentStub } = harness({ me: 'admin' });
+  const user = await exports.ensureAgctlUser();
+  const container = makeEl('div');
+  const chip = exports.renderChipInto(container, user, true);
+  chip.listeners.click({ stopPropagation() {} });
+  const popup = documentStub.body.children.find((c) => c.dataset && c.dataset.agctlCabinetPopup);
+  assert.ok(popup, 'плашка открылась');
+  assert.deepEqual(popup.children.map((b) => b.textContent), ['Профиль', 'Справка', 'Выйти']);
+  const logoutBtn = popup.children.find((b) => b.textContent === 'Выйти');
+  logoutBtn.listeners.click();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.ok(calls.includes('/api/logout'), 'POST /api/logout выполнен');
+  assert.match(source, /Выйти из аккаунта/, 'кнопка выхода есть и в шапке профиля');
 });
 
 test('нет панели «Кабинет», управления рантаймом и списка воркспейсов', () => {
