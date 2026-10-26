@@ -17,3 +17,4 @@ tests/e2e-ui/node_modules/
 
 # runtime-артефакты make up/corp/demo (pid + логи)
 .runtime/
+.DS_Store
