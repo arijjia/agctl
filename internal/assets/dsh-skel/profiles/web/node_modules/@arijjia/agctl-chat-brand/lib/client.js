@@ -1,9 +1,7 @@
 // agctl chat-brand — client half (hand-written Lazy-CJS bundle).
 // Брендинг ИИ-мастерская ТюмГУ, русский composer hint через штатный locale dsh,
-// автозакрытие диалога "Preview Notice", скрытие dev-панелей. Сайдбар сессий —
-// РОДНОЙ Workspaces-браузер dsh: проектные каталоги регистрируются host-плагином
-// как настоящие Workspace'ы, кастомное дерево и скрытие нативного списка убраны.
-// Регистрируется только в chat-домашках (SeedDshHome chatUI=true).
+// автозакрытие Preview Notice; dev-панель гейтится на gateway по роли. Сайдбар —
+// родной Workspaces browser; кастомного дерева и переименования нет.
 window.__ModuleLoader__.load({
 	id: "@arijjia/agctl-chat-brand",
 	factory: (require) => {
@@ -68,15 +66,6 @@ window.__ModuleLoader__.load({
 			img.style.objectFit = 'contain';
 			img.style.display = 'block';
 			return img;
-		}
-
-		function ensureBrandStyles() {
-			if (document.querySelector("style[data-agctl-brand-styles]")) return;
-			const style = document.createElement("style");
-			style.dataset.agctlBrandStyles = "1";
-			// Дубль правила чат-шелла: работает и без рестарта шлюза.
-			style.textContent = 'div[style*="grid-template-columns"][class*="_frame"]{grid-template-columns:auto minmax(0px,1fr) minmax(0px,0px)!important}';
-			document.head.appendChild(style);
 		}
 
 		function applyBrand() {
@@ -155,44 +144,11 @@ window.__ModuleLoader__.load({
 			return out;
 		}
 
-		function hideDevPanels() {
-			// DSH Layout may mount right-sidebar controls inside a shadow root.
-			// Сначала штатно схлопываем панель (dsh запомнит закрытое состояние и
-			// отдаст main-области всю ширину): кнопка скрыта CSS инъекцией,
-			// но программный click по display:none работает.
-			const rightButtons = queryAllDeep('button[aria-label*="right sidebar"]');
-			const collapse = rightButtons.find((b) => /collapse/i.test(b.getAttribute('aria-label') || ''));
-			if (collapse && !collapse.dataset.agctlCollapsed) {
-				collapse.dataset.agctlCollapsed = '1';
-				collapse.click();
-			}
-			for (const button of rightButtons) {
-				button.style.setProperty('display', 'none', 'important');
-				button.setAttribute('aria-hidden', 'true');
-				button.setAttribute('tabindex', '-1');
-				button.dataset.agctlChatHidden = '1';
-			}
-			for (const row of queryAllDeep('[class*=panelRow]')) {
-				const t = (row.textContent || '').trim();
-				if (/^(terminal|files|терминал|файлы)$/i.test(t)) row.style.setProperty('display', 'none', 'important');
-			}
-			// trajectory НЕ прячем: это вкладка шагов агента, владелец ею пользуется.
-			for (const control of queryAllDeep('button,[role=tab]')) {
-				const label = `${control.getAttribute('aria-label') || ''} ${control.getAttribute('title') || ''} ${control.textContent || ''}`.trim();
-				if (/workspace files|new terminal|choose workspace|choose shell|access mode|add files or run commands/i.test(label)) {
-					control.style.setProperty('display', 'none', 'important');
-					control.setAttribute('aria-hidden', 'true');
-					control.setAttribute('tabindex', '-1');
-				}
-			}
-		}
-
 		function fixAll() {
 			try { closePreviewNotice(); } catch (e) {}
 			try { applyBrand(); } catch (e) {}
 			try { fixPlaceholder(); } catch (e) {}
 			try { fixModels(); } catch (e) {}
-			try { hideDevPanels(); } catch (e) {}
 		}
 
 		// ── создание воркспейса через родную кнопку ─────────────────────────────
@@ -201,6 +157,8 @@ window.__ModuleLoader__.load({
 		// регистрируется штатным workspaces.create({path}) и появляется в родном
 		// списке. Встроенный DirectoryPicker контейнерных каталогов не используем.
 		let brandCtx = null;
+		let roleCanUseDevTools = false;
+		let devToolsStop = null;
 
 		function workspaceSvc() {
 			try { return (brandCtx && brandCtx.get && brandCtx.get("workspaces")) || null; }
@@ -244,11 +202,11 @@ window.__ModuleLoader__.load({
 			const cancel = document.createElement('button');
 			cancel.type = 'button';
 			cancel.textContent = 'Отмена';
-			cancel.style.cssText = 'padding:8px 12px;border:1px solid var(--dsw-alias-border-l1,#bbb);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font:inherit';
+			cancel.style.cssText = 'padding:8px 12px;border:1px solid var(--dsw-alias-border-l1,#bbb);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font:inherit;font-size:13px;line-height:18px';
 			const submit = document.createElement('button');
 			submit.type = 'submit';
 			submit.textContent = 'Создать';
-			submit.style.cssText = 'padding:8px 14px;border:1px solid #1459b8;border-radius:8px;background:#1769d2;color:#fff;cursor:pointer;font:inherit;font-weight:650';
+			submit.style.cssText = 'padding:8px 14px;border:1px solid #1459b8;border-radius:8px;background:#1769d2;color:#fff;cursor:pointer;font:inherit;font-size:13px;line-height:18px;font-weight:600';
 			actions.append(cancel, submit);
 			card.append(heading, name);
 			if (git) card.appendChild(git);
@@ -302,6 +260,41 @@ window.__ModuleLoader__.load({
 			});
 		}
 
+		async function syncRoleControls(ctx) {
+			const developerTools = ctx.configForms && ctx.configForms.developerTools && ctx.configForms.developerTools.enabled;
+			if (!developerTools) return;
+			const response = await fetch("/api/me", { credentials: "include", headers: { Accept: "application/json" } });
+			if (!response.ok) return;
+			const data = await response.json();
+			roleCanUseDevTools = !!(data && data.user && ["developer", "admin"].includes(data.user.role));
+			// Правой панелью управляет штатный DSH Layout API. Обычному user
+			// закрываем её без переходного кадра (pre-paint CSS в gateway); dev/admin
+			// получаем полный нативный rightbar.
+			const layout = (ctx.get && ctx.get("layout")) || ctx.layout;
+			if (layout) {
+				if (roleCanUseDevTools && typeof layout.openRightbar === "function") layout.openRightbar(true, false);
+				if (!roleCanUseDevTools && typeof layout.closeRightbar === "function") layout.closeRightbar();
+			}
+			// Пользователь может увидеть этот нативный toggle в Settings → General.
+			// Держим его выключенным при любых последующих изменениях, чтобы PTC/
+			// Minimal и правые developer-поверхности оставались только developer/admin.
+			if (!devToolsStop && typeof developerTools.subscribe === "function") {
+				devToolsStop = developerTools.subscribe(() => {
+					if (!roleCanUseDevTools && developerTools.getSnapshot()) {
+						void developerTools.setEnabled(false).catch((e) => console.warn("[agctl] developer tools gate:", e));
+					}
+				});
+				ctx.effect(() => () => {
+					devToolsStop?.();
+					devToolsStop = null;
+				}, "agctl-chat-brand.role-gate");
+			}
+			const enabled = !!developerTools.getSnapshot();
+			if (roleCanUseDevTools !== enabled) {
+				await developerTools.setEnabled(roleCanUseDevTools);
+			}
+		}
+
 		function apply(ctx) {
 			brandCtx = ctx;
 			bindWorkspaceCreate();
@@ -309,15 +302,8 @@ window.__ModuleLoader__.load({
 			// namespace conversation + язык ru с fallback en. Прямая подмена
 			// data-placeholder перезаписывалась React'ом; словарь — устойчив.
 			try { installComposerLocale(ctx); } catch (e) { console.warn("[agctl] composer locale:", e); }
-			// Developer Tools в chat-home включаем штатной настройкой DSH: иначе
-			// встроенный dsh-client-ui-conversation полностью исключает view=trajectory.
-			try {
-				const developerTools = ctx.configForms && ctx.configForms.developerTools && ctx.configForms.developerTools.enabled;
-				if (developerTools && !developerTools.getSnapshot()) {
-					void developerTools.setEnabled(true).catch((e) => console.warn("[agctl] не удалось включить Trajectory:", e));
-				}
-			} catch (e) {}
-			ensureBrandStyles();
+			// Developer Tools и правая панель доступны только developer/admin.
+			void syncRoleControls(ctx).catch((e) => console.warn("[agctl] role settings:", e));
 			if (window.__agctlChatBrandTimer) return;
 			fixAll();
 			setTimeout(fixAll, 1000);
@@ -325,8 +311,10 @@ window.__ModuleLoader__.load({
 			window.__agctlChatBrandTimer = setInterval(fixAll, 1500);
 		}
 
-		exports.inject = ["configForms", "locale"];
+		exports.inject = ["configForms", "locale", "layout"];
 		exports.apply = apply;
+		// Unit-test seam: role policy is independent of the UI renderer.
+		exports.__testSyncRoleControls = syncRoleControls;
 		return module.exports;
 	},
 });

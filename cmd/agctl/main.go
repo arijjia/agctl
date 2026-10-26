@@ -38,6 +38,12 @@ import (
 // version подставляется ldflags при сборке (make/goreleaser).
 var version = "dev"
 
+const (
+	defaultCorporateLLMBaseURL = "https://litellm-dev.utmn.ru/v1"
+	defaultCorporateLLMModel   = "qwen-3.8-fast"
+	defaultCorporateLLMModels  = "qwen-3.8-deep,qwen-3.8-27b,qwen-3.8-fast,qwen3guard,qwen3.5-9b-q8_0"
+)
+
 func main() {
 	log.SetFlags(log.Ltime)
 	if len(os.Args) < 2 {
@@ -51,6 +57,8 @@ func main() {
 		cmdMigrate(os.Args[2:])
 	case "init-chat-home": // внутренний initContainer helper для K8s Chat PVC
 		cmdInitChatHome(os.Args[2:])
+	case "seed-demo-users":
+		cmdSeedDemoUsers(os.Args[2:])
 	case "backlog":
 		os.Exit(backlog.Main(os.Args[2:], os.Stdout, os.Stderr))
 	case "workspace":
@@ -83,6 +91,7 @@ func usage() {
 Команды:
   serve [--home DIR] [--addr H:P] [--image T] [--bin-dir D]
   migrate [--home DIR]
+  seed-demo-users [--home DIR]  (локальные тестовые роли; запускать после первого admin)
   backlog <new|list|top|check|start|done|cancel|note|migrate> [флаги]
   workspace (legacy create отключён в v3)
   connect --port SSH_PORT [--host HOST] [--user root] [--identity KEY] [--print]
@@ -128,12 +137,18 @@ func cmdServe(args []string) {
 	memGB := fsSet.Float64("mem-gb", 2, "лимит памяти контейнера, ГБ")
 	cpus := fsSet.Float64("cpus", 2, "лимит CPU контейнера")
 	// Платформенный LLM по умолчанию для режима Chat: пользователь без личного
-	// секрета сразу получает корпоративные модели (без модала dsh про API key).
-	llmBaseURL := fsSet.String("llm-base-url", envOr("AGCTL_LLM_BASE_URL", ""), "базовый URL OpenAI-совместимого провайдера чата по умолчанию")
-	llmModel := fsSet.String("llm-model", envOr("AGCTL_LLM_MODEL", ""), "модель чата по умолчанию (из списка llm-models)")
-	llmModels := fsSet.String("llm-models", envOr("AGCTL_LLM_MODELS", ""), "список моделей чата через запятую")
-	llmAPIKey := fsSet.String("llm-api-key", envOr("AGCTL_LLM_API_KEY", ""), "ключ провайдера чата (предпочтительно через env AGCTL_LLM_API_KEY)")
+	// секрета сразу получает корпоративные Qwen-модели; ключ хранится только в env.
+	llmBaseURL := fsSet.String("llm-base-url", envOr("AGCTL_LLM_BASE_URL", defaultCorporateLLMBaseURL), "базовый URL OpenAI-совместимого провайдера чата по умолчанию")
+	llmModel := fsSet.String("llm-model", envOr("AGCTL_LLM_MODEL", defaultCorporateLLMModel), "модель чата по умолчанию (из списка llm-models)")
+	llmModels := fsSet.String("llm-models", envOr("AGCTL_LLM_MODELS", defaultCorporateLLMModels), "список моделей чата через запятую")
+	llmAPIKey := fsSet.String("llm-api-key", strings.TrimSpace(envOr("AGCTL_LLM_API_KEY", "")), "ключ провайдера чата (предпочтительно через env AGCTL_LLM_API_KEY)")
 	_ = fsSet.Parse(args)
+	*llmAPIKey = strings.TrimSpace(*llmAPIKey)
+	for _, r := range *llmAPIKey {
+		if r < 0x20 || r == 0x7f {
+			log.Fatal("AGCTL_LLM_API_KEY должен содержать только raw-токен в одну строку (без Bearer, кавычек и переводов строки)")
+		}
+	}
 	if *experimentalLocalBridge && !*secureCookies && !isLoopbackAddr(*addr) {
 		log.Fatal("--experimental-local-bridge requires --secure-cookies behind a trusted TLS ingress (plain loopback --addr is allowed for local development only)")
 	}

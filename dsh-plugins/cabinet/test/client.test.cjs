@@ -165,5 +165,5 @@ test('нет панели «Кабинет», управления рантай�
   assert.match(source, /Пользователь/);
   assert.match(source, /Профиль/, 'пункт профиля в плашке');
   assert.match(source, /Справка/, 'справка на месте');
-  assert.match(source, /Настройки/, 'нативные настройки доступны из плашки');
+  assert.doesNotMatch(source, /item\("Настройки"/, 'Settings остаётся отдельной нативной кнопкой, не в popup');
 });

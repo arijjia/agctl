@@ -14,10 +14,10 @@ RUN_CORP_PID := $(RUNTIME_DIR)/corp.pid
 # Дефолты корпоративного провайдера чата; ключ берётся из .env
 # (AGCTL_LLM_API_KEY) — он экспортируется корневым Makefile.
 CORP_LLM_BASE_URL ?= https://litellm-dev.utmn.ru/v1
-CORP_LLM_MODELS ?= qwen-3.8-dee,qwen-3.8-27b,qwen-3.8-fast,qwen3guard,qwen3.5-9b-q8_0
+CORP_LLM_MODELS ?= qwen-3.8-deep,qwen-3.8-27b,qwen-3.8-fast,qwen3guard,qwen3.5-9b-q8_0
 CORP_LLM_MODEL ?= qwen-3.8-fast
 
-.PHONY: up corp stop down restart logs status
+.PHONY: up corp stop down restart logs status demo-users
 
 $(RUNTIME_DIR):
 	@mkdir -p $(RUNTIME_DIR)
@@ -26,6 +26,8 @@ $(RUNTIME_DIR):
 ## img_build в зависимостях гарантирует образ agctl-dsh после docker prune:
 ## с тёплым кэшем сборка занимает секунды, после полной чистки — минуты.
 up: web_build go_build img_build | $(RUNTIME_DIR)
+	@if [ -z "$(AGCTL_LLM_API_KEY)" ]; then \
+	  echo "⚠ AGCTL_LLM_API_KEY пуст: Qwen-модели будут видны, но запросы не пройдут. Впиши raw-токен в .env (без Bearer/кавычек)."; fi
 	@if [ -f "$(RUN_UP_PID)" ] && kill -0 "$$(cat $(RUN_UP_PID))" 2>/dev/null; then \
 	  echo "agctl уже запущен (pid $$(cat $(RUN_UP_PID))) — make stop"; exit 1; fi
 	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl serve --addr "$(RUN_ADDR)" >>"$(RUN_UP_LOG)" 2>&1 & echo $$! > "$(RUN_UP_PID)"
@@ -35,6 +37,10 @@ up: web_build go_build img_build | $(RUNTIME_DIR)
 	  echo "  лог: $(RUN_UP_LOG) · pid: $$(cat $(RUN_UP_PID)) · остановка: make stop"; \
 	else \
 	  echo "✗ сервер упал при старте — хвост $(RUN_UP_LOG):"; tail -5 "$(RUN_UP_LOG)"; exit 1; fi
+
+## demo-users: добавить локальные тестовые роли (после первого реального admin)
+demo-users: go_build
+	./dist/agctl seed-demo-users --home "$(RUN_HOME)"
 
 ## corp: то же, что up, но с корпоративным LiteLLM (ключ — в .env)
 corp: web_build go_build img_build | $(RUNTIME_DIR)

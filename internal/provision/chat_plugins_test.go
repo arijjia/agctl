@@ -75,6 +75,10 @@ func TestEnsureChatPluginsMigratesOldChatHomeIdempotently(t *testing.T) {
 			t.Fatalf("cordis patch bundle %s count = %d, want 1", bundle, count)
 		}
 	}
+	const accountDisable = "- id: ui-settings-account\n  name: \"@deepseek-ai/dsh-client-ui-settings-account\"\n  disabled: true"
+	if count := strings.Count(string(patchData), accountDisable); count != 1 {
+		t.Fatalf("account More/Get started disable patch count = %d, want 1", count)
+	}
 }
 
 // dsh 0.2.x profile loader resolves the client entry as <bundle>/client.js and

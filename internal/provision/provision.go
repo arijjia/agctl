@@ -414,6 +414,17 @@ func EnsureChatPlugins(home string, skelFS fs.FS) error {
 		}
 		patch = append(patch, []byte(fmt.Sprintf("- id: %s\n  name: %s\n", item.id, yamlStr(item.bundle)))...)
 	}
+	// The product does not use a DeepSeek cloud account. Disable the native
+	// account launcher so More/Feedback/Sign in and Get started do not replace
+	// the ordinary DSH Settings trigger; the profile's platform API key/models
+	// are supplied by agctl instead.
+	const accountLauncherPatch = "- id: ui-settings-account\n  name: \"@deepseek-ai/dsh-client-ui-settings-account\"\n  disabled: true\n"
+	if !bytes.Contains(patch, []byte(accountLauncherPatch)) {
+		if len(patch) > 0 && patch[len(patch)-1] != '\n' {
+			patch = append(patch, '\n')
+		}
+		patch = append(patch, []byte(accountLauncherPatch)...)
+	}
 	if err := os.WriteFile(patchPath, patch, 0o644); err != nil {
 		return fmt.Errorf("provision: chat profile patch write: %w", err)
 	}

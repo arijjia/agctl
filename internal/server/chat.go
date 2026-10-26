@@ -784,7 +784,7 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 			s.chatMu.Unlock()
 			// Pre-paint чат-шелл — bounded, identity-encoded HTML; при слишком
 			// большом или ошибочно читаемом документе helper возвращает исходный поток.
-			injectChatShellResponse(resp)
+			injectChatShellResponseForRole(resp, id.Role)
 			if loc := resp.Header.Get("Location"); loc != "" {
 				resp.Header.Set("Location", rewriteLocation(loc, prefix, authority))
 			}

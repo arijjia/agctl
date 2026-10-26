@@ -37,7 +37,7 @@ async function loadClientFactory() {
 test("клиентский бандл загружается и объявляет apply с мягким inject", async () => {
 	const exports = await loadClientFactory();
 	assert.equal(typeof exports.apply, "function");
-	assert.deepEqual(exports.inject, ["configForms", "locale"]);
+	assert.deepEqual(exports.inject, ["configForms", "locale", "layout"]);
 });
 
 test("нативный Workspaces-браузер dsh остаётся единственным обозревателем сессий", async () => {
@@ -56,12 +56,14 @@ test("нативный Workspaces-браузер dsh остаётся единс
 	assert.match(src, /if \(cloneUrl\) body\.cloneUrl = cloneUrl/, "clone URL из диалога уходит в projects API");
 	assert.match(src, /\['developer', 'admin'\]\.includes\(meData\.user\.role\)/, "GitHub clone доступен только developer/admin");
 	assert.match(src, /fetch\('\/api\/projects'/, "каталог создаётся серверным API");
+	assert.match(src, /font-size:13px;line-height:18px/, "кнопки в create-workspace диалоге уменьшены");
 	// Composer hint остаётся на штатном locale-контракте.
 	assert.match(src, /installComposerLocale/, "русский hint через locale dsh на месте");
-	// Бренд/модели/дев-панели живут в fixAll.
+	// Бренд/модели живут в fixAll; developerTools гейтится по GET /api/me.
 	assert.match(src, /applyBrand/, "бренд на месте");
 	assert.match(src, /fixModels/, "скрытие группы DeepSeek на месте");
-	assert.match(src, /hideDevPanels/, "скрытие dev-панелей на месте");
+	assert.match(src, /syncRoleControls/, "developerTools включается только developer/admin");
+	assert.doesNotMatch(src, /hideDevPanels/, "клиент больше не схлопывает правую панель вслепую");
 });
 
 test("composer hint — штатный locale dsh, не DOM-патч", async () => {
@@ -74,4 +76,51 @@ test("composer hint — штатный locale dsh, не DOM-патч", async () 
 	assert.match(src, /explicitPreference == null\)\s*locale\.setLocale\("ru"\)/s, "явный выбор языка пользователя не перетирается");
 	assert.doesNotMatch(src, /setAttribute\('data-placeholder'|setAttribute\('placeholder'/, "прямые DOM-патчи placeholder убраны");
 	assert.doesNotMatch(src, /Message or run a task/, "английский текст открытой сессии больше не патчится");
+});
+
+test("role gate: user фиксирует Standard, developer/admin включают native presets", async () => {
+	async function check(role, initial) {
+		const exports = await loadClientFactory();
+		let enabled = initial;
+		const listeners = new Set();
+		const developerTools = {
+			getSnapshot: () => enabled,
+			setEnabled: async (next) => {
+				enabled = next;
+				for (const listener of [...listeners]) listener();
+			},
+			subscribe: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
+		};
+		const layoutCalls = [];
+		const layout = {
+			openRightbar: (track, fullscreen) => layoutCalls.push(["open", track, fullscreen]),
+			closeRightbar: () => layoutCalls.push(["close"]),
+		};
+		const ctx = {
+			configForms: { developerTools: { enabled: developerTools } },
+			get: (name) => name === "layout" ? layout : undefined,
+			effect: (register) => register(),
+		};
+		const oldFetch = globalThis.fetch;
+		globalThis.fetch = async () => ({ ok: true, json: async () => ({ user: { role } }) });
+		try {
+			await exports.__testSyncRoleControls(ctx);
+			return { enabled, developerTools, layoutCalls };
+		} finally {
+			if (oldFetch === undefined) delete globalThis.fetch;
+			else globalThis.fetch = oldFetch;
+		}
+	}
+
+	const user = await check("user", true);
+	assert.equal(user.enabled, false, "user получает только Standard");
+	assert.deepEqual(user.layoutCalls, [["close"]], "user right pane закрывается");
+	await user.developerTools.setEnabled(true); // попытка включить toggle в Settings
+	assert.equal(user.enabled, false, "toggle user сразу возвращается в off");
+	const developer = await check("developer", false);
+	assert.equal(developer.enabled, true);
+	assert.deepEqual(developer.layoutCalls, [["open", true, false]], "developer получает полный right pane");
+	const admin = await check("admin", false);
+	assert.equal(admin.enabled, true);
+	assert.deepEqual(admin.layoutCalls, [["open", true, false]], "admin получает полный right pane");
 });

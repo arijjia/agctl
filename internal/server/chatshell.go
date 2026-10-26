@@ -18,15 +18,20 @@ import (
 const chatShellMaxHTMLBytes = 1 << 20 // 1 MiB: больше главной страницы dsh на порядок
 
 const chatShellStyle = `<style data-agctl="chat-shell">
-button[aria-label="Open right sidebar"],button[aria-label="Collapse right sidebar"],
-button[aria-label^="Access mode"],button[aria-label^="New terminal"],
-button[aria-label^="Workspace files"]{display:none!important}
-/* Грид фрейма dsh резервирует третью колонку под (скрытую) правую панель —
-   сохранённое состояние ширины не должно съедать половину чата. */
-div[style*="grid-template-columns"][class*="_frame"]{grid-template-columns:auto minmax(0px,1fr) minmax(0px,0px)!important}
 svg[viewBox="0 0 23.16 17.04"]{visibility:hidden}
 [class*="brandIdentity"],[class*="pXSMma_titleGroup"]{visibility:hidden!important}
 [class*="previewBadge"]{display:none!important}
+</style>`
+
+// chatShellUserStyle применяется только к обычной роли: правая dev-панель и
+// её триггеры скрываются до первого кадра, без JS-collapse после рендера.
+const chatShellUserStyle = `<style data-agctl="chat-shell-user">
+button[aria-label="Open right sidebar"],button[aria-label="Collapse right sidebar"],
+button[aria-label^="Access mode"],button[aria-label^="New terminal"],
+button[aria-label^="Workspace files"]{display:none!important}
+[class*="_tabLayout_"]:has(button[aria-label="Collapse right sidebar"]){display:none!important}
+/* У пользователя нет правого dev-панеля — освобождаем центральную колонку до paint. */
+div[style*="grid-template-columns"][class*="_frame"]{grid-template-columns:auto minmax(0px,1fr) minmax(0px,0px)!important}
 </style>`
 
 // Document-start: шапка фиксится только в известных UI-селекторах; текст
@@ -112,8 +117,17 @@ new MutationObserver(function(muts){
 }).observe(document,{subtree:true,childList:true,characterData:true});
 })();</script>`
 
-// chatShellHead — инъекция, добавляемая сразу после открывающего <head>.
-var chatShellHead = chatShellStyle + chatShellScript
+// chatShellHeadForRole — ранняя инъекция. Обычная роль скрывает right dev pane
+// до первого кадра; developer/admin получают только бренд и полный нативный dsh UI.
+func chatShellHeadForRole(role string) string {
+	style := chatShellStyle
+	if role != "developer" && role != "admin" {
+		style += chatShellUserStyle
+	}
+	return style + chatShellScript
+}
+
+var chatShellHead = chatShellHeadForRole("user")
 
 // devShellStyle / devShellScriptTpl — брендинг-only шелл dev-workspace
 // (/w/{id}/): заголовок вкладки, строка идентичности (логотип вместо кита,
@@ -193,9 +207,13 @@ var devShellHead = devShellStyle + strings.ReplaceAll(
 	devShellScriptTpl, "__AGCTL_LOGO__",
 	base64.StdEncoding.EncodeToString(assets.BrandLogo))
 
-// injectChatShell вставляет чат-шелл в HTML-документ (идемпотентно).
+// injectChatShell preserves the historical user-mode helper used by tests.
 func injectChatShell(body []byte) []byte {
-	return injectShell(body, `<style data-agctl="chat-shell">`, chatShellHead)
+	return injectChatShellForRole(body, "user")
+}
+
+func injectChatShellForRole(body []byte, role string) []byte {
+	return injectShell(body, `<style data-agctl="chat-shell">`, chatShellHeadForRole(role))
 }
 
 // injectDevShell вставляет dev-шелл брендинга в HTML dev-workspace.
@@ -365,11 +383,13 @@ func doctypeEnd(s string) int {
 	return -1
 }
 
-// injectChatShellResponse ограничивает память и никогда не теряет прочитанный
-// префикс: при ошибке чтения/слишком большом HTML прокси отдает оригинальный
-// поток без модификации.
+// injectChatShellResponse defaults to the ordinary-user chrome for legacy callers.
 func injectChatShellResponse(resp *http.Response) {
-	injectShellResponse(resp, injectChatShell)
+	injectChatShellResponseForRole(resp, "user")
+}
+
+func injectChatShellResponseForRole(resp *http.Response, role string) {
+	injectShellResponse(resp, func(body []byte) []byte { return injectChatShellForRole(body, role) })
 }
 
 // injectDevShellResponse — то же для dev-workspace (/w/{id}/).

@@ -113,7 +113,7 @@ func TestChatBrandPluginSkeletonPresentButDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(manifest, []byte(`"inject": ["configForms", "locale"]`)) || !bytes.Contains(manifest, []byte(`"platform": "web"`)) {
-		t.Fatal("chat-brand client must request configForms and locale services and target web platform")
+	if !bytes.Contains(manifest, []byte(`"inject": ["configForms", "locale", "layout"]`)) || !bytes.Contains(manifest, []byte(`"platform": "web"`)) {
+		t.Fatal("chat-brand client must request configForms, locale and layout services and target web platform")
 	}
 }

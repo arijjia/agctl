@@ -1,7 +1,7 @@
 // agctl cabinet v3.2 — профиль пользователя: чип в нативном слоте
-// sidebar.footer.action, плашка (Профиль / Настройки / Справка), статистика
-// использования и SSH. Runtime'ом управляет только agctl serve — кнопок
-// запуска/останова нет.
+// sidebar.footer.action, popup (Профиль / Справка); родная Settings-кнопка
+// остаётся отдельным рядом под ним. Профиль показывает роль, статистику,
+// заявки и SSH. Runtime'ом управляет только agctl serve — кнопок запуска/останова нет.
 window.__ModuleLoader__.load({
 	id: "@arijjia/agctl-cabinet",
 	factory: (require) => {
@@ -470,11 +470,6 @@ window.__ModuleLoader__.load({
 			};
 			popup.append(
 				item("Профиль", () => openProfileOverlay(me)),
-				item("Настройки", () => {
-					const btn = [...document.querySelectorAll('button,[role="button"],a')].find((b) =>
-						/settings|настройки/i.test(`${b.getAttribute("aria-label") || ""} ${b.getAttribute("title") || ""} ${b.textContent || ""}`));
-					if (btn) btn.click();
-				}),
 				item("Справка", () => openHelpOverlay()),
 			);
 			document.body.appendChild(popup);

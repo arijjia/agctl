@@ -10,6 +10,23 @@ import (
 	"testing"
 )
 
+func TestChatShellRoleSpecificRightPane(t *testing.T) {
+	doc := "<!doctype html><html><head></head><body></body></html>"
+	user := string(injectChatShellForRole([]byte(doc), "user"))
+	if !strings.Contains(user, `data-agctl="chat-shell-user"`) || !strings.Contains(user, `aria-label="Open right sidebar"`) {
+		t.Fatal("ordinary user must get pre-paint right-panel hiding")
+	}
+	for _, role := range []string{"developer", "admin"} {
+		got := string(injectChatShellForRole([]byte(doc), role))
+		if strings.Contains(got, `data-agctl="chat-shell-user"`) || strings.Contains(got, `aria-label="Open right sidebar"`) {
+			t.Fatalf("role %s must keep the complete native right panel", role)
+		}
+		if !strings.Contains(got, "data-agctl-early-brand") {
+			t.Fatalf("role %s lost the agctl brand pre-paint shell", role)
+		}
+	}
+}
+
 func TestInjectChatShell(t *testing.T) {
 	shell := `<style data-agctl="chat-shell">`
 	if !strings.Contains(chatShellHead, shell) {

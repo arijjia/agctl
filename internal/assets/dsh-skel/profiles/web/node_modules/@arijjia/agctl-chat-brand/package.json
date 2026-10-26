@@ -16,7 +16,7 @@
       "patch": "./cordis.patch.yml"
     },
     "client": {
-      "inject": ["configForms", "locale"],
+      "inject": ["configForms", "locale", "layout"],
       "platform": "web"
     }
   }
