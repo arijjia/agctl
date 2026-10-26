@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: role-aware-dsh-chrome
 title: "User видит только Settings; developer/admin сохраняют правую DSH-панель и пресеты"
-status: in-progress
+status: done
 priority: P1
 size: M
 area: plugin
@@ -46,3 +46,5 @@ agctl role, а не на факт наличия SSH-ключа.
 ## Журнал
 
 - 2026-10-26: создано (`gitctl backlog new`).
+- 2026-10-26: Готово: ui-settings-account disabled в chat-home patch (More/Feedback/Sign in/Get started убраны, native Settings вернулся); chatShell ролевой (user — pre-paint скрытие right pane, dev/admin — полный нативный UI); chat-brand больше не делает blind-collapse, developerTools гейтится по /api/me с подпиской на изменения; presets фильтруются штатно по developerTools (user — только Standard). Проверено headless-браузером для user и developer.
+- 2026-10-26: done — Role-aware dsh chrome визуально проверен

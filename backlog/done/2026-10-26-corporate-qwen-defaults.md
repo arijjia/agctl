@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: corporate-qwen-defaults
 title: "make up по умолчанию настраивает корпоративные Qwen-модели"
-status: in-progress
+status: done
 priority: P2
 size: S
 area: platform
@@ -40,3 +40,5 @@ secret в `.env`/env и не попадает в репозиторий. `make u
 ## Журнал
 
 - 2026-10-26: создано (`gitctl backlog new`).
+- 2026-10-26: Готово: корпоративные Qwen defaults (litellm-dev + 5 моделей, default qwen-3.8-fast) зашиты в serve и make; исправлен typo qwen-3.8-dee; API key валидируется как raw single-line; .env.example и предупреждение make up описывают формат.
+- 2026-10-26: done — Qwen defaults в make up/serve

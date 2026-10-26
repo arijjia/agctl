@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: demo-role-accounts
 title: "Локальные тестовые учётки user/developer/admin с README"
-status: in-progress
+status: done
 priority: P2
 size: S
 area: meta
@@ -39,3 +39,5 @@ serve не должен автоматически добавлять извес
 ## Журнал
 
 - 2026-10-26: создано (`gitctl backlog new`).
+- 2026-10-26: Готово: make demo-users → agctl seed-demo-users; идемпотентно, отказ на пустой базе, три роли; README с таблицей credentials и предупреждением.
+- 2026-10-26: done — make demo-users + README credentials
