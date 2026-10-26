@@ -1,5 +1,5 @@
 # ── img: сборка образа agctl-dsh (linux-бинарь agctl + встроенный контекст) ─
-IMG ?= agctl-dsh:0.2.0
+IMG ?= agctl-dsh:0.2.1
 IMG_ARCH := $(shell docker version --format '{{.Server.Arch}}' 2>/dev/null || echo aarch64)
 IMG_GOARCH := $(subst aarch64,arm64,$(subst x86_64,amd64,$(IMG_ARCH)))
 
