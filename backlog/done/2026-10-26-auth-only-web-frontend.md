@@ -25,3 +25,4 @@ depends: []
 - 2026-10-26: создано (`gitctl backlog new`).
 - 2026-10-26: Готово: web/src урезан до Login (api.ts — только register/login/logout/me); SPA отдаётся с корня (no-store) без пути /app/, маршруты /app* удалены; после входа корень → /chat/. make up теперь зависит от img_build — после docker system prune образ agctl-dsh пересобирается сам (corp — тоже). tier0-fallback-status-page отменена как перекрытая этим решением.
 - 2026-10-26: done — Auth-only фронт + self-healing make up
+- 2026-10-26: Follow-up 2026-10-26 (вечер): добавлен выход из учётки — «Выйти» в попапе чипа и «Выйти из аккаунта» в шапке профиля; POST /api/logout → редирект на страницу входа (a109e00).
