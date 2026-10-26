@@ -105,7 +105,10 @@ test('чип повторяет метрики нативного Settings-ря�
   assert.equal(container.style.width, 'calc(100% + 4px)');
   assert.equal(container.style.margin, '4px -2px');
 
-  // Кнопка = VOzbGW_trigger: 42px, паддинг 0 10px 0 8px, 14/22.
+  // Кнопка = VOzbGW_trigger: flex-ряд (иначе button рендерит детей в столбик),
+  // высота 42px, паддинг 0 10px 0 8px, 14/22.
+  assert.equal(chip.style.display, 'flex');
+  assert.equal(chip.style.alignItems, 'center');
   assert.equal(chip.style.height, '42px');
   assert.equal(chip.style.padding, '0 10px 0 8px');
   assert.equal(chip.style.fontSize, '14px');

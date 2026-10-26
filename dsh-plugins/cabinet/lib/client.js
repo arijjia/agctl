@@ -368,6 +368,10 @@ window.__ModuleLoader__.load({
 		// Кнопка = .VOzbGW_trigger: 42px, padding 0 10px 0 8px, gap 8px, 14/22;
 		// рельса = .VOzbGW_rail: 36×36 по центру.
 		function applyChipMetrics(node, wide) {
+			// <button> по умолчанию inline: без явного flex аватар занимает строку,
+			// а имя уезжает под него. Нативный trigger получает flex из CSS-класса.
+			node.style.display = "flex";
+			node.style.alignItems = "center";
 			node.style.boxSizing = "border-box";
 			node.style.borderRadius = "var(--dsw-radius-md, 10px)";
 			node.style.cursor = "pointer";
