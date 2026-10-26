@@ -3,13 +3,13 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "agctl — физика: процессы, порты, протоколы",
-    "output": ".archify/architecture-agctl-processes-20261024-165956/agctl-processes.html",
+    "output": ".archify/architecture-agctl-processes-20261025-183853/agctl-processes.html",
     "quality_profile": "showcase",
     "repository": {
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "10b76be2e218d0a1a0e80fc120df081c47b263e0"
+      "revision": "2da9332663df222a0e62a5016c42d007b46d6ea8"
     },
     "views": [
       {
@@ -19,9 +19,10 @@
           "browser",
           "serve",
           "dockerd",
-          "home"
+          "agdb",
+          "seckey"
         ],
-        "note": "Логин поднимает 0 контейнеров: экран входа — SPA agctl (go:embed), не dsh"
+        "note": "Логин +0 процессов; файлы/том — отдельны от процессов runtime"
       },
       {
         "id": "v-chat",
@@ -29,12 +30,12 @@
         "focus": [
           "browser",
           "serve",
-          "dockerd",
           "relayc",
           "dshchat",
+          "wkspace",
           "llm"
         ],
-        "note": "+2 процесса; до готовности контейнера agctl отдаёт свой HTML прогрева"
+        "note": "+2 процесса; dsh пишет файлы проектов через RW mount; том переживает удаление контейнера"
       },
       {
         "id": "v-dev",
@@ -43,13 +44,13 @@
           "browser",
           "sshclient",
           "serve",
-          "relayc",
           "dshchat",
           "sshd",
-          "home",
+          "wkspace",
+          "gitstore",
           "llm"
         ],
-        "note": "SSH-канал к своим файлам: +1 процесс sshd в том же контейнере"
+        "note": "SSH к тем же файлам пользователя; версии Git: workspace + history store"
       },
       {
         "id": "v-local",
@@ -109,21 +110,21 @@
       "sources": [
         {
           "path": "cmd/agctl/main.go",
-          "line": 118,
-          "end_line": 120,
-          "label": "serve, addr по умолчанию"
+          "line": 117,
+          "end_line": 222,
+          "label": "cmdServe startup + HTTP listener"
         },
         {
           "path": "internal/server/server.go",
           "line": 214,
-          "end_line": 305,
-          "label": "маршруты /api /w /chat /map"
+          "end_line": 316,
+          "label": "API/gateway routes + auth middleware"
         },
         {
-          "path": "internal/server/server.go",
-          "line": 349,
-          "end_line": 402,
-          "label": "фоновые задачи (горутины)"
+          "path": "internal/server/chat.go",
+          "line": 421,
+          "end_line": 519,
+          "label": "lazy per-user runtime + TTL reaper"
         }
       ]
     },
@@ -155,30 +156,130 @@
       ]
     },
     {
-      "id": "home",
+      "id": "agdb",
       "type": "database",
-      "label": "$AGCTL_HOME — файлы, не процесс",
-      "sublabel": "SQLite WAL · secrets.key · chats/ · repos/",
+      "label": "agctl.db — SQLite WAL",
+      "sublabel": "users · sessions · roles · audit",
       "pos": [
-        430,
-        480
+        880,
+        430
       ],
       "size": [
-        270,
-        96
+        220,
+        88
       ],
       "sources": [
         {
           "path": "cmd/agctl/main.go",
-          "line": 95,
-          "end_line": 108,
-          "label": "AGCTL_HOME, ~/.agctl"
+          "line": 165,
+          "end_line": 168,
+          "label": "store.Open($AGCTL_HOME/agctl.db)"
+        }
+      ]
+    },
+    {
+      "id": "seckey",
+      "type": "database",
+      "label": "secrets.key — вне Git",
+      "sublabel": "мастер-ключ AES-256-GCM · 0600",
+      "pos": [
+        1170,
+        430
+      ],
+      "size": [
+        250,
+        88
+      ],
+      "sources": [
+        {
+          "path": "cmd/agctl/main.go",
+          "line": 157,
+          "end_line": 164,
+          "label": "EnsureMasterKey + secrets.New"
+        }
+      ]
+    },
+    {
+      "id": "dshhome",
+      "type": "database",
+      "label": "u<id>/dsh-home — вне Git",
+      "sublabel": "сессии · настройки · credentials",
+      "pos": [
+        880,
+        552
+      ],
+      "size": [
+        220,
+        88
+      ],
+      "sources": [
+        {
+          "path": "internal/runtime/dockerrt/chat.go",
+          "line": 24,
+          "end_line": 27,
+          "label": "per-user persistent directories"
         },
         {
+          "path": "internal/runtime/dockerrt/docker.go",
+          "line": 288,
+          "end_line": 291,
+          "label": "dsh-home → /home/dsh bind"
+        },
+        {
+          "path": "internal/assets/image/entrypoint.sh",
+          "line": 9,
+          "end_line": 13,
+          "label": "seed при первом старте"
+        }
+      ]
+    },
+    {
+      "id": "wkspace",
+      "type": "database",
+      "label": "u<id>/workspace/<project>",
+      "sublabel": "файлы проектов · .git · под Git",
+      "pos": [
+        1170,
+        552
+      ],
+      "size": [
+        250,
+        88
+      ],
+      "sources": [
+        {
+          "path": "internal/runtime/dockerrt/chat.go",
+          "line": 24,
+          "end_line": 27,
+          "label": "per-user persistent directories"
+        },
+        {
+          "path": "internal/runtime/dockerrt/docker.go",
+          "line": 288,
+          "end_line": 291,
+          "label": "work → /workspace bind"
+        }
+      ]
+    },
+    {
+      "id": "gitstore",
+      "type": "database",
+      "label": "Git history store (bare)",
+      "sublabel": "под $AGCTL_HOME · путь target уточнит MVP",
+      "pos": [
+        1170,
+        676
+      ],
+      "size": [
+        250,
+        88
+      ],
+      "sources": [
+        {
           "path": "internal/provision/provision.go",
-          "line": 22,
-          "end_line": 25,
-          "label": "go-git в процессе, без детей"
+          "line": 1,
+          "end_line": 5,
+          "label": "bare-origin + клон + autosave"
         },
         {
           "path": "internal/provision/provision.go",
@@ -231,8 +332,9 @@
       "sources": [
         {
           "path": "internal/assets/image/entrypoint.sh",
-          "line": 48,
-          "label": "exec dsh web --port 3099"
+          "line": 9,
+          "end_line": 48,
+          "label": "seed, role SSH, relay, exec dsh"
         },
         {
           "path": "internal/runtime/dockerrt/chat.go",
@@ -280,7 +382,7 @@
       "label": "LiteLLM корп.",
       "sublabel": "litellm-dev.utmn.ru · :443",
       "pos": [
-        1543,
+        1555,
         140
       ],
       "size": [
@@ -308,7 +410,7 @@
       "sublabel": "удалённо — только через туннель/VPN",
       "pos": [
         24,
-        840
+        996
       ],
       "size": [
         214,
@@ -336,7 +438,7 @@
       "sublabel": "исходящий WSS :443 · credential 0600",
       "pos": [
         24,
-        700
+        880
       ],
       "size": [
         222,
@@ -358,7 +460,7 @@
       "sublabel": "127.0.0.1:3080 · HTTP+WS",
       "pos": [
         420,
-        700
+        880
       ],
       "size": [
         232,
@@ -406,6 +508,27 @@
         "dshchat",
         "sshd"
       ],
+      "pad": 32
+    },
+    {
+      "kind": "region",
+      "label": "$AGCTL_HOME — файлы, не процесс",
+      "wraps": [
+        "agdb",
+        "seckey",
+        "dshhome",
+        "wkspace",
+        "gitstore"
+      ],
+      "pad": 36
+    },
+    {
+      "kind": "security-group",
+      "label": "Git — версионированные данные",
+      "wraps": [
+        "wkspace",
+        "gitstore"
+      ],
       "pad": 12
     },
     {
@@ -414,12 +537,16 @@
       "wraps": [
         "serve",
         "dockerd",
-        "home",
+        "agdb",
+        "seckey",
+        "dshhome",
+        "wkspace",
+        "gitstore",
         "relayc",
         "dshchat",
         "sshd"
       ],
-      "pad": 34
+      "pad": 80
     }
   ],
   "connections": [
@@ -441,11 +568,17 @@
     {
       "id": "c3",
       "from": "serve",
-      "to": "home",
-      "label": "SQLite WAL · git/go-git",
+      "to": "agdb",
+      "label": "SQLite WAL",
       "variant": "dashed",
       "fromSide": "bottom",
-      "toSide": "top"
+      "toSide": "left",
+      "via": [
+        [
+          565,
+          474
+        ]
+      ]
     },
     {
       "id": "c4",
@@ -475,11 +608,15 @@
       "to": "sshd",
       "label": "SSH-2 → 127.0.0.1:<dyn>",
       "fromSide": "right",
-      "toSide": "bottom",
+      "toSide": "right",
       "via": [
         [
-          1335,
-          876
+          1500,
+          1032
+        ],
+        [
+          1500,
+          302
         ]
       ]
     },
@@ -499,6 +636,66 @@
       "label": "HTTP в yamux → :3080",
       "fromSide": "right",
       "toSide": "left"
+    },
+    {
+      "id": "c13",
+      "from": "dshchat",
+      "to": "wkspace",
+      "label": "bind mount RW · host FS",
+      "variant": "emphasis",
+      "fromSide": "left",
+      "toSide": "left",
+      "via": [
+        [
+          1145,
+          182
+        ],
+        [
+          1145,
+          596
+        ]
+      ]
+    },
+    {
+      "id": "c14",
+      "from": "dshchat",
+      "to": "dshhome",
+      "label": "bind mount RW · DSH_HOME",
+      "fromSide": "left",
+      "toSide": "top",
+      "via": [
+        [
+          1106,
+          182
+        ],
+        [
+          1106,
+          535
+        ],
+        [
+          990,
+          535
+        ]
+      ]
+    },
+    {
+      "id": "c15",
+      "from": "serve",
+      "to": "gitstore",
+      "label": "go-git autosave · push",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left",
+      "via": [
+        [
+          760,
+          365
+        ],
+        [
+          760,
+          720
+        ]
+      ]
     }
   ],
   "cards": [
@@ -525,12 +722,35 @@
       ]
     },
     {
-      "dot": "emerald",
-      "title": "Протоколы",
+      "dot": "violet",
+      "title": "Персистентность: куда идут записи",
       "items": [
-        "Браузер↔agctl: HTTP/1.1 + WS/SSE, cookie agctl_*; dsh-auth-* минтит шлюз (401 → серверный ?token=)",
-        "agctl↔dockerd: REST over Unix socket; relay↔dsh: сырой TCP, HTTP/WS проходят как есть",
-        "dsh→LiteLLM: HTTPS :443, OpenAI-совместимый; local backend: WSS :443 + yamux (HTTP внутри стримов)"
+        "Рамка $AGCTL_HOME — файлы, не процесс: внутри agctl.db, secrets.key и данные пользователей u<id>",
+        "dsh web и процессы-дети читают/пишут файлы напрямую через RW bind mount; записи не проксируются через agctl serve",
+        "Сейчас в коде: $AGCTL_HOME/chats/u<id>/{dsh-home,work}; цель v3 — u<id>/{dsh-home,workspace/<project>}, миграции пока нет",
+        "Рамка Git: версии — workspace/<project> и history store; вне Git — dsh-home, agctl.db, secrets.key, контейнеры",
+        "Контейнер можно удалить — том остаётся. Бэкап платформы = копия $AGCTL_HOME",
+        "Git history store (bare) — сейчас repos/; целевой путь модель не зафиксировала, уточнит MVP"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "agctl serve — сердце платформы",
+      "items": [
+        "Постоянно работающий управляющий процесс платформы на хосте: один Go-процесс, слушает :8929, принимает HTTP/WS/SSE.",
+        "Проверяет сессию и роль, обслуживает API и шлюзы; в целевой v3-модели лениво запускает через Docker один runtime пользователя.",
+        "TTL/reaper останавливает вычисления, но оставляет том. agctl serve не запускает команды агента и не проксирует файловые записи.",
+        "dsh и дочерние инструменты читают и пишут напрямую через RW bind mount; фоновые задачи, включая Git autosave, выполняются в Go-процессе как горутины. SQLite и секреты — данные платформы в AGCTL_HOME."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Entrypoint при старте контейнера (это скрипт, не процесс)",
+      "items": [
+        "Docker подключает маунты до запуска скрипта: user dsh-home → /home/dsh, workspace/ → /workspace.",
+        "Entrypoint при пустом DSH_HOME досеивает скелет настроек и плагинов из образа; рабочие файлы проектов остаются на маунте.",
+        "Если передан AGCTL_SSH_PUBKEY (роль developer), скрипт готовит key-only конфиг, проверяет его и запускает sshd :2222 в фоне.",
+        "Затем запускает relay :3080 в фоне и выполняет exec dsh web --port 3099: shell заменяется главным процессом dsh."
       ]
     }
   ]

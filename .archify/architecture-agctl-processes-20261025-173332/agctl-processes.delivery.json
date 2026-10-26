@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "28213e54-5529-488d-b103-d326028b4034",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/masha/src/arijjia/cit/agctl-map-persistence/system/map/agctl-processes.architecture.json",
+  "output": "/Users/masha/src/arijjia/cit/agctl-map-persistence/.archify/architecture-agctl-processes-20261025-173332/agctl-processes.html",
+  "specification": {
+    "sha256": "fb373433b33451b76ebdd7148fffc6dad612680078ea67a2caa2515fc5ec1d27",
+    "bytes": 16197
+  },
+  "artifact": {
+    "sha256": "1716b7a0c219c00481f3b8d50c3884fa613a48cb3425f480277ccede6edc97fb",
+    "bytes": 778768
+  }
+}
