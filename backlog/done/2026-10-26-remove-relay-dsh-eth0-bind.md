@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: remove-relay-dsh-eth0-bind
 title: "Убрать релей: entrypoint dsh --host <eth0-ip> + healthcheck по /run/dsh-bind-ip, bump образа"
-status: open
+status: done
 priority: P2
 size: M
 area: infra
@@ -73,3 +73,7 @@ Rewrite) и по ветке бинд-адреса; чужой Host → 403; WS-�
 - 2026-10-26: создано (`gitctl backlog new`).
 - 2026-10-26: тело карточки из резерча — вердикт «можно убрать», эксперимент и
   план; резерч-док: agctl-hq `docs/v3/relay-removal-research.md` (21e01f2).
+- 2026-10-26: реализация: internal/assets/image/dsh-net.mjs (print/health) вместо relay.mjs; entrypoint биндит dsh web на eth0-IP (--host, порт 3080 насквозь); Dockerfile healthcheck = agctl-dsh-net health; bump образа 0.2.2 (img.mk, default serve, dockerrt fallback); формулировки k8srt. go test ./... и go vet зелёные.
+- 2026-10-26: E2E живым сервером (изолированный AGCTL_HOME, :18929, образ 0.2.2): /chat/ → mint-cookie 303 → 200 с __DSH_BOOT__ (boot-токен через логи работает); в контейнере единственный процесс dsh web --host 172.17.0.5:3080, релея нет; docker healthcheck = healthy. RSS в один момент: старый u1 322.7 MB (dsh 266.6 + relay 56.1) против нового 270.1 MB — процесс релея исчезает целиком (замеры 56–81 MB). Тестовый контейнер/сервер/временный home удалены, прод (u1/u3) не тронут.
+- 2026-10-26: доки: architecture.md (таблица портов, путь чата, healthcheck, физкарта), secure-gateway.md (схема, пункт 5, NetworkPolicy), capacity.md, architecture-roadmap.md, README.md. Раскатка: образ 0.2.2 собран локально (make img_build), нужен рестарт prod-serve — существующие контейнеры пересоздадутся лениво через TTL/reaper. Карта system/map/agctl-processes.* всё ещё описывает relayc — обновить отдельно.
+- 2026-10-26: done — Убрано: релея в образе нет, dsh web слушает eth0 напрямую (апстрим dsh запрещает только wildcard), healthcheck напрямую в dsh, образ 0.2.2. Минус node-процесс на пользователя (56–81 MB RSS), E2E через шлюз зелёный, откат — revert.

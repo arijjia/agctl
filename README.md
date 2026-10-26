@@ -20,7 +20,7 @@ legacy-рабочих мест в v3 демонтированы. Git/autosave х
 ```mermaid
 flowchart LR
     U[Пользователь] -->|один домен + cookie| B["agctl serve<br/>auth + API + шлюз /chat"]
-    B -->|ленивый runtime| T["Персональный контейнер u<ID><br/>relay + dsh web; developer + sshd"]
+    B -->|ленивый runtime| T["Персональный контейнер u<ID><br/>dsh web на eth0; developer + sshd"]
     T -->|том пользователя| V[("chats/u<ID><br/>dsh-home + work/projects")]
     T -->|git autosave в процессе agctl| V
     T -->|LLM API :443| L[LiteLLM]

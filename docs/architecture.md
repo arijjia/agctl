@@ -99,7 +99,8 @@ target layout, not a completed migration; the pilot starts on a clean volume.
 4. Reaper проверяет runtime раз в минуту. При `active==0` и idle ≥ TTL
    (по умолчанию 60 мин; `--chat-ttl-min`) удаляется контейнер compute;
    DSH_HOME/work volume не удаляются (`chat.go`, `reapIdleChats`).
-5. Docker HEALTHCHECK проверяет HTTP на `127.0.0.1:3099`. Reconcile раз в
+5. Docker HEALTHCHECK проверяет HTTP на eth0-адресе контейнера
+   (`agctl-dsh-net health`). Reconcile раз в
    30 секунд видит статус `unhealthy`: legacy workspace помечает stopped,
    unhealthy chat-runtime останавливает и выкидывает из кэша; следующий
    `/chat/` пересоздаёт контейнер на прежнем томе (`Dockerfile`,
@@ -180,17 +181,16 @@ Git-процесса нет. Для `user` Git не показывается; de
 | Порт | Кто слушает | Где доступен |
 |---|---|---|
 | `127.0.0.1:8929` | `agctl serve` | только loopback хоста |
-| `127.0.0.1:<dynamic>` | опубликованный Docker `:3080` relay | loopback хоста; agctl reverse-proxy |
-| `0.0.0.0:3080` | `agctl-relay` внутри контейнера | интерфейсы контейнера; dsh наружу через него |
-| `127.0.0.1:3099` | `dsh web` внутри контейнера | только loopback контейнера |
+| `127.0.0.1:<dynamic>` | опубликованный Docker `:3080` → dsh web | loopback хоста; agctl reverse-proxy |
+| `<eth0-IP>:3080` | `dsh web` внутри контейнера | интерфейсы контейнера; апстрим dsh запрещает только wildcard-бинд, конкретный eth0-адрес легален |
 | `127.0.0.1:<dynamic>` → `:2222` | Docker → sshd developer | только loopback хоста |
 | исходящий `:443` | dsh/connector → LiteLLM или локальный backend tunnel | исходящие соединения |
 
 Путь чата: browser → `:8929` → auth/gateway `/chat/` → опубликованный
-loopback host port → relay `:3080` → raw TCP `127.0.0.1:3099` → dsh web →
-LiteLLM `:443`. Публикация Docker выбирает случайный свободный host port;
-это не «слушать всю LAN». Подробности релея — в
-`agctl-hq/docs/v3/architecture-explained.md` §5–7.
+loopback host port → DNAT → dsh web `:3080` (bind на eth0 контейнера,
+без релея) → LiteLLM `:443`. Публикация Docker выбирает случайный свободный
+host port; это не «слушать всю LAN». Почему релея нет и как это проверялось —
+в `agctl-hq/docs/v3/relay-removal-research.md`.
 
 ## 6. Legacy compatibility и отложенное
 
@@ -216,5 +216,6 @@ LiteLLM `:443`. Публикация Docker выбирает случайный 
 `system/map/agctl-processes.architecture.json` (улики проверяются `archify`
 против revision в meta). Узлы — процессы или файлы/внешние сущности, рамки —
 реальные host/container границы. Один персональный контейнер v3 содержит
-relay + dsh web и, для developer, sshd; `agctl serve` и go-git autosave —
+dsh web (bind на eth0 контейнера; релей удалён) и, для developer, sshd;
+`agctl serve` и go-git autosave —
 один Go-процесс, горутины не отдельные процессы.

@@ -1,8 +1,10 @@
 #!/bin/sh
 # agctl-entrypoint: готовит DSH_HOME (volume может быть пустым) и запускает
-# dsh web. dsh слушает только loopback (апстрим запрещает --host 0.0.0.0),
-# поэтому наружу его отдаёт L4-релей 0.0.0.0:3080 -> 127.0.0.1:3099.
-# Опционально поднимает sshd внутри контейнера, когда agctl передал публичный ключ.
+# dsh web. Апстрим dsh запрещает только wildcard-бинд, поэтому dsh слушает
+# конкретный адрес eth0 контейнера (agctl-dsh-net print); наружу его отдаёт
+# публикация порта Docker/k8s — релея в образе нет (экономит node-процесс
+# и ~80 MB RSS на пользователя). Опционально поднимает sshd внутри контейнера,
+# когда agctl передал публичный ключ.
 set -e
 SKEL=/opt/dsh-skel
 
@@ -44,5 +46,6 @@ SSHCONF
   echo "[agctl-entrypoint] SSH enabled on container port 2222 (key auth only)"
 fi
 
-RELAY_PORT="${RELAY_PORT:-3080}" DSH_PORT="${DSH_PORT:-3099}" node /usr/local/bin/agctl-relay &
-exec dsh web --port "${DSH_PORT:-3099}" --no-open "$@"
+BIND_IP="$(node /usr/local/bin/agctl-dsh-net print)"
+echo "[agctl-entrypoint] dsh web на ${BIND_IP}:${DSH_PORT:-3080}"
+exec dsh web --host "$BIND_IP" --port "${DSH_PORT:-3080}" --no-open "$@"

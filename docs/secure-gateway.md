@@ -13,8 +13,7 @@ Browser -- HTTPS --> trusted ingress -- HTTP --> agctl serve :8929
                                                      |
                                agctl reverse proxy / boot-token mint
                                                      |
-                      127.0.0.1:<dynamic host port> -> same user container :3080 relay
-                                                                     -> 127.0.0.1:3099 DSH Web
+                      127.0.0.1:<dynamic host port> -> same user container dsh web :3080 (bind eth0, без релея)
                                                                      -> optional sshd :2222 (developer)
 ```
 
@@ -40,13 +39,14 @@ Browser -- HTTPS --> trusted ingress -- HTTP --> agctl serve :8929
    cookies, DSH-cookie ограничивается `/chat/`, а последующие запросы всё равно
    проходят проверку платформенной сессии ([очистка cookies](../internal/server/gateway.go#L255-L270),
    [scoping DSH-cookie](../internal/server/chat.go#L726-L754)).
-5. DSH внутри контейнера слушает `127.0.0.1:3099`; relay принимает внутри
-   контейнера `:3080` и передаёт трафик на DSH. Docker публикует web-порт только
+5. DSH внутри контейнера слушает конкретный адрес eth0 (`dsh web --host <ip>`;
+   апстрим dsh запрещает только wildcard-бинд, поэтому релей в образе не нужен
+   и не живёт). Docker публикует web-порт только
    на `127.0.0.1` хоста; на macOS контейнерные процессы исполняются в Linux VM
    Docker Desktop, а не как отдельные процессы macOS
-   ([relay и DSH запуск](../internal/assets/image/entrypoint.sh#L47-L48),
-   [relay bind/target](../internal/assets/image/relay.mjs#L2-L12),
-   [host port bindings](../internal/runtime/dockerrt/docker.go#L273-L279)).
+   ([выбор адреса и запуск](../internal/assets/image/entrypoint.sh),
+   [bind-ip + healthcheck](../internal/assets/image/dsh-net.mjs),
+   [host port bindings](../internal/runtime/dockerrt/docker.go#L269-L276)).
 
 ## TLS и запуск agctl
 
@@ -139,7 +139,8 @@ source snapshot, а не финальная миграция. Целевой в�
   SSH/IDE-сессии. Если process inspection временно ошибается, reaper пропускает
   один тик, чтобы не оборвать работу. Detached-задачи после закрытия SSH не
   учитываются; это отдельный остаток.
-- В образ добавлен healthcheck DSH на `127.0.0.1:3099`; reconcile останавливает
+- В образ добавлен healthcheck dsh web (HTTP на eth0-адресе контейнера,
+  `agctl-dsh-net health`); reconcile останавливает
   и выселяет unhealthy personal runtime из кэша, после чего `/chat/` пересоздаёт
   его на сохранённом томе ([Docker HEALTHCHECK](../internal/assets/image/Dockerfile#L49-L55),
   [reconcile unhealthy chat](../internal/server/server.go#L459-L490)).
@@ -150,7 +151,7 @@ source snapshot, а не финальная миграция. Целевой в�
   ([чтение логов runtime](../internal/runtime/dockerrt/chat.go#L81-L84),
   [извлечение boot token](../internal/server/server.go#L596-L635)).
 - **Egress открыт / не ограничен gateway-политикой.** K8s prototype задаёт
-  ingress-only NetworkPolicy на relay port и не ограничивает egress; она не
+  ingress-only NetworkPolicy на dsh web port и не ограничивает egress; она не
   gateway-specific, а target CNI не валидирован для production
   ([K8s policy prototype](../internal/runtime/k8srt/provider.go#L251-L279)).
 - Host-порты привязаны к loopback, но не к отдельному Unix socket: другой

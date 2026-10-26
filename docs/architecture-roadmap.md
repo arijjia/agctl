@@ -60,8 +60,8 @@ compat-proxy пока оставлены; это не пользовательс
   Общий контракт `StorageID` сохраняет пользовательский том при смене Pod;
   `cmd serve` пока выбирает Docker, live cluster/readiness/NetworkPolicy
   не прошли production validation.
-- K8s-путь v3: один Pod на пользователя (relay + dsh web + sshd для роли
-  developer как sidecars в общей pod-сети) и один PVC; не Pod на проект.
+- K8s-путь v3: один Pod на пользователя (dsh web + sshd для роли
+  developer в общей pod-сети) и один PVC; не Pod на проект.
 - **Local backend** (DSH на ноутбуке) владелец решила осмыслить позже:
   серверный experimental code за выключенным флагом остаётся в репо, но
   UX/rollout не планировать без отдельного решения.

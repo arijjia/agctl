@@ -249,7 +249,7 @@ func (p *Provider) ensureService(ctx context.Context, name string, labels map[st
 }
 
 // ensureNetworkPolicy is a prototype ingress guard: it permits any Pod in the
-// configured namespace to reach the relay port. It is not gateway-specific,
+// configured namespace to reach the dsh web port. It is not gateway-specific,
 // does not constrain egress, and requires target-CNI validation/hardening before
 // production use because LLM base URLs are user-configured.
 func (p *Provider) ensureNetworkPolicy(ctx context.Context, name string, labels map[string]string) error {

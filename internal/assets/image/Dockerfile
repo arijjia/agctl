@@ -1,4 +1,4 @@
-# agctl-dsh: рабочее место агента (dsh web + relay + agctl-бинарь).
+# agctl-dsh: рабочее место агента (dsh web на eth0 + agctl-бинарь).
 # Слои: base (node+тулчейн) → dsh (npm, pinned) → MCP-прогрев → runtime.
 # DSH_HOME — ТОЛЬКО volume в рантайме (сессии/креды никогда не в слоях).
 # Секреты (LLM-токен) — только env/файл в volume, никогда в образе.
@@ -43,13 +43,14 @@ ENV DSH_HOME=/home/dsh
 COPY agctl /usr/local/bin/agctl
 COPY skel/ /opt/dsh-skel/
 COPY entrypoint.sh /usr/local/bin/agctl-entrypoint
-COPY relay.mjs /usr/local/bin/agctl-relay
-RUN chmod +x /usr/local/bin/agctl /usr/local/bin/agctl-entrypoint /usr/local/bin/agctl-relay && mkdir -p /home/dsh /workspace
+COPY dsh-net.mjs /usr/local/bin/agctl-dsh-net
+RUN chmod +x /usr/local/bin/agctl /usr/local/bin/agctl-entrypoint /usr/local/bin/agctl-dsh-net && mkdir -p /home/dsh /workspace
 WORKDIR /workspace
 EXPOSE 3080 2222
 # Живость dsh: любой HTTP-ответ (в т.ч. 401/303 без cookie) = процесс жив и
-# слушает :3099; обрыв/таймаут/5xx = unhealthy. Start-period — с запасом на
-# первый прогрев (MCP-кэш уже вшит). Статус читает agctl (reconcile).
+# слушает dsh web на eth0-адресе контейнера (agctl-dsh-net health); обрыв/
+# таймаут/5xx = unhealthy. Start-period — с запасом на первый прогрев
+# (MCP-кэш уже вшит). Статус читает agctl (reconcile).
 HEALTHCHECK --interval=30s --timeout=6s --start-period=150s --retries=3 \
-  CMD node -e "const h=require('http'),r=h.get('http://127.0.0.1:3099/',x=>process.exit(x.statusCode<500?0:1));r.on('error',()=>process.exit(1));r.setTimeout(5000,()=>{r.destroy();process.exit(1)})"
+  CMD node /usr/local/bin/agctl-dsh-net health
 ENTRYPOINT ["agctl-entrypoint"]

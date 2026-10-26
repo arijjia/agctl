@@ -128,6 +128,6 @@ macOS-процесса Docker Desktop.
 есть прототип Pod/Service/PVC, но нет проверки на живом кластере и оснований
 считать таблицы кластерным результатом. Scheduler/PVC attach, RuntimeClass
 overhead, реальное поведение target CNI и production backup/retention/encryption
-не измерены. Текущий prototype NetworkPolicy ограничивает ingress только relay
-портом, разрешает источники из namespace и не ограничивает egress
+не измерены. Текущий prototype NetworkPolicy ограничивает ingress только dsh
+web портом, разрешает источники из namespace и не ограничивает egress
 ([K8s policy prototype](../internal/runtime/k8srt/provider.go#L251-L279)).

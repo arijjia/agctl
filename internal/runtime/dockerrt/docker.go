@@ -66,7 +66,7 @@ func New(cfg Config, imageFS fs.FS) (*Runtime, error) {
 		cfg.BinDir = "dist"
 	}
 	if cfg.Image == "" {
-		cfg.Image = "agctl-dsh:0.1.0"
+		cfg.Image = "agctl-dsh:0.2.2"
 	}
 	_ = ping
 	return &Runtime{cli: cli, cfg: cfg, imageFS: imageFS}, nil
