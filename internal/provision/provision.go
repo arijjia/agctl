@@ -143,10 +143,9 @@ func Provision(l Layout, p Provider, templateName string, templateFS, skelFS fs.
 
 // Layout — пути воркспейса на диске хоста.
 type Layout struct {
-	Repo              string // $HOME/repos/<owner>/<name>.git — bare origin
-	Work              string // $HOME/work/<id>/repo — рабочий клон (монтируется)
-	DshHome           string // $HOME/work/<id>/dsh-home — DSH_HOME (переживает рестарт)
-	ChatSessionScoped bool   // режим Chat: выделять скрытый cwd на каждую DSH-сессию
+	Repo    string // $HOME/repos/<owner>/<name>.git — bare origin
+	Work    string // $HOME/work/<id>/repo — рабочий клон (монтируется)
+	DshHome string // $HOME/work/<id>/dsh-home — DSH_HOME (переживает рестарт)
 }
 
 // NewID — короткий id воркспейса: w-<12 hex>.

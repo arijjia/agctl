@@ -33,7 +33,6 @@ func TestEnsureChatCreatesPodServiceAndPersistentPVC(t *testing.T) {
 	apiKey := hex.EncodeToString(keyBytes) // ephemeral test value; never logged or committed
 	spec := agctlrt.ChatSpec{
 		RuntimeID: "chat-a1b2c3-u17", StorageID: "u17", UserID: 17,
-		SessionScope: true,
 		Provider: provision.Provider{
 			BaseURL: "https://llm.example.invalid/v1", Model: "model-a", APIKey: apiKey,
 		},

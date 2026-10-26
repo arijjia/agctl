@@ -330,7 +330,6 @@ func (p *Provider) ensurePod(ctx context.Context, name, pvcName, secretName stri
 	mainEnv := []corev1.EnvVar{
 		{Name: "DSH_HOME", Value: "/home/dsh"},
 		{Name: "AGCTL_WS_ID", Value: spec.RuntimeID},
-		{Name: "AGCTL_CHAT_SESSION_ROOT", Value: "/workspace/.sessions"},
 		{Name: "HOME", Value: "/workspace"},
 		{Name: "NPM_CONFIG_CACHE", Value: "/tmp/npm-cache"},
 		{Name: "XDG_CACHE_HOME", Value: "/tmp/cache"},

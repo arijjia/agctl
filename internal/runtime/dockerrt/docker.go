@@ -266,11 +266,6 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		"NPM_CONFIG_CACHE=/tmp/npm-cache",
 		"XDG_CACHE_HOME=/tmp/cache",
 	}
-	if ws.ChatSessionScoped {
-		// Fallback cwd для Session без выбранного проектного Workspace.
-		// Проектные Session сохраняют реальный cwd /workspace/<project>.
-		env = append(env, "AGCTL_CHAT_SESSION_ROOT=/workspace/.sessions")
-	}
 	portBindings := network.PortMap{
 		network.MustParsePort("3080/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: fmt.Sprint(opts.HostPort)}},
 	}

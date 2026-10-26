@@ -60,7 +60,7 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 		}
 		opts.SSHPubKey, opts.SSHHostPort = spec.SSHPubKey, sshPort
 	}
-	layout := provision.Layout{Work: work, DshHome: dshHome, ChatSessionScoped: spec.SessionScope}
+	layout := provision.Layout{Work: work, DshHome: dshHome}
 	res, err := rt.Start(ctx, layout, spec.RuntimeID, opts, spec.Provider)
 	if err != nil {
 		return agctlrt.ChatHandle{}, err

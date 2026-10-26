@@ -538,7 +538,7 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 	defer cancel()
 	spec := agctlrt.ChatSpec{
 		RuntimeID: s.chatRuntimeID(userID), StorageID: chatStorageID(userID),
-		UserID: userID, Provider: s.userProvider(userID), SessionScope: true,
+		UserID: userID, Provider: s.userProvider(userID),
 		SSHPubKey: s.developerSSHPubKey(userID),
 	}
 	handle, err := s.chatProvider.EnsureChat(ctx, spec)

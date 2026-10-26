@@ -13,11 +13,10 @@ import (
 // persistence scope (AGCTL_HOME for Docker, a dedicated namespace for K8s); it
 // maps to a bind-mount or PVC. RuntimeID identifies compute, not storage/port.
 type ChatSpec struct {
-	RuntimeID    string
-	StorageID    string
-	UserID       int64
-	Provider     provision.Provider
-	SessionScope bool
+	RuntimeID string
+	StorageID string
+	UserID    int64
+	Provider  provision.Provider
 	// SSHPubKey — роль developer: поднять sshd в контейнере (key-only,
 	// порт публикуется только на loopback хоста). Пусто = sshd не поднимать.
 	SSHPubKey string
