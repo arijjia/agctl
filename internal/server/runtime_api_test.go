@@ -6,57 +6,42 @@ import (
 	"testing"
 )
 
-// TestMyRuntimeDeveloperControls — developer-контролы личного рантайма:
-// статус/старт/стоп/логи; роль user получает 403.
-func TestMyRuntimeDeveloperControls(t *testing.T) {
+func TestMyRuntimeStatusReadOnly(t *testing.T) {
 	e := newTestEnv(t, 3)
 	e.register(e.admin, "anna", "secret1")
-	env2 := e.newClient()
-	e.register(env2, "bob", "secret2") // роль user
+	user := e.newClient()
+	e.register(user, "bob", "secret2")
 
-	// user — 403 на все эндпоинты.
+	// Any authenticated user can read only their own runtime status.
+	if code, body := e.do(user, "GET", "/api/me/runtime", nil); code != http.StatusOK || !strings.Contains(body, `"status":"sleeping"`) {
+		t.Fatalf("user initial status = %d %s", code, body)
+	}
+	if code, body := e.do(e.admin, "GET", "/api/me/runtime", nil); code != http.StatusOK || !strings.Contains(body, `"status":"sleeping"`) {
+		t.Fatalf("admin initial status = %d %s", code, body)
+	}
+
+	// Requests wake the runtime; the status endpoint remains read-only.
+	if _, err := e.srv.ensureChat(1); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := e.do(e.admin, "GET", "/api/me/runtime", nil); code != http.StatusOK || !strings.Contains(body, `"status":"running"`) {
+		t.Fatalf("status after agctl wake = %d %s", code, body)
+	}
+	if code, body := e.do(user, "GET", "/api/me/runtime", nil); code != http.StatusOK || !strings.Contains(body, `"status":"sleeping"`) {
+		t.Fatalf("other user's status = %d %s", code, body)
+	}
+
+	// No user-facing lifecycle/log endpoints: agctl serve and TTL reaper own it.
 	for _, tc := range []struct{ method, path string }{
-		{"GET", "/api/me/runtime"},
 		{"POST", "/api/me/runtime/start"},
 		{"POST", "/api/me/runtime/stop"},
 		{"GET", "/api/me/runtime/logs"},
 	} {
-		if code, _ := e.do(env2, tc.method, tc.path, nil); code != http.StatusForbidden {
-			t.Fatalf("%s %s как user = %d, want 403", tc.method, tc.path, code)
+		if code, body := e.do(e.admin, tc.method, tc.path, nil); code != http.StatusNotFound && code != http.StatusMethodNotAllowed {
+			t.Fatalf("%s %s = %d %s, want a non-routable status", tc.method, tc.path, code, body)
 		}
 	}
-
-	// Спящий рантайм: статус sleeping, логи — 409.
-	if code, body := e.do(e.admin, "GET", "/api/me/runtime", nil); code != 200 || !strings.Contains(body, `"status":"sleeping"`) {
-		t.Fatalf("initial status = %d %s", code, body)
-	}
-	if code, _ := e.do(e.admin, "GET", "/api/me/runtime/logs", nil); code != http.StatusConflict {
-		t.Fatalf("sleeping logs = %d, want 409", code)
-	}
-
-	// Старт поднимает runtime; статус running; логи читаются.
-	if code, body := e.do(e.admin, "POST", "/api/me/runtime/start", nil); code != 200 || !strings.Contains(body, `"status":"running"`) {
-		t.Fatalf("start = %d %s", code, body)
-	}
-	if code, body := e.do(e.admin, "GET", "/api/me/runtime", nil); code != 200 || !strings.Contains(body, `"status":"running"`) {
-		t.Fatalf("status after start = %d %s", code, body)
-	}
-	code, body := e.do(e.admin, "GET", "/api/me/runtime/logs?tail=50", nil)
-	if code != 200 || !strings.Contains(body, "dsh web listening") {
-		t.Fatalf("logs = %d %q", code, body)
-	}
-
-	// Стоп удаляет compute, но не том: статус снова sleeping, повторный стоп — no-op.
-	if code, body := e.do(e.admin, "POST", "/api/me/runtime/stop", nil); code != 200 || !strings.Contains(body, `"status":"sleeping"`) {
-		t.Fatalf("stop = %d %s", code, body)
-	}
-	if got := e.rt.chatStops[e.srv.chatRuntimeID(1)]; got != 1 {
-		t.Fatalf("StopChat calls = %d, want 1", got)
-	}
-	if code, _ := e.do(e.admin, "POST", "/api/me/runtime/stop", nil); code != 200 {
-		t.Fatalf("idle stop = %d, want 200", code)
-	}
-	if code, body := e.do(e.admin, "GET", "/api/me/runtime", nil); code != 200 || !strings.Contains(body, `"status":"sleeping"`) {
-		t.Fatalf("status after stop = %d %s", code, body)
+	if got := e.rt.chatStops[e.srv.chatRuntimeID(1)]; got != 0 {
+		t.Fatalf("runtime control request stopped provider %d times", got)
 	}
 }

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -117,8 +118,16 @@ func TestDeveloperSSHInChatContainer(t *testing.T) {
 	if code != http.StatusOK || !contains(body, `"pubKey":""`) {
 		t.Fatalf("get cleared ssh key = %d %s", code, body)
 	}
-	if code, body = e.do(e.admin, "POST", "/api/me/runtime/stop", nil); code != http.StatusOK {
-		t.Fatalf("stop to apply key removal = %d %s", code, body)
+	// Simulate service-owned sleep (user-facing start/stop API is not exposed).
+	e.srv.chatMu.Lock()
+	current := e.srv.chats[1]
+	delete(e.srv.chats, 1)
+	e.srv.chatMu.Unlock()
+	if current == nil {
+		t.Fatal("expected running chat before simulated sleep")
+	}
+	if err := e.rt.StopChat(context.Background(), current.handle); err != nil {
+		t.Fatalf("service stop: %v", err)
 	}
 	next, err := e.srv.ensureChat(1)
 	if err != nil {
