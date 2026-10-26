@@ -5017,13 +5017,13 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="1" data-composition-frame-label="Ноутбук (experimental local backend)" x="12" y="853" width="652" height="131" rx="12" class="c-region" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="2" data-composition-frame-label="Контейнер пользователя u&lt;id&gt; — ×N, ленивый, TTL 1 ч" x="1150.7903072806453" y="98" width="368.4193854387097" height="256" rx="12" class="c-region" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="2" data-composition-frame-label="Контейнер пользователя u&lt;id&gt; — ×N, ленивый, TTL 1 ч" x="1080.7903072806453" y="98" width="368.4193854387097" height="268" rx="12" class="c-region" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="3" data-composition-frame-label="$AGCTL_HOME — файлы, не процесс" x="844" y="394" width="612" height="390" rx="12" class="c-region" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="3" data-composition-frame-label="$AGCTL_HOME — файлы, не процесс" x="844" y="394" width="612" height="406" rx="12" class="c-region" stroke-width="1"/>
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="4" data-composition-frame-label="Git — версионированные данные" x="1158" y="525" width="274" height="259" rx="8" class="c-security-group" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="5" data-composition-frame-label="Сервер — один хост" x="350" y="50" width="1185" height="734" rx="12" class="c-region" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="5" data-composition-frame-label="Сервер — один хост" x="378" y="78" width="1094" height="738" rx="12" class="c-region" stroke-width="1"/>
 
         <!-- Connection paths (before components for correct z-order) -->
         <g data-graph-role="automatic-crossover" style="--step:0">
@@ -5036,14 +5036,14 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         </g>
         <path data-edge-from="serve" data-edge-to="agdb" data-edge-label="SQLite WAL" data-edge-key="2" data-edge-id="c3" data-composition-points="565,430;565,474;880,474" d="M 565 430 L 565 466 Q 565 474 573 474 L 880 474" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         <g data-graph-role="automatic-crossover" style="--step:3">
-          <path data-graph-role="automatic-crossover-underlay" d="M 700 365 L 949.5 365 Q 957.5 365 957.5 357 L 957.5 190 Q 957.5 182 965.5 182 L 1215 182" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="serve" data-edge-to="dshchat" data-edge-label="HTTP · /chat/ и /w/{id} → DNAT :3080" data-edge-key="3" data-edge-id="c4" data-composition-points="700,365;957.5,365;957.5,182;1215,182" data-composition-crossover="halo" data-composition-independent="true" d="M 700 365 L 949.5 365 Q 957.5 365 957.5 357 L 957.5 190 Q 957.5 182 965.5 182 L 1215 182" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 700 365 L 914.5 365 Q 922.5 365 922.5 357 L 922.5 190 Q 922.5 182 930.5 182 L 1145 182" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="serve" data-edge-to="dshchat" data-edge-label="HTTP · /chat/ и /w/{id} → DNAT :3080" data-edge-key="3" data-edge-id="c4" data-composition-points="700,365;922.5,365;922.5,182;1145,182" data-composition-crossover="halo" data-composition-independent="true" d="M 700 365 L 914.5 365 Q 922.5 365 922.5 357 L 922.5 190 Q 922.5 182 930.5 182 L 1145 182" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:4">
-          <path data-graph-role="automatic-crossover-underlay" d="M 1455 182 L 1555 182" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="dshchat" data-edge-to="llm" data-edge-label="HTTPS :443" data-edge-key="4" data-edge-id="c6" data-composition-points="1455,182;1555,182" data-composition-crossover="halo" data-composition-independent="true" d="M 1455 182 L 1555 182" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 1385 182 L 1555 182" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="dshchat" data-edge-to="llm" data-edge-label="HTTPS :443" data-edge-key="4" data-edge-id="c6" data-composition-points="1385,182;1555,182" data-composition-crossover="halo" data-composition-independent="true" d="M 1385 182 L 1555 182" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         </g>
-        <path data-edge-from="sshclient" data-edge-to="sshd" data-edge-label="SSH-2 → 127.0.0.1:&lt;dyn&gt;" data-edge-key="5" data-edge-id="c10" data-composition-points="238,1032;1500,1032;1500,302;1455,302" d="M 238 1032 L 1492 1032 Q 1500 1032 1500 1024 L 1500 310 Q 1500 302 1492 302 L 1455 302" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="sshclient" data-edge-to="sshd" data-edge-label="SSH-2 → 127.0.0.1:&lt;dyn&gt;" data-edge-key="5" data-edge-id="c10" data-composition-points="238,1032;1450,1032;1450,302;1385,302" d="M 238 1032 L 1442 1032 Q 1450 1032 1450 1024 L 1450 310 Q 1450 302 1442 302 L 1385 302" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <g data-graph-role="automatic-crossover" style="--step:6">
           <path data-graph-role="automatic-crossover-underlay" d="M 246 915 L 262 915 Q 270 915 270 907 L 270 380 Q 270 372 278 372 L 430 372" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
           <path data-edge-from="conn" data-edge-to="serve" data-edge-label="WSS :443 · yamux" data-edge-key="6" data-edge-id="c11" data-composition-points="246,915;270,915;270,372;430,372" data-composition-crossover="halo" data-composition-independent="true" d="M 246 915 L 262 915 Q 270 915 270 907 L 270 380 Q 270 372 278 372 L 430 372" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
@@ -5052,8 +5052,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <path data-graph-role="automatic-crossover-underlay" d="M 246 930.05 L 420 930.05" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
           <path data-edge-from="conn" data-edge-to="dshlocal" data-edge-label="HTTP в yamux → :3080" data-edge-key="7" data-edge-id="c12" data-composition-points="246,930.05;420,930.05" data-composition-crossover="halo" data-composition-independent="true" d="M 246 930.05 L 420 930.05" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
-        <path data-edge-from="dshchat" data-edge-to="wkspace" data-edge-label="bind mount RW · host FS" data-edge-key="8" data-edge-id="c13" data-composition-points="1215,182;1145,182;1145,596;1170,596" d="M 1215 182 L 1153 182 Q 1145 182 1145 190 L 1145 588 Q 1145 596 1153 596 L 1170 596" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="dshchat" data-edge-to="dshhome" data-edge-label="bind mount RW · DSH_HOME" data-edge-key="9" data-edge-id="c14" data-composition-points="1215,182;1106,182;1106,535;990,535;990,552" d="M 1215 182 L 1114 182 Q 1106 182 1106 190 L 1106 527 Q 1106 535 1098 535 L 998 535 Q 990 535 990 543 L 990 552" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="dshchat" data-edge-to="wkspace" data-edge-label="bind mount RW · host FS" data-edge-key="8" data-edge-id="c13" data-composition-points="1145,182;1120,182;1120,596;1170,596" d="M 1145 182 L 1128 182 Q 1120 182 1120 190 L 1120 588 Q 1120 596 1128 596 L 1170 596" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="dshchat" data-edge-to="dshhome" data-edge-label="bind mount RW · DSH_HOME" data-edge-key="9" data-edge-id="c14" data-composition-points="1145,182;1106,182;1106,535;990,535;990,552" d="M 1145 182 L 1114 182 Q 1106 182 1106 190 L 1106 527 Q 1106 535 1098 535 L 998 535 Q 990 535 990 543 L 990 552" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="serve" data-edge-to="gitstore" data-edge-label="go-git autosave · push" data-edge-key="10" data-edge-id="c15" data-composition-points="700,365;760,365;760,720;1170,720" d="M 700 365 L 752 365 Q 760 365 760 373 L 760 712 Q 760 720 768 720 L 1170 720" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
 
         <!-- Components -->
@@ -5155,25 +5155,25 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
         <g id="node-dshchat" data-node-id="dshchat" data-node-label="dsh web — node" tabindex="0" role="button" aria-label="Focus dsh web — node, bind eth0 · :3080 · движок+API · SPA, Сервер — один хост › Контейнер пользователя u&lt;id&gt; — ×N, ленивый, TTL 1 ч" aria-pressed="false" data-node-kind="backend" data-node-sublabel="bind eth0 · :3080 · движок+API · SPA" data-node-context="Сервер — один хост › Контейнер пользователя u&lt;id&gt; — ×N, ленивый, TTL 1 ч">
           <title>dsh web — node · bind eth0 · :3080 · движок+API · SPA · Сервер — один хост › Контейнер пользователя u&lt;id&gt; — ×N, ленивый, TTL 1 ч</title>
-          <rect x="1215" y="130" width="240" height="104" rx="6" class="c-mask"/>
-          <rect x="1215" y="130" width="240" height="104" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(1221 136) scale(0.6875)">
+          <rect x="1145" y="130" width="240" height="104" rx="6" class="c-mask"/>
+          <rect x="1145" y="130" width="240" height="104" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(1151 136) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="1335" y="180" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">dsh web — node</text>
-        <text data-detail="context" x="1335" y="196" class="t-muted" font-size="9" text-anchor="middle">bind eth0 · :3080 · движок+API · SPA</text>
+          <text data-node-label="" data-detail-anchor="" x="1265" y="180" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">dsh web — node</text>
+        <text data-detail="context" x="1265" y="196" class="t-muted" font-size="9" text-anchor="middle">bind eth0 · :3080 · движок+API · SPA</text>
         </g>
 
         <g id="node-sshd" data-node-id="sshd" data-node-label="sshd — только роль developer" tabindex="0" role="button" aria-label="Focus sshd — только роль developer, :2222 · key-only · порт на loopback, Сервер — один хост › Контейнер пользователя u&lt;id&gt; — ×N, ленивый, TTL 1 ч" aria-pressed="false" data-node-kind="security" data-node-sublabel=":2222 · key-only · порт на loopback" data-node-context="Сервер — один хост › Контейнер пользователя u&lt;id&gt; — ×N, ленивый, TTL 1 ч">
           <title>sshd — только роль developer · :2222 · key-only · порт на loopback · Сервер — один хост › Контейнер пользователя u&lt;id&gt; — ×N, ленивый, TTL 1 ч</title>
-          <rect x="1215" y="270" width="240" height="64" rx="6" class="c-mask"/>
-          <rect x="1215" y="270" width="240" height="64" rx="6" class="c-security" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(1221 276) scale(0.6875)">
+          <rect x="1145" y="270" width="240" height="64" rx="6" class="c-mask"/>
+          <rect x="1145" y="270" width="240" height="64" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(1151 276) scale(0.6875)">
             <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="1335" y="300" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">sshd — только роль developer</text>
-        <text data-detail="context" x="1335" y="316" class="t-muted" font-size="9" text-anchor="middle">:2222 · key-only · порт на loopback</text>
+          <text data-node-label="" data-detail-anchor="" x="1265" y="300" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">sshd — только роль developer</text>
+        <text data-detail="context" x="1265" y="316" class="t-muted" font-size="9" text-anchor="middle">:2222 · key-only · порт на loopback</text>
         </g>
 
         <g id="node-llm" data-node-id="llm" data-node-label="LiteLLM корп." tabindex="0" role="button" aria-label="Focus LiteLLM корп., litellm-dev.utmn.ru · :443, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="litellm-dev.utmn.ru · :443" data-node-context="Architecture component">
@@ -5236,16 +5236,16 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <text x="722.5" y="464" class="t-edge-dashed" font-size="8" text-anchor="middle">SQLite WAL</text>
         </g>
         <g data-detail="context" data-edge-from="serve" data-edge-to="dshchat" data-edge-label="HTTP · /chat/ и /w/{id} → DNAT :3080" data-edge-key="3" data-edge-id="c4">
-          <rect x="866.1" y="253.5" width="182.79999999999998" height="14" rx="3" class="c-mask"/>
-          <text x="957.5" y="263.5" class="t-edge-emphasis" font-size="8" text-anchor="middle">HTTP · /chat/ и /w/{id} → DNAT :3080</text>
+          <rect x="831.1" y="253.5" width="182.79999999999998" height="14" rx="3" class="c-mask"/>
+          <text x="922.5" y="263.5" class="t-edge-emphasis" font-size="8" text-anchor="middle">HTTP · /chat/ и /w/{id} → DNAT :3080</text>
         </g>
         <g data-detail="context" data-edge-from="dshchat" data-edge-to="llm" data-edge-label="HTTPS :443" data-edge-key="4" data-edge-id="c6">
-          <rect x="1476" y="162" width="58" height="14" rx="3" class="c-mask"/>
-          <text x="1505" y="172" class="t-edge-emphasis" font-size="8" text-anchor="middle">HTTPS :443</text>
+          <rect x="1441" y="162" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="1470" y="172" class="t-edge-emphasis" font-size="8" text-anchor="middle">HTTPS :443</text>
         </g>
         <g data-detail="context" data-edge-from="sshclient" data-edge-to="sshd" data-edge-label="SSH-2 → 127.0.0.1:&lt;dyn&gt;" data-edge-key="5" data-edge-id="c10">
-          <rect x="1439.8" y="647" width="120.39999999999999" height="14" rx="3" class="c-mask"/>
-          <text x="1500" y="657" class="t-edge-default" font-size="8" text-anchor="middle">SSH-2 → 127.0.0.1:&lt;dyn&gt;</text>
+          <rect x="1389.8" y="647" width="120.39999999999999" height="14" rx="3" class="c-mask"/>
+          <text x="1450" y="657" class="t-edge-default" font-size="8" text-anchor="middle">SSH-2 → 127.0.0.1:&lt;dyn&gt;</text>
         </g>
         <g data-detail="context" data-edge-from="conn" data-edge-to="serve" data-edge-label="WSS :443 · yamux" data-edge-key="6" data-edge-id="c11">
           <rect x="226.6" y="623.5" width="86.8" height="14" rx="3" class="c-mask"/>
@@ -5256,8 +5256,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <text x="333" y="920.05" class="t-edge-default" font-size="8" text-anchor="middle">HTTP в yamux → :3080</text>
         </g>
         <g data-detail="context" data-edge-from="dshchat" data-edge-to="wkspace" data-edge-label="bind mount RW · host FS" data-edge-key="8" data-edge-id="c13">
-          <rect x="1151" y="382" width="120.39999999999999" height="14" rx="3" class="c-mask"/>
-          <text x="1211.2" y="392" class="t-edge-emphasis" font-size="8" text-anchor="middle">bind mount RW · host FS</text>
+          <rect x="1126" y="382" width="120.39999999999999" height="14" rx="3" class="c-mask"/>
+          <text x="1186.2" y="392" class="t-edge-emphasis" font-size="8" text-anchor="middle">bind mount RW · host FS</text>
         </g>
         <g data-detail="context" data-edge-from="dshchat" data-edge-to="dshhome" data-edge-label="bind mount RW · DSH_HOME" data-edge-key="9" data-edge-id="c14">
           <rect x="974.8000000000001" y="351.5" width="125.19999999999999" height="14" rx="3" class="c-mask"/>
@@ -5280,8 +5280,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         </g>
 
         <g data-graph-role="structural-frame-label" data-composition-frame-id="2" data-composition-frame-kind="region" data-composition-frame-label="Контейнер пользователя u&lt;id&gt; — ×N, ленивый, TTL 1 ч">
-          <rect data-graph-role="structural-frame-label-mask" x="1154.7903072806453" y="107" width="360.4193854387097" height="19" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="1158.7903072806453" y="122.4516139032258" class="t-cloud" font-size="11.451613903225807" font-weight="600">Контейнер пользователя u&lt;id&gt; — ×N, ленивый, TTL 1 ч</text>
+          <rect data-graph-role="structural-frame-label-mask" x="1084.7903072806453" y="107" width="360.4193854387097" height="19" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="1088.7903072806453" y="122.4516139032258" class="t-cloud" font-size="11.451613903225807" font-weight="600">Контейнер пользователя u&lt;id&gt; — ×N, ленивый, TTL 1 ч</text>
         </g>
 
         <g data-graph-role="structural-frame-label" data-composition-frame-id="3" data-composition-frame-kind="region" data-composition-frame-label="$AGCTL_HOME — файлы, не процесс">
@@ -5295,8 +5295,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         </g>
 
         <g data-graph-role="structural-frame-label" data-composition-frame-id="5" data-composition-frame-kind="region" data-composition-frame-label="Сервер — один хост">
-          <rect data-graph-role="structural-frame-label-mask" x="354" y="107" width="133.6774301548387" height="19" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="358" y="122.4516139032258" class="t-cloud" font-size="11.451613903225807" font-weight="600">Сервер — один хост</text>
+          <rect data-graph-role="structural-frame-label-mask" x="382" y="107" width="133.6774301548387" height="19" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="386" y="122.4516139032258" class="t-cloud" font-size="11.451613903225807" font-weight="600">Сервер — один хост</text>
         </g>
 
         <!-- Legend -->

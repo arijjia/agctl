@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "receiptId": "45cf51e0-6141-4dbe-8184-750720d3391d",
+  "receiptId": "66bbdfb7-d571-4c0c-a457-11fe07061dc6",
   "status": "current",
   "command": "deliver",
   "type": "architecture",
   "input": "/Users/masha/src/arijjia/cit/agctl/.archify/architecture-agctl-processes-20261026-164456/candidate.json",
   "output": "/Users/masha/src/arijjia/cit/agctl/.archify/architecture-agctl-processes-20261026-164456/agctl-processes.html",
   "specification": {
-    "sha256": "e3af870144d395bc0f715863e38842bcf7fa3e07a82c0e087a9acd756952c49d",
+    "sha256": "5b418c1cec6cd6bdb1ee44d7a15cd766328c87c148cfd3f48b5cfe3012bd260e",
     "bytes": 19691
   },
   "artifact": {
-    "sha256": "79d38b0bfff66acf7e68f57425f1267d1dd4ba7ecd1173b778a984492847c6cc",
+    "sha256": "9fc737d0a9eecd75dcc86cdd6e81f9c3eb079da175dfd1793fcdb51c5abf7437",
     "bytes": 786425
   }
 }

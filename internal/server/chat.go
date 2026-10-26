@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -692,19 +693,22 @@ func writeWarmChatPage(w http.ResponseWriter) {
 	_, _ = fmt.Fprintf(w, `<!doctype html><meta charset="utf-8"><title>agctl: прогрев</title><meta http-equiv="refresh" content="2"><p style="font-family:system-ui;padding:2rem">Личный чат запускается… <a href="/chat/">Повторить сейчас</a></p>`)
 }
 
-// rootEntry — корень платформы: залогинен → свой чат, иначе → SPA-логин.
-func (s *Server) rootEntry(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.who(r); err != nil {
-		http.Redirect(w, r, "/app/", http.StatusSeeOther)
+// rootEntry — корень платформы: залогинен → свой чат, иначе → страница входа
+// (единственная страница фронта agctl). no-store, чтобы после входа корень
+// всегда перенаправлял в /chat/, а не отдавал закэшированную форму.
+func (s *Server) rootEntry(w http.ResponseWriter, r *http.Request, webFS fs.FS) {
+	if _, err := s.who(r); err == nil {
+		http.Redirect(w, r, "/chat/", http.StatusTemporaryRedirect)
 		return
 	}
-	http.Redirect(w, r, "/chat/", http.StatusTemporaryRedirect)
-}
-
-// appEntry — SPA кабинета (логин и администрирование) на отдельном пути:
-// корень платформы занят чатом.
-func (s *Server) appEntry(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/app/", http.StatusPermanentRedirect)
+	index, err := fs.ReadFile(webFS, "index.html")
+	if err != nil {
+		http.Error(w, "фронтенд не собран: выполните make web_build", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(index)
 }
 
 // chatProxy — gateway for the authenticated user's runtime. Endpoint is

@@ -88,9 +88,10 @@ local go-git autosave against the host path. This is the
 **current source layout**. `$AGCTL_HOME/u<ID>/{dsh-home,workspace}` is a possible
 target layout, not a completed migration; the pilot starts on a clean volume.
 
-1. Пользователь открывает `/`. Без сессии получает `/app/` — React SPA agctl
-   из `go:embed`; при входе корень ведёт в `/chat/` (`server.go`, функция
-   `registerTier0Routes`).
+1. Пользователь открывает `/`. Без сессии получает единственную страницу
+   фронта agctl — вход/регистрация (React SPA из `go:embed`, `no-store`);
+   после входа корень ведёт в `/chat/` (`server.go`, функция
+   `registerTier0Routes`). Отдельного пути `/app/` больше нет.
 2. Сам логин контейнер не создаёт. Первый `/chat/` вызывает `ensureChat`
    (`internal/server/chat.go`, сейчас около строк 501–555): per-user lock,
    стабильный `StorageID=u<ID>`, `ChatProvider.EnsureChat`.

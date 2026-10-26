@@ -306,18 +306,17 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 }
 
 // registerTier0Routes — маршруты режима 1 «Чат». Корень платформы:
-// залогинен → /chat/ (личный dsh), нет → /app/ (SPA-логин). SPA на /app/.
+// залогинен → /chat/ (личный dsh), нет → страница входа (единственная
+// страница фронта agctl); отдельного пути /app больше нет.
 func (s *Server) registerTier0Routes(mux *http.ServeMux, webFS fs.FS) {
-	mux.HandleFunc("GET /{$}", s.rootEntry)
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		s.rootEntry(w, r, webFS)
+	})
 	mux.HandleFunc("GET /chat", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/chat/", http.StatusTemporaryRedirect)
 	})
 	mux.HandleFunc("GET /chat/", s.requireUser(s.chatProxy))
 	mux.HandleFunc("POST /chat/", s.requireUser(s.chatProxy))
-	mux.HandleFunc("GET /app", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/app/", http.StatusPermanentRedirect)
-	})
-	mux.Handle("GET /app/", http.StripPrefix("/app", http.FileServerFS(webFS)))
 }
 
 // corsMiddleware — точный allow-list origins для /api (кабинет-плагин dsh web

@@ -294,7 +294,7 @@
       "label": "dsh web — node",
       "sublabel": "bind eth0 · :3080 · движок+API · SPA",
       "pos": [
-        1215,
+        1145,
         130
       ],
       "size": [
@@ -328,7 +328,7 @@
       "label": "sshd — только роль developer",
       "sublabel": ":2222 · key-only · порт на loopback",
       "pos": [
-        1215,
+        1145,
         270
       ],
       "size": [
@@ -513,7 +513,7 @@
         "dshchat",
         "sshd"
       ],
-      "pad": 80
+      "pad": 52
     }
   ],
   "connections": [
@@ -572,11 +572,11 @@
       "toSide": "right",
       "via": [
         [
-          1500,
+          1450,
           1032
         ],
         [
-          1500,
+          1450,
           302
         ]
       ]
@@ -608,11 +608,11 @@
       "toSide": "left",
       "via": [
         [
-          1145,
+          1120,
           182
         ],
         [
-          1145,
+          1120,
           596
         ]
       ]

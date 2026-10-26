@@ -1,30 +1,49 @@
 {
   "schemaVersion": 1,
-  "ok": true,
+  "ok": false,
   "command": "finalize",
-  "status": "pass",
+  "status": "fail",
   "type": "architecture",
   "quality": "showcase",
   "specification": {
     "path": "/Users/masha/src/arijjia/cit/agctl/.archify/architecture-agctl-processes-20261026-164456/candidate.json",
-    "sha256": "e3af870144d395bc0f715863e38842bcf7fa3e07a82c0e087a9acd756952c49d",
+    "sha256": "5b418c1cec6cd6bdb1ee44d7a15cd766328c87c148cfd3f48b5cfe3012bd260e",
     "bytes": 19691
   },
   "artifact": {
     "path": "/Users/masha/src/arijjia/cit/agctl/.archify/architecture-agctl-processes-20261026-164456/agctl-processes.html",
-    "sha256": "79d38b0bfff66acf7e68f57425f1267d1dd4ba7ecd1173b778a984492847c6cc",
+    "sha256": "9fc737d0a9eecd75dcc86cdd6e81f9c3eb079da175dfd1793fcdb51c5abf7437",
     "bytes": 786425
   },
   "gates": {
     "validate": "pass",
     "deliver": "pass",
     "check": "pass",
-    "browser-check": "pass"
+    "browser-check": "fail"
   },
-  "diagnostics": [],
+  "failedStage": "browser-check",
+  "diagnostics": [
+    {
+      "code": "viewer/evidence-path-conflict",
+      "severity": "error",
+      "message": "browser-check will not replace the existing unowned evidence path \"/Users/masha/src/arijjia/cit/agctl/.archify/architecture-agctl-processes-20261026-164456/agctl-processes.browser-check.json\".",
+      "subject": {
+        "artifact": "/Users/masha/src/arijjia/cit/agctl/.archify/architecture-agctl-processes-20261026-164456/agctl-processes.html",
+        "evidencePath": "/Users/masha/src/arijjia/cit/agctl/.archify/architecture-agctl-processes-20261026-164456/agctl-processes.browser-check.json"
+      },
+      "evidence": {
+        "reason": {
+          "code": "ownership-artifact-mismatch"
+        }
+      },
+      "supportedFixes": [
+        "move the conflicting file aside, or choose a separate --out-dir, then rerun browser-check"
+      ]
+    }
+  ],
   "diagnosticSummary": {
-    "total": 0,
-    "shown": 0,
+    "total": 1,
+    "shown": 1,
     "truncated": false
   },
   "evidence": {
@@ -45,34 +64,5 @@
     "eventKey": "archify@sha256:70e210265c59f24dcbdf2a502ff671104b5454e7ee7d3554aecd86bad32384f5"
   },
   "visualReview": "not-requested",
-  "durationMs": 1537,
-  "visualReviewRecommendation": {
-    "action": "inspect-route-readability",
-    "signals": {
-      "routesOverSuggestedBends": 1
-    },
-    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
-    "affectedRoutes": {
-      "crossings": [],
-      "detours": [
-        {
-          "relationship": {
-            "id": "c14",
-            "from": "dshchat",
-            "to": "dshhome",
-            "label": "bind mount RW · DSH_HOME",
-            "collectionIndex": 9,
-            "artifactIndex": 10
-          },
-          "bends": 3,
-          "stretch": 1
-        }
-      ],
-      "truncated": false
-    },
-    "hints": [
-      "dshchat → dshhome needs 3 bends: move node dshchat or dshhome so they share a row or column with matching centers, or sit diagonally with a clear corner."
-    ],
-    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
-  }
+  "durationMs": 462
 }

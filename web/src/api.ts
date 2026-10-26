@@ -1,41 +1,8 @@
-// api.ts — тонкий клиент REST API agctl.
+// api.ts — тонкий клиент REST API agctl (только авторизация: весь остальной
+// интерфейс платформы живёт внутри dsh).
 
-export type Role = "user" | "admin";
+export type Role = "user" | "developer" | "admin";
 export type User = { login: string; role: Role };
-export type WsStatus = "provisioning" | "running" | "stopped" | "failed" | "removing" | "stopping";
-
-export type RepoTemplate = { id: string; title: string; description: string };
-export type KitComponent = { id: string; title: string; description: string };
-export type Kit = {
-  id: string;
-  title: string;
-  description: string;
-  version: string;
-  defaultComponents: string[];
-  components: KitComponent[];
-};
-
-export type Workspace = {
-  id: string;
-  name: string;
-  kit: string;
-  template: string; // legacy alias
-  status: WsStatus;
-  owner: string;
-  createdAt: string;
-  updatedAt: string;
-  url: string;
-  port: number;
-  error: string;
-  model: string;
-  models: string[];
-  baseURL: string;
-  components: string[];
-  repoPath: string;
-};
-
-export type AuditEvent = { ts: string; actor: string; action: string; target: string; details: string };
-export type AdminUser = { id: number; login: string; role: Role; createdAt: string };
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -59,24 +26,8 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 }
 
 export const api = {
-  templates: () => req<{ templates: RepoTemplate[] }>("GET", "/api/templates"),
-  kits: () => req<{ kits: Kit[] }>("GET", "/api/kits"),
   register: (login: string, password: string) => req<{ user: User }>("POST", "/api/register", { login, password }),
   login: (login: string, password: string) => req<{ user: User }>("POST", "/api/login", { login, password }),
   logout: () => req<void>("POST", "/api/logout"),
   me: () => req<{ user: User }>("GET", "/api/me"),
-  workspaces: () => req<{ workspaces: Workspace[] }>("GET", "/api/workspaces"),
-  create: (name: string, kit: string, baseURL: string, models: string[], apiKey: string, components?: string[]) =>
-    req<{ workspace: Workspace }>("POST", "/api/workspaces", {
-      name, kit, baseURL, models, apiKey,
-      ...(components !== undefined ? { components } : {}),
-    }),
-  updateProvider: (id: string, baseURL: string, models: string[], apiKey: string) =>
-    req<{ workspace: Workspace }>(`PATCH`, `/api/workspaces/${id}/provider`, { baseURL, models, apiKey }),
-  start: (id: string) => req<{ workspace: Workspace }>("POST", `/api/workspaces/${id}/start`),
-  stop: (id: string) => req<{ workspace: Workspace }>("POST", `/api/workspaces/${id}/stop`),
-  remove: (id: string) => req<void>("DELETE", `/api/workspaces/${id}`),
-  logs: (id: string) => req<{ logs: string }>("GET", `/api/workspaces/${id}/logs?tail=150`),
-  adminUsers: () => req<{ users: AdminUser[] }>("GET", "/api/admin/users"),
-  adminAudit: () => req<{ events: AuditEvent[] }>("GET", "/api/admin/audit?limit=200"),
 };
