@@ -327,6 +327,27 @@ func EnsureChatPlugins(home string, skelFS fs.FS) error {
 		if err := CopyFS(skelFS, src, dst); err != nil {
 			return fmt.Errorf("provision: sync %s: %w", bundle, err)
 		}
+		// Compat entry: загрузчик профилей dsh резолвит клиентский бандл как
+		// <bundle>/client.js (экспорт-карту lib/client.js он не читает). Без
+		// этого файла на старых томах грузится устаревшая корневая копия.
+		// Host-плагины без клиентской половины (session-files) пропускаем.
+		clientSrc, clientErr := fs.ReadFile(skelFS, src+"/lib/client.js")
+		switch {
+		case clientErr == nil:
+			if err := os.WriteFile(filepath.Join(dst, "client.js"), clientSrc, 0o644); err != nil {
+				return fmt.Errorf("provision: sync %s: client entry: %w", bundle, err)
+			}
+		case os.IsNotExist(clientErr):
+			// host-only бандл: клиентского entry нет и не было.
+		default:
+			return fmt.Errorf("provision: sync %s: client bundle: %w", bundle, clientErr)
+		}
+		// Зеркальная очистка: файлы, которых больше нет в скелете, удаляем —
+		// иначе на старых томах живут забытые версии (например, корневой
+		// client.js древней «плоской» сборки). Сгенерированный entry — наш.
+		if err := pruneStaleBundleFiles(dst, src, skelFS); err != nil {
+			return fmt.Errorf("provision: sync %s: prune: %w", bundle, err)
+		}
 	}
 
 	pjPath := filepath.Join(home, "profiles", "web", "package.json")
@@ -404,6 +425,33 @@ const (
 	chatSessionFilesBundle = "@arijjia/agctl-chat-session-files"
 	chatBrandBundle        = "@arijjia/agctl-chat-brand"
 )
+
+// pruneStaleBundleFiles удаляет файлы в dst, которых нет в скелете src.
+// Сгенерированный корневой client.js (compat entry) пропускается. Пустые
+// каталоги после удаления не собираются — это безвредно для node_modules.
+func pruneStaleBundleFiles(dst, src string, skelFS fs.FS) error {
+	return filepath.WalkDir(dst, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(dst, path)
+		if err != nil {
+			return err
+		}
+		if filepath.ToSlash(rel) == "client.js" {
+			return nil // сгенерированный compat entry
+		}
+		if _, statErr := fs.Stat(skelFS, src+"/"+filepath.ToSlash(rel)); os.IsNotExist(statErr) {
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
 
 // seedWorkspaceRegistry — предзаписанный реестр воркспейсов dsh: одна запись
 // на /workspace. Без неё dsh при первом буте пытается создать «дефолтный»
