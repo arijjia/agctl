@@ -4,111 +4,146 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(require('node:path').join(__dirname, '../lib/client.js'), 'utf8');
-function harness(role, port = 2222, unauthorized = false) {
-  let cursor = 0, page, effect, exports;
-  const states = [], calls = [], registrations = [];
-  const React = {
-    Fragment: 'fragment',
-    createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity) }),
-    useState(initial) {
-      const index = cursor++;
-      if (!(index in states)) states[index] = typeof initial === 'function' ? initial() : initial;
-      return [states[index], value => { states[index] = value; }];
+
+function makeEl(tag) {
+  const node = {
+    tag, children: [], dataset: {}, style: {}, attributes: {}, value: '', textContent: '', disabled: false,
+    appendChild(child) {
+      if (child.parentElement) child.parentElement.removeChild(child);
+      child.parentElement = this;
+      this.children.push(child);
+      return child;
     },
-    useEffect(fn) { if (!effect) effect = fn; },
+    prepend(child) { child.parentElement = this; this.children.unshift(child); },
+    append(...kids) { for (const k of kids) { k.parentElement = this; this.children.push(k); } },
+    removeChild(child) {
+      const i = this.children.indexOf(child);
+      if (i >= 0) { this.children.splice(i, 1); child.parentElement = null; }
+    },
+    remove() { if (this.parentElement) this.parentElement.removeChild(this); },
+    addEventListener(type, fn) { (this.listeners ||= {})[type] = fn; },
+    setAttribute(k, v) { this.attributes[k] = v; },
+    getAttribute(k) { return this.attributes[k] ?? null; },
+    contains(target) {
+      for (let cur = target; cur; cur = cur.parentElement) if (cur === this) return true;
+      return false;
+    },
+    querySelector(sel) { return sel === 'span' ? this.children.find((c) => c.tag === 'span') || null : null; },
+    querySelectorAll(sel) { return sel === 'span' ? this.children.filter((c) => c.tag === 'span') : []; },
+    isConnected: true,
+    parentElement: null,
+  };
+  return node;
+}
+
+function harness({ me, unauthorized = false } = {}) {
+  const calls = [];
+  const registrations = [];
+  const slots = {
+    inject(key, register) {
+      registrations.push({ key, entry: register() });
+    },
+    register(entry, component) {
+      return { ...entry, children: component };
+    },
+  };
+  const documentStub = {
+    readyState: 'complete',
+    body: makeEl('body'),
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+    createElement: makeEl,
+    addEventListener() {},
+    removeEventListener() {},
+    head: makeEl('head'),
+  };
+  let exports;
+  const modules = { react: { createElement: (t, p) => ({ tag: t, props: p }), useRef: () => ({ current: null }), useEffect: () => {} } };
+  const windowStub = { __ModuleLoader__: { load: (def) => { exports = def.factory((name) => modules[name]); } } };
+  const ctx = {
+    slots,
+    get(name) {
+      if (name === 'sessions') {
+        return { list: { getSnapshot: () => ({ ids: ['s1'], byId: { s1: { updatedAt: Date.now() } } }) } };
+      }
+      return undefined;
+    },
   };
   vm.runInNewContext(source, {
-    window: { __ModuleLoader__: { load: mod => { exports = mod.factory(() => React); } } },
-    document: { querySelector: () => true, readyState: 'loading', addEventListener() {} },
-    localStorage: { getItem: () => '', setItem() {} },
-    fetch: async (path, opts) => {
-      calls.push({ path, ...opts });
-      let data = {};
-      let text = null;
-      if (path === '/api/me') data = { user: { login: 'alice', role } };
-      if (path === '/api/role-requests') data = { role, requests: [{ id: 'req/1', userId: 'u1', login: 'alice', motivation: 'Build tools', status: role === 'user' ? 'rejected' : 'pending', createdAt: 'today' }] };
-      if (path === '/api/projects') data = { projects: [{ name: 'demo', directory: '/workspace/demo' }] };
-      if (path === '/api/me/ssh') data = { pubKey: 'ssh-ed25519 public', sshPort: port };
-      if (path === '/api/me/runtime') data = { status: port > 0 ? 'running' : 'sleeping', sshPort: port };
-      if (path.startsWith('/api/me/runtime/logs')) { data = null; text = 'dsh web listening'; }
-      return { ok: !unauthorized, status: unauthorized ? 401 : 200, json: async () => data, text: async () => text === null ? JSON.stringify(data) : text };
+    window: windowStub,
+    document: documentStub,
+    fetch: async (path) => {
+      calls.push(path);
+      if (unauthorized && path === '/api/me') return { ok: false, status: 401, json: async () => ({}) };
+      const data = { '/api/me': { user: { login: 'masha', role: me || 'user' } } }[path] || {};
+      return { ok: true, status: 200, json: async () => data };
     },
   });
-  exports.apply({ slots: { inject: (_, fn) => fn(), register: (meta, component) => { registrations.push(meta); if (meta.name === 'main') page = component; } } });
-  const render = () => { cursor = 0; return page(); };
-  const settle = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
-  const nodes = tree => tree && typeof tree === 'object' ? [tree, ...tree.children.flatMap(nodes)] : [];
-  return { calls, registrations, render, settle, nodes, start: async () => { render(); effect(); await settle(); return render(); } };
+  exports.apply(ctx);
+  return { calls, registrations, exports, slots };
 }
-for (const role of ['user', 'developer', 'admin']) test(`v3.1 ${role} controls and API contracts`, async () => {
-  const app = harness(role);
-  let tree = await app.start();
-  const all = () => app.nodes(tree);
-  const text = () => JSON.stringify(tree);
-  assert.match(text(), /demo/);
-  assert.match(text(), /\/workspace\/demo/, 'воркспейс показывает контейнерный путь каталога');
-  assert.equal(app.calls.some(c => /workspaces|workspace-requests|local-backend|kits|config/.test(c.path)), false);
-  assert.equal(app.calls.some(c => c.path === '/api/me/ssh'), role !== 'user');
-  assert.equal(app.calls.some(c => c.path === '/api/me/runtime'), role !== 'user', 'статус рантайма читает developer');
-  assert.equal(all().some(n => n.type === 'textarea' && n.props.required), role === 'user');
-  assert.equal(all().some(n => n.type === 'button' && n.children.includes('Одобрить')), role === 'admin');
-  // Workspace-центричность: нет «Подключения», нет ссылки на «Личный чат».
-  assert.doesNotMatch(text(), /Подключение к agctl|Открыть личный чат/);
-  assert.ok(!all().some(n => n.type === 'a' && n.props.href === '/chat/'));
-  const nameInput = all().find(n => n.props['aria-label'] === 'Имя воркспейса');
-  nameInput.props.onChange({ target: { value: 'new-workspace' } }); tree = app.render();
-  if (role !== 'user') {
-    all().find(n => n.props['aria-label'] === 'Git URL воркспейса').props.onChange({ target: { value: 'https://github.com/u/r.git' } }); tree = app.render();
-  }
-  all().find(n => n.type === 'form' && n.children.some(c => c && c.type === 'div' && c.children.some(b => b && b.type === 'button' && b.children.includes('Добавить воркспейс')))).props.onSubmit({ preventDefault() {} });
-  await app.settle(); tree = app.render();
-  const created = app.calls.find(c => c.path === '/api/projects' && c.method === 'POST');
-  assert.ok(created, 'воркспейс создаётся через POST /api/projects');
-  const createdBody = JSON.parse(created.body);
-  assert.equal(createdBody.name, 'new-workspace');
-  assert.equal(createdBody.cloneUrl, role === 'user' ? undefined : 'https://github.com/u/r.git');
-  if (role === 'user') {
-    all().find(n => n.type === 'textarea').props.onChange({ target: { value: 'I build tools' } }); tree = app.render();
-    all().find(n => n.type === 'form' && n.children.some(c => c && c.type === 'button' && c.children.includes('Отправить заявку'))).props.onSubmit({ preventDefault() {} });
-    await app.settle();
-    assert.ok(app.calls.some(c => c.path === '/api/role-requests' && c.method === 'POST' && JSON.parse(c.body).motivation === 'I build tools'));
-  } else {
-    assert.match(text(), /ssh root@127.0.0.1 -p 2222/);
-    // Developer-контролы рантайма: старт, стоп, логи.
-    assert.ok(all().some(n => n.type === 'button' && n.children.includes('Запустить')));
-    assert.ok(all().some(n => n.type === 'button' && n.children.includes('Остановить')));
-    all().find(n => n.type === 'button' && n.children.includes('Запустить')).props.onClick(); await app.settle(); tree = app.render();
-    assert.ok(app.calls.some(c => c.path === '/api/me/runtime/start' && c.method === 'POST'));
-    all().find(n => n.type === 'button' && n.children.includes('Логи')).props.onClick(); await app.settle(); tree = app.render();
-    assert.ok(app.calls.some(c => c.path.startsWith('/api/me/runtime/logs')));
-    assert.match(text(), /dsh web listening/);
-    all().find(n => n.type === 'button' && n.children.includes('Остановить')).props.onClick(); await app.settle(); tree = app.render();
-    assert.ok(app.calls.some(c => c.path === '/api/me/runtime/stop' && c.method === 'POST'));
-    all().find(n => n.type === 'textarea').props.onChange({ target: { value: '' } }); tree = app.render();
-    all().find(n => n.type === 'form' && n.children.some(c => c && c.type === 'button' && c.children.includes('Сохранить ключ'))).props.onSubmit({ preventDefault() {} });
-    await app.settle(); tree = app.render();
-    assert.ok(app.calls.some(c => c.path === '/api/me/ssh' && c.method === 'PUT' && JSON.parse(c.body).pubKey === ''));
-  }
-  if (role === 'admin') {
-    for (const [label, decision] of [['Одобрить', 'approve'], ['Отклонить', 'reject']]) {
-      all().find(n => n.type === 'button' && n.children.includes(label)).props.onClick(); await app.settle(); tree = app.render();
-      assert.ok(app.calls.some(c => c.path === '/api/role-requests/req%2F1/' + decision && c.method === 'POST'));
-    }
-  }
-  assert.ok(app.calls.every(c => c.credentials === 'include'));
-  assert.equal(app.registrations.length, 2);
+
+test('чип регистрируется в нативном слоте sidebar.footer.action', async () => {
+  const { registrations, exports } = harness({ me: 'admin' });
+  assert.equal(registrations.length, 1, 'ровно одна слот-регистрация');
+  assert.equal(registrations[0].key, 'sidebar.footer.action');
+  assert.equal(registrations[0].entry.name, 'sidebar.footer.action');
+  assert.equal(registrations[0].entry.id, 'agctl-profile-chip');
+  assert.equal(typeof registrations[0].entry.children, 'function', 'слот получает React-компонент чипа');
+  assert.equal(exports.inject.join(','), 'slots', 'плагин запрашивает только слоты');
 });
-test('sleeping runtime and expired session', async () => {
-  const sleeping = harness('developer', 0);
-  assert.match(JSON.stringify(await sleeping.start()), /Рантайм спит/);
-  const expired = harness('user', 0, true);
-  const tree = await expired.start();
-  assert.ok(expired.nodes(tree).some(n => n.type === 'input' && n.props.type === 'password'));
+
+test('чип показывает avatar-инициалы и логин, collapsed оставляет круглый avatar', async () => {
+  const { exports } = harness({ me: 'admin' });
+  const user = await exports.ensureAgctlUser();
+  assert.equal(user.login, 'masha');
+  const container = makeEl('div');
+  const chip = exports.renderChipInto(container, user, true);
+  const spans = chip.querySelectorAll('span');
+  assert.equal(spans[0].textContent, 'MA');
+  assert.equal(spans[1].textContent, 'masha');
+  assert.equal(spans[1].style.display, 'block');
+  exports.renderChipInto(container, user, false);
+  assert.equal(spans[1].style.display, 'none');
+  assert.equal(chip.style.width, '42px');
 });
-test('workspace-centric cabinet: no url field, no mode nav, no projects wording', () => {
-  assert.doesNotMatch(source, /\/w\/|РЕЖИМЫ|\/api\/workspaces|\/api\/workspace-requests|\/api\/local-backend/);
-  assert.doesNotMatch(source, /Подключение к agctl|agctl-cabinet\.url|Личный чат|Личный runtime|Открыть личный чат/);
-  assert.doesNotMatch(source, /"Проекты"/, 'вкладка «Проекты» заменена воркспейсами');
-  assert.match(source, /\/api\/me\/runtime/, 'developer-контролы рантайма на месте');
-  assert.match(source, /cloneUrl/, 'клонирование воркспейса по URL на месте');
+
+test('повторный рендер переиспользует один DOM-узел чипа', async () => {
+  const { exports } = harness({ me: 'user' });
+  const user = await exports.ensureAgctlUser();
+  const first = makeEl('div');
+  const second = makeEl('div');
+  const a = exports.renderChipInto(first, user, true);
+  const b = exports.renderChipInto(second, user, true);
+  assert.equal(a, b, 'chip node переиспользуется между монтированиями');
+  assert.equal(first.children.includes(a), false, 'узел переехал из первого контейнера');
+  assert.equal(second.children.includes(b), true);
+});
+
+test('без авторизации пользователь не резолвится и чип не рендерится', async () => {
+  const { exports } = harness({ unauthorized: true });
+  const user = await exports.ensureAgctlUser();
+  assert.equal(user, null, '401 не даёт пользователя');
+});
+
+test('нет панели «Кабинет», управления рантаймом и списка воркспейсов', () => {
+  assert.doesNotMatch(source, /sidebar\.panellist|renderSlot\(|slots\.inject\("sidebar\.settings"\)/, 'панель Кабинета и settings-затенение отсутствуют');
+  assert.match(source, /slots\.inject\("sidebar\.footer\.action"/, 'чип живёт в штатном footer.action слоте');
+  assert.doesNotMatch(source, /\/api\/me\/runtime\/(start|stop|logs)/, 'кнопки управления рантаймом удалены');
+  assert.doesNotMatch(source, /Добавить воркспейс|Имя воркспейса/, 'создание воркспейсов переехало в родную кнопку сайдбара');
+  assert.match(source, /api\/me\/runtime/, 'только read-only статус в профиле');
+  assert.match(source, /projectionValues[\s\S]*tokenUsage/, 'статистика берёт provider-reported DSH token projections');
+  for (const key of ['uncachedInputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'outputTokens']) {
+    assert.match(source, new RegExp(key), `профиль показывает ${key}`);
+  }
+  assert.match(source, /Активность сессий за год/);
+  assert.match(source, /не токены\/день/, 'heatmap не выдаётся за токены по дням');
+  assert.match(source, /Права доступа/);
+  assert.match(source, /roleDescription/, 'роль сопровождается описанием прав');
+  assert.match(source, /Администратор/);
+  assert.match(source, /Разработчик/);
+  assert.match(source, /Пользователь/);
+  assert.match(source, /Профиль/, 'пункт профиля в плашке');
+  assert.match(source, /Справка/, 'справка на месте');
+  assert.match(source, /Настройки/, 'нативные настройки доступны из плашки');
 });

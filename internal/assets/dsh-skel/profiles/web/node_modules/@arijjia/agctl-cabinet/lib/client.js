@@ -1,140 +1,66 @@
-// agctl cabinet v3 — one personal runtime, projects, roles and SSH.
+// agctl cabinet v3.2 — профиль пользователя: чип в нативном слоте
+// sidebar.footer.action, плашка (Профиль / Настройки / Справка), статистика
+// использования и SSH. Runtime'ом управляет только agctl serve — кнопок
+// запуска/останова нет.
 window.__ModuleLoader__.load({
 	id: "@arijjia/agctl-cabinet",
 	factory: (require) => {
-		var module = { exports: {} };
-		var exports = module.exports;
-		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+		var exports = {};
 		const React = require("react");
-		const h = React.createElement;
 
-		const PANEL_ID = "agctl-cabinet";
-		let pluginCtx = null;
-
-		function CabinetIcon() {
-			return h(
-				"svg",
-				{
-					width: 16,
-					height: 16,
-					viewBox: "0 0 16 16",
-					fill: "none",
-					stroke: "currentColor",
-					strokeWidth: 1.4,
-					strokeLinecap: "round",
-					strokeLinejoin: "round",
-					"aria-hidden": true,
-				},
-				h("rect", { x: 2, y: 2.5, width: 12, height: 11, rx: 2 }),
-				h("path", { d: "M2 6.5h12" }),
-				h("path", { d: "M6.5 6.5v7" }),
-			);
-		}
-
-		const styles = {
-			wrap: {
-				height: "100%",
-				boxSizing: "border-box",
-				overflow: "auto",
-				padding: "24px 28px",
-				fontFamily: "inherit",
-				color: "var(--dsw-alias-label-primary, inherit)",
-			},
-			title: { margin: "0 0 4px", fontSize: 20, fontWeight: 650 },
-			subtitle: {
-				margin: "0 0 20px",
-				fontSize: 13,
-				color: "var(--dsw-alias-label-tertiary, #888)",
-			},
-			card: {
-				border: "1px solid var(--dsw-alias-border-l1, #ddd)",
-				borderRadius: 10,
-				padding: "14px 16px",
-				marginBottom: 16,
-				maxWidth: 620,
-			},
-			cardTitle: { margin: "0 0 10px", fontSize: 14, fontWeight: 600 },
-			row: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" },
-			input: {
-				flex: 1,
-				minWidth: 160,
-				boxSizing: "border-box",
-				padding: "6px 10px",
-				fontSize: 13,
-				borderRadius: 8,
-				border: "1px solid var(--dsw-alias-border-l1, #ccc)",
-				background: "transparent",
-				color: "inherit",
-			},
-			button: {
-				padding: "7px 13px",
-				fontSize: 13,
-				fontWeight: 650,
-				borderRadius: 8,
-				border: "1px solid #1459b8",
-				background: "#1769d2",
-				color: "#fff",
-				cursor: "pointer",
-				boxShadow: "0 1px 2px rgba(0,0,0,.16)",
-			},
-			field: { display: "flex", flexDirection: "column", gap: 6, width: "100%", marginTop: 10 },
-			fieldLabel: { fontSize: 12, fontWeight: 600, color: "var(--dsw-alias-label-secondary, #555)" },
-			formStack: { display: "flex", flexDirection: "column", gap: 10, maxWidth: 620 },
-			logPanel: { marginTop: 8, padding: 12, border: "1px solid var(--dsw-alias-border-l1, #ddd)", borderRadius: 10, maxWidth: 900 },
-			logs: { margin: "8px 0 0", padding: 12, maxHeight: 360, overflow: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, color: "var(--dsw-alias-label-primary, #222)", background: "var(--dsw-alias-bg-module-platform, rgba(0,0,0,.04))", borderRadius: 8 },
-
-			place: {
-				display: "flex",
-				justifyContent: "space-between",
-				alignItems: "center",
-				gap: 10,
-				padding: "10px 12px",
-				border: "1px solid var(--dsw-alias-border-l1, #ddd)",
-				borderRadius: 10,
-				marginBottom: 8,
-				maxWidth: 620,
-				flexWrap: "wrap",
-			},
-			placeName: { fontSize: 13, fontWeight: 600 },
-			placeMeta: { fontSize: 12, color: "var(--dsw-alias-label-tertiary, #888)" },
-			note: { fontSize: 12, color: "var(--dsw-alias-label-tertiary, #888)", marginTop: 14 },
-			status: { fontSize: 12, marginTop: 8, whiteSpace: "pre-wrap" },
-			mini: { padding: "5px 10px", fontSize: 12 },
-		};
-
-		function ensureCabinetStyles() {
+		function ensureStyles() {
 			if (document.querySelector("style[data-agctl-cabinet-styles]")) return;
 			const style = document.createElement("style");
 			style.dataset.agctlCabinetStyles = "1";
 			style.textContent = `
-				[data-agctl-cabinet-root] button,[data-agctl-cabinet-root] a { transition: background .15s ease, box-shadow .15s ease, transform .15s ease; }
-				[data-agctl-cabinet-root] button:hover:not(:disabled),[data-agctl-cabinet-root] a:hover { background:#1255aa!important; border-color:#1255aa!important; color:#fff!important; }
-				[data-agctl-cabinet-root] button:focus-visible,[data-agctl-cabinet-root] a:focus-visible { outline:3px solid rgba(22,136,245,.35); outline-offset:2px; }
-				[data-agctl-cabinet-root] button:disabled { opacity:.58; cursor:not-allowed!important; box-shadow:none; }
-				[data-agctl-cabinet-root] input,[data-agctl-cabinet-root] textarea,[data-agctl-cabinet-root] select { min-height:38px; }
+				[data-agctl-cabinet-chip]:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(255,255,255,.08)) !important; }
+				[data-agctl-cabinet-popup] button:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(255,255,255,.08)) !important; }
+				[data-agctl-cabinet-overlay] input, [data-agctl-cabinet-overlay] textarea {
+					box-sizing:border-box;width:100%;min-height:38px;padding:8px 11px;margin-top:4px;
+					border:1px solid var(--dsw-alias-border-l1,#bbb);border-radius:8px;
+					background:transparent;color:inherit;font:inherit;resize:vertical;
+				}
+				[data-agctl-cabinet-overlay] .agctl-btn {
+					padding:8px 14px;border:1px solid #1459b8;border-radius:8px;background:#1769d2;
+					color:#fff;cursor:pointer;font:inherit;font-weight:650;
+				}
+				[data-agctl-cabinet-overlay] .agctl-btn:disabled { opacity:.6; cursor:not-allowed; }
+				[data-agctl-cabinet-overlay] .agctl-card {
+					border:1px solid var(--dsw-alias-border-l1,#333);border-radius:12px;
+					padding:14px 16px;margin:0 0 14px;
+				}
 			`;
 			document.head.appendChild(style);
 		}
 
-		function CabinetPage() {
-			const [phase, setPhase] = React.useState("connecting");
-			const [me, setMe] = React.useState(null);
-			const [login, setLogin] = React.useState("");
-			const [password, setPassword] = React.useState("");
-			const [motivation, setMotivation] = React.useState("");
-			const [requests, setRequests] = React.useState([]);
-			const [projects, setProjects] = React.useState([]);
-			const [name, setName] = React.useState("");
-			const [cloneUrl, setCloneUrl] = React.useState("");
-			const [pubKey, setPubKey] = React.useState("");
-			const [sshPort, setSSHPort] = React.useState(0);
-			const [sshLoaded, setSSHLoaded] = React.useState(false);
-			const [runtime, setRuntime] = React.useState(null);
-			const [runtimeLogs, setRuntimeLogs] = React.useState("");
-			const [busy, setBusy] = React.useState(false);
-			const [msg, setMsg] = React.useState("");
-			const isDev = me && ["developer", "admin"].includes(me.role);
-			const api = async (path, method = "GET", body) => {
+		function initials(login) {
+			const clean = String(login || "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+			const parts = clean.split(/\s+/).filter(Boolean);
+			if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+			return clean.slice(0, 2).toUpperCase() || "··";
+		}
+
+		function roleName(role) {
+			return { admin: "Администратор", developer: "Разработчик", user: "Пользователь" }[role] || role;
+		}
+
+		function roleDescription(role) {
+			switch (role) {
+				case "admin": return "Полный доступ: пользователи, заявки на роль, аудит, SSH и все developer-возможности.";
+				case "developer": return "Всё пользователя плюс SSH-канал к своему рантайму, клонирование проектов из GitHub и developer-настройки.";
+				default: return "Личный чат и воркспейсы-проекты. SSH и developer-настройки — после заявки на роль developer.";
+			}
+		}
+
+		function el(tag, css, text) {
+			const node = document.createElement(tag);
+			if (css) node.style.cssText = css;
+			if (text !== undefined) node.textContent = text;
+			return node;
+		}
+
+		function apiFactory() {
+			return async (path, method = "GET", body) => {
 				const res = await fetch(path, {
 					credentials: "include", method,
 					headers: { Accept: "application/json", ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
@@ -142,185 +68,398 @@ window.__ModuleLoader__.load({
 				});
 				let data;
 				try { data = await res.json(); } catch { data = null; }
-				if (!res.ok) {
-					if (res.status === 401 || (path === "/api/me" && res.status === 403)) { setMe(null); setPhase("login"); }
-					throw new Error("HTTP " + res.status + ": " + ((data && data.error) || "Запрос не выполнен"));
-				}
+				if (!res.ok) throw new Error("HTTP " + res.status + ": " + ((data && data.error) || "Запрос не выполнен"));
 				return data;
 			};
-			const runtimeApi = async (path, method = "GET", body) => {
-				const res = await fetch(path, {
-					credentials: "include", method,
-					headers: { Accept: "text/plain", ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
-					body: body === undefined ? undefined : JSON.stringify(body),
-				});
-				if (!res.ok) {
-					let data = null;
-					try { data = await res.json(); } catch { data = null; }
-					throw new Error("HTTP " + res.status + ": " + ((data && data.error) || "Запрос не выполнен"));
-				}
-				return res.text();
-			};
-			const refresh = async () => {
-				setMe(null);
-				setPhase("connecting");
-				setSSHLoaded(false);
-				const data = await api("/api/me");
-				if (!data || !data.user || !data.user.login || !data.user.role) throw new Error("Некорректный ответ /api/me");
-				const user = data.user;
-				setMe(user);
-				setPhase("ready");
-				setRequests([]);
-				setProjects([]);
-				const errors = [];
-				try {
-					const result = await api("/api/role-requests");
-					setRequests(Array.isArray(result && result.requests) ? result.requests : []);
-				} catch (err) { errors.push("Заявки: " + err.message); }
-				try {
-					const result = await api("/api/projects");
-					const list = Array.isArray(result && result.projects) ? result.projects : [];
-					setProjects(list);
-					// Воркспейс = каталог проекта; регистрируем его настоящим DSH
-					// Workspace, чтобы новые сессии получали cwd=/workspace/<name>.
-					const workspaces = pluginCtx && pluginCtx.get && pluginCtx.get("workspaces");
-					if (workspaces && typeof workspaces.create === "function") {
-						for (const project of list) {
-							if (project && project.directory) {
-								try { await workspaces.create({ path: project.directory }); }
-								catch (err) { console.warn("[agctl] DSH Workspace для воркспейса не зарегистрирован:", project.name, err); }
-							}
-						}
-					}
-				} catch (err) { errors.push("Воркспейсы: " + err.message); }
-				if (["developer", "admin"].includes(user.role)) {
-					try {
-						const ssh = await api("/api/me/ssh");
-						setPubKey(ssh.pubKey || ""); setSSHPort(ssh.sshPort || 0); setSSHLoaded(true);
-					} catch (err) { errors.push("SSH: " + err.message); }
-					try {
-						setRuntime(await api("/api/me/runtime"));
-					} catch (err) { errors.push("Рантайм: " + err.message); }
-				} else {
-					setRuntime(null);
-				}
-				if (errors.length) throw new Error(errors.join("\n"));
-			};
-			const run = async (action) => {
-				setBusy(true); setMsg("");
-				try { await action(); } catch (err) { setMsg(String(err.message || err)); }
-				finally { setBusy(false); }
-			};
-			React.useEffect(() => { run(refresh); }, []);
-			const submit = (action) => (e) => { e.preventDefault(); run(action); };
-			const button = (text, props = {}) => h("button", { style: styles.button, disabled: busy, ...props }, text);
-			const field = (label, node) => h("label", { style: styles.field }, h("span", { style: styles.fieldLabel }, label), node);
-			const requestCard = (r, admin) => h("div", { key: r.id, style: styles.card },
-				h("strong", null, r.login + " · " + r.status),
-				h("p", { style: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, r.motivation),
-				h("p", { style: styles.note }, "Создана: " + r.createdAt + (r.decidedBy ? " · Решение: " + r.decidedBy : "") + (r.decidedAt ? " · " + r.decidedAt : "")),
-				admin && r.status === "pending" && h("div", { style: styles.row }, ...["approve", "reject"].map((decision) => button(decision === "approve" ? "Одобрить" : "Отклонить", {
-					key: decision, onClick: () => run(async () => {
-						await api("/api/role-requests/" + encodeURIComponent(r.id) + "/" + decision, "POST", {});
-						await refresh(); setMsg("Решение сохранено.");
-					}),
-				}))),
-			);
-			const runtimeControls = isDev && h("section", { style: styles.card }, h("h2", { style: styles.cardTitle }, "Мой рантайм"),
-				h("p", { style: styles.note }, runtime ? (runtime.status === "running" ? "Работает." + (runtime.sshPort > 0 ? " SSH-порт: " + runtime.sshPort : "") : "Спит (том и сессии сохранены).") : "Статус недоступен."),
-				h("div", { style: styles.row },
-					button("Запустить", { "aria-label": "Запустить рантайм", onClick: () => run(async () => {
-						await api("/api/me/runtime/start", "POST", {}); await refresh(); setMsg("Рантайм запущен.");
-					}) }),
-					button("Остановить", { "aria-label": "Остановить рантайм", onClick: () => run(async () => {
-						await api("/api/me/runtime/stop", "POST", {}); setRuntimeLogs(""); await refresh(); setMsg("Рантайм остановлен; данные сохранены.");
-					}) }),
-					button("Логи", { "aria-label": "Логи рантайма", onClick: () => run(async () => {
-						setRuntimeLogs(await runtimeApi("/api/me/runtime/logs?tail=300")); setMsg("");
-					}) }),
-				),
-				runtimeLogs && h("pre", { style: styles.logs, "aria-label": "Логи контейнера" }, runtimeLogs),
-			);
-			return h("div", { style: styles.wrap, "data-agctl-cabinet-root": "1" },
-				h("h1", { style: styles.title }, "Кабинет agctl"),
-				h("p", { style: styles.subtitle }, me ? me.login + " · " + me.role : "Личный кабинет"),
-				msg && h("p", { style: styles.status, role: "status" }, msg),
-				phase === "connecting" && h("p", { style: styles.note }, "Подключаюсь…"),
-				phase === "login" && h("form", { style: styles.card, onSubmit: submit(async () => {
-					await api("/api/login", "POST", { login, password }); setPassword(""); await refresh();
-				}) }, h("h2", { style: styles.cardTitle }, "Вход"),
-					field("Логин", h("input", { style: styles.input, value: login, required: true, autoComplete: "username", onChange: (e) => setLogin(e.target.value) })),
-					field("Пароль", h("input", { style: styles.input, type: "password", value: password, required: true, autoComplete: "current-password", onChange: (e) => setPassword(e.target.value) })),
-					button("Войти", { type: "submit" })),
-				phase === "ready" && me && h(React.Fragment, null,
-					me.role === "user" && h("form", { style: styles.card, onSubmit: submit(async () => {
-						if (!motivation.trim()) throw new Error("Укажи мотивацию.");
-						await api("/api/role-requests", "POST", { motivation: motivation.trim() }); setMotivation(""); await refresh(); setMsg("Заявка на роль developer отправлена.");
-					}) }, h("h2", { style: styles.cardTitle }, "Заявка на роль developer"),
-						field("Мотивация", h("textarea", { style: { ...styles.input, minHeight: 90 }, value: motivation, required: true, onChange: (e) => setMotivation(e.target.value) })),
-						button("Отправить заявку", { type: "submit", disabled: busy || requests.some((r) => r.status === "pending") })),
-					["user", "admin"].includes(me.role) && h("section", null,
-						h("h2", { style: styles.cardTitle }, me.role === "admin" ? "Заявки на роль developer" : "Мои заявки"),
-						requests.length ? requests.map((r) => requestCard(r, me.role === "admin")) : h("p", { style: styles.note }, "Заявок нет.")),
-					isDev && h("form", { style: styles.card, onSubmit: submit(async () => {
-						const ssh = await api("/api/me/ssh", "PUT", { pubKey: pubKey.trim() });
-						setPubKey(ssh.pubKey || ""); setSSHPort(ssh.sshPort || 0); setSSHLoaded(true); setMsg(ssh.note || "SSH-ключ сохранён.");
-					}) }, h("h2", { style: styles.cardTitle }, "SSH"),
-						field("Публичный SSH-ключ (пусто — отключить SSH)", h("textarea", { style: { ...styles.input, minHeight: 90 }, value: pubKey, disabled: !sshLoaded, placeholder: "ssh-ed25519 …", onChange: (e) => setPubKey(e.target.value) })),
-						button("Сохранить ключ", { type: "submit", disabled: busy || !sshLoaded }),
-						sshLoaded && (sshPort > 0 ? h("pre", { style: styles.logs }, "ssh root@127.0.0.1 -p " + sshPort) : h("p", { style: styles.note }, "Рантайм спит (sshPort = 0). Запусти его в «Моём рантайме» или открой чат.")),
-						h("p", { style: styles.note }, "SSH слушает только loopback 127.0.0.1 сервера, не твоего компьютера. Для удалённого подключения нужен SSH-туннель. Приватный ключ не отправляй.")),
-					runtimeControls,
-					h("section", { style: styles.card }, h("h2", { style: styles.cardTitle }, "Воркспейсы"),
-						h("form", { style: styles.formStack, onSubmit: submit(async () => {
-							if (!name.trim()) throw new Error("Укажи имя воркспейса.");
-							const body = { name: name.trim() };
-							if (isDev && cloneUrl.trim()) body.cloneUrl = cloneUrl.trim();
-							await api("/api/projects", "POST", body);
-							setName(""); setCloneUrl(""); await refresh(); setMsg("Воркспейс создан.");
-						}) },
-							field("Имя", h("input", { style: styles.input, "aria-label": "Имя воркспейса", placeholder: "Имя воркспейса", value: name, required: true, onChange: (e) => setName(e.target.value) })),
-							isDev && field("Публичный GitHub HTTPS URL (необязательно)", h("input", { style: styles.input, "aria-label": "Git URL воркспейса", placeholder: "https://github.com/user/repo.git", value: cloneUrl, onChange: (e) => setCloneUrl(e.target.value) })),
-							h("div", { style: styles.row }, button("Добавить воркспейс", { type: "submit" }))),
-						h("p", { style: styles.note }, "Воркспейсы появляются деревом в боковой панели чата; каждый — каталог /workspace/<имя> с локальной Git-историей. Автопуш во внешний Git не выполняется."),
-						projects.length ? projects.map((project) => h("div", { key: project.name, style: { marginTop: 12 } },
-							h("strong", null, project.name),
-							h("div", { style: { ...styles.placeMeta, overflowWrap: "anywhere" } }, project.directory || ""))) : h("p", { style: styles.note }, "Воркспейсов пока нет.")),
-				),
-			);
 		}
 
-		const inject = ["slots", "layout"];
+		// ── статистика активности из родного стора сессий dsh ───────────────────
+		function sessionActivity() {
+			const root = window.__agctlCabinetCtx;
+			const sessions = root && root.get && root.get("sessions");
+			try {
+				const snap = sessions && sessions.list && sessions.list.getSnapshot();
+				if (!snap || !Array.isArray(snap.ids)) return { total: 0, byDay: new Map(), usage: null, usageSessions: 0 };
+				const byDay = new Map();
+				const usage = { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+				let total = 0, usageSessions = 0;
+				for (const id of snap.ids) {
+					const s = snap.byId[id];
+					if (!s || s.origin === "subagent") continue;
+					total++;
+					const day = Math.floor((s.updatedAt || 0) / 86400000);
+					if (day > 0) byDay.set(day, (byDay.get(day) || 0) + 1);
+					// dsh token-meter exposes cumulative provider-reported totals per
+					// session in the native list projection; no guesses from message text.
+					const projection = s.projectionValues || (snap.projectionsBySession && snap.projectionsBySession[id] && snap.projectionsBySession[id].values);
+					const tokens = projection && projection.tokenUsage;
+					if (tokens) {
+						usageSessions++;
+						for (const key of Object.keys(usage)) usage[key] += Number(tokens[key]) || 0;
+					}
+				}
+				return { total, byDay, usage, usageSessions };
+			} catch (e) {
+				return { total: 0, byDay: new Map(), usage: null, usageSessions: 0 };
+			}
+		}
+
+		function heatColor(count) {
+			if (!count) return null;
+			if (count <= 1) return "rgba(35,110,220,.35)";
+			if (count <= 3) return "rgba(35,110,220,.6)";
+			if (count <= 6) return "rgba(35,110,220,.8)";
+			return "rgba(35,110,220,1)";
+		}
+
+		function buildOverlay() {
+			closeOverlay();
+			const overlay = el("div", "position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:48px 20px;overflow:auto");
+			overlay.dataset.agctlCabinetOverlay = "1";
+			const sheet = el("div", "width:min(760px,100%);background:var(--dsw-alias-bg-layer-1,#161616);color:var(--dsw-alias-label-primary,inherit);border-radius:16px;border:1px solid var(--dsw-alias-border-l1,#333);padding:28px 30px;box-shadow:0 24px 80px rgba(0,0,0,.5);box-sizing:border-box");
+			const close = el("button", "float:right;border:none;background:transparent;color:inherit;font-size:22px;cursor:pointer;line-height:1", "×");
+			close.setAttribute("aria-label", "Закрыть");
+			close.addEventListener("click", () => overlay.remove());
+			sheet.appendChild(close);
+			overlay.appendChild(sheet);
+			overlay.addEventListener("click", (ev) => { if (ev.target === overlay) overlay.remove(); });
+			document.body.appendChild(overlay);
+			return sheet;
+		}
+
+		function openHelpOverlay() {
+			const sheet = buildOverlay();
+			const box = el("div", null, null);
+			box.innerHTML = `
+				<h2 style="margin:0 0 14px;font-size:18px">Справка — ИИ-мастерская ТюмГУ</h2>
+				<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.5">
+					<li><b>Воркспейсы</b> — папки проектов в боковой панели. Новая сессия, созданная внутри папки, работает в каталоге этого проекта.</li>
+					<li><b>Создать воркспейс</b> — кнопка в шапке списка Workspaces: пустой или клон публичного GitHub-репозитория.</li>
+					<li><b>SSH</b> (роль developer) — положи публичный ключ в Профиле; порт появится, когда рантайм работает. Доступ только с самого сервера или через туннель.</li>
+					<li><b>Рантайм</b> управляется agctl автоматически: просыпается при открытии чата и засыпает после часа бездействия; активная SSH-сессия продлевает работу. Запускать и останавливать вручную не нужно.</li>
+					<li><b>Git</b> — история воркспейса сохраняется автоматически; автопуш во внешний Git не выполняется.</li>
+				</ul>`;
+			sheet.appendChild(box);
+		}
+
+		function statsBlock() {
+			const wrap = el("div", null, null);
+			const { total, byDay, usage, usageSessions } = sessionActivity();
+			const fmt = (n) => new Intl.NumberFormat("ru-RU").format(Math.round(n || 0));
+			const input = usage ? usage.uncachedInputTokens + usage.cacheReadTokens + usage.cacheWriteTokens : 0;
+			const output = usage ? usage.outputTokens : 0;
+			const tokenTotal = input + output;
+			const row = el("div", "display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 6px");
+			const card = (value, label) => {
+				const c = el("div", "flex:1 1 145px;border:1px solid var(--dsw-alias-border-l1,#333);border-radius:12px;padding:12px 14px;text-align:center");
+				c.appendChild(el("div", "font-size:20px;font-weight:700", value));
+				c.appendChild(el("div", "font-size:11px;color:var(--dsw-alias-label-tertiary,#888);margin-top:4px", label));
+				return c;
+			};
+			row.append(
+				card(usageSessions ? fmt(tokenTotal) : "—", "Токенов всего"),
+				card(usageSessions ? fmt(input) : "—", "Входные токены"),
+				card(usageSessions ? fmt(output) : "—", "Выходные токены"),
+				card(fmt(total), "Сессий всего"),
+				card(fmt(byDay.size), "Активных дней"),
+			);
+			wrap.appendChild(row);
+			const cache = usage && usageSessions ? el("p", "font-size:11px;color:var(--dsw-alias-label-tertiary,#888);margin:8px 0 0",
+				`Кэш: чтение ${fmt(usage.cacheReadTokens)}, запись ${fmt(usage.cacheWriteTokens)}; учтено сессий: ${usageSessions}`)
+				: el("p", "font-size:11px;color:var(--dsw-alias-label-tertiary,#888);margin:8px 0 0", "Token usage пока не пришёл от dsh.");
+			wrap.appendChild(cache);
+			const label = el("div", "font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#999);margin-top:14px", "Активность сессий за год (по последнему обновлению; не токены/день)");
+			wrap.appendChild(label);
+			const heatScroll = el("div", "overflow-x:auto;margin-top:8px");
+			const heat = el("div", "display:grid;grid-template-rows:repeat(7, 10px);grid-auto-flow:column;grid-auto-columns:10px;gap:3px;width:max-content");
+			const today = Math.floor(Date.now() / 86400000);
+			for (let i = 363; i >= 0; i--) {
+				const day = today - i;
+				const count = byDay.get(day) || 0;
+				const cell = el("div", "width:10px;height:10px;border-radius:3px", null);
+				cell.style.background = heatColor(count) || "var(--dsw-alias-interactive-bg-hover, rgba(255,255,255,.08))";
+				cell.title = count ? `${count} сессий` : "Нет активности";
+				heat.appendChild(cell);
+			}
+			heatScroll.appendChild(heat);
+			wrap.appendChild(heatScroll);
+			return wrap;
+		}
+
+		function openProfileOverlay(me) {
+			const sheet = buildOverlay();
+			const api = apiFactory();
+			const status = el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888);white-space:pre-wrap", null);
+
+			// шапка
+			const head = el("div", "display:flex;flex-direction:column;align-items:center;gap:8px;margin:6px 0 22px");
+			const displayName = me.displayName || me.name || me.login;
+			const avatar = el("div", "width:84px;height:84px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#8a9a5b;color:#fff;font-size:30px;font-weight:700", initials(displayName));
+			const name = el("div", "font-size:22px;font-weight:700", displayName);
+			const handle = el("div", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888)", "@" + me.login);
+			head.append(avatar, name, handle);
+			sheet.append(head);
+
+			// роль
+			const roleCard = el("div", "agctl-card");
+			roleCard.appendChild(el("h2", "margin:0 0 10px;font-size:14px;font-weight:600", "Права доступа"));
+			const roleRow = el("div", "display:flex;gap:10px;align-items:baseline");
+			roleRow.appendChild(el("span", "font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#999);width:130px;flex:none", "Роль"));
+			const badge = el("span", "display:inline-block;padding:2px 10px;border-radius:999px;border:1px solid #1459b8;background:rgba(23,105,210,.15);font-size:12px;font-weight:700", roleName(me.role));
+			roleRow.appendChild(badge);
+			roleCard.append(roleRow, el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888);margin:8px 0 0", roleDescription(me.role)));
+			sheet.appendChild(roleCard);
+
+			// использование
+			const usageCard = el("div", "agctl-card");
+			usageCard.appendChild(el("h2", "margin:0 0 4px;font-size:14px;font-weight:600", "Использование"));
+			usageCard.appendChild(statsBlock());
+			const runtimeLine = el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888);margin:10px 0 0", "");
+			usageCard.appendChild(runtimeLine);
+			sheet.appendChild(usageCard);
+
+			const isDev = me.role === "developer" || me.role === "admin";
+
+			// SSH (developer/admin)
+			if (isDev) {
+				const sshCard = el("div", "agctl-card");
+				sshCard.appendChild(el("h2", "margin:0 0 10px;font-size:14px;font-weight:600", "SSH"));
+				const label = el("label", "display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600", "Публичный SSH-ключ (пусто — отключить SSH)");
+				const area = el("textarea", null, null);
+				area.placeholder = "ssh-ed25519 …";
+				label.appendChild(area);
+				const save = el("button", "agctl-btn", "Сохранить ключ");
+				const portLine = el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888)", "");
+				const note = el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888)", "SSH слушает только loopback 127.0.0.1 сервера. Для удалённого подключения нужен SSH-туннель. Приватный ключ не отправляй.");
+				save.addEventListener("click", async () => {
+					save.disabled = true;
+					try {
+						const data = await api("/api/me/ssh", "PUT", { pubKey: area.value.trim() });
+						area.value = data.pubKey || "";
+						status.textContent = data.note || "SSH-ключ сохранён.";
+					} catch (err) { status.textContent = String(err.message || err); }
+					finally { save.disabled = false; }
+				});
+				sshCard.append(label, save, portLine, note);
+				sheet.appendChild(sshCard);
+				api("/api/me/ssh").then((ssh) => {
+					area.value = ssh.pubKey || "";
+					portLine.textContent = ssh.sshPort > 0
+						? "ssh root@127.0.0.1 -p " + ssh.sshPort
+						: "Рантайм спит (sshPort = 0): открой чат — sshd поднимется при следующем старте.";
+				}).catch((err) => { status.textContent = "SSH: " + err.message; });
+			}
+
+			// заявки на роль
+			const requestsCard = el("div", null, null);
+			const requestsTitle = el("h2", "margin:0 0 10px;font-size:14px;font-weight:600", me.role === "admin" ? "Заявки на роль developer" : "Мои заявки");
+			requestsCard.appendChild(requestsTitle);
+			sheet.append(requestsCard, status);
+
+			api("/api/me/runtime").then((runtime) => {
+				runtimeLine.textContent = runtime.status === "running"
+					? "Личный рантайм работает; заснёт сам после часа простоя."
+					: "Личный рантайм спит; проснётся сам при открытии чата.";
+			}).catch(() => { runtimeLine.textContent = ""; });
+
+			if (me.role === "user") {
+				const form = el("div", "agctl-card");
+				form.appendChild(el("h2", "margin:0 0 10px;font-size:14px;font-weight:600", "Заявка на роль developer"));
+				const label = el("label", "display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600", "Мотивация");
+				const area = el("textarea", "min-height:90px", null);
+				label.appendChild(area);
+				const send = el("button", "agctl-btn", "Отправить заявку");
+				send.addEventListener("click", async () => {
+					send.disabled = true;
+					try {
+						if (!area.value.trim()) throw new Error("Укажи мотивацию.");
+						await api("/api/role-requests", "POST", { motivation: area.value.trim() });
+						area.value = "";
+						status.textContent = "Заявка на роль developer отправлена.";
+						renderRequests();
+					} catch (err) { status.textContent = String(err.message || err); }
+					finally { send.disabled = false; }
+				});
+				form.append(label, send);
+				sheet.insertBefore(form, requestsCard);
+			}
+
+			function renderRequests() {
+				api("/api/role-requests").then((data) => {
+					for (const child of [...requestsCard.children]) if (child !== requestsTitle) child.remove();
+					const list = Array.isArray(data && data.requests) ? data.requests : [];
+					if (!list.length) {
+						const empty = el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888)", "Заявок нет.");
+						empty.dataset.agctlEmpty = "1";
+						requestsCard.appendChild(empty);
+						return;
+					}
+					for (const r of list) {
+						const card = el("div", "agctl-card");
+						card.dataset.agctlRequest = "1";
+						card.appendChild(el("strong", null, r.login + " · " + r.status));
+						card.appendChild(el("p", "white-space:pre-wrap;overflow-wrap:anywhere", r.motivation));
+						card.appendChild(el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888)", "Создана: " + r.createdAt + (r.decidedBy ? " · Решение: " + r.decidedBy : "")));
+						if (me.role === "admin" && r.status === "pending") {
+							const actions = el("div", "display:flex;gap:8px");
+							for (const [decision, label] of [["approve", "Одобрить"], ["reject", "Отклонить"]]) {
+								const btn = el("button", "agctl-btn", label);
+								btn.addEventListener("click", async () => {
+									btn.disabled = true;
+									try {
+										await api("/api/role-requests/" + encodeURIComponent(r.id) + "/" + decision, "POST", {});
+										status.textContent = "Решение сохранено.";
+										renderRequests();
+									} catch (err) { status.textContent = String(err.message || err); btn.disabled = false; }
+								});
+								actions.appendChild(btn);
+							}
+							card.appendChild(actions);
+						}
+						requestsCard.appendChild(card);
+					}
+				}).catch((err) => { status.textContent = "Заявки: " + err.message; });
+			}
+			renderRequests();
+		}
+
+		function closeOverlay() {
+			for (const node of document.querySelectorAll("[data-agctl-cabinet-overlay]")) node.remove();
+		}
+
+		// ── чип пользователя: штатный слот sidebar.footer.action ────────────────
+		// dsh отдаёт footArea двумя слотами: footer.action (list) и settings
+		// (single, занят нативным SettingsRoot). Регистрируемся в footer.action —
+		// чип встаёт ровно над Settings, не затеняя shipped UI, а collapsed-
+		// состояние приходит ownerProps.wide, без MutationObserver по классам.
+		let chipNode = null;
+		let agctlUserPromise = null;
+
+		function ensureAgctlUser() {
+			if (agctlUserPromise) return agctlUserPromise;
+			agctlUserPromise = fetch("/api/me", { credentials: "include", headers: { Accept: "application/json" } })
+				.then((res) => (res.ok ? res.json() : null))
+				.then((data) => (data && data.user && data.user.login ? data.user : null))
+				.catch(() => null);
+			return agctlUserPromise;
+		}
+
+		function applyChipWidth(node, wide) {
+			if (wide) {
+				node.style.width = "calc(100% - 16px)";
+				node.style.justifyContent = "flex-start";
+				node.style.margin = "6px 8px 10px";
+				node.style.padding = "7px 9px";
+				node.style.minHeight = "42px";
+			} else {
+				// Rail 56px: только круглый avatar, как родные иконки.
+				node.style.width = "42px";
+				node.style.justifyContent = "center";
+				node.style.margin = "6px auto 10px";
+				node.style.padding = "7px 0";
+				node.style.minHeight = "42px";
+			}
+			const spans = node.querySelectorAll("span");
+			if (spans[1]) spans[1].style.display = wide ? "block" : "none";
+		}
+
+		function buildChipNode(user) {
+			const chip = el("button", "display:flex;align-items:center;gap:9px;border-radius:10px;cursor:pointer;border:none;background:transparent;color:inherit;font:inherit;text-align:left");
+			chip.dataset.agctlCabinetChip = "1";
+			chip.type = "button";
+			chip.setAttribute("aria-label", "Профиль и настройки agctl");
+			const avatar = el("span", "width:28px;height:28px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:#8a9a5b;color:#fff;font-size:11px;font-weight:700");
+			const name = el("span", "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600");
+			chip.append(avatar, name);
+			chip.addEventListener("click", (ev) => {
+				ev.stopPropagation();
+				toggleCabinetPopup(chip, user);
+			});
+			return chip;
+		}
+
+		function renderChipInto(container, user, wide) {
+			if (!chipNode) chipNode = buildChipNode(user);
+			chipNode.__agctlUser = user;
+			const displayName = user.displayName || user.name || user.login;
+			const spans = chipNode.querySelectorAll("span");
+			if (spans[0].textContent !== initials(displayName)) spans[0].textContent = initials(displayName);
+			if (spans[1].textContent !== displayName) spans[1].textContent = displayName;
+			if (chipNode.parentElement !== container) container.appendChild(chipNode);
+			applyChipWidth(chipNode, wide);
+			return chipNode;
+		}
+
+		function ProfileChip(props) {
+			const wide = props.wide !== false;
+			const hostRef = React.useRef(null);
+			React.useEffect(() => {
+				const host = hostRef.current;
+				if (!host) return undefined;
+				let alive = true;
+				ensureAgctlUser().then((user) => {
+					if (alive && host.isConnected && user) renderChipInto(host, user, wide);
+				});
+				return () => {
+					alive = false;
+					if (chipNode && chipNode.parentElement === host) host.removeChild(chipNode);
+				};
+			}, []);
+			React.useEffect(() => {
+				if (chipNode) applyChipWidth(chipNode, wide);
+			}, [wide]);
+			return React.createElement("div", { ref: hostRef, "data-agctl-profile-chip-host": "1" });
+		}
+
+		function toggleCabinetPopup(anchor, me) {
+			const existing = document.querySelector("[data-agctl-cabinet-popup]");
+			if (existing) { existing.remove(); return; }
+			const popup = el("div", "position:fixed;z-index:10000;min-width:230px;padding:6px;border-radius:12px;border:1px solid var(--dsw-alias-border-l1,#333);background:var(--dsw-specific-menu,#1c1c1c);color:var(--dsw-alias-label-primary,inherit);box-shadow:0 12px 40px rgba(0,0,0,.4);display:flex;flex-direction:column;gap:2px");
+			popup.dataset.agctlCabinetPopup = "1";
+			const item = (label, act) => {
+				const btn = el("button", "display:flex;align-items:center;gap:10px;border:none;background:transparent;color:inherit;font:inherit;font-size:13px;padding:9px 10px;border-radius:8px;cursor:pointer;text-align:left", label);
+				btn.type = "button";
+				btn.addEventListener("click", () => { popup.remove(); act(); });
+				return btn;
+			};
+			popup.append(
+				item("Профиль", () => openProfileOverlay(me)),
+				item("Настройки", () => {
+					const btn = [...document.querySelectorAll('button,[role="button"],a')].find((b) =>
+						/settings|настройки/i.test(`${b.getAttribute("aria-label") || ""} ${b.getAttribute("title") || ""} ${b.textContent || ""}`));
+					if (btn) btn.click();
+				}),
+				item("Справка", () => openHelpOverlay()),
+			);
+			document.body.appendChild(popup);
+			const rect = anchor.getBoundingClientRect();
+			popup.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - popup.offsetWidth - 8)) + "px";
+			popup.style.bottom = Math.max(8, window.innerHeight - rect.top + 6) + "px";
+			const dismiss = (ev) => {
+				if (popup.contains(ev.target) || anchor.contains(ev.target)) return;
+				popup.remove();
+				document.removeEventListener("mousedown", dismiss, true);
+			};
+			document.addEventListener("mousedown", dismiss, true);
+		}
 
 		function apply(ctx) {
-			pluginCtx = ctx;
-			ensureCabinetStyles();
-			ctx.slots.inject("main", () =>
-				ctx.slots.register(
-					{
-						name: "main",
-						key: PANEL_ID,
-						inject: () => ({}),
-					},
-					CabinetPage,
-				),
-			);
-			ctx.slots.inject("sidebar.panellist", () =>
-				ctx.slots.register(
-					{
-						name: "sidebar.panellist",
-						id: PANEL_ID,
-						order: 25,
-						label: "Кабинет",
-					},
-					CabinetIcon,
-				),
-			);
+			window.__agctlCabinetCtx = ctx;
+			ensureStyles();
+			// Штатное расширение native sidebar: регистрируемся один раз, dsh сам
+			// монтирует/размонтирует компонент и передаёт wide при collapse.
+			ctx.slots.inject("sidebar.footer.action", () => ctx.slots.register({
+				name: "sidebar.footer.action",
+				id: "agctl-profile-chip",
+				order: 10,
+			}, ProfileChip));
 		}
 
-		exports.inject = inject;
+		exports.inject = ["slots"];
 		exports.apply = apply;
-		exports.PANEL_ID = PANEL_ID;
-		return module.exports;
+		// Test seams: рендер чипа и загрузка пользователя без React-рантайма.
+		exports.renderChipInto = renderChipInto;
+		exports.ensureAgctlUser = ensureAgctlUser;
+		return exports;
 	},
 });
