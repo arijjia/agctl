@@ -93,19 +93,36 @@ test('чип регистрируется в нативном слоте sidebar
   assert.equal(exports.inject.join(','), 'slots', 'плагин запрашивает только слоты');
 });
 
-test('чип показывает avatar-инициалы и логин, collapsed оставляет круглый avatar', async () => {
+test('чип повторяет метрики нативного Settings-ряда', async () => {
   const { exports } = harness({ me: 'admin' });
   const user = await exports.ensureAgctlUser();
   assert.equal(user.login, 'masha');
   const container = makeEl('div');
   const chip = exports.renderChipInto(container, user, true);
+
+  // Ряд = VOzbGW_triggerRow: полная ширина панели, блик -2px — левая граница
+  // совпадает с кнопкой Settings, а не правее неё.
+  assert.equal(container.style.width, 'calc(100% + 4px)');
+  assert.equal(container.style.margin, '4px -2px');
+
+  // Кнопка = VOzbGW_trigger: 42px, паддинг 0 10px 0 8px, 14/22.
+  assert.equal(chip.style.height, '42px');
+  assert.equal(chip.style.padding, '0 10px 0 8px');
+  assert.equal(chip.style.fontSize, '14px');
+  assert.equal(chip.style.borderRadius, 'var(--dsw-radius-md, 10px)');
+
   const spans = chip.querySelectorAll('span');
   assert.equal(spans[0].textContent, 'MA');
   assert.equal(spans[1].textContent, 'masha');
   assert.equal(spans[1].style.display, 'block');
+
+  // Рельса = VOzbGW_railRow/rail: 36px ряд и 36×36 кнопка, имя скрыто.
   exports.renderChipInto(container, user, false);
+  assert.equal(container.style.width, '36px');
+  assert.equal(container.style.margin, '8px 0 10px');
+  assert.equal(chip.style.width, '36px');
+  assert.equal(chip.style.height, '36px');
   assert.equal(spans[1].style.display, 'none');
-  assert.equal(chip.style.width, '42px');
 });
 
 test('повторный рендер переиспользует один DOM-узел чипа', async () => {

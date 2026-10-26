@@ -332,6 +332,9 @@ window.__ModuleLoader__.load({
 		// (single, занят нативным SettingsRoot). Регистрируемся в footer.action —
 		// чип встаёт ровно над Settings, не затеняя shipped UI, а collapsed-
 		// состояние приходит ownerProps.wide, без MutationObserver по классам.
+		// Метрики ряда и кнопки списаны с нативного VOzbGW_triggerRow/trigger
+		// (dsh-client-ui-settings-general), чтобы левая граница и размер чипа
+		// совпадали с кнопкой Settings пиксель-в-пиксель.
 		let chipNode = null;
 		let agctlUserPromise = null;
 
@@ -344,32 +347,66 @@ window.__ModuleLoader__.load({
 			return agctlUserPromise;
 		}
 
-		function applyChipWidth(node, wide) {
+		// Ряд = .VOzbGW_triggerRow: calc(100% + 4px) с блик-отступом -2px;
+		// в рельсе = .VOzbGW_railRow: 36px, margin 8px 0 10px.
+		function applyRowMetrics(node, wide) {
+			node.style.display = "flex";
+			node.style.alignItems = "center";
+			node.style.flex = "none";
+			node.style.minWidth = "0";
 			if (wide) {
-				node.style.width = "calc(100% - 16px)";
+				node.style.width = "calc(100% + 4px)";
+				node.style.margin = "4px -2px";
 				node.style.justifyContent = "flex-start";
-				node.style.margin = "6px 8px 10px";
-				node.style.padding = "7px 9px";
-				node.style.minHeight = "42px";
 			} else {
-				// Rail 56px: только круглый avatar, как родные иконки.
-				node.style.width = "42px";
+				node.style.width = "36px";
+				node.style.margin = "8px 0 10px";
 				node.style.justifyContent = "center";
-				node.style.margin = "6px auto 10px";
-				node.style.padding = "7px 0";
-				node.style.minHeight = "42px";
+			}
+		}
+
+		// Кнопка = .VOzbGW_trigger: 42px, padding 0 10px 0 8px, gap 8px, 14/22;
+		// рельса = .VOzbGW_rail: 36×36 по центру.
+		function applyChipMetrics(node, wide) {
+			node.style.boxSizing = "border-box";
+			node.style.borderRadius = "var(--dsw-radius-md, 10px)";
+			node.style.cursor = "pointer";
+			node.style.minWidth = "0";
+			node.style.color = "inherit";
+			node.style.background = "transparent";
+			node.style.border = "none";
+			node.style.fontFamily = "inherit";
+			node.style.fontSize = "14px";
+			node.style.lineHeight = "22px";
+			node.style.fontWeight = "400";
+			node.style.overflow = "hidden";
+			node.style.textAlign = "left";
+			if (wide) {
+				node.style.height = "42px";
+				node.style.flex = "1 1 auto";
+				node.style.alignItems = "center";
+				node.style.gap = "8px";
+				node.style.padding = "0 10px 0 8px";
+				node.style.justifyContent = "flex-start";
+			} else {
+				node.style.width = "36px";
+				node.style.height = "36px";
+				node.style.flex = "none";
+				node.style.justifyContent = "center";
+				node.style.gap = "0";
+				node.style.padding = "0";
 			}
 			const spans = node.querySelectorAll("span");
 			if (spans[1]) spans[1].style.display = wide ? "block" : "none";
 		}
 
 		function buildChipNode(user) {
-			const chip = el("button", "display:flex;align-items:center;gap:9px;border-radius:10px;cursor:pointer;border:none;background:transparent;color:inherit;font:inherit;text-align:left");
+			const chip = el("button", null, null);
 			chip.dataset.agctlCabinetChip = "1";
 			chip.type = "button";
 			chip.setAttribute("aria-label", "Профиль и настройки agctl");
 			const avatar = el("span", "width:28px;height:28px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:#8a9a5b;color:#fff;font-size:11px;font-weight:700");
-			const name = el("span", "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600");
+			const name = el("span", "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:22px");
 			chip.append(avatar, name);
 			chip.addEventListener("click", (ev) => {
 				ev.stopPropagation();
@@ -379,6 +416,7 @@ window.__ModuleLoader__.load({
 		}
 
 		function renderChipInto(container, user, wide) {
+			applyRowMetrics(container, wide);
 			if (!chipNode) chipNode = buildChipNode(user);
 			chipNode.__agctlUser = user;
 			const displayName = user.displayName || user.name || user.login;
@@ -386,7 +424,7 @@ window.__ModuleLoader__.load({
 			if (spans[0].textContent !== initials(displayName)) spans[0].textContent = initials(displayName);
 			if (spans[1].textContent !== displayName) spans[1].textContent = displayName;
 			if (chipNode.parentElement !== container) container.appendChild(chipNode);
-			applyChipWidth(chipNode, wide);
+			applyChipMetrics(chipNode, wide);
 			return chipNode;
 		}
 
@@ -396,6 +434,7 @@ window.__ModuleLoader__.load({
 			React.useEffect(() => {
 				const host = hostRef.current;
 				if (!host) return undefined;
+				applyRowMetrics(host, wide);
 				let alive = true;
 				ensureAgctlUser().then((user) => {
 					if (alive && host.isConnected && user) renderChipInto(host, user, wide);
@@ -406,7 +445,10 @@ window.__ModuleLoader__.load({
 				};
 			}, []);
 			React.useEffect(() => {
-				if (chipNode) applyChipWidth(chipNode, wide);
+				const host = hostRef.current;
+				if (!host) return;
+				applyRowMetrics(host, wide);
+				if (chipNode) applyChipMetrics(chipNode, wide);
 			}, [wide]);
 			return React.createElement("div", { ref: hostRef, "data-agctl-profile-chip-host": "1" });
 		}
