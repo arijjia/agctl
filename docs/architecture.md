@@ -130,35 +130,40 @@ $AGCTL_HOME/chats/u<ID>/work/<project-name>/
 `GET/POST /api/projects` возвращает только имя и контейнерный путь, не
 раскрывая host path; имя валидируется как один компонент пути, симлинки
 запрещены (`internal/provision/projects.go`, `internal/server/projects.go`).
-Developer/admin при создании может передать `cloneUrl` (только http/https):
-репозиторий клонируется в воркспейс без креденшелов; remote остаётся
-настроенным клоном, но автопуш не выполняется.
+Developer/admin при создании может передать `cloneUrl` (только публичный
+`https://github.com/owner/repository` без credentials/query/fragment): репозиторий
+клонируется во временный каталог вне bind mount, затем атомарно переносится в
+воркспейс; remote остаётся настроенным клоном, но автопуш не выполняется.
 
-### 4.2 Folder → настоящий cwd
+### 4.2 Нативный Workspaces browser → настоящий cwd
 
-1. Создание папки из дерева chat-brand вызывает `POST /api/projects` —
-   создаются каталог и локальный Git.
-2. Клиент DSH регистрирует Workspace по `path` через официальный
-   `workspaces.create({path})`; этот метод создаёт/переиспользует запись в
-   workspace registry dsh.
-3. «＋» на папке вызывает `uiWorkspace.startSession(workspaceId)`.
-4. Host-плагин `agctl-chat-session-files` видит явно заданный project
-   `workspaceId` и **не** заменяет его скрытым cwd `.sessions/<sessionId>`.
-   Поэтому новый Session реально запускается в `/workspace/<project>`.
+1. Host-плагин `agctl-chat-session-files` при старте перечисляет видимые
+   каталоги `/workspace/*` и регистрирует их через `workspaceRegistry.create`.
+   Скрытые dot-каталоги, включая возможные остатки старого `.sessions/`,
+   пропускаются.
+2. Сайдбар — **родной DSH Workspaces браузер**: DSH рисует иконки, active/open
+   folder states, статусы сессий, поиск, фильтры и кнопки. Кастомное дерево,
+   кастомные статусы и переименование `Workspaces` в «Сессии» демонтированы.
+3. Нативная кнопка `Add workspace` вызывает agctl create-flow: пустой каталог
+   или (developer/admin) публичный GitHub HTTPS clone. Клиент вызывает
+   `POST /api/projects`, затем регистрирует ответный путь через официальный
+   `workspaces.create({path})`.
+4. Новая Session, созданная в выбранном project Workspace, работает в
+   `/workspace/<project>`. Без project selection используется default Workspace
+   `/workspace`; host-плагин больше не перехватывает `sessionController.create`
+   и не создаёт скрытые `.sessions/<sessionId>` каталоги.
 
-Сессии, созданные без проекта, сохраняют старое поведение — отдельный
-`.sessions/<sessionId>` и внутренний Workspace «Chat». Переназначение старой
-сессии в другую папку меняет UI-группировку, но не переносит её файлы между
-каталогами; пилот рассчитан на чистый том, миграции нет.
+Старые записи `.sessions/<sessionId>` и Workspace-registry entries могут
+остаться на томах предыдущего пилота; автоматическая миграция/очистка не
+выполняется. Новые скрытые каталоги не создаются. `AGENTS.local.md` всё ещё
+можно менять через `PUT /api/projects/{name}/instructions` (и compat PATCH API),
+но отдельного UI «папка/скрыть/настройки» больше нет.
 
-Project instructions записываются в `AGENTS.local.md` корня проекта через
-`PUT /api/projects/{name}/instructions` (и совместимый PATCH endpoint чата).
-Скрытие папки из дерева не удаляет каталог, Git-историю и инструкции.
-
-Личным рантаймом управляет developer из Кабинета: `GET /api/me/runtime`
-(статус/sshPort), `POST /api/me/runtime/start|stop`, хвост логов
-`GET /api/me/runtime/logs?tail=N`. Стоп — то же, что делает TTL-reaper:
-удаляет compute, том и сессии остаются; старт — ленивый `ensureChat`.
+Рантайм полностью управляется `agctl serve`: пользователь не получает кнопок
+start/stop/logs. В профиле остаётся только read-only статус; idle reaper
+сам засыпает после TTL и просыпается по запросу. Активная SSH-сессия продлевает
+lease проверкой Docker `ContainerTop` в последнюю минуту TTL; detached job после
+разрыва SSH пока не отслеживается.
 
 ### 4.3 Невидимое Git-версионирование
 

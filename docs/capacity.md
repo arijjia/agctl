@@ -101,9 +101,13 @@ RAM∞(t) ≈ B + C∞(t) × R₀ + S∞(t) × Rssh,   где S∞(t) ≤ C∞(t
 внутри этого `work`, а не отдельные dev-тома. Приближённая модель диска:
 
 ```text
-Dtotal ≈ Σusers (D_dsh-home + D_work/.sessions + Σprojects(D_worktree + D_.git))
+Dtotal ≈ Σusers (D_dsh-home + Σprojects(D_worktree + D_.git) + D_workspace-root)
          + DB + logs + images
 ```
+
+Новые чаты используют default Workspace `/workspace`; скрытые per-session каталоги
+не создаются. На старых томах остаточный `.sessions/` может занимать место до
+отдельного аудита/очистки.
 
 Старые 50–200 МБ/пользователя не учитывают новый профиль и не задают квоту на
 проекты. Нужен **пилот с чистого тома**: иначе старые рабочие каталоги/данные

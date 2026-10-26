@@ -1,6 +1,6 @@
 # agctl v3 — архитектурный роадмап
 
-> Срез: 2026-10-25, ветка `main`. Целевая модель владельца: один персональный
+> Срез: 2026-10-26, ветка `main`. Целевая модель владельца: один персональный
 > рантайм на аккаунт, роли вместо двух режимов, проекты-папки, TTL 1 час.
 > Фактическое устройство — [architecture.md](architecture.md); подробное
 > обоснование — `agctl-hq/docs/v3/unified-runtime-model.md`; физика —
@@ -13,8 +13,8 @@
 | Волна | Содержание | Статус |
 |---|---|---|
 | **A. Роль + единый runtime** | `role_requests` → admin approve → постоянная `users.role=developer`; SSH key-only в том же личном контейнере; TTL default 60 min; HEALTHCHECK :3099 + reconcile unhealthy | ✅ done |
-| **B. Проекты-папки + invisible Git** | `/api/projects`; реальный каталог + локальная `.git`; Cabinet/chat tree регистрируют DSH Workspace; новые сессии в проектном cwd; go-git autosave раз в 2 мин без push (GitHub-клон сохраняет origin) | ✅ done |
-| **C. Кабинет v3** | заявка developer, очередь admin, SSH key/port, список/создание проектов; единое `/chat/` дерево Workspace-проектов; Git обычной роли user скрыт | ✅ done |
+| **B. Проекты + invisible Git** | `/api/projects`; реальный каталог + локальная `.git`; host plugin boot-регистрирует `/workspace/*` в DSH WorkspaceRegistry; native Workspaces browser + Add Workspace dialog (empty/GitHub); native Session cwd; go-git autosave без push | ✅ done |
+| **C. Профиль/Кабинет v3.2** | Нижний user-chip popup (профиль/DSH Settings/help); role + requests + token projections/activity + SSH; никаких runtime controls и отдельного workspace списка | ✅ done |
 | **D. Демонтаж seats** | UI создания мест/local-backend убран; создание/мутации legacy workspace и workspace-request → 410; CLI `agctl workspace create` отключена | ✅ done |
 
 Пилот стартует с **чистого тома** — перенос старых `chats/` и `work/` не
