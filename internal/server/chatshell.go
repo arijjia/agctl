@@ -20,11 +20,7 @@ const chatShellMaxHTMLBytes = 1 << 20 // 1 MiB: больше главной ст
 const chatShellStyle = `<style data-agctl="chat-shell">
 button[aria-label="Open right sidebar"],button[aria-label="Collapse right sidebar"],
 button[aria-label^="Access mode"],button[aria-label^="New terminal"],
-button[aria-label^="Workspace files"],button[aria-label="Choose workspace"],
-button[aria-label="Add workspace"],button[aria-label="View options"],
-button[aria-label^="Workspace actions for "],button[aria-label^="New session in "]{display:none!important}
-[class*="projectRow"]{display:none!important}
-[class*="_tabLayout_"]:has(button[aria-label="Collapse right sidebar"]){display:none!important}
+button[aria-label^="Workspace files"]{display:none!important}
 /* Грид фрейма dsh резервирует третью колонку под (скрытую) правую панель —
    сохранённое состояние ширины не должно съедать половину чата. */
 div[style*="grid-template-columns"][class*="_frame"]{grid-template-columns:auto minmax(0px,1fr) minmax(0px,0px)!important}
@@ -72,11 +68,6 @@ function fixIdentity(root){
 function fixChrome(root){
   if(!root||!root.querySelectorAll)return;
   fixIdentity(root);
-  var labels=[];
-  if(root.matches&&root.matches('[class*="sectionLabel"]'))labels.push(root);
-  var found=root.querySelectorAll('[class*="sectionLabel"]');
-  for(var i=0;i<found.length;i++)labels.push(found[i]);
-  for(var i=0;i<labels.length;i++)if((labels[i].textContent||'').trim()==='Workspaces')labels[i].textContent='Сессии';
   var titles=[];
   if(root.matches&&root.matches('[class*="pXSMma_titleGroup"]'))titles.push(root);
   found=root.querySelectorAll('[class*="pXSMma_titleGroup"]');
@@ -104,19 +95,17 @@ new MutationObserver(function(muts){
     var m=muts[i];
     if(m.type==='characterData'&&m.target.parentElement){
       var p=m.target.parentElement;
-      var label=p.closest&&p.closest('[class*="sectionLabel"]');
       var title=p.closest&&p.closest('[class*="pXSMma_titleGroup"]');
       var heading=p.closest&&p.closest('[class*="_heading_"]');
-      if(label)fixChrome(label);if(title)fixChrome(title);if(heading)fixChrome(heading);
+      if(title)fixChrome(title);if(heading)fixChrome(heading);
     }
     if(m.addedNodes)for(var j=0;j<m.addedNodes.length;j++){
       var n=m.addedNodes[j];
       if(n.nodeType===1)fixChrome(n);
       else if(n.nodeType===3&&n.parentElement){
-        var label=n.parentElement.closest&&n.parentElement.closest('[class*="sectionLabel"]');
         var title=n.parentElement.closest&&n.parentElement.closest('[class*="pXSMma_titleGroup"]');
         var heading=n.parentElement.closest&&n.parentElement.closest('[class*="_heading_"]');
-        if(label)fixChrome(label);if(title)fixChrome(title);if(heading)fixChrome(heading);
+        if(title)fixChrome(title);if(heading)fixChrome(heading);
       }
     }
   }
