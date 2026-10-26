@@ -1,67 +1,51 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { sessionDirectory } from "./path.js";
-
-const SCOPE_MARKER = ".agctl-session-workdir";
+import { readdir } from "node:fs/promises";
 
 export const name = "agctl-chat-session-files";
-export const inject = ["sessionController", "workspaceRegistry"];
+export const inject = ["workspaceRegistry"];
 
 /**
- * Host plugin for agctl Chat containers. Sessions in the default Workspace get
- * a hidden per-session directory. Sessions explicitly started in a project
- * Workspace keep that real project cwd, so folder=project is physical on disk.
- * The chat-brand client controls which project Workspace starts a new Session.
+ * Host plugin for the personal agctl runtime. At boot it registers every
+ * project directory under /workspace as a real DSH Workspace, so the native
+ * Workspaces sidebar shows project folders with native icons and statuses.
+ *
+ * Sessions always belong to a real Workspace: project sessions keep their
+ * project cwd (/workspace/<name>); unassigned sessions live in the default
+ * Workspace rooted at /workspace. No hidden per-session directories are
+ * created — the native sidebar stays clean.
+ *
+ * Workspace directories are NOT security boundaries inside one user's
+ * container: that user's shell can navigate anywhere in /workspace.
+ * Containers and volumes remain isolated between users.
  */
 export function apply(ctx) {
-	const rootValue = process.env.AGCTL_CHAT_SESSION_ROOT;
-	if (!rootValue) return;
-
-	const root = path.resolve(rootValue);
-	const controller = ctx.sessionController;
 	const registry = ctx.workspaceRegistry;
-	const originalCreate = controller.create;
-	const callOriginal = (request) => originalCreate.call(controller, request);
+	if (!registry || typeof registry.resolveByPath !== "function" || typeof registry.create !== "function") return;
 
-	const createWithSessionDirectory = async (request = {}) => {
-		if (request.cwd !== undefined) return callOriginal(request);
-
-		// Caller-owned ids may be idempotent re-adoptions; keep the DSH contract
-		// untouched rather than creating a second hidden Workspace.
-		if (request.sessionId !== undefined) return callOriginal(request);
-		const sessionId = `session-${randomUUID()}`;
-
-		const requestedWorkspaceId = request.workspaceId;
-		const requestedWorkspace = requestedWorkspaceId !== undefined ? registry.get(requestedWorkspaceId) : undefined;
-		if (requestedWorkspaceId !== undefined && !requestedWorkspace) return callOriginal(request);
-		// v3: проект-папка является настоящим DSH Workspace. Сессию в нём
-		// оставляем в каталоге проекта; скрытый .sessions/<id> создаём только
-		// для обычного чата/default /workspace.
-		const workspaceRoot = path.dirname(root);
-		const requestedPath = requestedWorkspace && path.resolve(requestedWorkspace.path);
-		const sessionRoot = path.resolve(root);
-		const isPerSessionPath = requestedPath === sessionRoot || requestedPath.startsWith(sessionRoot + path.sep);
-		if (requestedWorkspace && requestedPath !== workspaceRoot && !isPerSessionPath) {
-			return callOriginal(request);
+	// /workspace inside the container; AGCTL_WORKSPACE_ROOT exists only for tests.
+	const workspaceRoot = process.env.AGCTL_WORKSPACE_ROOT || "/workspace";
+	const registerProjects = async () => {
+		let entries;
+		try {
+			entries = await readdir(workspaceRoot, { withFileTypes: true });
+		} catch (error) {
+			ctx.logger.info(`agctl-chat-session-files: cannot list ${workspaceRoot}: ${error?.message ?? error}`);
+			return;
 		}
-
-		const cwd = sessionDirectory(root, sessionId);
-		await mkdir(cwd, { recursive: true, mode: 0o700 });
-		await writeFile(path.join(cwd, SCOPE_MARKER), `session=${sessionId}\n`, { mode: 0o600, flag: "wx" }).catch((error) => {
-			if (error?.code !== "EEXIST") throw error;
-		});
-		// DSH rc2 rejects workspaceId+cwd together, but the web composer requires
-		// every new Session to belong to a Workspace. Create a hidden per-session
-		// Workspace at the same directory, then pass only that WorkspaceId.
-		const workspace = await registry.create(cwd, "Chat");
-		const { workspaceId: _workspaceId, cwd: _cwd, ...rest } = request;
-		return callOriginal({ ...rest, sessionId, workspaceId: workspace.id });
+		for (const entry of entries) {
+			if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+			const dir = path.join(workspaceRoot, entry.name);
+			try {
+				const known = await registry.resolveByPath(dir);
+				if (known === undefined) {
+					await registry.create(dir);
+					ctx.logger.info(`agctl-chat-session-files: workspace registered for ${dir}`);
+				}
+			} catch (error) {
+				ctx.logger.info(`agctl-chat-session-files: workspace registration skipped for ${dir}: ${error?.message ?? error}`);
+			}
+		}
 	};
-
-	controller.create = createWithSessionDirectory;
-	ctx.effect(() => () => {
-		if (controller.create === createWithSessionDirectory) controller.create = originalCreate;
-	});
-	ctx.logger.info("agctl-chat-session-files: per-session cwd creation enabled");
+	void registerProjects();
+	ctx.logger.info("agctl-chat-session-files: native project workspace registration enabled");
 }

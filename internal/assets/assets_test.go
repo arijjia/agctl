@@ -23,6 +23,7 @@ func TestCabinetPluginSkeletonInSync(t *testing.T) {
 		"README.md",
 		filepath.Join("lib", "index.js"),
 		filepath.Join("lib", "client.js"),
+		filepath.Join("test", "client.test.cjs"),
 	}
 	for _, f := range files {
 		want, err := os.ReadFile(filepath.Join(src, f))
@@ -48,13 +49,12 @@ func TestCabinetPluginSkeletonInSync(t *testing.T) {
 	}
 }
 
-// The Host-side per-session working-directory plugin is copied into the same
-// web profile bundle as the Cabinet client plugin. Keep source and embedded
-// copies byte-identical so new per-user chat homes get the current behavior.
+// The Host-side plugin registers persistent project directories as native DSH
+// Workspaces. Keep source and embedded copies byte-identical for new chat homes.
 func TestChatSessionFilesPluginSkeletonInSync(t *testing.T) {
 	src := filepath.Join("..", "..", "dsh-plugins", "chat-session-files")
 	dst := filepath.Join("dsh-skel", "profiles", "web", "node_modules", "@arijjia", "agctl-chat-session-files")
-	files := []string{"package.json", "README.md", "cordis.patch.yml", filepath.Join("lib", "index.js"), filepath.Join("lib", "path.js")}
+	files := []string{"package.json", "README.md", "cordis.patch.yml", filepath.Join("lib", "index.js"), filepath.Join("test", "plugin.test.js")}
 	for _, f := range files {
 		want, err := os.ReadFile(filepath.Join(src, f))
 		if err != nil {
@@ -89,7 +89,7 @@ func TestChatSessionFilesPluginSkeletonInSync(t *testing.T) {
 func TestChatBrandPluginSkeletonPresentButDisabled(t *testing.T) {
 	src := filepath.Join("..", "..", "dsh-plugins", "chat-brand")
 	dst := filepath.Join("dsh-skel", "profiles", "web", "node_modules", "@arijjia", "agctl-chat-brand")
-	for _, f := range []string{"package.json", "cordis.patch.yml", filepath.Join("lib", "index.js"), filepath.Join("lib", "client.js")} {
+	for _, f := range []string{"package.json", "cordis.patch.yml", filepath.Join("lib", "index.js"), filepath.Join("lib", "client.js"), filepath.Join("test", "client-bundle.test.js")} {
 		want, err := os.ReadFile(filepath.Join(src, f))
 		if err != nil {
 			t.Fatalf("chat-brand source %s: %v", f, err)
@@ -113,7 +113,7 @@ func TestChatBrandPluginSkeletonPresentButDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(manifest, []byte(`"inject": ["configForms"]`)) || !bytes.Contains(manifest, []byte(`"platform": "web"`)) {
-		t.Fatal("chat-brand client must request the configForms service and target the web platform")
+	if !bytes.Contains(manifest, []byte(`"inject": ["configForms", "locale"]`)) || !bytes.Contains(manifest, []byte(`"platform": "web"`)) {
+		t.Fatal("chat-brand client must request configForms and locale services and target web platform")
 	}
 }

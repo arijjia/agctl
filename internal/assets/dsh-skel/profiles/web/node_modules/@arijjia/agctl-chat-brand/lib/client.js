@@ -1,9 +1,9 @@
 // agctl chat-brand — client half (hand-written Lazy-CJS bundle).
-// Режим 1 «Чат»: брендинг ИИ-мастерская ТюмГУ, свой логотип, плейсхолдер
-// первого сообщения, дерево папок сессий вместо плоского списка (нативный
-// список Workspaces скрыт, секции-аккордеоны — единственный обозреватель
-// сессий), автозакрытие диалога "Preview Notice". Регистрируется только в
-// chat-домашках (SeedDshHome chatUI=true); dev-workspaces получают чистый скелет.
+// Брендинг ИИ-мастерская ТюмГУ, русский composer hint через штатный locale dsh,
+// автозакрытие диалога "Preview Notice", скрытие dev-панелей. Сайдбар сессий —
+// РОДНОЙ Workspaces-браузер dsh: проектные каталоги регистрируются host-плагином
+// как настоящие Workspace'ы, кастомное дерево и скрытие нативного списка убраны.
+// Регистрируется только в chat-домашках (SeedDshHome chatUI=true).
 window.__ModuleLoader__.load({
 	id: "@arijjia/agctl-chat-brand",
 	factory: (require) => {
@@ -144,41 +144,6 @@ window.__ModuleLoader__.load({
 			}
 		}
 
-		// Родной список Workspaces/сессий скрывается ЦЕЛИКОМ: единственным
-		// обозревателем сессий становится дерево папок (applyFolders).
-		// Узлы из DOM НЕ удаляются — React держит их смонтированными, программный
-		// клик по скрытой строке остаётся фолбэком открытия сессии.
-		function hideNativeSessionList() {
-			const label = [...document.querySelectorAll('[class*=sectionLabel]')].find((e) =>
-				/^(workspaces|сессии)$/i.test((e.textContent || '').trim()),
-			);
-			if (!label) return;
-			label.textContent = 'Сессии';
-			const root = label.closest('[class*=root]') || label.parentElement?.parentElement;
-			const header = label.closest('[class*=sectionHeader]');
-			if (header) {
-				for (const button of header.querySelectorAll('button')) {
-					const a = button.getAttribute('aria-label') || '';
-					if (/^(view options|add workspace)$/i.test(a)) button.style.setProperty('display', 'none', 'important');
-				}
-			}
-			// Прячем именно дерево сессий, не дерево поиска: у результатов поиска
-			// свой [role=tree] с классом *_searchTree, и на время поиска нативное
-			// дерево сессий вообще размонтируется. Плоский режим группировки
-			// рендерит [role=list] — его тоже прячем вне поиска, иначе строки
-			// «протекают» под кастомным деревом.
-			const trees = [...(root?.querySelectorAll('[role=tree], [role=list]') || [])];
-			for (const t of trees) {
-				if ((t.getAttribute('class') || '').includes('searchTree')) continue;
-				t.setAttribute('aria-label', 'Сессии');
-				t.style.setProperty('display', 'none', 'important');
-			}
-			for (const action of root.querySelectorAll('button')) {
-				const a = action.getAttribute('aria-label') || '';
-				if (/^new session in /i.test(a) || /^workspace actions for /i.test(a)) action.style.setProperty('display', 'none', 'important');
-			}
-		}
-
 		function queryAllDeep(selector) {
 			const out = [];
 			const visit = (root) => {
@@ -222,785 +187,124 @@ window.__ModuleLoader__.load({
 			}
 		}
 
-		// ── виртуальные папки сессий (режим 1, цвет = университетский синий) ────
-		const FOLDERS_KEY = "agctl-chat-folders.v1";
-		const FOLDERS_MIGRATED_KEY = "agctl-chat-folders.server-sync.v1";
-		// UI-состояние дерева (свёрнутые секции) — только localStorage: серверный
-		// контракт state {folders, assign, settings, active, pendingFolder} не
-		// расширяем (Go-структура неизвестные поля молча отбрасывает).
-		const FOLDERS_UI_KEY = "agctl-chat-folders-ui.v1";
-		let folderServerAvailable = false;
-		let folderStateLoadPromise = null;
-		let pluginCtx = null;
-
-		function foldersState() {
-			try {
-				const s = JSON.parse(localStorage.getItem(FOLDERS_KEY));
-				if (s && Array.isArray(s.folders) && s.assign) {
-					if (!s.settings || typeof s.settings !== "object") s.settings = {};
-					if (!Array.isArray(s.hiddenProjects)) s.hiddenProjects = [];
-					if (typeof s.active !== "string") s.active = "";
-					return s;
-				}
-			} catch (e) {}
-			return { folders: [], assign: {}, settings: {}, hiddenProjects: [], active: "" };
-		}
-
-		async function putFoldersState(state) {
-			const res = await fetch("/api/chat/folders", {
-				method: "PUT",
-				credentials: "include",
-				headers: { Accept: "application/json", "Content-Type": "application/json" },
-				body: JSON.stringify(state),
-			});
-			if (!res.ok) throw new Error("HTTP " + res.status);
-		}
-
-		function saveFoldersState(state) {
-			try { localStorage.setItem(FOLDERS_KEY, JSON.stringify(state)); } catch (e) {}
-			if (!folderServerAvailable) return;
-			void putFoldersState(state).catch((e) => console.warn("[agctl] folders were not synced to server:", e));
-		}
-
-		function foldersUiState() {
-			try {
-				const s = JSON.parse(localStorage.getItem(FOLDERS_UI_KEY));
-				if (s && typeof s === "object" && s.collapsed && typeof s.collapsed === "object") return s;
-			} catch (e) {}
-			return { collapsed: {} };
-		}
-
-		function saveFoldersUiState(ui) {
-			try { localStorage.setItem(FOLDERS_UI_KEY, JSON.stringify(ui)); } catch (e) {}
-		}
-
-		async function syncAssignedFolderInstructions(state) {
-			for (const name of state.folders || []) syncFolderInstructions("", name, state);
-		}
-
-		async function hydrateFolderState() {
-			if (folderStateLoadPromise) return folderStateLoadPromise;
-			folderStateLoadPromise = (async () => {
-				try {
-					const res = await fetch("/api/chat/folders", { credentials: "include", headers: { Accept: "application/json" } });
-					if (!res.ok) return;
-					folderServerAvailable = true;
-					const data = await res.json();
-					const remote = data && data.folders;
-					if (!remote || !Array.isArray(remote.folders)) return;
-					const local = foldersState();
-					const migrated = localStorage.getItem(FOLDERS_MIGRATED_KEY) === "1";
-					if (!migrated && local.folders.length && remote.folders.length === 0) {
-						localStorage.setItem(FOLDERS_MIGRATED_KEY, "1");
-						await putFoldersState(local);
-						await syncFolderProjects(local);
-						await syncAssignedFolderInstructions(local);
-						return;
-					}
-					localStorage.setItem(FOLDERS_KEY, JSON.stringify(remote));
-					localStorage.setItem(FOLDERS_MIGRATED_KEY, "1");
-					await syncFolderProjects(remote);
-					await syncAssignedFolderInstructions(remote);
-				} catch (e) {
-					folderServerAvailable = false; // older agctl server: keep browser-local mode
-				}
-			})();
-			return folderStateLoadPromise;
-		}
-
-		function sessionId(row) {
-			const key = row && (row.getAttribute("data-row-key") || row.dataset.sessionId || "");
-			if (key.startsWith("session:")) return key.slice("session:".length);
-			return key.startsWith("session-") ? key : "";
-		}
-
-		// ── сервисы dsh-клиента (мягкие зависимости, ctx.get в момент вызова;
-		// без них плагин работает через DOM-фолбэк и не рискует не загрузиться,
-		// как было бы при жёстком exports.inject) ────────────────────────────────
-		function svc(name) {
-			try { return (pluginCtx && pluginCtx.get && pluginCtx.get(name)) || null; }
-			catch (e) { return null; }
-		}
-
-		function sessionsSnapshot() {
-			const s = svc("sessions");
-			try {
-				const snap = s && s.list && s.list.getSnapshot();
-				if (snap && snap.byId && Array.isArray(snap.ids)) return snap;
-			} catch (e) {}
-			return null;
-		}
-
-		function workspacesSnapshot() {
-			const w = svc("workspaces");
-			try {
-				const snap = w && w.list && w.list.getSnapshot();
-				if (snap && Array.isArray(snap.items)) return snap;
-			} catch (e) {}
-			return null;
-		}
-
-		const projectWorkspacePromises = new Map();
-
-		async function projectRequest(method = "GET", body) {
-			const res = await fetch("/api/projects", {
-				method, credentials: "include",
-				headers: { Accept: "application/json", ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
-				body: body === undefined ? undefined : JSON.stringify(body),
-			});
-			const data = await res.json().catch(() => ({}));
-			if (!res.ok) throw new Error((data && data.error) || ("projects HTTP " + res.status));
-			return data;
-		}
-
-		// Папка чата = реальный project dir + DSH Workspace. workspaces.create
-		// — официальный remote-контракт dsh; он же сохраняет registry на Host.
-		function ensureProjectWorkspace(name) {
-			if (projectWorkspacePromises.has(name)) return projectWorkspacePromises.get(name);
-			const pending = (async () => {
-				const workspaces = svc("workspaces");
-				if (!workspaces || typeof workspaces.create !== "function") throw new Error("DSH Workspace service недоступен");
-				const snapshot = workspacesSnapshot();
-				const existing = snapshot && snapshot.items.find((w) => w.path === "/workspace/" + name);
-				if (existing) return { name, directory: existing.path, workspaceId: existing.workspaceId || existing.id };
-				let data = await projectRequest("GET");
-				let project = (data.projects || []).find((p) => p.name === name);
-				if (!project) {
-					try {
-						data = await projectRequest("POST", { name });
-						project = data.project;
-					} catch (error) {
-						// Проект мог параллельно создать Кабинет/другая вкладка.
-						data = await projectRequest("GET");
-						project = (data.projects || []).find((p) => p.name === name);
-						if (!project) throw error;
-					}
-				}
-				if (!project || !project.directory) throw new Error("agctl не вернул каталог проекта");
-				const workspace = await workspaces.create({ path: project.directory });
-				let workspaceId = workspace && (workspace.workspaceId || workspace.id);
-				if (!workspaceId) throw new Error("DSH не вернул Workspace проекта");
-				// Remote create durably writes the Host registry; wait for the client
-				// snapshot stream before uiWorkspace.startSession reads that registry.
-				for (let i = 0; i < 30; i++) {
-					const current = workspacesSnapshot();
-					const item = current && current.items.find((w) => w.path === project.directory);
-					if (item) { workspaceId = item.workspaceId || item.id || workspaceId; break; }
-					await new Promise((resolve) => setTimeout(resolve, 50));
-				}
-				return { name, directory: project.directory, workspaceId };
-			})();
-			projectWorkspacePromises.set(name, pending);
-			pending.catch(() => projectWorkspacePromises.delete(name));
-			return pending;
-		}
-
-		async function syncFolderProjects(state) {
-			try {
-				const data = await projectRequest("GET");
-				let changed = false;
-				const hidden = new Set(state.hiddenProjects || []);
-				for (const project of data.projects || []) {
-					if (!hidden.has(project.name) && !state.folders.includes(project.name)) {
-						state.folders.push(project.name);
-						state.settings[project.name] = state.settings[project.name] || { instructions: "" };
-						changed = true;
-					}
-				}
-				for (const name of state.folders) await ensureProjectWorkspace(name);
-				if (changed) saveFoldersState(state);
-			} catch (e) {
-				console.warn("[agctl] не удалось связать папки с проектами:", e);
-			}
-		}
-
-		// Открытая сейчас сессия: официальный признак dsh — retainedBy.mainView>0
-		// (тот же предикат, что в SearchResults браузера воркспейсов).
-		function currentSessionId() {
-			const snap = sessionsSnapshot();
-			if (snap) {
-				for (const s of Object.values(snap.byId)) {
-					if (((s.retainedBy && s.retainedBy.mainView) || 0) > 0) return s.id;
-				}
-			}
-			const selected = document.querySelector(".YDXeBa_sessionRow.YDXeBa_selected");
-			return selected ? sessionId(selected) : "";
-		}
-
-		// collectSessions — полный список сессий для дерева. Первичный источник —
-		// стор dsh: нативный браузер рендерит строки условно (схлопнутые
-		// воркспейсы и лимит «показать ещё» физически отсутствуют в DOM), стор же
-		// содержит все сессии. Фолбэк — скрытые нативные строки.
-		function collectSessions() {
-			const snap = sessionsSnapshot();
-			const workspaces = workspacesSnapshot();
-			if (snap) {
-				const archived = new Set((workspaces && workspaces.archivedSessionIds) || []);
-				const pinned = (workspaces && workspaces.pinnedSessionIds) || [];
-				const pinRank = new Map(pinned.map((id, i) => [id, i]));
-				const projectBySession = new Map();
-				for (const workspace of (workspaces && workspaces.items) || []) {
-					const path = workspace.path || "";
-					if (!path.startsWith("/workspace/") || path.startsWith("/workspace/.sessions/")) continue;
-					const name = path.slice("/workspace/".length).split("/")[0];
-					if (!name) continue;
-					for (const sid of workspace.sessionIds || []) projectBySession.set(sid, name);
-				}
-				const rows = [];
-				for (const id of snap.ids) {
-					const s = snap.byId[id];
-					if (!s || s.origin === "subagent" || archived.has(id)) continue;
-					rows.push({
-						id,
-						title: s.blank ? "Новая сессия" : ((s.title || "").trim() || s.displayTitle || "Без названия"),
-						ts: s.updatedAt || 0,
-						running: !!s.running,
-						blank: !!s.blank,
-						projectName: projectBySession.get(id) || "",
-						cwd: s.cwd || "",
-						pin: pinRank.has(id) ? pinRank.get(id) : -1,
-					});
-				}
-				rows.sort((a, b) => {
-					if (a.blank !== b.blank) return a.blank ? -1 : 1;
-					if ((a.pin >= 0) !== (b.pin >= 0)) return a.pin >= 0 ? -1 : 1;
-					if (a.pin >= 0 && b.pin >= 0 && a.pin !== b.pin) return a.pin - b.pin;
-					return b.ts - a.ts;
-				});
-				return rows;
-			}
-			const rows = [];
-			for (const row of document.querySelectorAll(".YDXeBa_sessionRow")) {
-				const id = sessionId(row);
-				if (!id) continue;
-				const title = (row.textContent || "").trim().slice(0, 120);
-				rows.push({ id, title: title || "Без названия", ts: 0, running: false, blank: /^new session$/i.test(title), pin: -1 });
-			}
-			return rows;
-		}
-
-		// Открыть сессию: официальный путь клиента — uiWorkspace.openSession(id),
-		// ровно тот же метод, что вызывает нативная строка при клике. Фолбэк —
-		// программный клик по родной (скрытой) строке: обработчики React работают
-		// через делегирование, display:none клику не мешает, узел не удалён.
-		function openSessionRow(id) {
-			const ui = svc("uiWorkspace");
-			if (ui && typeof ui.openSession === "function") {
-				try {
-					ui.openSession(id);
-					return true;
-				} catch (e) { console.warn("[agctl] uiWorkspace.openSession не сработал:", e); }
-			}
-			for (const row of document.querySelectorAll("[data-row-key]")) {
-				if (row.getAttribute("data-row-key") === "session:" + id) {
-					row.click();
-					return true;
-				}
-			}
-			console.warn("[agctl] сессия не найдена для открытия:", id);
-			return false;
-		}
-
-		function syncFolderInstructions(_session, folderName, state) {
-			// v3: инструкции принадлежат проекту (каталогу), не отдельной сессии.
-			// Скрытие папки не удаляет ни каталог, ни git-историю, ни AGENTS.local.md.
-			if (!folderName) return;
-			const instructions = ((state.settings[folderName] || {}).instructions || "");
-			void fetch("/api/projects/" + encodeURIComponent(folderName) + "/instructions", {
-				method: "PUT",
-				credentials: "include",
-				headers: { Accept: "application/json", "Content-Type": "application/json" },
-				body: JSON.stringify({ instructions }),
-			}).then(async (res) => {
-				if (!res.ok) console.warn("[agctl] project instructions were not applied (HTTP " + res.status + ")");
-			}).catch((e) => console.warn("[agctl] project instructions were not applied:", e));
-		}
-
-		function editFolderSettings(oldName, allowRename = false) {
-			const state = foldersState();
-			const current = (state.settings[oldName] || {}).instructions || "";
-			const overlay = document.createElement("div");
-			overlay.dataset.agctlFolderSettings = "1";
-			overlay.style.cssText = "position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.46);display:flex;align-items:center;justify-content:center;padding:20px";
-			const card = document.createElement("form");
-			card.style.cssText = "width:min(560px,100%);max-height:min(84vh,760px);overflow:auto;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#222);border:1px solid var(--dsw-alias-border-l1,#ccc);border-radius:14px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.32);display:flex;flex-direction:column;gap:14px";
-			const heading = document.createElement("h2");
-			heading.textContent = "Настройки папки проекта";
-			heading.style.cssText = "margin:0;font-size:18px;font-weight:650";
-			card.appendChild(heading);
-			const nameLabel = document.createElement("label");
-			nameLabel.style.cssText = "display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600";
-			nameLabel.appendChild(document.createTextNode("Название"));
-			const nameInput = document.createElement("input");
-			nameInput.value = oldName;
-			nameInput.disabled = !allowRename;
-			nameInput.maxLength = 80;
-			nameInput.style.cssText = "box-sizing:border-box;width:100%;min-height:40px;padding:9px 11px;border:1px solid var(--dsw-alias-border-l1,#bbb);border-radius:8px;background:transparent;color:inherit;font:inherit;font-weight:400";
-			nameLabel.appendChild(nameInput);
-			card.appendChild(nameLabel);
-			const instructionsLabel = document.createElement("label");
-			instructionsLabel.style.cssText = "display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600";
-			instructionsLabel.appendChild(document.createTextNode("Инструкции проекта"));
-			const instructions = document.createElement("textarea");
-			instructions.value = current;
-			instructions.rows = 7;
-			instructions.maxLength = 16000;
-			instructions.placeholder = "Например: для этой папки сначала уточняй требования, затем предлагай план и только после согласования редактируй файлы.";
-			instructions.style.cssText = "box-sizing:border-box;width:100%;min-height:150px;resize:vertical;padding:10px 11px;border:1px solid var(--dsw-alias-border-l1,#bbb);border-radius:8px;background:transparent;color:inherit;font:inherit;font-weight:400";
-			instructionsLabel.appendChild(instructions);
-			card.appendChild(instructionsLabel);
-			const note = document.createElement("p");
-			note.textContent = "Инструкции хранятся в AGENTS.local.md корня проекта и подхватываются его сессиями; имя проекта совпадает с именем каталога.";
-			note.style.cssText = "margin:0;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-tertiary,#777)";
-			card.appendChild(note);
-			const status = document.createElement("p");
-			status.style.cssText = "margin:0;min-height:1em;font-size:12px;color:var(--dsw-alias-state-error-primary,#c33)";
-			card.appendChild(status);
-			const actions = document.createElement("div");
-			actions.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap";
-			const left = document.createElement("div");
-			left.style.cssText = "display:flex;gap:8px;flex-wrap:wrap";
-			const remove = document.createElement("button");
-			remove.type = "button";
-			remove.textContent = "Скрыть папку";
-			remove.style.cssText = "padding:8px 12px;border:1px solid #c33;border-radius:8px;background:transparent;color:#c33;cursor:pointer;font:inherit";
-			remove.addEventListener("click", () => {
-				if (!window.confirm("Скрыть проект «" + oldName + "» из дерева? Каталог, Git-история и файлы останутся в персональном томе.")) return;
-				for (const [session, assigned] of Object.entries(state.assign)) {
-					if (assigned === oldName) delete state.assign[session];
-				}
-				state.folders = state.folders.filter((name) => name !== oldName);
-				state.hiddenProjects = Array.isArray(state.hiddenProjects) ? state.hiddenProjects : [];
-				if (!state.hiddenProjects.includes(oldName)) state.hiddenProjects.push(oldName);
-				delete state.settings[oldName];
-				if (state.active === oldName) state.active = "";
-				saveFoldersState(state);
-				overlay.remove();
-				fixAll();
-			});
-			left.appendChild(remove);
-			const cancel = document.createElement("button");
-			cancel.type = "button";
-			cancel.textContent = "Отмена";
-			cancel.style.cssText = "padding:8px 12px;border:1px solid var(--dsw-alias-border-l1,#bbb);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font:inherit";
-			cancel.addEventListener("click", () => overlay.remove());
-			left.appendChild(cancel);
-			actions.appendChild(left);
-			const save = document.createElement("button");
-			save.type = "submit";
-			save.textContent = "Сохранить";
-			save.style.cssText = "padding:8px 14px;border:1px solid #1459b8;border-radius:8px;background:#1769d2;color:#fff;cursor:pointer;font:inherit;font-weight:650";
-			actions.appendChild(save);
-			card.appendChild(actions);
-			card.addEventListener("submit", (ev) => {
-				ev.preventDefault();
-				const nextName = allowRename ? nameInput.value.trim() : oldName;
-				if (!nextName) { status.textContent = "Название не может быть пустым."; return; }
-				if (nextName !== oldName && state.folders.includes(nextName)) { status.textContent = "Папка с таким именем уже существует."; return; }
-				const cleanInstructions = instructions.value.trim();
-				state.folders = state.folders.map((name) => name === oldName ? nextName : name);
-				for (const [session, assigned] of Object.entries(state.assign)) if (assigned === oldName) state.assign[session] = nextName;
-				delete state.settings[oldName];
-				state.settings[nextName] = { instructions: cleanInstructions };
-				saveFoldersState(state);
-				syncFolderInstructions("", nextName, state);
-				overlay.remove();
-				fixAll();
-			});
-			overlay.addEventListener("click", (ev) => { if (ev.target === overlay) overlay.remove(); });
-			overlay.appendChild(card);
-			document.body.appendChild(overlay);
-			nameInput.focus();
-		}
-
-		function bindFolderNewSession() {
-			if (window.__agctlFolderNewSessionBound) return;
-			window.__agctlFolderNewSessionBound = true;
-			document.addEventListener("click", (ev) => {
-				const button = ev.target && ev.target.closest && ev.target.closest('button[aria-label]');
-				if (!button || !/^new session$/i.test((button.getAttribute("aria-label") || "").trim())) return;
-				const state = foldersState();
-				if (!state.active) return;
-				// Активна папка-проект: перехватываем штатную кнопку и создаём
-				// Session именно в её DSH Workspace (/workspace/<project>).
-				ev.preventDefault();
-				ev.stopImmediatePropagation();
-				void newSessionInFolder(state.active).catch((e) => window.alert("Не удалось открыть проект: " + e.message));
-			}, true);
-		}
-
-		// ── вертикальное дерево-аккордеон папок: визуал родного dsh ─────────────
-		// Папки — родная иконка папки, сессии — без иконок, статус как в dsh:
-		// спиннер во время работы и зелёная точка, когда сессия завершилась.
-		function ensureFolderStyles() {
-			if (document.querySelector("style[data-agctl-folder-tree]")) return;
-			const style = document.createElement("style");
-			style.dataset.agctlFolderTree = "1";
-			style.textContent = [
-				'[data-agctl-folders-tree]{display:flex;flex-direction:column;gap:2px;padding:2px 8px 10px}',
-				'.agctl-folder-section{display:flex;flex-direction:column}',
-				'.agctl-folder-head{display:flex;align-items:center;gap:6px;min-height:32px;padding:0 8px;border-radius:var(--dsw-radius-md,8px);cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary,#222)}',
-				'.agctl-folder-head:hover,.agctl-folder-head:focus-visible{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.07));outline:none}',
-				'.agctl-folder-chevron{width:14px;height:20px;display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--dsw-alias-label-caption,#999);font-size:9px;transition:transform .15s var(--ds-ease-in-out,ease)}',
-				'.agctl-folder-section.agctl-open>.agctl-folder-head .agctl-folder-chevron{transform:rotate(90deg)}',
-				'.agctl-folder-icon{width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--dsw-alias-label-secondary,#666)}',
-				'.agctl-folder-section.agctl-open>.agctl-folder-head .agctl-folder-icon{color:var(--dsw-alias-label-primary,#222)}',
-				'.agctl-folder-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px}',
-				'.agctl-folder-count{flex:none;color:var(--dsw-alias-label-tertiary,#888);font-size:12px;line-height:16px}',
-				'.agctl-folder-actions{flex:none;display:none;align-items:center;gap:2px;margin-left:4px}',
-				'.agctl-folder-head:hover .agctl-folder-actions,.agctl-folder-head:focus-visible .agctl-folder-actions{display:inline-flex}',
-				'.agctl-folder-btn{border:0;background:transparent;color:var(--dsw-alias-label-tertiary,#888);cursor:pointer;font:inherit;font-size:13px;line-height:1;padding:4px 5px;border-radius:6px}',
-				'.agctl-folder-btn:hover{color:var(--dsw-alias-label-primary,#222);background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.07))}',
-				'.agctl-folder-rows{display:none;flex-direction:column;gap:1px;padding-left:16px}',
-				'.agctl-folder-section.agctl-open>.agctl-folder-rows{display:flex}',
-				'.agctl-tree-row{display:flex;align-items:center;gap:6px;min-height:30px;padding:0 8px;border-radius:var(--dsw-radius-md,8px);cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary,#222)}',
-				'.agctl-tree-row:hover,.agctl-tree-row.agctl-selected{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.07))}',
-				'.agctl-row-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px}',
-				'.agctl-row-time{flex:none;color:var(--dsw-alias-label-tertiary,#888);font-size:10px;line-height:16px}',
-				// Статус сессии как в родном dsh: зелёная точка; во время работы — спиннер.
-				'.agctl-row-status{width:10px;height:10px;flex:none;border-radius:999px;background:#2fae62}',
-				'.agctl-row-status.agctl-running{background:transparent;border:1.5px solid var(--dsw-alias-label-caption,#9aa0a6);border-top-color:transparent;animation:agctl-spin .8s linear infinite}',
-				'@keyframes agctl-spin{to{transform:rotate(360deg)}}',
-				'.agctl-tree-row.agctl-running .agctl-row-title{font-weight:600}',
-				'.agctl-folder-empty{color:var(--dsw-alias-label-tertiary,#888);font-size:12px;line-height:18px;padding:3px 8px 5px 30px}',
-				'.agctl-add-folder{display:flex;align-items:center;gap:6px;margin:4px 8px 0;padding:5px 10px;border:1px dashed var(--dsw-alias-border-l1,#bbb);border-radius:999px;background:transparent;color:var(--dsw-alias-label-secondary,#555);cursor:pointer;font:inherit;font-size:12px;align-self:flex-start}',
-				'.agctl-add-folder:hover{color:var(--dsw-alias-label-primary,#222);background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.07))}',
-			].join("\n");
-			document.head.appendChild(style);
-		}
-
-		const AGCTL_FOLDER_PATH = "M1.5 4.2c0-.9.7-1.6 1.6-1.6h3l1.6 1.8h5.2c.9 0 1.6.7 1.6 1.6v6c0 .9-.7 1.6-1.6 1.6H3.1c-.9 0-1.6-.7-1.6-1.6v-7.8z";
-
-		function folderIcon() {
-			const wrap = document.createElement("span");
-			wrap.className = "agctl-folder-icon";
-			const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-			svg.setAttribute("width", "15");
-			svg.setAttribute("height", "15");
-			svg.setAttribute("viewBox", "0 0 16 16");
-			svg.setAttribute("fill", "none");
-			svg.setAttribute("aria-hidden", "true");
-			const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-			path.setAttribute("d", AGCTL_FOLDER_PATH);
-			path.setAttribute("stroke", "currentColor");
-			path.setAttribute("stroke-width", "1.4");
-			path.setAttribute("stroke-linecap", "round");
-			path.setAttribute("stroke-linejoin", "round");
-			svg.appendChild(path);
-			wrap.appendChild(svg);
-			return wrap;
-		}
-
-		function fmtRowTime(ts) {
-			if (!ts) return "";
-			const d = new Date(ts);
-			const now = new Date();
-			const pad = (n) => String(n).padStart(2, "0");
-			if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
-				return pad(d.getHours()) + ":" + pad(d.getMinutes());
-			}
-			const dm = pad(d.getDate()) + "." + pad(d.getMonth() + 1);
-			return d.getFullYear() === now.getFullYear() ? dm : dm + "." + String(d.getFullYear()).slice(2);
-		}
-
-		function setFolderOpen(name, open) {
-			const ui = foldersUiState();
-			if (open) delete ui.collapsed[name];
-			else ui.collapsed[name] = true;
-			saveFoldersUiState(ui);
-			if (open) {
-				// Активная папка = последняя развёрнутая: нативная кнопка New session
-				// (bindFolderNewSession) привяжет следующую сессию к ней.
-				const state = foldersState();
-				if (state.active !== name) {
-					state.active = name;
-					saveFoldersState(state);
-				}
-			}
-		}
-
-		async function createFolderFlow() {
-			const name = (window.prompt("Имя проекта / папки:") || "").trim();
-			if (!name) return;
-			try {
-				await ensureProjectWorkspace(name);
-			} catch (e) {
-				window.alert("Не удалось создать каталог проекта: " + e.message);
-				return;
-			}
-			const fresh = foldersState();
-			fresh.hiddenProjects = (fresh.hiddenProjects || []).filter((n) => n !== name);
-			if (!fresh.folders.includes(name)) fresh.folders.push(name);
-			fresh.settings[name] = fresh.settings[name] || { instructions: "" };
-			fresh.active = name;
-			saveFoldersState(fresh);
-			setFolderOpen(name, true);
-			fixAll();
-			setTimeout(() => editFolderSettings(name, false), 0);
-		}
-
-		// «＋» на папке создаёт Session в настоящем DSH Workspace проекта.
-		async function newSessionInFolder(name) {
-			const project = await ensureProjectWorkspace(name);
-			const state = foldersState();
-			const snap = sessionsSnapshot();
-			const known = snap ? [...snap.ids] : [...document.querySelectorAll(".YDXeBa_sessionRow")].map(sessionId).filter(Boolean);
-			state.active = name;
-			state.settings[name] = state.settings[name] || { instructions: "" };
-			state.pendingFolder = { name, known, at: Date.now() };
-			saveFoldersState(state);
-			setFolderOpen(name, true);
-			const workspaces = workspacesSnapshot();
-			const projectWorkspace = workspaces && workspaces.items.find((w) => w.workspaceId === project.workspaceId);
-			// Пустая draft-сессия в ТОМ ЖЕ проекте может переиспользоваться
-			// uiWorkspace.startSession; назначаем её папке до обновления списка.
-			if (snap && projectWorkspace) {
-				const archived = new Set(workspaces.archivedSessionIds || []);
-				const blank = snap.ids.map((id) => snap.byId[id]).find((s) => s && s.blank && s.cwd === project.directory && !archived.has(s.id));
-				if (blank) {
-					state.assign[blank.id] = name;
-					syncFolderInstructions(blank.id, name, state);
-					saveFoldersState(state);
-				}
-			}
-			const ui = svc("uiWorkspace");
-			if (ui && typeof ui.startSession === "function") {
-				ui.startSession(project.workspaceId);
-			} else {
-				const sessions = svc("sessions");
-				if (!sessions || typeof sessions.create !== "function") throw new Error("DSH session service недоступен");
-				const created = await sessions.create({ workspaceId: project.workspaceId });
-				const id = created && (created.sessionId || created.id);
-				if (id) openSessionRow(id);
-			}
-			setTimeout(() => fixAll(), 120);
-		}
-
-		function folderTreeRow(row, state, currentId) {
-			const el = document.createElement("div");
-			el.className = "agctl-tree-row" + (row.id === currentId ? " agctl-selected" : "") + (row.running ? " agctl-running" : "");
-			el.dataset.agctlSessionId = row.id;
-			// Родной статус dsh: спиннер во время работы, зелёная точка после.
-			const status = document.createElement("span");
-			status.className = "agctl-row-status" + (row.running ? " agctl-running" : "");
-			el.appendChild(status);
-			const title = document.createElement("span");
-			title.className = "agctl-row-title";
-			title.textContent = row.title;
-			title.title = row.title;
-			el.appendChild(title);
-			const time = document.createElement("span");
-			time.className = "agctl-row-time";
-			time.textContent = fmtRowTime(row.ts);
-			el.appendChild(time);
-			el.addEventListener("click", () => openSessionRow(row.id));
-			// Workspace принадлежность задаётся реальным cwd при создании Session;
-			// перетаскивать существующую сессию в другой каталог без миграции файлов
-			// нельзя. Переassign остаётся только для legacy-состояния до чистого пилота.
-			return el;
-		}
-
-		function folderSectionView(section, state, ui, currentId) {
-			const isUnassigned = section.name === "";
-			const open = !ui.collapsed[section.name];
-			const sec = document.createElement("div");
-			sec.className = "agctl-folder-section" + (open ? " agctl-open" : "");
-			sec.dataset.agctlFolder = section.name;
-			const head = document.createElement("div");
-			head.className = "agctl-folder-head";
-			head.setAttribute("role", "button");
-			head.setAttribute("tabindex", "0");
-			head.setAttribute("aria-expanded", open ? "true" : "false");
-			const chevron = document.createElement("span");
-			chevron.className = "agctl-folder-chevron";
-			chevron.textContent = "▶";
-			head.appendChild(chevron);
-			head.appendChild(folderIcon());
-			const title = document.createElement("span");
-			title.className = "agctl-folder-title";
-			title.textContent = isUnassigned ? "Без папки" : section.name;
-			head.appendChild(title);
-			const count = document.createElement("span");
-			count.className = "agctl-folder-count";
-			count.textContent = String(section.rows.length);
-			head.appendChild(count);
-			if (!isUnassigned) {
-				const actions = document.createElement("span");
-				actions.className = "agctl-folder-actions";
-				const settings = document.createElement("button");
-				settings.type = "button";
-				settings.className = "agctl-folder-btn";
-				settings.textContent = "⚙";
-				settings.title = "Настройки папки «" + section.name + "»";
-				settings.addEventListener("click", (ev) => { ev.stopPropagation(); editFolderSettings(section.name); });
-				const add = document.createElement("button");
-				add.type = "button";
-				add.className = "agctl-folder-btn";
-				add.textContent = "＋";
-				add.title = "Новая сессия в папке «" + section.name + "»";
-				add.addEventListener("click", (ev) => { ev.stopPropagation(); newSessionInFolder(section.name); });
-				actions.appendChild(settings);
-				actions.appendChild(add);
-				head.appendChild(actions);
-			}
-			// Актуальное состояние читаем из DOM, а не из замыкания рендера:
-			// быстрые клики между тиками fixAll должны честно чередоваться.
-			// Сразу пересобираем дерево — реакция на клик мгновенная.
-			const toggle = () => {
-				setFolderOpen(section.name, !sec.classList.contains("agctl-open"));
-				fixAll();
-			};
-			head.addEventListener("click", toggle);
-			head.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(); } });
-			if (!isUnassigned) {
-				head.addEventListener("contextmenu", (ev) => { ev.preventDefault(); editFolderSettings(section.name); });
-			}
-			sec.appendChild(head);
-			const body = document.createElement("div");
-			body.className = "agctl-folder-rows";
-			for (const row of section.rows) body.appendChild(folderTreeRow(row, state, currentId));
-			if (!section.rows.length) {
-				const empty = document.createElement("div");
-				empty.className = "agctl-folder-empty";
-				empty.textContent = isUnassigned ? "Нет сессий без папки" : "В папке пока нет сессий";
-				body.appendChild(empty);
-			}
-			sec.appendChild(body);
-			return sec;
-		}
-
-		function renderFolderTree(root, label, state, rows) {
-			ensureFolderStyles();
-			let host = root.querySelector("[data-agctl-folders-tree]");
-			if (!host) {
-				host = document.createElement("div");
-				host.dataset.agctlFoldersTree = "1";
-				host.setAttribute("role", "tree");
-				host.setAttribute("aria-label", "Сессии");
-				const header = label.closest("[class*=sectionHeader]");
-				(header || label).parentElement.insertBefore(host, header ? header.nextSibling : label.nextSibling);
-			}
-			// Пока активен родной поиск сессий, дерево папок убираем с глаз.
-			const searching = !!root.querySelector('[class*="searchTree"], [class*="searchResultRow"]');
-			// Свёрнутая панель: нативная рельса показывает только иконки —
-			// кастомное дерево в неё не влезает и ломает вёрстку (скриншот
-			// владельца 2026-10-25). Прячем дерево целиком, fixAll вернёт его
-			// при разворачивании.
-			const collapsed = root.getBoundingClientRect().width < 120;
-			host.style.display = searching || collapsed ? "none" : "";
-			if (searching || collapsed) {
-				delete host.dataset.agctlTreeSig;
-				return;
-			}
-			const ui = foldersUiState();
-			const currentId = currentSessionId();
-			const sections = state.folders.map((name) => ({ name, rows: [] }));
-			sections.push({ name: "", rows: [] });
-			const byName = new Map(sections.map((s) => [s.name, s]));
-			for (const row of rows) {
-				const bucket = byName.get(state.assign[row.id] || "") || byName.get("");
-				bucket.rows.push(row);
-			}
-			// Пересобираем DOM только при реальных изменениях: цикл fixAll тикает
-			// каждые 1.5с, а реконструкция сбрасывала бы hover и фокус.
-			const sig = JSON.stringify({
-				folders: state.folders,
-				assign: state.assign,
-				collapsed: ui.collapsed,
-				currentId,
-				rows: rows.map((r) => [r.id, r.title, r.ts, r.running ? 1 : 0]),
-			});
-			if (host.dataset.agctlTreeSig === sig) return;
-			host.dataset.agctlTreeSig = sig;
-			host.replaceChildren();
-			for (const section of sections) host.appendChild(folderSectionView(section, state, ui, currentId));
-			const addFolder = document.createElement("button");
-			addFolder.type = "button";
-			addFolder.className = "agctl-add-folder";
-			addFolder.textContent = "＋ Новая папка";
-			addFolder.addEventListener("click", createFolderFlow);
-			host.appendChild(addFolder);
-		}
-
-		function applyFolders() {
-			bindFolderNewSession();
-			const label = [...document.querySelectorAll('[class*=sectionLabel]')].find((e) =>
-				/^(сессии|workspaces)$/i.test((e.textContent || "").trim()),
-			);
-			if (!label) return;
-			const root = label.closest('[class*=root]') || label.parentElement?.parentElement;
-			if (!root) return;
-			const state = foldersState();
-			const rows = collectSessions();
-			let folderStateChanged = false;
-			const hiddenProjects = new Set(state.hiddenProjects || []);
-			// Project Workspace может быть создан из Кабинета и пока не иметь
-			// сессий. Всё равно показываем его папкой; стандартный /workspace и
-			// скрытые .sessions/<id> в дерево проектов не попадают.
-			const wsSnapshot = workspacesSnapshot();
-			for (const workspace of (wsSnapshot && wsSnapshot.items) || []) {
-				const path = workspace.path || "";
-				if (!path.startsWith("/workspace/") || path.startsWith("/workspace/.sessions/")) continue;
-				const name = path.slice("/workspace/".length).split("/")[0];
-				if (name && !hiddenProjects.has(name) && !state.folders.includes(name)) {
-					state.folders.push(name);
-					state.settings[name] = state.settings[name] || { instructions: "" };
-					folderStateChanged = true;
-				}
-			}
-			for (const row of rows) {
-				if (row.projectName && !hiddenProjects.has(row.projectName)) {
-					if (!state.folders.includes(row.projectName)) {
-						state.folders.push(row.projectName);
-						state.settings[row.projectName] = state.settings[row.projectName] || { instructions: "" };
-						folderStateChanged = true;
-					}
-					if (!state.assign[row.id]) {
-						state.assign[row.id] = row.projectName;
-						folderStateChanged = true;
-					}
-				}
-			}
-			if (folderStateChanged) saveFoldersState(state);
-			const pending = state.pendingFolder;
-			if (pending && Date.now() - pending.at < 2 * 60 * 1000) {
-				const fresh = rows.find((row) => !pending.known.includes(row.id));
-				if (fresh) {
-					state.assign[fresh.id] = pending.name;
-					state.settings[pending.name] = state.settings[pending.name] || { instructions: "" };
-					delete state.pendingFolder;
-					saveFoldersState(state);
-					setFolderOpen(pending.name, true);
-					syncFolderInstructions(fresh.id, pending.name, state);
-				}
-			} else if (pending) {
-				delete state.pendingFolder;
-				saveFoldersState(state);
-			}
-			// Upgrade the pre-W3 title-key mapping to stable DSH session IDs.
-			for (const row of rows) {
-				if (!state.assign[row.id] && state.assign[row.title]) {
-					state.assign[row.id] = state.assign[row.title];
-					delete state.assign[row.title];
-					saveFoldersState(state);
-					syncFolderInstructions(row.id, state.assign[row.id], state);
-				}
-			}
-			renderFolderTree(root, label, state, rows);
-		}
-
 		function fixAll() {
 			try { closePreviewNotice(); } catch (e) {}
 			try { applyBrand(); } catch (e) {}
 			try { fixPlaceholder(); } catch (e) {}
 			try { fixModels(); } catch (e) {}
-			try { hideNativeSessionList(); } catch (e) {}
-			try { applyFolders(); } catch (e) {}
 			try { hideDevPanels(); } catch (e) {}
 		}
 
+		// ── создание воркспейса через родную кнопку ─────────────────────────────
+		// Родная кнопка "Add workspace" в шапке Workspaces открывает наш диалог:
+		// «Пустой» или «Из GitHub» (POST /api/projects), затем воркспейс
+		// регистрируется штатным workspaces.create({path}) и появляется в родном
+		// списке. Встроенный DirectoryPicker контейнерных каталогов не используем.
+		let brandCtx = null;
+
+		function workspaceSvc() {
+			try { return (brandCtx && brandCtx.get && brandCtx.get("workspaces")) || null; }
+			catch (e) { return null; }
+		}
+
+		function bindWorkspaceCreate() {
+			if (window.__agctlWorkspaceCreateBound) return;
+			window.__agctlWorkspaceCreateBound = true;
+			document.addEventListener('click', (ev) => {
+				const button = ev.target && ev.target.closest && ev.target.closest('button[aria-label], button[title]');
+				if (!button) return;
+				const labels = [button.getAttribute('aria-label'), button.getAttribute('title')].filter(Boolean);
+				if (!labels.some((label) => /^add workspace$/i.test(label.trim()))) return;
+				ev.preventDefault();
+				ev.stopImmediatePropagation();
+				void openWorkspaceCreateDialog().catch((error) => window.alert("Не удалось открыть создание воркспейса: " + error.message));
+			}, true);
+		}
+
+		async function openWorkspaceCreateDialog() {
+			if (document.querySelector('[data-agctl-workspace-create]')) return;
+			const meResponse = await fetch('/api/me', { credentials: 'include', headers: { Accept: 'application/json' } });
+			if (!meResponse.ok) throw new Error('Сессия agctl недоступна (HTTP ' + meResponse.status + ')');
+			const meData = await meResponse.json();
+			const canClone = !!(meData && meData.user && ['developer', 'admin'].includes(meData.user.role));
+			const overlay = document.createElement('div');
+			overlay.dataset.agctlWorkspaceCreate = '1';
+			overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.46);display:flex;align-items:center;justify-content:center;padding:20px';
+			const card = document.createElement('form');
+			card.style.cssText = 'width:min(480px,100%);background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#222);border:1px solid var(--dsw-alias-border-l1,#ccc);border-radius:14px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.32);display:flex;flex-direction:column;gap:12px';
+			const heading = document.createElement('h2');
+			heading.textContent = 'Новый воркспейс';
+			heading.style.cssText = 'margin:0;font-size:18px;font-weight:650';
+			const name = labeled('Имя', input('Имя воркспейса'));
+			const git = canClone ? labeled('Публичный GitHub HTTPS URL (необязательно)', input('https://github.com/user/repo.git')) : null;
+			const status = document.createElement('p');
+			status.style.cssText = 'margin:0;min-height:18px;font-size:12px;color:var(--dsw-alias-label-tertiary,#888)';
+			const actions = document.createElement('div');
+			actions.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
+			const cancel = document.createElement('button');
+			cancel.type = 'button';
+			cancel.textContent = 'Отмена';
+			cancel.style.cssText = 'padding:8px 12px;border:1px solid var(--dsw-alias-border-l1,#bbb);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font:inherit';
+			const submit = document.createElement('button');
+			submit.type = 'submit';
+			submit.textContent = 'Создать';
+			submit.style.cssText = 'padding:8px 14px;border:1px solid #1459b8;border-radius:8px;background:#1769d2;color:#fff;cursor:pointer;font:inherit;font-weight:650';
+			actions.append(cancel, submit);
+			card.append(heading, name);
+			if (git) card.appendChild(git);
+			card.append(status, actions);
+			overlay.appendChild(card);
+			document.body.appendChild(overlay);
+			const close = () => overlay.remove();
+			cancel.addEventListener('click', close);
+			overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(); });
+
+			function input(placeholder) {
+				const el = document.createElement('input');
+				el.style.cssText = 'box-sizing:border-box;width:100%;min-height:38px;padding:8px 11px;border:1px solid var(--dsw-alias-border-l1,#bbb);border-radius:8px;background:transparent;color:inherit;font:inherit';
+				el.placeholder = placeholder;
+				return el;
+			}
+			function labeled(text, node) {
+				const wrap = document.createElement('label');
+				wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:600';
+				wrap.append(document.createTextNode(text), node);
+				return wrap;
+			}
+
+			card.addEventListener('submit', async (ev) => {
+				ev.preventDefault();
+				const projectName = name.querySelector('input').value.trim();
+				const cloneUrl = git ? git.querySelector('input').value.trim() : "";
+				if (!projectName) { status.textContent = 'Укажите имя воркспейса.'; return; }
+				submit.disabled = true;
+				status.textContent = 'Создаём…';
+				try {
+					const body = { name: projectName };
+					if (cloneUrl) body.cloneUrl = cloneUrl;
+					const res = await fetch('/api/projects', {
+						method: 'POST', credentials: 'include',
+						headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+						body: JSON.stringify(body),
+					});
+					const data = await res.json().catch(() => ({}));
+					if (!res.ok) throw new Error((data && data.error) || 'HTTP ' + res.status);
+					const directory = data && data.project && data.project.directory;
+					if (!directory) throw new Error('agctl не вернул каталог воркспейса');
+					const workspaces = workspaceSvc();
+					if (!workspaces || typeof workspaces.create !== 'function') throw new Error('DSH Workspace service недоступен');
+					await workspaces.create({ path: directory });
+					close();
+				} catch (error) {
+					status.textContent = String(error.message || error);
+					submit.disabled = false;
+				}
+			});
+		}
+
 		function apply(ctx) {
-			pluginCtx = ctx;
+			brandCtx = ctx;
+			bindWorkspaceCreate();
 			// Русский composer hint — штатным locale-контрактом dsh: словарь для
 			// namespace conversation + язык ru с fallback en. Прямая подмена
 			// data-placeholder перезаписывалась React'ом; словарь — устойчив.
@@ -1014,8 +318,6 @@ window.__ModuleLoader__.load({
 				}
 			} catch (e) {}
 			ensureBrandStyles();
-			ensureFolderStyles();
-			void hydrateFolderState().then(() => fixAll());
 			if (window.__agctlChatBrandTimer) return;
 			fixAll();
 			setTimeout(fixAll, 1000);
@@ -1023,7 +325,7 @@ window.__ModuleLoader__.load({
 			window.__agctlChatBrandTimer = setInterval(fixAll, 1500);
 		}
 
-		exports.inject = ["configForms"];
+		exports.inject = ["configForms", "locale"];
 		exports.apply = apply;
 		return module.exports;
 	},

@@ -1,7 +1,7 @@
 {
   "name": "@arijjia/agctl-chat-brand",
-  "description": "agctl chat branding and project-folder sidebar backed by real DSH Workspaces",
-  "version": "0.4.0",
+  "description": "agctl chat branding and native DSH Workspaces integration (project create + locale)",
+  "version": "0.5.0",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -16,7 +16,7 @@
       "patch": "./cordis.patch.yml"
     },
     "client": {
-      "inject": ["configForms"],
+      "inject": ["configForms", "locale"],
       "platform": "web"
     }
   }

@@ -1,25 +1,21 @@
 # @arijjia/agctl-chat-session-files
 
-Host-side DSH plugin for the personal agctl Chat runtime. It wraps the Host
-`sessionController.create` call and keeps the DSH Workspace selected by the
-client when it points to a real project directory such as
-`/workspace/<project>`.
+Host-side plugin for the personal agctl DSH runtime. At boot it enumerates
+`/workspace/*` and registers each visible project directory in the native DSH
+WorkspaceRegistry via `workspaceRegistry.create(path)`. The native Workspaces
+browser then owns folder icons, expand/collapse, session rows and status UI.
 
-For a new Session created in the default `/workspace` (or in a legacy hidden
-session Workspace), the plugin creates a persistent per-session directory at
-`/workspace/.sessions/<sessionId>` and an internal Workspace for that path.
-This keeps the composer attached without exposing DSH's internal session
-folders as project folders.
+New sessions are created by the native Workspace client:
 
-The chat-brand client registers project directories as real DSH Workspaces and
-starts folder sessions with that Workspace ID. Those sessions must keep their
-project cwd; they must not be redirected to `.sessions/<id>`.
+- in a project Workspace, DSH sets cwd to `/workspace/<project>`;
+- without a selected project, DSH uses its default Workspace rooted at
+  `/workspace`.
 
-Session and project directories are **not security boundaries** inside one
-user's container: that user's shell can navigate to sibling paths. Containers
-and volumes are isolated between users. The `/workspace` volume persists over
-container sleep/recreation.
+The plugin does **not** wrap `sessionController.create`, create hidden
+`.sessions/<id>` directories, or render a custom sidebar. Dot-directories such
+as legacy `.sessions/` are skipped during project registration.
 
-The plugin activates only when `AGCTL_CHAT_SESSION_ROOT` is set by agctl on the
-personal runtime. It does not create or manage the retired legacy dev-workspace
-seats.
+Project directories are not security boundaries within one user's container:
+the user's shell can navigate to sibling projects. Isolation is between users;
+their containers and persistent bind mounts are separate. DSH_HOME (`/home/dsh`)
+and `/workspace` are sibling mounts under the user's persistent host volume.

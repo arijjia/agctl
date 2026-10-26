@@ -1,15 +1,14 @@
 {
   "name": "@arijjia/agctl-chat-session-files",
-  "description": "Use per-session cwd by default and preserve real project Workspace cwd when selected",
-  "version": "0.2.0",
+  "description": "Register personal project directories as native DSH Workspaces; no per-session cwd",
+  "version": "0.3.0",
   "type": "module",
   "main": "lib/index.js",
   "scripts": {
     "test": "node --test test/*.test.js"
   },
   "exports": {
-    ".": "./lib/index.js",
-    "./path": "./lib/path.js"
+    ".": "./lib/index.js"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "*"
