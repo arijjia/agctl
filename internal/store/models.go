@@ -599,8 +599,17 @@ func (d *DB) wsReqList(rows *sql.Rows) ([]WorkspaceRequest, error) {
 }
 
 func (d *DB) UpdateWorkspaceRequestStatus(id, status, decidedBy, reason, workspaceID string) error {
-	_, err := d.Exec(`UPDATE workspace_requests SET status = ?, decided_by = ?,
-		decided_at = ?, reason = ?, workspace_id = ?, updated_at = ? WHERE id = ?`,
+	// Гвардия WHERE status='pending' - как у DecideRoleRequest: повторное
+	// решение по уже решённой заявке отклоняется, статус не перезаписывается.
+	res, err := d.Exec(`UPDATE workspace_requests SET status = ?, decided_by = ?,
+		decided_at = ?, reason = ?, workspace_id = ?, updated_at = ?
+		WHERE id = ? AND status = 'pending'`,
 		status, decidedBy, now(), reason, workspaceID, now(), id)
-	return wrap("update ws request status", err)
+	if err != nil {
+		return wrap("update ws request status", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("store: заявка %s уже решена или не существует", id)
+	}
+	return nil
 }
