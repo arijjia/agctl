@@ -3,13 +3,13 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "agctl — физика: процессы, порты, протоколы",
-    "output": ".archify/architecture-agctl-processes-20261025-183853/agctl-processes.html",
+    "output": ".archify/architecture-agctl-processes-20261026-164456/agctl-processes.html",
     "quality_profile": "showcase",
     "repository": {
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "2da9332663df222a0e62a5016c42d007b46d6ea8"
+      "revision": "1eaa30124c4ae912f4c4571085b296d0af8b2dc3"
     },
     "views": [
       {
@@ -30,12 +30,11 @@
         "focus": [
           "browser",
           "serve",
-          "relayc",
           "dshchat",
           "wkspace",
           "llm"
         ],
-        "note": "+2 процесса; dsh пишет файлы проектов через RW mount; том переживает удаление контейнера"
+        "note": "+1 процесс; dsh пишет файлы проектов через RW mount; том переживает удаление контейнера"
       },
       {
         "id": "v-dev",
@@ -82,7 +81,7 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 303,
+          "line": 308,
           "end_line": 317,
           "label": "корень: вход → /app/, сессия → /chat/"
         },
@@ -122,8 +121,8 @@
         },
         {
           "path": "internal/server/chat.go",
-          "line": 421,
-          "end_line": 519,
+          "line": 504,
+          "end_line": 580,
           "label": "lazy per-user runtime + TTL reaper"
         }
       ]
@@ -149,7 +148,7 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 272,
+          "line": 270,
           "end_line": 276,
           "label": "публикация портов на 127.0.0.1"
         }
@@ -227,8 +226,8 @@
         },
         {
           "path": "internal/assets/image/entrypoint.sh",
-          "line": 9,
-          "end_line": 13,
+          "line": 10,
+          "end_line": 15,
           "label": "seed при первом старте"
         }
       ]
@@ -290,37 +289,10 @@
       ]
     },
     {
-      "id": "relayc",
-      "type": "backend",
-      "label": "agctl-relay — node",
-      "sublabel": "0.0.0.0:3080 → пайп :3099",
-      "pos": [
-        860,
-        140
-      ],
-      "size": [
-        176,
-        72
-      ],
-      "sources": [
-        {
-          "path": "internal/assets/image/entrypoint.sh",
-          "line": 47,
-          "label": "запуск релея"
-        },
-        {
-          "path": "internal/assets/image/relay.mjs",
-          "line": 1,
-          "end_line": 12,
-          "label": "L4-релей"
-        }
-      ]
-    },
-    {
       "id": "dshchat",
       "type": "backend",
       "label": "dsh web — node",
-      "sublabel": "127.0.0.1:3099 · движок+API · раздаёт SPA",
+      "sublabel": "bind eth0 · :3080 · движок+API · SPA",
       "pos": [
         1215,
         130
@@ -332,20 +304,21 @@
       "sources": [
         {
           "path": "internal/assets/image/entrypoint.sh",
-          "line": 9,
-          "end_line": 48,
-          "label": "seed, role SSH, relay, exec dsh"
+          "line": 49,
+          "end_line": 51,
+          "label": "выбор eth0-IP + exec dsh web"
+        },
+        {
+          "path": "internal/assets/image/dsh-net.mjs",
+          "line": 5,
+          "end_line": 21,
+          "label": "print: адрес eth0; health: HTTP-проба"
         },
         {
           "path": "internal/runtime/dockerrt/chat.go",
           "line": 17,
           "end_line": 71,
           "label": "EnsureChat: seed + Start (+SSH developer)"
-        },
-        {
-          "path": "internal/runtime/dockerrt/docker.go",
-          "line": 269,
-          "label": "AGCTL_CHAT_SESSION_ROOT"
         }
       ]
     },
@@ -365,13 +338,14 @@
       "sources": [
         {
           "path": "internal/assets/image/entrypoint.sh",
-          "line": 22,
-          "end_line": 45,
+          "line": 27,
+          "end_line": 46,
           "label": "sshd только при AGCTL_SSH_PUBKEY"
         },
         {
           "path": "internal/server/chat.go",
-          "line": 481,
+          "line": 559,
+          "end_line": 562,
           "label": "ключ — только у роли developer"
         }
       ]
@@ -393,13 +367,8 @@
         {
           "path": "internal/runtime/dockerrt/docker.go",
           "line": 251,
-          "label": "host.docker.internal:host-gateway"
-        },
-        {
-          "path": "internal/runtime/dockerrt/docker.go",
-          "line": 288,
-          "end_line": 292,
-          "label": "pin провайдера"
+          "end_line": 260,
+          "label": "host-gateway + DNS-пины провайдеров"
         }
       ]
     },
@@ -424,10 +393,10 @@
           "label": "agctl connect"
         },
         {
-          "path": "internal/assets/image/entrypoint.sh",
-          "line": 22,
-          "end_line": 24,
-          "label": "порт 2222 только loopback"
+          "path": "internal/runtime/dockerrt/docker.go",
+          "line": 273,
+          "end_line": 275,
+          "label": "2222 публикуется на loopback"
         }
       ]
     },
@@ -504,7 +473,6 @@
       "kind": "region",
       "label": "Контейнер пользователя u<id> — ×N, ленивый, TTL 1 ч",
       "wraps": [
-        "relayc",
         "dshchat",
         "sshd"
       ],
@@ -542,7 +510,6 @@
         "dshhome",
         "wkspace",
         "gitstore",
-        "relayc",
         "dshchat",
         "sshd"
       ],
@@ -583,17 +550,11 @@
     {
       "id": "c4",
       "from": "serve",
-      "to": "relayc",
-      "label": "HTTP · /chat/ и /w/{id} → :3080",
+      "to": "dshchat",
+      "label": "HTTP · /chat/ и /w/{id} → DNAT :3080",
       "variant": "emphasis",
       "fromSide": "right",
       "toSide": "left"
-    },
-    {
-      "id": "c5",
-      "from": "relayc",
-      "to": "dshchat",
-      "label": "raw TCP → 127.0.0.1:3099"
     },
     {
       "id": "c6",
@@ -705,7 +666,7 @@
       "items": [
         "Сервер всегда: 2 — agctl serve + dockerd; SQLite и git — файлы и библиотека в процессе, не процессы",
         "Вход/логин: +0 — экран рисует SPA agctl (go:embed), dsh ещё не существует",
-        "Открылся /chat/: +2 — agctl-relay и dsh web; до готовности agctl отдаёт свой HTML прогрева",
+        "Открылся /chat/: +1 — dsh web (bind на eth0); до готовности agctl отдаёт свой HTML прогрева",
         "Агент работает: + недолговечные дети dsh web (bash, python3, git, npx MCP)",
         "Разработчик: +1 — sshd в его персональном контейнере (роль developer, при переданном ключе)",
         "Сон по TTL (1 ч простоя) удаляет все процессы контейнера; том пользователя живёт"
@@ -717,8 +678,8 @@
       "items": [
         "Наружу — только 127.0.0.1:8929 — единственный порт (TLS agctl не терминирует: впереди ingress)",
         "Хост-порты контейнеров — динамические, только на loopback: web :3080, ssh :2222 (роль developer)",
-        "Путь чата: браузер → :8929 → proxy + mint ?token= → relay :3080 → dsh :3099 → LLM :443",
-        "Внутри контейнера dsh слушает только 127.0.0.1:3099 — наружу его отдаёт relay :3080"
+        "Путь чата: браузер → :8929 → proxy + mint ?token= → DNAT → dsh :3080 (bind eth0) → LLM :443",
+        "Апстрим dsh запрещает только wildcard-бинд — dsh слушает eth0 контейнера напрямую, релея в образе нет"
       ]
     },
     {
@@ -750,7 +711,7 @@
         "Docker подключает маунты до запуска скрипта: user dsh-home → /home/dsh, workspace/ → /workspace.",
         "Entrypoint при пустом DSH_HOME досеивает скелет настроек и плагинов из образа; рабочие файлы проектов остаются на маунте.",
         "Если передан AGCTL_SSH_PUBKEY (роль developer), скрипт готовит key-only конфиг, проверяет его и запускает sshd :2222 в фоне.",
-        "Затем запускает relay :3080 в фоне и выполняет exec dsh web --port 3099: shell заменяется главным процессом dsh."
+        "Затем вычисляет eth0-адрес (agctl-dsh-net print) и выполняет exec dsh web --host <ip> --port 3080: shell заменяется главным процессом dsh."
       ]
     }
   ]
