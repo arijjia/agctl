@@ -20,6 +20,9 @@ type ChatSpec struct {
 	// SSHPubKey — роль developer: поднять sshd в контейнере (key-only,
 	// порт публикуется только на loopback хоста). Пусто = sshd не поднимать.
 	SSHPubKey string
+	// DefaultFullAccess — роль user: пресет разрешений danger-full-access
+	// назначается дефолтом свежих сессий (пресет-селектор user не показывает).
+	DefaultFullAccess bool
 }
 
 // ChatHandle describes one running runtime generation. Endpoint is private to

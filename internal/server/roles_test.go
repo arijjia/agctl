@@ -157,3 +157,36 @@ func TestChatTTLDefaultIsOneHour(t *testing.T) {
 		t.Fatalf("ChatTTL = %v, want 1h", e.srv.cfg.ChatTTL)
 	}
 }
+
+// TestDZ2UserDefaultFullAccess — роль user получает Full Access по умолчанию;
+// после повышения роли до developer дефолт снимается.
+func TestDZ2UserDefaultFullAccess(t *testing.T) {
+	e := newTestEnv(t, 3)
+	e.register(e.admin, "admin_dz2", "Admin#2026")
+	user := e.newClient()
+	e.register(user, "plain_dz2", "User#2026")
+	u, err := e.db.UserByLogin("plain_dz2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt, err := e.srv.ensureChat(u.ID)
+	if err != nil {
+		t.Fatalf("ensure user chat: %v", err)
+	}
+	if spec := e.rt.chatSpecs[rt.handle.RuntimeID]; !spec.DefaultFullAccess {
+		t.Fatal("роль user: DefaultFullAccess = false, ждали true")
+	}
+	if err := e.db.UpdateUserRole(u.ID, "developer"); err != nil {
+		t.Fatal(err)
+	}
+	e.srv.chatMu.Lock()
+	delete(e.srv.chats, u.ID)
+	e.srv.chatMu.Unlock()
+	rt, err = e.srv.ensureChat(u.ID)
+	if err != nil {
+		t.Fatalf("ensure developer chat: %v", err)
+	}
+	if spec := e.rt.chatSpecs[rt.handle.RuntimeID]; spec.DefaultFullAccess {
+		t.Fatal("роль developer: DefaultFullAccess = true, ждали false")
+	}
+}

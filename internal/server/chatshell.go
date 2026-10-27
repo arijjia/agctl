@@ -36,6 +36,12 @@ div[style*="grid-template-columns"][class*="_frame"]{grid-template-columns:auto 
 
 // Document-start: шапка фиксится только в известных UI-селекторах; текст
 // сообщения/кода/вставленного пользователем HTML никогда не переписывается.
+// У developer/admin правая колонка схлопнута до подтверждения роли и готовности
+// содержимого. Это не даёт показать пустое зарезервированное место при старте.
+const chatShellDeveloperStyle = `<style data-agctl="chat-shell-developer">
+html:not([data-agctl-developer-tools-ready="1"]) div[style*="grid-template-columns"][class*="_frame"]{grid-template-columns:auto minmax(0px,1fr) minmax(0px,0px)!important}
+</style>`
+
 const chatShellScript = `<script data-agctl="chat-shell">(function(){
 "use strict";
 var BRAND="ИИ-мастерская ТюмГУ",TAGLINE="Тюмень на правильном пути";
@@ -71,6 +77,7 @@ function fixIdentity(root){
   }
 }
 function fixChrome(root){
+  var found;
   if(!root||!root.querySelectorAll)return;
   fixIdentity(root);
   var titles=[];
@@ -117,11 +124,13 @@ new MutationObserver(function(muts){
 }).observe(document,{subtree:true,childList:true,characterData:true});
 })();</script>`
 
-// chatShellHeadForRole — ранняя инъекция. Обычная роль скрывает right dev pane
-// до первого кадра; developer/admin получают только бренд и полный нативный dsh UI.
+// chatShellHeadForRole — ранняя инъекция. User всегда схлопывает правую dev-панель;
+// developer/admin держат колонку схлопнутой до подтверждения роли клиентским плагином.
 func chatShellHeadForRole(role string) string {
 	style := chatShellStyle
-	if role != "developer" && role != "admin" {
+	if role == "developer" || role == "admin" {
+		style += chatShellDeveloperStyle
+	} else {
 		style += chatShellUserStyle
 	}
 	return style + chatShellScript

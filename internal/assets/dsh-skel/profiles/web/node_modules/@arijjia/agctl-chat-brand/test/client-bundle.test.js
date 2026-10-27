@@ -37,7 +37,7 @@ async function loadClientFactory() {
 test("клиентский бандл загружается и объявляет apply с мягким inject", async () => {
 	const exports = await loadClientFactory();
 	assert.equal(typeof exports.apply, "function");
-	assert.deepEqual(exports.inject, ["configForms", "locale", "layout"]);
+	assert.deepEqual(exports.inject, ["configForms", "locale", "layout", "uiWorkspace"]);
 });
 
 test("нативный Workspaces-браузер dsh остаётся единственным обозревателем сессий", async () => {
@@ -78,49 +78,113 @@ test("composer hint — штатный locale dsh, не DOM-патч", async () 
 	assert.doesNotMatch(src, /Message or run a task/, "английский текст открытой сессии больше не патчится");
 });
 
-test("role gate: user фиксирует Standard, developer/admin включают native presets", async () => {
+test("role gate: user держит dev tools off, developer/admin открывают панель после готовности", async () => {
 	async function check(role, initial) {
 		const exports = await loadClientFactory();
 		let enabled = initial;
 		const listeners = new Set();
+		const actions = [];
 		const developerTools = {
 			getSnapshot: () => enabled,
+			subscribe: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
+		};
+		const developerToolsForm = {
+			enabled: developerTools,
 			setEnabled: async (next) => {
+				actions.push(["enabled", next]);
 				enabled = next;
 				for (const listener of [...listeners]) listener();
 			},
-			subscribe: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
 		};
-		const layoutCalls = [];
 		const layout = {
-			openRightbar: (track, fullscreen) => layoutCalls.push(["open", track, fullscreen]),
-			closeRightbar: () => layoutCalls.push(["close"]),
+			openRightbar: (track, fullscreen) => actions.push(["open", track, fullscreen]),
+			closeRightbar: () => actions.push(["close"]),
 		};
 		const ctx = {
-			configForms: { developerTools: { enabled: developerTools } },
+			configForms: { developerTools: developerToolsForm },
 			get: (name) => name === "layout" ? layout : undefined,
 			effect: (register) => register(),
 		};
 		const oldFetch = globalThis.fetch;
+		const oldDocument = globalThis.document;
+		globalThis.document = { documentElement: { dataset: {} } };
 		globalThis.fetch = async () => ({ ok: true, json: async () => ({ user: { role } }) });
 		try {
 			await exports.__testSyncRoleControls(ctx);
-			return { enabled, developerTools, layoutCalls };
+			return { enabled, developerToolsForm, actions, ready: globalThis.document.documentElement.dataset.agctlDeveloperToolsReady };
 		} finally {
 			if (oldFetch === undefined) delete globalThis.fetch;
 			else globalThis.fetch = oldFetch;
+			if (oldDocument === undefined) delete globalThis.document;
+			else globalThis.document = oldDocument;
 		}
 	}
 
 	const user = await check("user", true);
-	assert.equal(user.enabled, false, "user получает только Standard");
-	assert.deepEqual(user.layoutCalls, [["close"]], "user right pane закрывается");
-	await user.developerTools.setEnabled(true); // попытка включить toggle в Settings
+	assert.equal(user.enabled, false, "у user developer tools выключены; режим доступа задаёт role default");
+	assert.deepEqual(user.actions, [["close"], ["enabled", false]], "у user правая панель схлопнута");
+	assert.equal(user.ready, undefined, "для user developer-панель не раскрывается");
+	await user.developerToolsForm.setEnabled(true); // попытка включить toggle в Settings
 	assert.equal(user.enabled, false, "toggle user сразу возвращается в off");
 	const developer = await check("developer", false);
 	assert.equal(developer.enabled, true);
-	assert.deepEqual(developer.layoutCalls, [["open", true, false]], "developer получает полный right pane");
+	assert.deepEqual(developer.actions, [["enabled", true]], "developer tools включены, нативный rightbar сам управляет видимостью содержимого");
+	assert.equal(developer.ready, "1", "pre-paint схлопывание снимается после готовности панели");
 	const admin = await check("admin", false);
 	assert.equal(admin.enabled, true);
-	assert.deepEqual(admin.layoutCalls, [["open", true, false]], "admin получает полный right pane");
+	assert.deepEqual(admin.actions, [["enabled", true]], "admin получает controls; пустой rightbar не открывается принудительно");
+});
+
+test("first empty chat starts one session in Default workspace", async () => {
+	const exports = await loadClientFactory();
+	const calls = [];
+	const wsState = { phase: "ready", items: [{ workspaceId: "ws-default", path: "/workspace", title: "Default workspace" }], archivedSessionIds: [] };
+	const sessionState = { phase: "ready", ids: [], byId: {} };
+	const wsListeners = new Set();
+	const sessionListeners = new Set();
+	const uiWorkspace = {
+		workspaces: { list: { getSnapshot: () => wsState, subscribe: (fn) => { wsListeners.add(fn); return () => wsListeners.delete(fn); } } },
+		sessions: { list: { getSnapshot: () => sessionState, subscribe: (fn) => { sessionListeners.add(fn); return () => sessionListeners.delete(fn); } } },
+		startSession: (id) => calls.push(id),
+	};
+	const ctx = { get: (name) => name === "uiWorkspace" ? uiWorkspace : undefined, effect: (register) => register() };
+	exports.__testEnsureFirstWorkspaceSession(ctx);
+	assert.deepEqual(calls, ["ws-default"], "пустой первый старт активирует штатную сессию Default workspace");
+	for (const fn of [...wsListeners, ...sessionListeners]) fn();
+	assert.deepEqual(calls, ["ws-default"], "на подписках не создаются дубли");
+});
+
+test("first-session bootstrap waits for readiness and skips non-empty/archived accounts", async () => {
+	const exports = await loadClientFactory();
+	const calls = [];
+	const wsState = { phase: "loading", items: [], archivedSessionIds: [] };
+	const sessionState = { phase: "loading", ids: [], byId: {} };
+	const wsListeners = new Set();
+	const sessionListeners = new Set();
+	const uiWorkspace = {
+		workspaces: { list: { getSnapshot: () => wsState, subscribe: (fn) => { wsListeners.add(fn); return () => wsListeners.delete(fn); } } },
+		sessions: { list: { getSnapshot: () => sessionState, subscribe: (fn) => { sessionListeners.add(fn); return () => sessionListeners.delete(fn); } } },
+		startSession: (id) => calls.push(id),
+	};
+	const ctx = { get: (name) => name === "uiWorkspace" ? uiWorkspace : undefined, effect: (register) => register() };
+	exports.__testEnsureFirstWorkspaceSession(ctx);
+	assert.deepEqual(calls, [], "до готовности списков ничего не создаётся");
+	wsState.phase = "ready"; wsState.items = [{ workspaceId: "ws-default", path: "/workspace", title: "Default workspace" }];
+	sessionState.phase = "ready";
+	for (const fn of [...wsListeners, ...sessionListeners]) fn();
+	assert.deepEqual(calls, ["ws-default"], "создание происходит после готовности обоих списков");
+
+	for (const account of [
+		{ phase: "ready", ids: ["existing"], byId: {} },
+		{ phase: "ready", ids: [], byId: {} },
+	]) {
+		const skipped = [];
+		const ctx2 = { get: (name) => name === "uiWorkspace" ? {
+			workspaces: { list: { getSnapshot: () => ({ phase: "ready", items: [{ workspaceId: "ws-default", path: "/workspace", title: "Default workspace" }], archivedSessionIds: account.ids.length ? [] : ["archived"] }), subscribe: () => () => {} } },
+			sessions: { list: { getSnapshot: () => account, subscribe: () => () => {} } },
+			startSession: (id) => skipped.push(id),
+		} : undefined, effect: (register) => register() };
+		exports.__testEnsureFirstWorkspaceSession(ctx2);
+		assert.deepEqual(skipped, [], "existing или archived session blocks auto-create");
+	}
 });

@@ -541,6 +541,9 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 		RuntimeID: s.chatRuntimeID(userID), StorageID: chatStorageID(userID),
 		UserID: userID, Provider: s.userProvider(userID),
 		SSHPubKey: s.developerSSHPubKey(userID),
+		// Роль user: агент всегда в Full Access по умолчанию (пресет-селектор
+		// пользователю не показывается). Ошибка чтения роли -> дефолт не меняем.
+		DefaultFullAccess: s.userRole(userID) == "user",
 	}
 	handle, err := s.chatProvider.EnsureChat(ctx, spec)
 	if err != nil {
@@ -555,6 +558,15 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 	s.chatMu.Unlock()
 	log.Printf("[chat] пользователь %d: личный runtime поднят (%s)", userID, handle.Endpoint)
 	return rt, nil
+}
+
+// userRole — роль учётной записи; пустая строка при ошибке чтения.
+func (s *Server) userRole(userID int64) string {
+	u, err := s.db.UserByID(userID)
+	if err != nil {
+		return ""
+	}
+	return u.Role
 }
 
 // developerSSHPubKey — публичный SSH-ключ разработчика (роли developer/admin),

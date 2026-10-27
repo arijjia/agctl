@@ -21,6 +21,9 @@ func TestChatShellRoleSpecificRightPane(t *testing.T) {
 		if strings.Contains(got, `data-agctl="chat-shell-user"`) || strings.Contains(got, `aria-label="Open right sidebar"`) {
 			t.Fatalf("role %s must keep the complete native right panel", role)
 		}
+		if !strings.Contains(got, `data-agctl="chat-shell-developer"`) || !strings.Contains(got, `data-agctl-developer-tools-ready="1"`) {
+			t.Fatalf("role %s must collapse the empty right column until developer tools are ready", role)
+		}
 		if !strings.Contains(got, "data-agctl-early-brand") {
 			t.Fatalf("role %s lost the agctl brand pre-paint shell", role)
 		}
@@ -49,6 +52,9 @@ func TestInjectChatShell(t *testing.T) {
 	}
 	if !strings.Contains(got, "data-agctl-early-brand") || !strings.Contains(got, "Тюмень на правильном пути") {
 		t.Fatal("document-start shell must render the platform brand/tagline before plugins")
+	}
+	if !strings.Contains(got, "function fixChrome(root){\n  var found;") {
+		t.Fatal("document-start shell must declare fixChrome query state before strict-mode use")
 	}
 
 	// HTML без head, но с body: вставка после открывающего <body…>.

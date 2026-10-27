@@ -261,27 +261,24 @@ window.__ModuleLoader__.load({
 		}
 
 		async function syncRoleControls(ctx) {
-			const developerTools = ctx.configForms && ctx.configForms.developerTools && ctx.configForms.developerTools.enabled;
-			if (!developerTools) return;
+			const developerToolsForm = ctx.configForms && ctx.configForms.developerTools;
+			const developerTools = developerToolsForm && developerToolsForm.enabled;
+			if (!developerToolsForm || !developerTools || typeof developerTools.getSnapshot !== "function") return;
+			const layout = (ctx.get && ctx.get("layout")) || ctx.layout;
+			// Серверный pre-paint CSS схлопывает колонку до роли. Не вызываем
+			// layout.closeRightbar для developer/admin: это затёрло бы штатное
+			// состояние нативной панели до того, как её содержимое готово.
 			const response = await fetch("/api/me", { credentials: "include", headers: { Accept: "application/json" } });
-			if (!response.ok) return;
+			if (!response.ok) return; // fail closed: pre-paint колонка остаётся схлопнутой
 			const data = await response.json();
 			roleCanUseDevTools = !!(data && data.user && ["developer", "admin"].includes(data.user.role));
-			// Правой панелью управляет штатный DSH Layout API. Обычному user
-			// закрываем её без переходного кадра (pre-paint CSS в gateway); dev/admin
-			// получаем полный нативный rightbar.
-			const layout = (ctx.get && ctx.get("layout")) || ctx.layout;
-			if (layout) {
-				if (roleCanUseDevTools && typeof layout.openRightbar === "function") layout.openRightbar(true, false);
-				if (!roleCanUseDevTools && typeof layout.closeRightbar === "function") layout.closeRightbar();
-			}
-			// Пользователь может увидеть этот нативный toggle в Settings → General.
-			// Держим его выключенным при любых последующих изменениях, чтобы PTC/
-			// Minimal и правые developer-поверхности оставались только developer/admin.
+			// Пользователь может увидеть этот нативный переключатель в Settings.
+			// Держим его выключенным при последующих изменениях; developer/admin
+			// сохраняют штатный выбор режимов и правую панель.
 			if (!devToolsStop && typeof developerTools.subscribe === "function") {
 				devToolsStop = developerTools.subscribe(() => {
 					if (!roleCanUseDevTools && developerTools.getSnapshot()) {
-						void developerTools.setEnabled(false).catch((e) => console.warn("[agctl] developer tools gate:", e));
+						void developerToolsForm.setEnabled(false).catch((e) => console.warn("[agctl] developer tools gate:", e));
 					}
 				});
 				ctx.effect(() => () => {
@@ -289,15 +286,51 @@ window.__ModuleLoader__.load({
 					devToolsStop = null;
 				}, "agctl-chat-brand.role-gate");
 			}
+			if (!roleCanUseDevTools && layout && typeof layout.closeRightbar === "function") layout.closeRightbar();
 			const enabled = !!developerTools.getSnapshot();
 			if (roleCanUseDevTools !== enabled) {
-				await developerTools.setEnabled(roleCanUseDevTools);
+				await developerToolsForm.setEnabled(roleCanUseDevTools);
 			}
+			if (roleCanUseDevTools) {
+				// Снимаем pre-paint схлопывание после принятия роли и включения controls.
+				// Видимость правой панели дальше определяет нативный DSH rightbar по
+				// наличию выбранного содержимого; мы не открываем пустую колонку сами.
+				await new Promise((resolve) => typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => resolve()) : setTimeout(resolve, 0));
+				if (typeof document !== "undefined" && document.documentElement) document.documentElement.dataset.agctlDeveloperToolsReady = "1";
+			}
+		}
+
+		function ensureFirstWorkspaceSession(ctx) {
+			const uiWorkspace = (ctx.get && ctx.get("uiWorkspace")) || ctx.uiWorkspace;
+			const workspaceList = uiWorkspace && uiWorkspace.workspaces && uiWorkspace.workspaces.list;
+			const sessionList = uiWorkspace && uiWorkspace.sessions && uiWorkspace.sessions.list;
+			if (!uiWorkspace || typeof uiWorkspace.startSession !== "function" || !workspaceList || !sessionList) return;
+			ctx.effect(() => {
+				let started = false;
+				const tryStart = () => {
+					if (started) return;
+					const workspaces = workspaceList.getSnapshot && workspaceList.getSnapshot();
+					const sessions = sessionList.getSnapshot && sessionList.getSnapshot();
+					if (!workspaces || !sessions || workspaces.phase !== "ready" || sessions.phase !== "ready") return;
+					if ((sessions.ids || []).length > 0 || (workspaces.archivedSessionIds || []).length > 0) return;
+					const workspace = (workspaces.items || []).find((item) => item.path === "/workspace" || item.title === "Default workspace");
+					if (!workspace) return;
+					started = true;
+					// Тот же штатный переход, что и у кнопки «New session in Default workspace».
+					uiWorkspace.startSession(workspace.workspaceId);
+				};
+				const stops = [];
+				if (typeof workspaceList.subscribe === "function") stops.push(workspaceList.subscribe(tryStart));
+				if (typeof sessionList.subscribe === "function") stops.push(sessionList.subscribe(tryStart));
+				tryStart();
+				return () => stops.forEach((stop) => stop());
+			}, "agctl-chat-brand.first-workspace-session");
 		}
 
 		function apply(ctx) {
 			brandCtx = ctx;
 			bindWorkspaceCreate();
+			try { ensureFirstWorkspaceSession(ctx); } catch (e) { console.warn("[agctl] first workspace session:", e); }
 			// Русский composer hint — штатным locale-контрактом dsh: словарь для
 			// namespace conversation + язык ru с fallback en. Прямая подмена
 			// data-placeholder перезаписывалась React'ом; словарь — устойчив.
@@ -311,10 +344,11 @@ window.__ModuleLoader__.load({
 			window.__agctlChatBrandTimer = setInterval(fixAll, 1500);
 		}
 
-		exports.inject = ["configForms", "locale", "layout"];
+		exports.inject = ["configForms", "locale", "layout", "uiWorkspace"];
 		exports.apply = apply;
 		// Unit-test seam: role policy is independent of the UI renderer.
 		exports.__testSyncRoleControls = syncRoleControls;
+		exports.__testEnsureFirstWorkspaceSession = ensureFirstWorkspaceSession;
 		return module.exports;
 	},
 });
