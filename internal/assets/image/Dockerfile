@@ -41,6 +41,7 @@ COPY --from=mcp-warm /opt/npm-mcp /opt/npm-mcp
 ENV NPM_MCP_CACHE=/opt/npm-mcp
 ENV DSH_HOME=/home/dsh
 COPY agctl /usr/local/bin/agctl
+# Скелет DSH_HOME: entrypoint сеет его в пустой том (см. /opt/dsh-skel).
 COPY skel/ /opt/dsh-skel/
 COPY entrypoint.sh /usr/local/bin/agctl-entrypoint
 COPY dsh-net.mjs /usr/local/bin/agctl-dsh-net
