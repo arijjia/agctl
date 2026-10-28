@@ -305,7 +305,7 @@ SSH-туннель и укажи его локальные host/port.
 | `make hooks` | установить pre-commit hook: gofmt + go vet, node --check, тест синка плагинов ↔ dsh-skel, блок случайного коммита `.env` |
 | `make go_build` / `go test ./...` | бинарь / полный Go-suite (включая роли, проекты, autosave, legacy tombstones) |
 | `make web_build` | React SPA → `web/dist` → `go:embed` |
-| `make img_build` | linux-сборка agctl + Docker-образ `agctl-dsh:0.2.0` (`IMG=agctl-dsh:X make img_build`) |
+| `make img_build` | linux-сборка agctl + Docker-образ `agctl-dsh:0.2.2` (`IMG=agctl-dsh:X make img_build`) |
 | `make release_local` | матрица darwin/linux/windows × arm64/amd64 в `dist/` |
 | `node --test dsh-plugins/chat-brand/test/*.test.js` | smoke структуры дерева папок → DSH Workspace проекта |
 | `node --test dsh-plugins/cabinet/test/*.test.cjs` | mock-тесты роли developer, SSH, проекты и отсутствия legacy UI |
