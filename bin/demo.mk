@@ -14,6 +14,9 @@ DEMO_PID := $(RUNTIME_DIR)/demo.pid
 demo: web_build go_build img_build | $(RUNTIME_DIR)
 	@if [ -f "$(DEMO_PID)" ] && kill -0 "$$(cat $(DEMO_PID))" 2>/dev/null; then \
 	  echo "демо-стенд уже работает: http://$(DEMO_ADDR) (pid $$(cat $(DEMO_PID)))"; exit 1; fi
+	@if [ -z "$$(printenv AGCTL_LLM_API_KEY)" ]; then \
+	  echo "⚠ AGCTL_LLM_API_KEY пуст: при первом входе dsh покажет нативный модал ввода токена (выглядит как «токен DeepSeek»)."; \
+	  echo "  Чтоб чат работал сразу: cp .env.example .env и впиши raw-ключ Qwen (без Bearer/кавычек), потом make restart."; fi
 	@AGCTL_HOME="$(DEMO_HOME)" nohup ./dist/agctl serve --addr "$(DEMO_ADDR)" >>"$(DEMO_LOG)" 2>&1 & echo $$! > "$(DEMO_PID)"
 	@sleep 1
 	@if kill -0 "$$(cat $(DEMO_PID))" 2>/dev/null; then \
