@@ -13,7 +13,7 @@ import (
 // TestInjectDevShell — dev-шелл брендинга встаёт после <head>, идемпотентен и
 // содержит логотип/бренд, но не трогает чат-специфику (нет скрытия панелей).
 func TestInjectDevShell(t *testing.T) {
-	brand := utmnView(t)
+	brand := fixtureView(t)
 	srv := &Server{brand: brand}
 	doc := `<!doctype html><html><head><title>DeepSeek Harness</title></head><body>ok</body></html>`
 	out := string(srv.injectDevShell([]byte(doc)))
@@ -52,7 +52,7 @@ func TestInjectDevShellNeutralWithoutLogo(t *testing.T) {
 // TestStoppedWorkspacePage — страница остановленного места брендируется,
 // экранирует имя и несёт кнопку запуска с polling на API места.
 func TestStoppedWorkspacePage(t *testing.T) {
-	brand := utmnView(t)
+	brand := fixtureView(t)
 	ws := store.Workspace{ID: `w1"><script>`, Name: `Место "тест"`, Status: "stopped"}
 	page := stoppedWorkspacePage(ws, brand)
 	for _, want := range []string{

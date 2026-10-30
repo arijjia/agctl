@@ -142,10 +142,11 @@ func requireHome(dir string) (string, error) {
 
 func cmdServe(args []string) {
 	// Профиль разрешается до регистрации флагов: от него зависят дефолты
-	// (LLM-провайдер и брендинг сервера).
+	// (LLM-провайдер и брендинг сервера). Имя ищется во встроенных профилях,
+	// затем в ./profiles и $AGCTL_HOME/profiles (make profile-fetch).
 	profileName := prescanFlag(args, "profile", envOr("AGCTL_PROFILE", "agctl"))
 	profileDir := prescanFlag(args, "profile-dir", os.Getenv("AGCTL_PROFILE_DIR"))
-	prof, err := profile.Resolve(profileName, profileDir)
+	prof, err := profile.Resolve(profileName, profileDir, "profiles", filepath.Join(defaultHome(), "profiles"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -163,7 +164,7 @@ func cmdServe(args []string) {
 	tier0 := fsSet.Bool("tier0", true, "поднимать общий чат (Tier 0) и отдавать корень платформы в него")
 	memGB := fsSet.Float64("mem-gb", 2, "лимит памяти контейнера, ГБ")
 	cpus := fsSet.Float64("cpus", 2, "лимит CPU контейнера")
-	profileFlag := fsSet.String("profile", profileName, "встроенный профиль платформы (по умолчанию agctl; профиль пилота встроен до выделения в отдельный репо)")
+	profileFlag := fsSet.String("profile", profileName, "профиль платформы: встроенный agctl (нейтральный) или имя каталога из ./profiles и $AGCTL_HOME/profiles")
 	profileDirFlag := fsSet.String("profile-dir", profileDir, "каталог профиля с диска (profile.yaml + assets) — кастомизация без пересборки бинаря")
 	// Платформенный LLM по умолчанию для режима Chat: дефолты приходят из
 	// профиля, env их перекрывает; ключ хранится только в env.

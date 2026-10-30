@@ -11,12 +11,12 @@ RUN_UP_PID := $(RUNTIME_DIR)/up.pid
 RUN_CORP_LOG := $(RUNTIME_DIR)/corp.log
 RUN_CORP_PID := $(RUNTIME_DIR)/corp.pid
 
-# Профиль платформы (--profile): по умолчанию utmn — профиль пилота,
-# встроенный в бинарь (брендинг и дефолты корпоративного LLM). Нейтральный
-# запуск без организации: make up PROFILE=agctl.
+# Профиль платформы (--profile): utmn, если профиль организации получен
+# (make profile-fetch кладёт его в ./profiles/utmn), иначе нейтральный agctl.
+# Встроенного профиля организации в бинаре нет — ядро универсально.
 # Ключ провайдера — в .env (AGCTL_LLM_API_KEY); сами дефолты LLM из профиля,
 # точечные переопределения — CORP_LLM_* (пусто = брать из профиля).
-PROFILE ?= utmn
+PROFILE ?= $(if $(wildcard profiles/utmn/profile.yaml),utmn,agctl)
 CORP_LLM_BASE_URL ?=
 CORP_LLM_MODELS ?=
 CORP_LLM_MODEL ?=
@@ -27,6 +27,13 @@ CORP_LLM_ARGS = $(if $(CORP_LLM_BASE_URL),--llm-base-url "$(CORP_LLM_BASE_URL)")
     $(if $(CORP_LLM_MODELS),--llm-models "$(CORP_LLM_MODELS)") \
     $(if $(CORP_LLM_MODEL),--llm-model "$(CORP_LLM_MODEL)")
 
+# profile_check: подсказка, если выбранный профиль не найден (встроен только agctl)
+define profile_check
+@if [ "$(PROFILE)" != "agctl" ] && [ ! -f "profiles/$(PROFILE)/profile.yaml" ]; then \
+  echo "⚠ профиль $(PROFILE) не найден в profiles/ (встроен только agctl)."; \
+  echo "  Сделай make profile-fetch (PROFILE_REPO=…) или запусти make $1 PROFILE=agctl."; fi
+endef
+
 .PHONY: up corp stop down restart logs status demo-users
 
 $(RUNTIME_DIR):
@@ -36,6 +43,7 @@ $(RUNTIME_DIR):
 ## img_build в зависимостях гарантирует образ agctl-dsh после docker prune:
 ## с тёплым кэшем сборка занимает секунды, после полной чистки — минуты.
 up: web_build go_build img_build | $(RUNTIME_DIR)
+	$(call profile_check,up)
 	@if [ -z "$(AGCTL_LLM_API_KEY)" ]; then \
 	  echo "⚠ AGCTL_LLM_API_KEY пуст: Qwen-модели будут видны, но запросы не пройдут. Впиши raw-токен в .env (без Bearer/кавычек)."; fi
 	@if [ -f "$(RUN_UP_PID)" ] && kill -0 "$$(cat $(RUN_UP_PID))" 2>/dev/null; then \
@@ -54,6 +62,7 @@ demo-users: go_build
 
 ## corp: то же, что up, но с корпоративным LiteLLM (ключ — в .env)
 corp: web_build go_build img_build | $(RUNTIME_DIR)
+	$(call profile_check,corp)
 	@if [ -f "$(RUN_CORP_PID)" ] && kill -0 "$$(cat $(RUN_CORP_PID))" 2>/dev/null; then \
 	  echo "corp-инстанс уже запущен (pid $$(cat $(RUN_CORP_PID))) — make stop"; exit 1; fi
 	@if [ -z "$$(printenv AGCTL_LLM_API_KEY)" ]; then \

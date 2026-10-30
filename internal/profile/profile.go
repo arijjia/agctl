@@ -120,21 +120,41 @@ func LoadDir(dir string) (*Data, error) {
 }
 
 // Resolve — порядок разрешения профиля: явный каталог (--profile-dir)
-// сильнее встроенного имени (--profile). Возвращает ошибку с доступными
-// вариантами, если ничего не найдено.
-func Resolve(name, dir string) (*Data, error) {
+// сильнее имени; имя ищется во встроенных профилях, затем в searchDirs
+// (обычно ./profiles и $AGCTL_HOME/profiles — там живут профили организаций,
+// полученные `make profile-fetch` или положенные вручную). Ошибка
+// перечисляет доступные варианты.
+func Resolve(name, dir string, search ...string) (*Data, error) {
 	if dir != "" {
 		return LoadDir(dir)
 	}
 	if name == "" {
 		name = "agctl"
 	}
-	d, err := Embedded(name)
-	if err != nil {
-		return nil, fmt.Errorf("профиль %q: %w (встроенные: %s; свой каталог — --profile-dir)",
-			name, err, strings.Join(EmbeddedNames(), ", "))
+	if d, err := Embedded(name); err == nil {
+		return d, nil
 	}
-	return d, nil
+	for _, base := range search {
+		if strings.TrimSpace(base) == "" {
+			continue
+		}
+		cand := filepath.Join(base, name)
+		if _, err := os.Stat(filepath.Join(cand, "profile.yaml")); err == nil {
+			return LoadDir(cand)
+		}
+	}
+	return nil, fmt.Errorf("профиль %q не найден: встроенные: %s; дисковые каталоги: %s (свой каталог — --profile-dir)",
+		name, strings.Join(EmbeddedNames(), ", "), strings.Join(nonEmpty(search), ", "))
+}
+
+func nonEmpty(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if strings.TrimSpace(s) != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func loadFS(fsys embed.FS, dir, source string) (*Data, error) {

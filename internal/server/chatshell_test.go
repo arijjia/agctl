@@ -2,10 +2,13 @@ package server
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"html"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,10 +16,45 @@ import (
 	"github.com/arijjia/agctl/internal/profile"
 )
 
-// utmnView — профиль организации для проверок брендированного пути.
-func utmnView(t *testing.T) profile.View {
+func osMkdirAll(path string) error { return os.MkdirAll(path, 0o755) }
+
+func osWriteFile(path string, data []byte) error { return os.WriteFile(path, data, 0o644) }
+
+// fixtureView — брендированный профиль-фикстура (синтетическая организация):
+// ядро и его тесты не носят данных реальных организаций — они в отдельном
+// репо профиля (make profile-fetch).
+func fixtureView(t *testing.T) profile.View {
 	t.Helper()
-	d, err := profile.Embedded("utmn")
+	const logo = "data:image/png;base64," +
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+	dir := t.TempDir()
+	if err := osMkdirAll(filepath.Join(dir, "assets")); err != nil {
+		t.Fatal(err)
+	}
+	yaml := "schema: 1\n" +
+		"id: fixture-org\n" +
+		"brand:\n" +
+		"  name: Fixture Org\n" +
+		"  tagline: fixture tagline\n" +
+		"  letter: F\n" +
+		"  logo: assets/logo.png\n" +
+		"login:\n" +
+		"  subtitle: fixture subtitle\n" +
+		"llm:\n" +
+		"  default_base_url: https://llm.fixture.example/v1\n" +
+		"help:\n" +
+		"  cabinet_title: Справка — Fixture Org\n"
+	if err := osWriteFile(filepath.Join(dir, "profile.yaml"), []byte(yaml)); err != nil {
+		t.Fatal(err)
+	}
+	logoBytes, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(logo, "data:image/png;base64,"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := osWriteFile(filepath.Join(dir, "assets", "logo.png"), logoBytes); err != nil {
+		t.Fatal(err)
+	}
+	d, err := profile.LoadDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +80,7 @@ func TestChatShellRoleSpecificRightPane(t *testing.T) {
 }
 
 func TestInjectChatShell(t *testing.T) {
-	srv := &Server{brand: utmnView(t)}
+	srv := &Server{brand: fixtureView(t)}
 	shell := `<style data-agctl="chat-shell">`
 	if !strings.Contains(chatShellHeadForRole("user", srv.brand), shell) {
 		t.Fatal("chat shell head must contain the style marker")
@@ -95,7 +133,7 @@ func TestInjectChatShell(t *testing.T) {
 // нейтральным agctl: ни имени, ни тэглайна организации в выводе быть не должно.
 func TestInjectChatShellNeutralProfile(t *testing.T) {
 	srv := &Server{brand: profile.Neutral()}
-	orgBrand := utmnView(t)
+	orgBrand := fixtureView(t)
 	doc := "<!doctype html><html><head><title>DeepSeek Harness</title></head><body></body></html>"
 	got := string(srv.injectChatShellForRole([]byte(doc), "user"))
 	for _, org := range []string{orgBrand.Name, orgBrand.Tagline} {
@@ -112,7 +150,7 @@ func TestInjectChatShellNeutralProfile(t *testing.T) {
 }
 
 func TestInjectChatShellHTMLAwarePlacement(t *testing.T) {
-	srv := &Server{brand: utmnView(t)}
+	srv := &Server{brand: fixtureView(t)}
 	doc := "<!DOCTYPE html><HTML><HEAD data-x='>'><!-- literal </head> --><script>const x = '</head>';</script><title>DeepSeek Harness</title></HEAD><BODY>x</BODY></HTML>"
 	got := string(srv.injectChatShellForRole([]byte(doc), "user"))
 	if !strings.HasPrefix(got, "<!DOCTYPE html>") {
@@ -132,7 +170,7 @@ func TestInjectChatShellHTMLAwarePlacement(t *testing.T) {
 }
 
 func TestInjectBrandBootIntoLoginIndex(t *testing.T) {
-	brand := utmnView(t)
+	brand := fixtureView(t)
 	idx := []byte("<!doctype html><html><head><meta charset='utf-8'><title>agctl — рабочие места агентов</title></head><body><div id=root></div></body></html>")
 	out := string(injectBrandBoot(idx, brand))
 	if !strings.Contains(out, `<script data-agctl="brand-boot">window.__AGCTL_BRAND__={`) {
@@ -150,7 +188,7 @@ func TestInjectBrandBootIntoLoginIndex(t *testing.T) {
 	if boot < 0 || headEnd < 0 || boot > headEnd {
 		t.Fatalf("boot-скрипт вне <head>: boot=%d head=%d", boot, headEnd)
 	}
-	if again := string(injectBrandBoot([]byte(out), utmnView(t))); again != out {
+	if again := string(injectBrandBoot([]byte(out), fixtureView(t))); again != out {
 		t.Fatal("brand boot инъекция должна быть идемпотентной")
 	}
 	// Документ без <head> — скрипт в начало.
@@ -161,7 +199,7 @@ func TestInjectBrandBootIntoLoginIndex(t *testing.T) {
 }
 
 func TestInjectChatShellResponseUpdatesBodyLength(t *testing.T) {
-	srv := &Server{brand: utmnView(t)}
+	srv := &Server{brand: fixtureView(t)}
 	body := []byte("<!doctype html><html><head><title>DeepSeek Harness</title></head><body>x</body></html>")
 	resp := &http.Response{
 		StatusCode:    http.StatusOK,
@@ -183,7 +221,7 @@ func TestInjectChatShellResponseUpdatesBodyLength(t *testing.T) {
 }
 
 func TestInjectChatShellResponseRestoresOversizedBody(t *testing.T) {
-	srv := &Server{brand: utmnView(t)}
+	srv := &Server{brand: fixtureView(t)}
 	body := bytes.Repeat([]byte("x"), chatShellMaxHTMLBytes+257)
 	resp := &http.Response{
 		StatusCode:    http.StatusOK,
@@ -219,7 +257,7 @@ func (b *failOnceBody) Read(p []byte) (int, error) {
 func (*failOnceBody) Close() error { return nil }
 
 func TestInjectChatShellResponseRestoresReadError(t *testing.T) {
-	srv := &Server{brand: utmnView(t)}
+	srv := &Server{brand: fixtureView(t)}
 	prefix := []byte("partial html")
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
