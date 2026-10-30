@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: decomposition-crosslink-roadmap
 title: "Кросс-линк профильной декомпозиции в docs/architecture-roadmap.md"
-status: open
+status: done
 priority: P3
 size: S
 area: platform
@@ -32,3 +32,5 @@ depends: []
 
 - 2026-10-30: создано (`gitctl backlog new`); попутный кандидат из работы
   над эпиком `profile-decomposition`.
+- 2026-10-30: Сделано: в docs/architecture-roadmap.md добавлен раздел 2.1 «Профильная декомпозиция (white-label)» со ссылками на эпик profile-decomposition, штабной роадмап и docs/customization.md. Коммит вместе с Ф4 агctl.
+- 2026-10-30: done — Кросс-линк добавлен в architecture-roadmap.md §2.1 (коммит Ф4)
