@@ -77,7 +77,7 @@ func (s *Server) proxyWorkspace(w http.ResponseWriter, r *http.Request, ws store
 		if strings.Contains(r.Header.Get("Accept"), "text/html") {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusConflict)
-			_, _ = io.WriteString(w, stoppedWorkspacePage(ws))
+			_, _ = io.WriteString(w, stoppedWorkspacePage(ws, s.brand))
 			return
 		}
 		writeErr(w, http.StatusConflict, "воркспейс не запущен (статус: "+ws.Status+")")
@@ -136,6 +136,7 @@ func (s *Server) proxyWorkspace(w http.ResponseWriter, r *http.Request, ws store
 			// Брендинг dev-места: тот же подход, что чат-шелл на /chat/, но
 			// только заголовок/лого/тэглайн — инструменты разработчика не
 			// трогаем (панели, Workspaces, выборщик моделей).
+			injectDevShellResponse := s.injectDevShellResponse
 			injectDevShellResponse(resp)
 			if loc := resp.Header.Get("Location"); loc != "" {
 				resp.Header.Set("Location", rewriteLocation(loc, prefix, target))

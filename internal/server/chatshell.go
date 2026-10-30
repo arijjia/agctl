@@ -3,16 +3,19 @@ package server
 // chatshell.go — pre-paint инъекция «чат-шелла» в HTML личного чата (режим 1).
 // Плагины dsh включаются после первой отрисовки, поэтому шлюз скрывает
 // непрошенные dev-панели и дефолтный бренд до появления первого кадра.
+// Брендовые константы приходят из профиля организации (internal/profile):
+// ядро agctl организаций не знает.
 
 import (
 	"bytes"
-	"encoding/base64"
+	"encoding/json"
+	"html"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"github.com/arijjia/agctl/internal/assets"
+	"github.com/arijjia/agctl/internal/profile"
 )
 
 const chatShellMaxHTMLBytes = 1 << 20 // 1 MiB: больше главной страницы dsh на порядок
@@ -36,9 +39,10 @@ div[style*="grid-template-columns"][class*="_frame"]{grid-template-columns:auto 
 
 // Document-start: шапка фиксится только в известных UI-селекторах; текст
 // сообщения/кода/вставленного пользователем HTML никогда не переписывается.
-const chatShellScript = `<script data-agctl="chat-shell">(function(){
+// Бренд и тэглайн подставляются из профиля (jsq-экранирование json.Marshal).
+const chatShellScriptTpl = `<script data-agctl="chat-shell">(function(){
 "use strict";
-var BRAND="ИИ-мастерская ТюмГУ",TAGLINE="Тюмень на правильном пути";
+var BRAND=__AGCTL_BRAND_NAME__,TAGLINE=__AGCTL_BRAND_TAGLINE__,LETTER=__AGCTL_BRAND_LETTER__;
 function fixTitle(){if(document.title!==BRAND)document.title=BRAND;}
 function setLeafText(root,pattern,value){
   if(!root||!root.querySelectorAll)return false;
@@ -61,7 +65,7 @@ function fixIdentity(root){
   for(var i=0;i<rows.length;i++){
     var row=rows[i];
     if(!row.querySelector('[data-agctl-early-brand],[data-agctl-brand-title]')){
-      var mark=document.createElement('span');mark.dataset.agctlEarlyMark='1';mark.textContent='Т';
+      var mark=document.createElement('span');mark.dataset.agctlEarlyMark='1';mark.textContent=LETTER;
       mark.style.cssText='display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;color:#08a8e0;font-size:22px;font-weight:800;line-height:1';
       var title=document.createElement('span');title.dataset.agctlEarlyBrand='1';title.textContent=BRAND;
       title.style.cssText='font-size:14px;font-weight:600;line-height:1.1;white-space:nowrap';
@@ -117,34 +121,49 @@ new MutationObserver(function(muts){
 }).observe(document,{subtree:true,childList:true,characterData:true});
 })();</script>`
 
+// jsq — JS-строковый литерал из Go-строки (json.Marshal экранирует и HTML).
+func jsq(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return `""`
+	}
+	return string(b)
+}
+
+func chatShellScript(v profile.View) string {
+	return strings.NewReplacer(
+		"__AGCTL_BRAND_NAME__", jsq(v.Name),
+		"__AGCTL_BRAND_TAGLINE__", jsq(v.Tagline),
+		"__AGCTL_BRAND_LETTER__", jsq(v.Letter),
+	).Replace(chatShellScriptTpl)
+}
+
 // chatShellHeadForRole — ранняя инъекция. Обычная роль скрывает right dev pane
 // до первого кадра; developer/admin получают только бренд и полный нативный dsh UI.
-func chatShellHeadForRole(role string) string {
+func chatShellHeadForRole(role string, v profile.View) string {
 	style := chatShellStyle
 	if role != "developer" && role != "admin" {
 		style += chatShellUserStyle
 	}
-	return style + chatShellScript
+	return style + chatShellScript(v)
 }
 
-var chatShellHead = chatShellHeadForRole("user")
-
 // devShellStyle / devShellScriptTpl — брендинг-only шелл dev-workspace
-// (/w/{id}/): заголовок вкладки, строка идентичности (логотип вместо кита,
-// «ИИ-мастерская ТюмГУ») и тэглайн «Тюмень на правильном пути». В отличие от
-// чат-шелла панели, Workspaces и выборщик моделей не трогаем — это рабочие
-// инструменты режима разработки. Плагин chat-brand в dev-домашки не сеется,
-// поэтому ранний скрипт шлюза сразу ставит настоящий логотип (тот же PNG, что
-// в chat-brand: internal/assets/brand/logo.png).
+// (/w/{id}/): заголовок вкладки, строка идентичности (логотип или буква-знак
+// вместо кита, имя платформы) и тэглайн. В отличие от чат-шелла панели,
+// Workspaces и выборщик моделей не трогаем — это рабочие инструменты режима
+// разработки. Плагин chat-brand в dev-домашки не сеется, поэтому ранний скрипт
+// шлюза сразу ставит бренд профиля (логотип из профиля; без логотипа — буква).
 const devShellStyle = `<style data-agctl="dev-shell">
 svg[viewBox="0 0 23.16 17.04"]{visibility:hidden}
 </style>`
 
 const devShellScriptTpl = `<script data-agctl="dev-shell">(function(){
 "use strict";
-var BRAND="ИИ-мастерская ТюмГУ",TAGLINE="Тюмень на правильном пути",LOGO="data:image/png;base64,__AGCTL_LOGO__";
+var BRAND=__AGCTL_BRAND_NAME__,TAGLINE=__AGCTL_BRAND_TAGLINE__,LOGO=__AGCTL_BRAND_LOGO__,LETTER=__AGCTL_BRAND_LETTER__;
 function fixTitle(){if(document.title!==BRAND)document.title=BRAND;}
-function makeLogo(h){var img=document.createElement('img');img.src=LOGO;img.alt='';img.dataset.agctlLogo='1';img.style.height=h+'px';img.style.width='auto';img.style.objectFit='contain';img.style.display='block';return img;}
+function makeMark(h){var img=null;if(LOGO){img=document.createElement('img');img.src=LOGO;img.alt='';img.dataset.agctlLogo='1';img.style.height=h+'px';img.style.width='auto';img.style.objectFit='contain';img.style.display='block';return img;}
+var s=document.createElement('span');s.dataset.agctlMark='1';s.textContent=LETTER;s.style.cssText='display:inline-flex;align-items:center;justify-content:center;height:'+h+'px;color:#08a8e0;font-size:'+(h-6)+'px;font-weight:800;line-height:1';return s;}
 function fixIdentity(root){
   if(!root||!root.querySelectorAll)return;
   var i,k,found;
@@ -152,7 +171,7 @@ function fixIdentity(root){
   for(i=0;i<whales.length;i++){
     var w=whales[i];
     var h=Math.max(18,Math.round(w.getBoundingClientRect().height||24));
-    w.replaceWith(makeLogo(h));
+    w.replaceWith(makeMark(h));
   }
   var rows=[];
   if(root.matches&&root.matches('[class*="brandIdentity"]'))rows.push(root);
@@ -162,7 +181,7 @@ function fixIdentity(root){
     var row=rows[i];
     if(!row.querySelector('[data-agctl-brand-title]')){
       var mark=document.createElement('span');mark.style.cssText='display:inline-flex;align-items:center';
-      mark.appendChild(makeLogo(28));
+      mark.appendChild(makeMark(28));
       var title=document.createElement('span');title.dataset.agctlBrandTitle='1';title.textContent=BRAND;
       title.style.cssText='font-size:14px;font-weight:600;line-height:1.1;white-space:nowrap';
       row.replaceChildren(mark,title);row.style.display='inline-flex';row.style.alignItems='center';row.style.gap='8px';row.style.overflow='visible';
@@ -202,27 +221,21 @@ new MutationObserver(function(muts){
 }).observe(document,{subtree:true,childList:true,characterData:true});
 })();</script>`
 
-// devShellHead собирается один раз: логотип вшивается base64 из ассетов.
-var devShellHead = devShellStyle + strings.ReplaceAll(
-	devShellScriptTpl, "__AGCTL_LOGO__",
-	base64.StdEncoding.EncodeToString(assets.BrandLogo))
-
-// injectChatShell preserves the historical user-mode helper used by tests.
-func injectChatShell(body []byte) []byte {
-	return injectChatShellForRole(body, "user")
+// devShellHeadFor собирает шелл под профиль: логотип (или буква-знак) из вью.
+func devShellHeadFor(v profile.View) string {
+	return devShellStyle + strings.NewReplacer(
+		"__AGCTL_BRAND_NAME__", jsq(v.Name),
+		"__AGCTL_BRAND_TAGLINE__", jsq(v.Tagline),
+		"__AGCTL_BRAND_LOGO__", jsq(v.LogoDataURI),
+		"__AGCTL_BRAND_LETTER__", jsq(v.Letter),
+	).Replace(devShellScriptTpl)
 }
 
-func injectChatShellForRole(body []byte, role string) []byte {
-	return injectShell(body, `<style data-agctl="chat-shell">`, chatShellHeadForRole(role))
-}
-
-// injectDevShell вставляет dev-шелл брендинга в HTML dev-workspace.
-func injectDevShell(body []byte) []byte {
-	return injectShell(body, `<style data-agctl="dev-shell">`, devShellHead)
-}
-
-// injectShell вставляет head-инъекцию в HTML-документ (идемпотентно по marker).
-func injectShell(body []byte, marker, head string) []byte {
+// injectShellFor вставляет head-инъекцию в HTML-документ (идемпотентно по
+// marker) и подменяет дефолтный <title> dsh на бренд профиля на wire:
+// инъекция стоит до <title>, и парсер иначе перезаписал бы document.title
+// дефолтом после выполнения раннего скрипта.
+func injectShellFor(body []byte, marker, head, title string) []byte {
 	if len(body) == 0 {
 		return body
 	}
@@ -230,9 +243,9 @@ func injectShell(body []byte, marker, head string) []byte {
 	if strings.Contains(s, marker) {
 		return body
 	}
-	// Заголовок меняем на wire тоже: инъекция стоит до <title>, и парсер иначе
-	// перезаписал бы document.title дефолтом после выполнения раннего скрипта.
-	s = strings.Replace(s, "<title>DeepSeek Harness</title>", "<title>ИИ-мастерская ТюмГУ</title>", 1)
+	if title != "" {
+		s = strings.Replace(s, "<title>DeepSeek Harness</title>", "<title>"+html.EscapeString(title)+"</title>", 1)
+	}
 	if i := openingTagEnd(s, "head"); i >= 0 {
 		return []byte(s[:i] + head + s[i:])
 	}
@@ -245,156 +258,26 @@ func injectShell(body []byte, marker, head string) []byte {
 	return []byte(head + s)
 }
 
-// openingTagEnd — HTML-aware scan до открывающего тега name. Комментарии,
-// quoted attributes и raw-text элементы пропускаются, поэтому literal
-// "</head>" внутри <script> не может разрезать bootstrap-документ.
-func openingTagEnd(s, name string) int {
-	lower := asciiLower(s)
-	for pos := 0; pos < len(s); {
-		rel := strings.IndexByte(s[pos:], '<')
-		if rel < 0 {
-			return -1
-		}
-		i := pos + rel
-		if strings.HasPrefix(s[i:], "<!--") {
-			end := strings.Index(s[i+4:], "-->")
-			if end < 0 {
-				return -1
-			}
-			pos = i + 4 + end + 3
-			continue
-		}
-		if i+1 >= len(s) || s[i+1] == '!' || s[i+1] == '?' {
-			end := htmlTagEnd(s, i+1)
-			if end < 0 {
-				return -1
-			}
-			pos = end + 1
-			continue
-		}
-		j := i + 1
-		closing := false
-		if s[j] == '/' {
-			closing = true
-			j++
-		}
-		start := j
-		for j < len(s) && isHTMLNameByte(s[j]) {
-			j++
-		}
-		if j == start {
-			pos = i + 1
-			continue
-		}
-		tag := lower[start:j]
-		end := htmlTagEnd(s, j)
-		if end < 0 {
-			return -1
-		}
-		if !closing && tag == name {
-			return end + 1
-		}
-		pos = end + 1
-		if !closing && isHTMLRawText(tag) {
-			close := rawTextClose(lower, pos, tag)
-			if close < 0 {
-				return -1
-			}
-			closeEnd := htmlTagEnd(s, close+2+len(tag))
-			if closeEnd < 0 {
-				return -1
-			}
-			pos = closeEnd + 1
-		}
-	}
-	return -1
+// ——— Server-обвязка: бренд живёт в Server, инъекции — его методы. ———
+
+// injectChatShellForRole вставляет чат-шелл под профиль сервера.
+func (s *Server) injectChatShellForRole(body []byte, role string) []byte {
+	return injectShellFor(body, `<style data-agctl="chat-shell">`, chatShellHeadForRole(role, s.brand), s.brand.Title)
 }
 
-func htmlTagEnd(s string, start int) int {
-	var quote byte
-	for i := start; i < len(s); i++ {
-		c := s[i]
-		if quote != 0 {
-			if c == quote {
-				quote = 0
-			}
-			continue
-		}
-		if c == '\'' || c == '"' {
-			quote = c
-		} else if c == '>' {
-			return i
-		}
-	}
-	return -1
+// injectDevShell вставляет dev-шелл брендинга в HTML dev-workspace.
+func (s *Server) injectDevShell(body []byte) []byte {
+	return injectShellFor(body, `<style data-agctl="dev-shell">`, devShellHeadFor(s.brand), s.brand.Title)
 }
 
-func rawTextClose(lower string, from int, name string) int {
-	needle := "</" + name
-	for from < len(lower) {
-		rel := strings.Index(lower[from:], needle)
-		if rel < 0 {
-			return -1
-		}
-		i := from + rel
-		end := i + len(needle)
-		if end == len(lower) || lower[end] == '>' || lower[end] == '/' || lower[end] == ' ' || lower[end] == '\n' || lower[end] == '\t' || lower[end] == '\r' {
-			return i
-		}
-		from = end
-	}
-	return -1
-}
-
-func isHTMLNameByte(c byte) bool {
-	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == ':' || c == '-'
-}
-
-// asciiLower меняет только ASCII-теги; byte offsets остаются точными даже
-// если до тега встречается Unicode-текст с многобайтовым case mapping.
-func asciiLower(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if c >= 'A' && c <= 'Z' {
-			b[i] = c + ('a' - 'A')
-		}
-	}
-	return string(b)
-}
-
-func isHTMLRawText(tag string) bool {
-	switch tag {
-	case "script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes":
-		return true
-	default:
-		return false
-	}
-}
-
-func doctypeEnd(s string) int {
-	lower := asciiLower(s)
-	i := strings.Index(lower, "<!doctype")
-	if i < 0 {
-		return -1
-	}
-	if end := htmlTagEnd(s, i+2); end >= 0 {
-		return end + 1
-	}
-	return -1
-}
-
-// injectChatShellResponse defaults to the ordinary-user chrome for legacy callers.
-func injectChatShellResponse(resp *http.Response) {
-	injectChatShellResponseForRole(resp, "user")
-}
-
-func injectChatShellResponseForRole(resp *http.Response, role string) {
-	injectShellResponse(resp, func(body []byte) []byte { return injectChatShellForRole(body, role) })
+// injectChatShellResponseForRole — инъекция в http.Response чат-прокси.
+func (s *Server) injectChatShellResponseForRole(resp *http.Response, role string) {
+	injectShellResponse(resp, func(body []byte) []byte { return s.injectChatShellForRole(body, role) })
 }
 
 // injectDevShellResponse — то же для dev-workspace (/w/{id}/).
-func injectDevShellResponse(resp *http.Response) {
-	injectShellResponse(resp, injectDevShell)
+func (s *Server) injectDevShellResponse(resp *http.Response) {
+	injectShellResponse(resp, s.injectDevShell)
 }
 
 func injectShellResponse(resp *http.Response, inject func([]byte) []byte) {

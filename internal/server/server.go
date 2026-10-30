@@ -24,6 +24,7 @@ import (
 	"github.com/arijjia/agctl/internal/assets"
 	"github.com/arijjia/agctl/internal/auth"
 	"github.com/arijjia/agctl/internal/bridge"
+	"github.com/arijjia/agctl/internal/profile"
 	"github.com/arijjia/agctl/internal/provision"
 	agctlrt "github.com/arijjia/agctl/internal/runtime"
 	"github.com/arijjia/agctl/internal/runtime/dockerrt"
@@ -47,7 +48,8 @@ type Config struct {
 	ChatTTL                 time.Duration      // idle TTL персонального runtime (по умолчанию 60 мин)
 	RequireApproval         bool               // legacy workspace flag; create endpoint is tombstoned in v3
 	ExperimentalLocalBridge bool               // opt-in pairing/status/revoke API for local connector
-	DefaultLLM              provision.Provider // платформенный провайдер чата по умолчанию (корп. LiteLLM); личный секрет пользователя его перекрывает
+	DefaultLLM              provision.Provider // платформенный провайдер чата по умолчанию (из профиля/env); личный секрет пользователя его перекрывает
+	Profile                 *profile.Data      // профиль организации (брендинг/дефолты); nil = нейтральный agctl
 }
 
 // RuntimeIface — то, что серверу нужно от docker-рантайма (мокается в тестах).
@@ -66,6 +68,7 @@ type Server struct {
 	authN *auth.Service
 	rt    RuntimeIface
 	cfg   Config
+	brand profile.View // профиль организации: брендинг шеллов, логин-страницы, LLM-дефолты
 
 	provMu sync.Mutex // один provision за раз упрощает порты/гонки
 	tokMu  sync.Mutex // кэш boot-токенов dsh web по воркспейсам
@@ -111,8 +114,12 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 		return nil, fmt.Errorf("server: db, secrets and both runtime providers are required")
 	}
 	resolveDefaultLLM(db, sec, &cfg)
+	brand := profile.Neutral()
+	if cfg.Profile != nil {
+		brand = cfg.Profile.View()
+	}
 	s := &Server{
-		db: db, sec: sec, cfg: cfg, rt: workspaceRuntime, chatProvider: chatProvider,
+		db: db, sec: sec, cfg: cfg, rt: workspaceRuntime, chatProvider: chatProvider, brand: brand,
 		localBridge: bridge.NewManager(),
 		tokens:      map[string]string{}, chats: map[int64]*chatRuntime{}, chatLocks: map[int64]*sync.Mutex{},
 	}

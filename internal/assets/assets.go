@@ -19,9 +19,3 @@ var DshSkel embed.FS
 //
 //go:embed all:image
 var Image embed.FS
-
-// BrandLogo — логотип «ИИ-мастерская ТюмГУ» для шлюзовых инъекций брендинга
-// (тот же PNG, что зашит в плагин chat-brand; источник — images/image.png).
-//
-//go:embed brand/logo.png
-var BrandLogo []byte

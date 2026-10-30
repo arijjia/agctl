@@ -5,14 +5,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/arijjia/agctl/internal/profile"
 	"github.com/arijjia/agctl/internal/store"
 )
 
 // TestInjectDevShell — dev-шелл брендинга встаёт после <head>, идемпотентен и
 // содержит логотип/бренд, но не трогает чат-специфику (нет скрытия панелей).
 func TestInjectDevShell(t *testing.T) {
+	srv := &Server{brand: utmnView(t)}
 	doc := `<!doctype html><html><head><title>DeepSeek Harness</title></head><body>ok</body></html>`
-	out := string(injectDevShell([]byte(doc)))
+	out := string(srv.injectDevShell([]byte(doc)))
 	if !strings.Contains(out, `<style data-agctl="dev-shell">`) {
 		t.Fatal("dev-shell не вставлен")
 	}
@@ -25,9 +27,23 @@ func TestInjectDevShell(t *testing.T) {
 	if !strings.Contains(out, "Тюмень на правильном пути") {
 		t.Fatal("тэглайн не заменяется dev-шеллом")
 	}
-	again := string(injectDevShell([]byte(out)))
+	again := string(srv.injectDevShell([]byte(out)))
 	if again != out {
 		t.Fatal("инъекция не идемпотентна")
+	}
+}
+
+// TestInjectDevShellNeutralWithoutLogo — профиль без логотипа использует
+// букву-знак вместо data-URI, бренд остаётся нейтральным.
+func TestInjectDevShellNeutralWithoutLogo(t *testing.T) {
+	srv := &Server{brand: profile.Neutral()}
+	doc := `<!doctype html><html><head><title>DeepSeek Harness</title></head><body>ok</body></html>`
+	out := string(srv.injectDevShell([]byte(doc)))
+	if strings.Contains(out, "data:image/png;base64,") {
+		t.Fatal("нейтральный профиль не должен вшивать логотип")
+	}
+	if !strings.Contains(out, `"a"`) || !strings.Contains(out, `"agctl"`) {
+		t.Fatal("буква-знак/имя agctl не подставлены в dev-шелл")
 	}
 }
 
@@ -35,7 +51,7 @@ func TestInjectDevShell(t *testing.T) {
 // экранирует имя и несёт кнопку запуска с polling на API места.
 func TestStoppedWorkspacePage(t *testing.T) {
 	ws := store.Workspace{ID: `w1"><script>`, Name: `Место "тест"`, Status: "stopped"}
-	page := stoppedWorkspacePage(ws)
+	page := stoppedWorkspacePage(ws, utmnView(t))
 	for _, want := range []string{
 		"ИИ-мастерская ТюмГУ",
 		"Рабочее место «Место &#34;тест&#34;» сейчас остановлено",
@@ -49,6 +65,11 @@ func TestStoppedWorkspacePage(t *testing.T) {
 	}
 	if strings.Contains(page, `w1"><script>`) {
 		t.Fatal("id воркспейса не экранирован в URL")
+	}
+	// Нейтральный профиль: имя agctl, буква-знак вместо логотипа, ничего чужого.
+	neutral := stoppedWorkspacePage(ws, profile.Neutral())
+	if !strings.Contains(neutral, "agctl") || strings.Contains(neutral, "ИИ-мастерская") || strings.Contains(neutral, "data:image/png") {
+		t.Fatal("нейтральная страница останова брендирована неверно")
 	}
 }
 
@@ -113,7 +134,7 @@ func TestProxyWorkspaceStoppedPage(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/html") {
 		t.Fatalf("html: content-type %q", ct)
 	}
-	for _, want := range []string{"agctl-start", "ИИ-мастерская ТюмГУ", "/api/workspaces/wstop/start"} {
+	for _, want := range []string{"agctl-start", e.srv.brand.Name, "/api/workspaces/wstop/start"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("html: в странице нет %q", want)
 		}

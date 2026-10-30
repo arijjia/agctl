@@ -8,12 +8,11 @@ package server
 // /w/{id}/, когда статус станет running. API-клиенты по-прежнему получают JSON.
 
 import (
-	"encoding/base64"
 	"html"
 	"net/url"
 	"strings"
 
-	"github.com/arijjia/agctl/internal/assets"
+	"github.com/arijjia/agctl/internal/profile"
 	"github.com/arijjia/agctl/internal/store"
 )
 
@@ -33,7 +32,7 @@ button{margin-top:1.25rem;padding:.6rem 1.4rem;border:0;border-radius:9px;backgr
 button:disabled{opacity:.6;cursor:default}
 #agctl-status{margin-top:.8rem;font-size:.85rem;opacity:.7;min-height:1.2em}
 </style></head><body><div class="card">
-<div class="brand"><img src="__LOGO__" alt="" style="height:22px;width:auto"> ИИ-мастерская ТюмГУ</div>
+<div class="brand">__BRAND_MARK__ __BRAND_NAME__</div>
 <h1>Рабочее место «__NAME__» сейчас остановлено</h1>
 <p>Интерфейс DSH для этого места не запущен: контейнер остановлен. Это нормально — репозиторий, сессии и файлы остаются на диске и переживают остановку.</p>
 <button id="agctl-start">Запустить рабочее место</button>
@@ -57,10 +56,17 @@ btn.addEventListener('click',function(){
 })();</script>
 </body></html>`
 
-func stoppedWorkspacePage(ws store.Workspace) string {
+// stoppedWorkspacePage брендирует страницу профилем организации: логотип
+// (или буква-знак без логотипа) и имя платформы.
+func stoppedWorkspacePage(ws store.Workspace, v profile.View) string {
+	mark := "<span style=\"display:inline-flex;align-items:center;justify-content:center;height:22px;color:#08a8e0;font-size:16px;font-weight:800;line-height:1\">" + html.EscapeString(v.Letter) + "</span>"
+	if v.LogoDataURI != "" {
+		mark = "<img src=\"" + v.LogoDataURI + "\" alt=\"\" style=\"height:22px;width:auto\">"
+	}
 	return strings.NewReplacer(
 		"__NAME__", html.EscapeString(ws.Name),
 		"__ID__", url.PathEscape(ws.ID),
-		"__LOGO__", "data:image/png;base64,"+base64.StdEncoding.EncodeToString(assets.BrandLogo),
+		"__BRAND_MARK__", mark,
+		"__BRAND_NAME__", html.EscapeString(v.Name),
 	).Replace(stoppedWorkspaceTpl)
 }

@@ -4,6 +4,17 @@ import { api } from "./api";
 // Фронт agctl — только страница входа/регистрации. Всё остальное (чат,
 // воркспейсы, профиль) живёт в dsh; после успешного входа корень платформы
 // перенаправляет в /chat/.
+//
+// Брендинг приходит из профиля организации: шлюз инжектит
+// window.__AGCTL_BRAND__ в index.html до загрузки этого модуля
+// (internal/profile); без него — нейтральный agctl.
+type AgctlBrand = { name?: string; subtitle?: string };
+const brand: AgctlBrand = (window as any).__AGCTL_BRAND__ ?? {};
+const brandName = brand.name || "agctl";
+const brandSubtitle = brand.subtitle
+  ? `${brandName}: ${brand.subtitle}`
+  : "вход в личное рабочее место";
+
 function Login({ onDone }: { onDone: () => void }) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [login, setLogin] = useState("");
@@ -29,8 +40,8 @@ function Login({ onDone }: { onDone: () => void }) {
   return (
     <div className="center-wrap">
       <form className="card login-card" onSubmit={submit}>
-        <h1>agctl</h1>
-        <p className="muted">ИИ-мастерская ТюмГУ: вход в личное рабочее место</p>
+        <h1>{brandName}</h1>
+        <p className="muted">{brandSubtitle}</p>
         <div className="tabs">
           <button type="button" className={mode === "login" ? "tab active" : "tab"} onClick={() => setMode("login")}>
             Вход

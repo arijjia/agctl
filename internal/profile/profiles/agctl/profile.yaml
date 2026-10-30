@@ -1,0 +1,18 @@
+# Нейтральный профиль agctl: ядро без привязки к организации.
+# Этот профиль встроен в бинарь по умолчанию (--profile agctl).
+schema: 1
+id: agctl
+brand:
+  name: agctl
+  tagline: агентские рабочие места
+  title: agctl
+  letter: a
+login:
+  subtitle: вход в личное рабочее место
+llm: {}
+help:
+  cabinet_title: Справка — agctl
+map:
+  llm_label: LLM gateway
+examples:
+  jira_url: https://jira.example.com

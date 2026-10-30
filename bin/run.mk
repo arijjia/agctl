@@ -11,11 +11,21 @@ RUN_UP_PID := $(RUNTIME_DIR)/up.pid
 RUN_CORP_LOG := $(RUNTIME_DIR)/corp.log
 RUN_CORP_PID := $(RUNTIME_DIR)/corp.pid
 
-# Дефолты корпоративного провайдера чата; ключ берётся из .env
-# (AGCTL_LLM_API_KEY) — он экспортируется корневым Makefile.
-CORP_LLM_BASE_URL ?= https://litellm-dev.utmn.ru/v1
-CORP_LLM_MODELS ?= qwen-3.8-deep,qwen-3.8-27b,qwen-3.8-fast,qwen3guard,qwen3.5-9b-q8_0
-CORP_LLM_MODEL ?= qwen-3.8-fast
+# Профиль платформы (--profile): по умолчанию utmn — профиль пилота
+# (ИИ-мастерская ТюмГУ) встроен в бинарь и несёт дефолты корпоративного
+# LiteLLM. Нейтральный запуск без организации: make up PROFILE=agctl.
+# Ключ провайдера — в .env (AGCTL_LLM_API_KEY); сами дефолты LLM из профиля,
+# точечные переопределения — CORP_LLM_* (пусто = брать из профиля).
+PROFILE ?= utmn
+CORP_LLM_BASE_URL ?=
+CORP_LLM_MODELS ?=
+CORP_LLM_MODEL ?=
+
+# corp-LLM-аргументы: передаются только если переопределены, иначе сервер
+# берёт дефолты профиля.
+CORP_LLM_ARGS = $(if $(CORP_LLM_BASE_URL),--llm-base-url "$(CORP_LLM_BASE_URL)") \
+    $(if $(CORP_LLM_MODELS),--llm-models "$(CORP_LLM_MODELS)") \
+    $(if $(CORP_LLM_MODEL),--llm-model "$(CORP_LLM_MODEL)")
 
 .PHONY: up corp stop down restart logs status demo-users
 
@@ -30,7 +40,7 @@ up: web_build go_build img_build | $(RUNTIME_DIR)
 	  echo "⚠ AGCTL_LLM_API_KEY пуст: Qwen-модели будут видны, но запросы не пройдут. Впиши raw-токен в .env (без Bearer/кавычек)."; fi
 	@if [ -f "$(RUN_UP_PID)" ] && kill -0 "$$(cat $(RUN_UP_PID))" 2>/dev/null; then \
 	  echo "agctl уже запущен (pid $$(cat $(RUN_UP_PID))) — make stop"; exit 1; fi
-	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl serve --addr "$(RUN_ADDR)" >>"$(RUN_UP_LOG)" 2>&1 & echo $$! > "$(RUN_UP_PID)"
+	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl serve --addr "$(RUN_ADDR)" --profile "$(PROFILE)" >>"$(RUN_UP_LOG)" 2>&1 & echo $$! > "$(RUN_UP_PID)"
 	@sleep 1
 	@if kill -0 "$$(cat $(RUN_UP_PID))" 2>/dev/null; then \
 	  echo "✓ agctl: http://$(RUN_ADDR) (дом: $(RUN_HOME))"; \
@@ -49,14 +59,11 @@ corp: web_build go_build img_build | $(RUNTIME_DIR)
 	@if [ -z "$$(printenv AGCTL_LLM_API_KEY)" ]; then \
 	  echo "⚠ AGCTL_LLM_API_KEY пуст — скопируй .env.example в .env и впиши ключ."; \
 	  echo "  Сервер стартует и без него: у пользователей с личным секретом чат работает."; fi
-	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl serve --addr "$(RUN_ADDR)" \
-	  --llm-base-url "$(CORP_LLM_BASE_URL)" \
-	  --llm-models "$(CORP_LLM_MODELS)" \
-	  --llm-model "$(CORP_LLM_MODEL)" \
+	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl serve --addr "$(RUN_ADDR)" --profile "$(PROFILE)" $(CORP_LLM_ARGS) \
 	  >>"$(RUN_CORP_LOG)" 2>&1 & echo $$! > "$(RUN_CORP_PID)"
 	@sleep 1
 	@if kill -0 "$$(cat $(RUN_CORP_PID))" 2>/dev/null; then \
-	  echo "✓ agctl (corp: $(CORP_LLM_BASE_URL)): http://$(RUN_ADDR)"; \
+	  echo "✓ agctl (профиль $(PROFILE)): http://$(RUN_ADDR)"; \
 	  echo "  лог: $(RUN_CORP_LOG) · остановка: make stop"; \
 	else \
 	  echo "✗ сервер упал при старте — хвост $(RUN_CORP_LOG):"; tail -5 "$(RUN_CORP_LOG)"; exit 1; fi

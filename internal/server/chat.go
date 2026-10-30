@@ -706,6 +706,8 @@ func (s *Server) rootEntry(w http.ResponseWriter, r *http.Request, webFS fs.FS) 
 		http.Error(w, "фронтенд не собран: выполните make web_build", http.StatusServiceUnavailable)
 		return
 	}
+	// Бренд до загрузки SPA: window.__AGCTL_BRAND__ + <title> профиля.
+	index = injectBrandBoot(index, s.brand)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write(index)
@@ -784,7 +786,8 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 			s.chatMu.Unlock()
 			// Pre-paint чат-шелл — bounded, identity-encoded HTML; при слишком
 			// большом или ошибочно читаемом документе helper возвращает исходный поток.
-			injectChatShellResponseForRole(resp, id.Role)
+			injectChatShell := func(r *http.Response) { s.injectChatShellResponseForRole(r, id.Role) }
+			injectChatShell(resp)
 			if loc := resp.Header.Get("Location"); loc != "" {
 				resp.Header.Set("Location", rewriteLocation(loc, prefix, authority))
 			}

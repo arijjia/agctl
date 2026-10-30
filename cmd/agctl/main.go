@@ -28,6 +28,7 @@ import (
 
 	"github.com/arijjia/agctl/internal/assets"
 	"github.com/arijjia/agctl/internal/backlog"
+	"github.com/arijjia/agctl/internal/profile"
 	"github.com/arijjia/agctl/internal/provision"
 	"github.com/arijjia/agctl/internal/secrets"
 	"github.com/arijjia/agctl/internal/server"
@@ -38,11 +39,27 @@ import (
 // version подставляется ldflags при сборке (make/goreleaser).
 var version = "dev"
 
-const (
-	defaultCorporateLLMBaseURL = "https://litellm-dev.utmn.ru/v1"
-	defaultCorporateLLMModel   = "qwen-3.8-fast"
-	defaultCorporateLLMModels  = "qwen-3.8-deep,qwen-3.8-27b,qwen-3.8-fast,qwen3guard,qwen3.5-9b-q8_0"
-)
+// Дефолтов LLM в коде больше нет: платформа универсальна, а организация
+// задаётся профилем (internal/profile). Нейтральный agctl — без LLM-дефолтов;
+// профиль организации (например utmn) несёт свои.
+
+// prescanFlag достаёт значение флага из argv до штатного разбора (нужен,
+// чтобы дефолты остальных флагов зависели от профиля). Поддерживает
+// --name=v и --name v.
+func prescanFlag(args []string, name, def string) string {
+	prefix := "--" + name + "="
+	for i, a := range args {
+		switch {
+		case strings.HasPrefix(a, prefix):
+			return strings.TrimSpace(strings.TrimPrefix(a, prefix))
+		case a == "--"+name && i+1 < len(args):
+			return strings.TrimSpace(args[i+1])
+		case a == "-"+name && i+1 < len(args):
+			return strings.TrimSpace(args[i+1])
+		}
+	}
+	return def
+}
 
 func main() {
 	log.SetFlags(log.Ltime)
@@ -124,6 +141,16 @@ func requireHome(dir string) (string, error) {
 }
 
 func cmdServe(args []string) {
+	// Профиль разрешается до регистрации флагов: от него зависят дефолты
+	// (LLM-провайдер и брендинг сервера).
+	profileName := prescanFlag(args, "profile", envOr("AGCTL_PROFILE", "agctl"))
+	profileDir := prescanFlag(args, "profile-dir", os.Getenv("AGCTL_PROFILE_DIR"))
+	prof, err := profile.Resolve(profileName, profileDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("profile: %s (%s)", prof.ID, prof.Source)
+
 	fsSet := flag.NewFlagSet("serve", flag.ExitOnError)
 	home := fsSet.String("home", defaultHome(), "каталог данных agctl")
 	addr := fsSet.String("addr", envOr("AGCTL_ADDR", "127.0.0.1:8929"), "адрес UI/API")
@@ -136,12 +163,16 @@ func cmdServe(args []string) {
 	tier0 := fsSet.Bool("tier0", true, "поднимать общий чат (Tier 0) и отдавать корень платформы в него")
 	memGB := fsSet.Float64("mem-gb", 2, "лимит памяти контейнера, ГБ")
 	cpus := fsSet.Float64("cpus", 2, "лимит CPU контейнера")
-	// Платформенный LLM по умолчанию для режима Chat: пользователь без личного
-	// секрета сразу получает корпоративные Qwen-модели; ключ хранится только в env.
-	llmBaseURL := fsSet.String("llm-base-url", envOr("AGCTL_LLM_BASE_URL", defaultCorporateLLMBaseURL), "базовый URL OpenAI-совместимого провайдера чата по умолчанию")
-	llmModel := fsSet.String("llm-model", envOr("AGCTL_LLM_MODEL", defaultCorporateLLMModel), "модель чата по умолчанию (из списка llm-models)")
-	llmModels := fsSet.String("llm-models", envOr("AGCTL_LLM_MODELS", defaultCorporateLLMModels), "список моделей чата через запятую")
+	profileFlag := fsSet.String("profile", profileName, "встроенный профиль платформы (по умолчанию agctl; профиль организации utmn встроен до выделения в отдельный репо)")
+	profileDirFlag := fsSet.String("profile-dir", profileDir, "каталог профиля с диска (profile.yaml + assets) — кастомизация без пересборки бинаря")
+	// Платформенный LLM по умолчанию для режима Chat: дефолты приходят из
+	// профиля, env их перекрывает; ключ хранится только в env.
+	llmBaseURL := fsSet.String("llm-base-url", envOr("AGCTL_LLM_BASE_URL", prof.LLM.DefaultBaseURL), "базовый URL OpenAI-совместимого провайдера чата по умолчанию (пусто = платформа без провайдера по умолчанию)")
+	llmModel := fsSet.String("llm-model", envOr("AGCTL_LLM_MODEL", prof.LLM.DefaultModel), "модель чата по умолчанию (из списка llm-models)")
+	llmModels := fsSet.String("llm-models", envOr("AGCTL_LLM_MODELS", prof.LLM.DefaultModels), "список моделей чата через запятую")
 	llmAPIKey := fsSet.String("llm-api-key", strings.TrimSpace(envOr("AGCTL_LLM_API_KEY", "")), "ключ провайдера чата (предпочтительно через env AGCTL_LLM_API_KEY)")
+	_ = profileFlag
+	_ = profileDirFlag
 	_ = fsSet.Parse(args)
 	*llmAPIKey = strings.TrimSpace(*llmAPIKey)
 	for _, r := range *llmAPIKey {
@@ -192,9 +223,12 @@ func cmdServe(args []string) {
 		Tier0:                   *tier0,
 		ChatTTL:                 time.Duration(*chatTTLMin) * time.Minute,
 		DefaultLLM:              defaultLLM,
+		Profile:                 prof,
 	})
 	if defaultLLM.BaseURL != "" {
 		log.Printf("llm: платформенный провайдер чата по умолчанию %s (моделей: %d, ключ %s)", defaultLLM.BaseURL, len(defaultLLM.AllModels()), keyState(defaultLLM.APIKey))
+	} else {
+		log.Printf("llm: провайдер по умолчанию не задан (профиль %s без llm-дефолтов; задайте env AGCTL_LLM_* или профиль организации)", prof.ID)
 	}
 	if err != nil {
 		log.Fatal(err)
