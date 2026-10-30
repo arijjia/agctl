@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: profile-decomposition
 title: "White-label декомпозиция: универсальное ядро agctl + профиль ТюмГУ как данные"
-status: in-progress
+status: done
 priority: P2
 size: L
 area: platform
@@ -85,3 +85,5 @@ agctl должен существовать в двух слоях: **униве
   отдельный приватный репо), но окончательного решения по границе репо ещё
   нет — поэтому Ф3 помечена гейтом владельца.
 - 2026-10-30: Ф1 выполнена на ветке agent/profile-decomposition (0af0df5): internal/profile (YAML+assets, embedded agctl/utmn + --profile-dir), чат/dev-шеллы и логин-страница брендируются профилем (window.__AGCTL_BRAND__ + <title> на wire), LLM-дефолты из профиля (env перекрывает), make PROFILE ?= utmn; assets.BrandLogo удалён; go vet/test зелёные, живой провод: логин utmn=ТюмГУ+лого, agctl=нейтральный без LLM.
+- 2026-10-30: Ночь 2026-10-30: все фазы Ф0-Ф4 выполнены и смержены в main (ff до d38fed0). Ф1 0af0df5 (internal/profile, брендинг шеллов/логина, LLM-дефолты из профиля); Ф2 a8fe212 (плагины на window.__AGCTL_BRAND__, дрейф-копии, README/карта/фикстуры нейтральны, guard-тест TestCoreIsOrganizationFree); Ф3 558098f (встроенный utmn удалён, репо agctl-profile-utmn 088f215, дисковый поиск ./profiles и $AGCTL_HOME/profiles, make profile-fetch, PROFILE-wildcard); Ф4 d38fed0 (docs/customization.md, кросс-линк в architecture-roadmap §2.1, дисклеймер пилота в README). Верификация: go vet OK, go test -race ./... 11/11 ok, web_build OK, плагины 14/0 (chat-brand 5, cabinet 6, session-files 3), guard зелёный, живой провод: agctl serve = нейтральный agctl, --profile utmn из ./profiles = ТюмГУ с логотипом и LLM-дефолтами, make up dry-run подставляет PROFILE utmn/agctl по наличию профиля.
+- 2026-10-30: done — White-label декомпозиция выполнена полностью: универсальное ядро (без литералов организаций, guard в тестах) + профиль-репо agctl-profile-utmn (данные, приватизируется независимо). Ручные хвосты владельца: письменное согласие ТюмГУ до публикации профиль-репо (см. utmn-trademark-license-audit), пуш обоих репо, деплой пилота с make profile-fetch
