@@ -140,12 +140,14 @@ func chatShellScript(v profile.View) string {
 
 // chatShellHeadForRole — ранняя инъекция. Обычная роль скрывает right dev pane
 // до первого кадра; developer/admin получают только бренд и полный нативный dsh UI.
+// BrandBootScript (window.__AGCTL_BRAND__) идёт первым: его читают плагины
+// (chat-brand, cabinet) в том же документе.
 func chatShellHeadForRole(role string, v profile.View) string {
 	style := chatShellStyle
 	if role != "developer" && role != "admin" {
 		style += chatShellUserStyle
 	}
-	return style + chatShellScript(v)
+	return v.BrandBootScript() + style + chatShellScript(v)
 }
 
 // devShellStyle / devShellScriptTpl — брендинг-only шелл dev-workspace
@@ -221,9 +223,10 @@ new MutationObserver(function(muts){
 }).observe(document,{subtree:true,childList:true,characterData:true});
 })();</script>`
 
-// devShellHeadFor собирает шелл под профиль: логотип (или буква-знак) из вью.
+// devShellHeadFor собирает шелл под профиль: brand-JSON для потенциальных
+// потребителей + логотип (или буква-знак) из вью.
 func devShellHeadFor(v profile.View) string {
-	return devShellStyle + strings.NewReplacer(
+	return v.BrandBootScript() + devShellStyle + strings.NewReplacer(
 		"__AGCTL_BRAND_NAME__", jsq(v.Name),
 		"__AGCTL_BRAND_TAGLINE__", jsq(v.Tagline),
 		"__AGCTL_BRAND_LOGO__", jsq(v.LogoDataURI),

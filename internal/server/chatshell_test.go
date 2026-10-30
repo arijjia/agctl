@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"errors"
+	"html"
 	"io"
 	"net/http"
 	"strconv"
@@ -58,23 +59,24 @@ func TestInjectChatShell(t *testing.T) {
 	if shellIdx == -1 || headEnd == -1 || shellIdx > headEnd {
 		t.Fatalf("shell must be inside <head>: shell=%d head=%d", shellIdx, headEnd)
 	}
-	if !strings.Contains(got, "<title>ИИ-мастерская ТюмГУ</title>") {
+	if !strings.Contains(got, "<title>"+html.EscapeString(srv.brand.Title)+"</title>") {
 		t.Fatal("document title must be branded before browser JS runs")
 	}
-	if !strings.Contains(got, "data-agctl-early-brand") || !strings.Contains(got, "Тюмень на правильном пути") {
+	if !strings.Contains(got, "data-agctl-early-brand") || !strings.Contains(got, srv.brand.Tagline) {
 		t.Fatal("document-start shell must render the platform brand/tagline before plugins")
 	}
 
-	// HTML без head, но с body: вставка после открывающего <body…>.
+	// HTML без head, но с body: вставка после открывающего <body…>; первым
+	// идёт brand-boot (JSON для плагинов), затем стиль шелла.
 	doc2 := "<html><body class='app'>x</body></html>"
 	got2 := string(srv.injectChatShellForRole([]byte(doc2), "user"))
-	if !strings.HasPrefix(got2, "<html><body class='app'>"+shell) {
-		t.Fatalf("shell must follow <body…> tag: %q", got2[:80])
+	if !strings.HasPrefix(got2, "<html><body class='app'>"+`<script data-agctl="brand-boot">`) {
+		t.Fatalf("shell must follow <body…> tag with brand boot first: %q", got2[:80])
 	}
 
 	// Фрагмент без head/body/doctype остаётся поддержанным.
 	got3 := string(srv.injectChatShellForRole([]byte("<div>x</div>"), "user"))
-	if !strings.HasPrefix(got3, shell) {
+	if !strings.HasPrefix(got3, `<script data-agctl="brand-boot">`) {
 		t.Fatal("shell must be prepended when no document structure exists")
 	}
 
@@ -90,14 +92,15 @@ func TestInjectChatShell(t *testing.T) {
 }
 
 // TestInjectChatShellNeutralProfile — ядро без профиля организации брендится
-// нейтральным agctl: никаких ТюмГУ ни в заголовке, ни в тэглайне.
+// нейтральным agctl: ни имени, ни тэглайна организации в выводе быть не должно.
 func TestInjectChatShellNeutralProfile(t *testing.T) {
 	srv := &Server{brand: profile.Neutral()}
+	orgBrand := utmnView(t)
 	doc := "<!doctype html><html><head><title>DeepSeek Harness</title></head><body></body></html>"
 	got := string(srv.injectChatShellForRole([]byte(doc), "user"))
-	for _, org := range []string{"ТюмГУ", "Тюмень на правильном пути"} {
+	for _, org := range []string{orgBrand.Name, orgBrand.Tagline} {
 		if strings.Contains(got, org) {
-			t.Fatalf("нейтральный шелл содержит %q", org)
+			t.Fatalf("нейтральный шелл содержит бренд организации %q", org)
 		}
 	}
 	if !strings.Contains(got, "<title>agctl</title>") {
@@ -123,21 +126,22 @@ func TestInjectChatShellHTMLAwarePlacement(t *testing.T) {
 	if strings.Count(got, "const x = '</head>';") != 1 {
 		t.Fatal("inline script raw text was corrupted")
 	}
-	if !strings.Contains(got, "<title>ИИ-мастерская ТюмГУ</title>") {
+	if !strings.Contains(got, "<title>"+html.EscapeString(srv.brand.Title)+"</title>") {
 		t.Fatal("mixed-case head document title was not branded")
 	}
 }
 
 func TestInjectBrandBootIntoLoginIndex(t *testing.T) {
+	brand := utmnView(t)
 	idx := []byte("<!doctype html><html><head><meta charset='utf-8'><title>agctl — рабочие места агентов</title></head><body><div id=root></div></body></html>")
-	out := string(injectBrandBoot(idx, utmnView(t)))
+	out := string(injectBrandBoot(idx, brand))
 	if !strings.Contains(out, `<script data-agctl="brand-boot">window.__AGCTL_BRAND__={`) {
 		t.Fatal("brand boot script не вставлен в index")
 	}
-	if !strings.Contains(out, `"name":"ИИ-мастерская ТюмГУ"`) {
+	if !strings.Contains(out, `"name":"`+brand.Name+`"`) {
 		t.Fatalf("brand JSON без имени организации: %s", out)
 	}
-	if !strings.Contains(out, "<title>ИИ-мастерская ТюмГУ</title>") {
+	if !strings.Contains(out, "<title>"+html.EscapeString(brand.Title)+"</title>") {
 		t.Fatal("title логин-страницы не заменён профилем")
 	}
 	// Инъекция до модульных скриптов и внутри <head>.

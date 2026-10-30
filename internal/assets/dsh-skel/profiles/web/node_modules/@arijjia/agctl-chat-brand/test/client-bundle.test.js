@@ -66,6 +66,17 @@ test("нативный Workspaces-браузер dsh остаётся единс
 	assert.doesNotMatch(src, /hideDevPanels/, "клиент больше не схлопывает правую панель вслепую");
 });
 
+test("бренд приходит из профиля организации, не зашит в бандл", async () => {
+	const src = await readFile(clientPath, "utf8");
+	// Бренд приходит из профиля организации, не зашит в бандл; литералы
+	// организаций в ядре ловит Go-guard (internal/profile/guard_test.go).
+	assert.match(src, /window\.__AGCTL_BRAND__/, "бренд читается из window.__AGCTL_BRAND__");
+	assert.match(src, /BRAND_CFG\.name \|\| "agctl"/, "фолбэк имени — нейтральный agctl");
+	assert.match(src, /BRAND_CFG\.logo \|\| ""/, "логотип — из профиля, не из бандла");
+	assert.match(src, /makeMark/, "марка строится из логотипа или буквы");
+	assert.doesNotMatch(src, /data:image\/png;base64,iVBOR/, "base64-логотип не вшит в бандл");
+});
+
 test("composer hint — штатный locale dsh, не DOM-патч", async () => {
 	const src = await readFile(clientPath, "utf8");
 	assert.match(src, /installComposerLocale/, "локаль ставится отдельной функцией");

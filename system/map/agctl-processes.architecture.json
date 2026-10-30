@@ -354,7 +354,7 @@
       "id": "llm",
       "type": "external",
       "label": "LiteLLM корп.",
-      "sublabel": "litellm-dev.utmn.ru · :443",
+      "sublabel": "llm.corp.example · :443",
       "pos": [
         1555,
         140

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"html"
 	"net/http"
 	"strings"
 	"testing"
@@ -12,19 +13,20 @@ import (
 // TestInjectDevShell — dev-шелл брендинга встаёт после <head>, идемпотентен и
 // содержит логотип/бренд, но не трогает чат-специфику (нет скрытия панелей).
 func TestInjectDevShell(t *testing.T) {
-	srv := &Server{brand: utmnView(t)}
+	brand := utmnView(t)
+	srv := &Server{brand: brand}
 	doc := `<!doctype html><html><head><title>DeepSeek Harness</title></head><body>ok</body></html>`
 	out := string(srv.injectDevShell([]byte(doc)))
 	if !strings.Contains(out, `<style data-agctl="dev-shell">`) {
 		t.Fatal("dev-shell не вставлен")
 	}
-	if !strings.Contains(out, "<title>ИИ-мастерская ТюмГУ</title>") {
+	if !strings.Contains(out, "<title>"+html.EscapeString(brand.Title)+"</title>") {
 		t.Fatal("title не заменён на wire")
 	}
-	if !strings.Contains(out, "data:image/png;base64,") {
-		t.Fatal("логотип не вшит в dev-шелл")
+	if !strings.Contains(out, brand.LogoDataURI) {
+		t.Fatal("логотип профиля не вшит в dev-шелл")
 	}
-	if !strings.Contains(out, "Тюмень на правильном пути") {
+	if !strings.Contains(out, brand.Tagline) {
 		t.Fatal("тэглайн не заменяется dev-шеллом")
 	}
 	again := string(srv.injectDevShell([]byte(out)))
@@ -50,14 +52,15 @@ func TestInjectDevShellNeutralWithoutLogo(t *testing.T) {
 // TestStoppedWorkspacePage — страница остановленного места брендируется,
 // экранирует имя и несёт кнопку запуска с polling на API места.
 func TestStoppedWorkspacePage(t *testing.T) {
+	brand := utmnView(t)
 	ws := store.Workspace{ID: `w1"><script>`, Name: `Место "тест"`, Status: "stopped"}
-	page := stoppedWorkspacePage(ws, utmnView(t))
+	page := stoppedWorkspacePage(ws, brand)
 	for _, want := range []string{
-		"ИИ-мастерская ТюмГУ",
+		brand.Name,
+		brand.LogoDataURI,
 		"Рабочее место «Место &#34;тест&#34;» сейчас остановлено",
 		"agctl-start",
 		"/api/workspaces/w1%22%3E%3Cscript%3E/start",
-		"data:image/png;base64,",
 	} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("в странице нет %q", want)
@@ -68,8 +71,11 @@ func TestStoppedWorkspacePage(t *testing.T) {
 	}
 	// Нейтральный профиль: имя agctl, буква-знак вместо логотипа, ничего чужого.
 	neutral := stoppedWorkspacePage(ws, profile.Neutral())
-	if !strings.Contains(neutral, "agctl") || strings.Contains(neutral, "ИИ-мастерская") || strings.Contains(neutral, "data:image/png") {
+	if !strings.Contains(neutral, "agctl") || strings.Contains(neutral, "data:image/png") {
 		t.Fatal("нейтральная страница останова брендирована неверно")
+	}
+	if strings.Contains(neutral, brand.Name) {
+		t.Fatal("нейтральная страница содержит бренд организации")
 	}
 }
 

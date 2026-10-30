@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: profile-decomposition
 title: "White-label декомпозиция: универсальное ядро agctl + профиль ТюмГУ как данные"
-status: open
+status: in-progress
 priority: P2
 size: L
 area: platform
@@ -84,3 +84,4 @@ agctl должен существовать в двух слоях: **униве
   настройку под ТюмГУ желательно держать отдельно (формат конфигов, возможно
   отдельный приватный репо), но окончательного решения по границе репо ещё
   нет — поэтому Ф3 помечена гейтом владельца.
+- 2026-10-30: Ф1 выполнена на ветке agent/profile-decomposition (0af0df5): internal/profile (YAML+assets, embedded agctl/utmn + --profile-dir), чат/dev-шеллы и логин-страница брендируются профилем (window.__AGCTL_BRAND__ + <title> на wire), LLM-дефолты из профиля (env перекрывает), make PROFILE ?= utmn; assets.BrandLogo удалён; go vet/test зелёные, живой провод: логин utmn=ТюмГУ+лого, agctl=нейтральный без LLM.

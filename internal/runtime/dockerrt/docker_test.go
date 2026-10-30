@@ -12,7 +12,7 @@ import (
 // ошибка резолва возвращается как ошибка (решение о старте — за Start).
 func TestPinnedHost(t *testing.T) {
 	lookup := func(host string) ([]net.IP, error) {
-		if host == "litellm-dev.utmn.ru" {
+		if host == "llm.corp.example" {
 			return []net.IP{net.ParseIP("10.255.254.41"), net.ParseIP("fd00::41")}, nil
 		}
 		return nil, fmt.Errorf("no such host %s", host)
@@ -22,7 +22,7 @@ func TestPinnedHost(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{"https://litellm-dev.utmn.ru/v1", "litellm-dev.utmn.ru:10.255.254.41", false},
+		{"https://llm.corp.example/v1", "llm.corp.example:10.255.254.41", false},
 		{"http://127.0.0.1:4000/v1", "", false},
 		{"http://localhost:4000/v1", "", false},
 		{"https://10.255.254.41/v1", "", false},

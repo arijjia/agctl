@@ -130,8 +130,11 @@ window.__ModuleLoader__.load({
 		function openHelpOverlay() {
 			const sheet = buildOverlay();
 			const box = el("div", null, null);
+			// Заголовок справки — из профиля организации (window.__AGCTL_BRAND__
+			// инжектит шлюз); без него — нейтральный agctl.
+			const helpTitle = (typeof window !== "undefined" && window.__AGCTL_BRAND__ && window.__AGCTL_BRAND__.helpTitle) || "Справка — agctl";
 			box.innerHTML = `
-				<h2 style="margin:0 0 14px;font-size:18px">Справка — ИИ-мастерская ТюмГУ</h2>
+				<h2 style="margin:0 0 14px;font-size:18px">${helpTitle}</h2>
 				<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.5">
 					<li><b>Воркспейсы</b> — папки проектов в боковой панели. Новая сессия, созданная внутри папки, работает в каталоге этого проекта.</li>
 					<li><b>Создать воркспейс</b> — кнопка в шапке списка Workspaces: пустой или клон публичного GitHub-репозитория.</li>

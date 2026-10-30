@@ -7,7 +7,7 @@
 //
 // Настройка — только env оператора (в БД не храним):
 //
-//	AGCTL_JIRA_URL      — например https://jira.utmn.ru
+//	AGCTL_JIRA_URL      — например https://jira.example.com
 //	AGCTL_JIRA_TOKEN    — PAT сервис-аккаунта агента (Bearer)
 //	AGCTL_JIRA_JQL      — по умолчанию: labels = agent-run
 //	AGCTL_JIRA_WORKSPACE— id воркспейса-исполнителя (w-…); без него поллер спит

@@ -3,7 +3,7 @@
 // бинаря. Ядро agctl универсально; вся кастомизация под конкретную
 // организацию живёт в профиле (см. agctl-hq/docs/agctl-decomposition-roadmap.md).
 //
-// Загрузка: --profile <имя> (встроенный, сейчас agctl и utmn) или
+// Загрузка: --profile <имя> (встроенные профили) или
 // --profile-dir <каталог> (дисковый профиль чужой организации). env:
 // AGCTL_PROFILE / AGCTL_PROFILE_DIR.
 package profile
