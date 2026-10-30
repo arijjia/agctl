@@ -41,6 +41,19 @@ compat-proxy пока оставлены; это не пользовательс
 6. **Полное удаление legacy-кода** (P3, `legacy-workspace-code-cleanup`):
    выпилить dormant provision/seat tables и `/w` compat после срока пилота.
 
+## 2.1. Профильная декомпозиция (white-label)
+
+Ядро agctl — универсальный продукт без привязки к организации: брендинг,
+LLM-дефолты и тексты живут в **профиле организации** — данных
+(`profile.yaml` + логотип), подключаемых без пересборки бинаря
+(`--profile` / `--profile-dir`, `make profile-fetch`). Профиль пилота
+(ИИ-мастерская ТюмГУ) выделен в отдельное репо `agctl-profile-utmn`.
+Маши́нная гарантия чистоты ядра — guard-тест `TestCoreIsOrganizationFree`
+(`internal/profile/guard_test.go`). Эпик — `profile-decomposition` в
+`backlog/open`; архитектурный план и инвентарь —
+`agctl-hq/docs/agctl-decomposition-roadmap.md`; развёртывание под свою
+организацию — [customization.md](customization.md).
+
 ## 3. Безопасность (P1/P2)
 
 - **Egress allowlist** (P2, `egress-allowlist`): сейчас egress Docker
