@@ -3,13 +3,13 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "agctl — физика: процессы, порты, протоколы",
-    "output": ".archify/architecture-agctl-processes-20261026-164456/agctl-processes.html",
+    "output": ".archify/architecture-agctl-processes-20261030-003200/agctl-processes.html",
     "quality_profile": "showcase",
     "repository": {
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "1eaa30124c4ae912f4c4571085b296d0af8b2dc3"
+      "revision": "72fa4218b5ed4935747efb2a39e884a15bf21912"
     },
     "views": [
       {
@@ -81,15 +81,15 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 308,
-          "end_line": 317,
-          "label": "корень: вход → /app/, сессия → /chat/"
+          "line": 318,
+          "end_line": 330,
+          "label": "корень: вход → /chat/, сессия → /chat/"
         },
         {
           "path": "internal/server/chatshell.go",
           "line": 3,
-          "end_line": 31,
-          "label": "pre-paint чат-шелла"
+          "end_line": 27,
+          "label": "pre-paint чат-шелла + brand-boot"
         }
       ]
     },
@@ -109,20 +109,20 @@
       "sources": [
         {
           "path": "cmd/agctl/main.go",
-          "line": 117,
-          "end_line": 222,
+          "line": 143,
+          "end_line": 264,
           "label": "cmdServe startup + HTTP listener"
         },
         {
           "path": "internal/server/server.go",
-          "line": 214,
-          "end_line": 316,
+          "line": 221,
+          "end_line": 311,
           "label": "API/gateway routes + auth middleware"
         },
         {
           "path": "internal/server/chat.go",
-          "line": 504,
-          "end_line": 580,
+          "line": 505,
+          "end_line": 581,
           "label": "lazy per-user runtime + TTL reaper"
         }
       ]
@@ -170,8 +170,8 @@
       "sources": [
         {
           "path": "cmd/agctl/main.go",
-          "line": 165,
-          "end_line": 168,
+          "line": 210,
+          "end_line": 213,
           "label": "store.Open($AGCTL_HOME/agctl.db)"
         }
       ]
@@ -192,8 +192,8 @@
       "sources": [
         {
           "path": "cmd/agctl/main.go",
-          "line": 157,
-          "end_line": 164,
+          "line": 202,
+          "end_line": 209,
           "label": "EnsureMasterKey + secrets.New"
         }
       ]
@@ -344,8 +344,8 @@
         },
         {
           "path": "internal/server/chat.go",
-          "line": 559,
-          "end_line": 562,
+          "line": 560,
+          "end_line": 565,
           "label": "ключ — только у роли developer"
         }
       ]
@@ -353,7 +353,7 @@
     {
       "id": "llm",
       "type": "external",
-      "label": "LiteLLM корп.",
+      "label": "LLM gateway — из профиля",
       "sublabel": "llm.corp.example · :443",
       "pos": [
         1555,
@@ -701,7 +701,8 @@
         "Постоянно работающий управляющий процесс платформы на хосте: один Go-процесс, слушает :8929, принимает HTTP/WS/SSE.",
         "Проверяет сессию и роль, обслуживает API и шлюзы; в целевой v3-модели лениво запускает через Docker один runtime пользователя.",
         "TTL/reaper останавливает вычисления, но оставляет том. agctl serve не запускает команды агента и не проксирует файловые записи.",
-        "dsh и дочерние инструменты читают и пишут напрямую через RW bind mount; фоновые задачи, включая Git autosave, выполняются в Go-процессе как горутины. SQLite и секреты — данные платформы в AGCTL_HOME."
+        "dsh и дочерние инструменты читают и пишут напрямую через RW bind mount; фоновые задачи, включая Git autosave, выполняются в Go-процессе как горутины. SQLite и секреты — данные платформы в AGCTL_HOME.",
+        "Брендинг и LLM-дефолты — из профиля организации (internal/profile: данные, не код; --profile/--profile-dir, make profile-fetch): шлюз инжектит window.__AGCTL_BRAND__ в <head> до первого кадра; в ядре нет литералов организаций — guard-тест TestCoreIsOrganizationFree"
       ]
     },
     {

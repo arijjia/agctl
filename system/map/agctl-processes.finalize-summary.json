@@ -6,14 +6,14 @@
   "type": "architecture",
   "quality": "showcase",
   "specification": {
-    "path": "/Users/masha/src/arijjia/cit/agctl/system/map/agctl-processes.architecture.json",
-    "sha256": "ce1e14c198f845a1d7ace12eafdc57b26e2ea4ae4e98cf27f729a5694e268e2c",
-    "bytes": 13892
+    "path": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261030-003200/candidate.json",
+    "sha256": "d76c85c7acaf61fa2e2d2a30bd7c29fcdae1b9e514ca613fac2467082b715aee",
+    "bytes": 20106
   },
   "artifact": {
-    "path": "/Users/masha/src/arijjia/cit/agctl/system/map/agctl-processes.html",
-    "sha256": "cee8c57e8b052468fd0355c2c176cce2884028af96829c20ec7413f8b5da2946",
-    "bytes": 775001
+    "path": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261030-003200/agctl-processes.html",
+    "sha256": "c385ee18e9a2aa69fd30d965fe872f1d306de996100b23ada7cc86dbeed58339",
+    "bytes": 786900
   },
   "gates": {
     "validate": "pass",
@@ -28,9 +28,9 @@
     "truncated": false
   },
   "evidence": {
-    "receipt": "/Users/masha/src/arijjia/cit/agctl/system/map/agctl-processes.finalize.json",
-    "summaryReceipt": "/Users/masha/src/arijjia/cit/agctl/system/map/agctl-processes.finalize-summary.json",
-    "browserCheckReceipt": "/Users/masha/src/arijjia/cit/agctl/system/map/agctl-processes.browser-check.json"
+    "receipt": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261030-003200/agctl-processes.finalize.json",
+    "summaryReceipt": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261030-003200/agctl-processes.finalize-summary.json",
+    "browserCheckReceipt": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261030-003200/agctl-processes.browser-check.json"
   },
   "update": {
     "status": "update_available",
@@ -38,12 +38,41 @@
     "availableVersion": "3.2.0",
     "releaseNotes": "https://github.com/tt-a1i/archify/releases/tag/v3.2.0",
     "severity": "normal",
-    "checkedAt": "2026-10-25T11:19:04.802Z",
-    "source": "cache",
+    "checkedAt": "2026-10-31T05:17:29.569Z",
+    "source": "network",
     "noticeRequired": true,
-    "noticeText": "Archify update: 3.0.1 → 3.2.0. A previous check at 2026-10-25T11:19:04.802Z found a newer release. Release notes: https://github.com/tt-a1i/archify/releases/tag/v3.2.0. The installed Skill has not changed; ask to snooze or ignore this reminder.",
+    "noticeText": "Archify update: 3.0.1 → 3.2.0. A newer release is available. Release notes: https://github.com/tt-a1i/archify/releases/tag/v3.2.0. The installed Skill has not changed; ask to snooze or ignore this reminder.",
     "eventKey": "archify@sha256:70e210265c59f24dcbdf2a502ff671104b5454e7ee7d3554aecd86bad32384f5"
   },
   "visualReview": "not-requested",
-  "durationMs": 1325
+  "durationMs": 5464,
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "routesOverSuggestedBends": 1
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [],
+      "detours": [
+        {
+          "relationship": {
+            "id": "c14",
+            "from": "dshchat",
+            "to": "dshhome",
+            "label": "bind mount RW · DSH_HOME",
+            "collectionIndex": 9,
+            "artifactIndex": 10
+          },
+          "bends": 3,
+          "stretch": 1
+        }
+      ],
+      "truncated": false
+    },
+    "hints": [
+      "dshchat → dshhome needs 3 bends: move node dshchat or dshhome so they share a row or column with matching centers, or sit diagonally with a clear corner."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
 }
