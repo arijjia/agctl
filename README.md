@@ -39,6 +39,7 @@ flowchart LR
 | Документ | О чём |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | **Текущая архитектура v3**: единый runtime пользователя, роли, проекты, SSH, шлюзы и healthcheck — с точными ссылками на код. Физической карте соответствует файл `system/map/agctl-processes.html` |
+| [docs/customization.md](docs/customization.md) | **Кастомизация под свою организацию**: профиль (`profile.yaml` + логотип), брендинг, LLM-дефолты, `make profile-fetch` |
 | [docs/architecture-roadmap.md](docs/architecture-roadmap.md) | **Архитектурный роадмап**: где мы сейчас, горизонты 1–3, принципы |
 | [docs/capacity.md](docs/capacity.md) | Оценка ресурсов по числу пользователей |
 | [docs/secure-gateway.md](docs/secure-gateway.md) | Схема шлюза и cookie-mint |

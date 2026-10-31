@@ -64,6 +64,24 @@ reconcile и очистка сессий — горутины внутри не�
 | Старый provisioner workspaces | `internal/provision/provision.go` (вызывающий HTTP/CLI create выключен) |
 | Docker runtime + image health | `internal/runtime/dockerrt` |
 | SQLite / secret encryption | `internal/store`, `internal/secrets` |
+| Профиль организации (брендинг, LLM-дефолты) | `internal/profile`; инъекции в HTML — `chatshell.go`, `htmlscan.go` |
+
+**Профиль организации (white-label).** Кастомизация — данные, не код:
+`internal/profile` читает `profile.yaml` + логотип (`--profile <имя>` —
+встроенный нейтральный `agctl` и дисковые каталоги `./profiles/<id>`,
+`$AGCTL_HOME/profiles/<id>`; `--profile-dir <каталог>` — чужой профиль без
+пересборки; env `AGCTL_PROFILE`/`AGCTL_PROFILE_DIR`). Ядро не содержит
+литералов организаций — это проверяет guard-тест
+`TestCoreIsOrganizationFree` (`internal/profile/guard_test.go`). Один канал
+доставки брендинга в браузер: шлюз инжектит `window.__AGCTL_BRAND__` (JSON
+профиля) и `<title>` в `<head>` до первого кадра и до загрузки плагинов —
+в чат-шелл `/chat/`, dev-шелл `/w/{id}` и страницу входа; плагины dsh
+(`dsh-plugins/chat-brand`, `cabinet`) — потребители JSON с нейтральным
+фолбэком. LLM-дефолты `serve` приходят из профиля, env `AGCTL_LLM_*` их
+перекрывает; секреты в профиль не входят. Развёртывание под свою
+организацию — `docs/customization.md`; профиль пилота живёт в отдельном
+репо (`agctl-profile-utmn`, подключение — `make profile-fetch`); план и
+инвентарь — `agctl-hq/docs/agctl-decomposition-roadmap.md`.
 
 Логическая изоляция: все пользовательские API проходят `requireUser`,
 админские — `requireAdmin`; SSH pubkey/project path выбираются по ID
@@ -89,9 +107,11 @@ local go-git autosave against the host path. This is the
 target layout, not a completed migration; the pilot starts on a clean volume.
 
 1. Пользователь открывает `/`. Без сессии получает единственную страницу
-   фронта agctl — вход/регистрация (React SPA из `go:embed`, `no-store`);
-   после входа корень ведёт в `/chat/` (`server.go`, функция
-   `registerTier0Routes`). Отдельного пути `/app/` больше нет.
+   фронта agctl — вход/регистрация (React SPA из `go:embed`, `no-store`;
+   бренд профиля инжектится в `<head>` до загрузки SPA —
+   `injectBrandBoot` в `htmlscan.go`); после входа корень ведёт в `/chat/`
+   (`server.go`, функция `registerTier0Routes`). Отдельного пути `/app/`
+   больше нет.
 2. Сам логин контейнер не создаёт. Первый `/chat/` вызывает `ensureChat`
    (`internal/server/chat.go`, сейчас около строк 501–555): per-user lock,
    стабильный `StorageID=u<ID>`, `ChatProvider.EnsureChat`.
@@ -219,4 +239,7 @@ host port; это не «слушать всю LAN». Почему релея н
 реальные host/container границы. Один персональный контейнер v3 содержит
 dsh web (bind на eth0 контейнера; релей удалён) и, для developer, sshd;
 `agctl serve` и go-git autosave —
-один Go-процесс, горутины не отдельные процессы.
+один Go-процесс, горутины не отдельные процессы. Подпись внешнего LLM на
+карте — из профиля организации (`map.llm_label`; в нейтральном срезе —
+`llm.corp.example :443`; после смены профиля карту стоит пересобрать
+archify, визуальные чек-артефакты — снимки прошлой сборки).
