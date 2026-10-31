@@ -6,11 +6,11 @@
   "status": "pass",
   "visualReview": "pending",
   "provenance": "current",
-  "deliveryReceiptId": "7e560557-2e96-4259-98d3-f3cd1a6f6808",
+  "deliveryReceiptId": "ac6beea4-d422-431c-b132-5a4268de735d",
   "artifact": {
-    "path": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261030-003200/agctl-processes.html",
-    "sha256": "c385ee18e9a2aa69fd30d965fe872f1d306de996100b23ada7cc86dbeed58339",
-    "bytes": 786900
+    "path": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261030-003200/review-2/agctl-processes.html",
+    "sha256": "ff6ce173dc13466f3f99ed2c9a80c7dd934ef3b0579c8087dba084019c3a4a06",
+    "bytes": 792145
   },
   "state": {
     "detail": "read",
@@ -84,7 +84,7 @@
         "innerWidth": 1600,
         "innerHeight": 1000,
         "scrollWidth": 1600,
-        "scrollHeight": 1172,
+        "scrollHeight": 1173,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -345,7 +345,7 @@
         "innerWidth": 1600,
         "innerHeight": 1000,
         "scrollWidth": 1600,
-        "scrollHeight": 1172,
+        "scrollHeight": 1173,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -558,7 +558,7 @@
         "innerWidth": 1600,
         "innerHeight": 1000,
         "scrollWidth": 1600,
-        "scrollHeight": 1172,
+        "scrollHeight": 1173,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -928,7 +928,7 @@
     "contactSheet": "agctl-processes.visual-check.html"
   },
   "sidecars": {
-    "directory": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261030-003200/visual-check",
+    "directory": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261030-003200/review-2/visual-check",
     "receipt": "agctl-processes.visual-check.json",
     "contactSheet": "agctl-processes.visual-check.html",
     "files": [
@@ -938,23 +938,23 @@
         "file": "agctl-processes.visual-check.html"
       },
       {
-        "sha256": "38422e3eba44bfba349aeca8d2ae0b1e53d2a5ae96f56b1554e1a967d49c5153",
-        "bytes": 141542,
+        "sha256": "3bf0f2e56b14c47fb46d2b2993dcee0591525f64472d2c6735a69f8c5250d755",
+        "bytes": 151565,
         "file": "agctl-processes.visual-check.1440x900.light.png"
       },
       {
-        "sha256": "da348fe82550aad74fd6f4190f18b1ea355f8a16e4fd657560b25742a2544a38",
-        "bytes": 149754,
+        "sha256": "e16ec402bcccd6311fb645e35c4898a1ab7f836e372313389dacfb73a44a9715",
+        "bytes": 160415,
         "file": "agctl-processes.visual-check.1440x900.dark.png"
       },
       {
-        "sha256": "729eb7b37ecff6365ebee6ef82ee95675ad580fba52586cb732bdd66b6b0f67a",
-        "bytes": 208877,
+        "sha256": "9489923594c39893d8b7f297819a9fcac9570f8129a18d20645569ccf90969b7",
+        "bytes": 222625,
         "file": "agctl-processes.visual-check.2048x1320.light.png"
       },
       {
-        "sha256": "ba13351bc825866d6fed14a7ebf35935e87218a907def48d2930b82b88a6b822",
-        "bytes": 216436,
+        "sha256": "f5335cbf153b7214aab99c0ba51c069857b8843b8569f07648c17dec1501ef5e",
+        "bytes": 230622,
         "file": "agctl-processes.visual-check.2048x1320.dark.png"
       }
     ]

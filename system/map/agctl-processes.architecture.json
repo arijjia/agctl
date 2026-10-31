@@ -61,6 +61,17 @@
           "dshlocal"
         ],
         "note": "Ноутбук сам инициирует WSS :443; UI едет по /api/local-backend/ui/*"
+      },
+      {
+        "id": "v-wl",
+        "label": "White-label: ядро + профиль",
+        "focus": [
+          "serve",
+          "profile",
+          "llm",
+          "browser"
+        ],
+        "note": "Кастомизация — данные профиля (узел-файлы); ядро agctl без литералов организаций (guard)"
       }
     ]
   },
@@ -449,6 +460,40 @@
           "label": "authority локального dsh"
         }
       ]
+    },
+    {
+      "id": "profile",
+      "type": "database",
+      "label": "Профиль организации",
+      "sublabel": "файлы: profile.yaml + logo.png",
+      "pos": [
+        400,
+        620
+      ],
+      "size": [
+        240,
+        96
+      ],
+      "sources": [
+        {
+          "path": "internal/profile/profile.go",
+          "line": 96,
+          "end_line": 130,
+          "label": "LoadDir/Resolve: embed + дисковые каталоги"
+        },
+        {
+          "path": "cmd/agctl/main.go",
+          "line": 147,
+          "end_line": 154,
+          "label": "--profile/--profile-dir при старте serve"
+        },
+        {
+          "path": "internal/profile/guard_test.go",
+          "line": 36,
+          "end_line": 40,
+          "label": "ядро без литералов организаций"
+        }
+      ]
     }
   ],
   "boundaries": [
@@ -511,9 +556,18 @@
         "wkspace",
         "gitstore",
         "dshchat",
-        "sshd"
+        "sshd",
+        "profile"
       ],
       "pad": 52
+    },
+    {
+      "kind": "region",
+      "label": "Профиль — данные, не код (отдельное репо)",
+      "wraps": [
+        "profile"
+      ],
+      "pad": 12
     }
   ],
   "connections": [
@@ -657,6 +711,15 @@
           720
         ]
       ]
+    },
+    {
+      "id": "c16",
+      "from": "serve",
+      "to": "profile",
+      "label": "file read · --profile",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
     }
   ],
   "cards": [
@@ -713,6 +776,16 @@
         "Entrypoint при пустом DSH_HOME досеивает скелет настроек и плагинов из образа; рабочие файлы проектов остаются на маунте.",
         "Если передан AGCTL_SSH_PUBKEY (роль developer), скрипт готовит key-only конфиг, проверяет его и запускает sshd :2222 в фоне.",
         "Затем вычисляет eth0-адрес (agctl-dsh-net print) и выполняет exec dsh web --host <ip> --port 3080: shell заменяется главным процессом dsh."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "White-label: ядро и профиль",
+      "items": [
+        "Ядро agctl — универсальное: ни одного литерала организации в коде; проверяет guard-тест TestCoreIsOrganizationFree (internal/profile/guard_test.go)",
+        "Кастомизация — данные-профиль: profile.yaml + assets/logo.png в отдельном репо (agctl-profile-utmn), приватность не зависит от ядра",
+        "agctl serve читает профиль при старте (--profile/--profile-dir, make profile-fetch) и инжектит window.__AGCTL_BRAND__ в <head> до первого кадра",
+        "Дефолты чата и подпись LLM на этой карте берутся из профиля; секреты (API-ключи) в профиль не входят — env/SQLite как раньше"
       ]
     }
   ]
