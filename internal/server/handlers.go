@@ -28,6 +28,9 @@ type credsReq struct {
 	Password string `json:"password"`
 }
 
+// parseSSHPublicKey валидирует и нормализует публичный SSH-ключ:
+// пустая строка легальна (sshd выключен), длина ограничена 4 KiB,
+// хвостовых данных после ключа быть не должно.
 func parseSSHPublicKey(raw string) (string, error) {
 	key := strings.TrimSpace(raw)
 	if key == "" {
@@ -43,6 +46,8 @@ func parseSSHPublicKey(raw string) (string, error) {
 	return key, nil
 }
 
+// validate проверяет минимальные требования к логину (≥3 символов) и
+// паролю (≥6 символов) до похода в базу.
 func (c credsReq) validate() error {
 	if len(strings.TrimSpace(c.Login)) < 3 {
 		return errors.New("логин: минимум 3 символа")
@@ -53,6 +58,9 @@ func (c credsReq) validate() error {
 	return nil
 }
 
+// handleRegister — POST /api/register: создание учётки; первый пользователь
+// платформы становится admin, остальные user. Пароль хешируется argon2id,
+// факт регистрации и роль пишутся в audit, сессия ставится сразу.
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var req credsReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -90,6 +98,9 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"user": map[string]string{"login": req.Login, "role": role}})
 }
 
+// handleLogin — POST /api/login: rate-limit по логину, сверка пароля
+// (constant-time), постановка cookie-сессии; неудачи фиксируются в rate-limit,
+// успешный вход сбрасывает счётчик и пишется в audit.
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req credsReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -116,11 +127,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"user": map[string]string{"login": u.Login, "role": u.Role}})
 }
 
+// handleLogout — POST /api/logout: удаление сессии и сброс cookie.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	s.authN.Logout(w, r)
 	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
+// handleMe — GET /api/me: текущий пользователь (login, role) по cookie.
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	id, err := s.who(r)
 	if err != nil {
@@ -132,14 +145,18 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 
 // ── воркспейсы ──────────────────────────────────────────────────────────────
 
+// handleTemplates — GET /api/templates: список legacy-шаблонов (v2).
 func (s *Server) handleTemplates(w http.ResponseWriter, r *http.Request, _ identity) {
 	writeJSON(w, http.StatusOK, map[string]any{"templates": provision.Templates})
 }
 
+// handleKits — GET /api/kits: каталог комплектов (legacy-обвязка v2).
 func (s *Server) handleKits(w http.ResponseWriter, r *http.Request, _ identity) {
 	writeJSON(w, http.StatusOK, map[string]any{"kits": provision.Kits})
 }
 
+// handleWorkspacesList — GET /api/workspaces: список мест; admin видит все
+// (с логинами владельцев), остальные — только свои. Legacy-поток v2.
 func (s *Server) handleWorkspacesList(w http.ResponseWriter, r *http.Request, id identity) {
 	var wss []store.Workspace
 	var err error
@@ -163,6 +180,8 @@ func (s *Server) handleWorkspacesList(w http.ResponseWriter, r *http.Request, id
 	writeJSON(w, http.StatusOK, map[string]any{"workspaces": out})
 }
 
+// handleWorkspaceGet — GET /api/workspaces/{id}: место владельца или любого
+// (для admin); чужое место обычному пользователю даёт 403.
 func (s *Server) handleWorkspaceGet(w http.ResponseWriter, r *http.Request, id identity) {
 	ws, err := s.loadWS(r, id)
 	if errors.Is(err, errForbidden) {
@@ -176,11 +195,16 @@ func (s *Server) handleWorkspaceGet(w http.ResponseWriter, r *http.Request, id i
 	writeJSON(w, http.StatusOK, map[string]any{"workspace": s.wsJSON(r.Context(), ws, s.db.WorkspaceOwnerLogin(ws.OwnerID))})
 }
 
+// handleWorkspaceCreate — POST /api/workspaces: надгробие v3 — рабочие места
+// демонтированы (HTTP 410 с подсказкой нового пути).
 func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, id identity) {
 	writeErr(w, http.StatusGone, "Рабочие места удалены в v3: используйте персональный контейнер и проекты; SSH настраивается через /api/me/ssh.")
 }
 
 // provisionJob — файловая часть + запуск контейнера.
+// provisionJob — legacy-джоба provizии v2 (файлы + запуск контейнера + ожидание
+// boot-токена dsh до 45 сек); сериализуется provMu, статус/audit обновляются
+// по стадиям. Живёт для совместимости старых записей БД.
 func (s *Server) provisionJob(ws store.Workspace, ownerLogin string, p provision.Provider) {
 	s.provMu.Lock()
 	defer s.provMu.Unlock()
@@ -226,19 +250,27 @@ var (
 	assetsDshSkel      = assetsSkel // префикс dsh-skel
 )
 
+// handleWorkspaceStart — POST …/start: надгробие v3 (HTTP 410).
 func (s *Server) handleWorkspaceStart(w http.ResponseWriter, r *http.Request, id identity) {
 	writeErr(w, http.StatusGone, "Рабочие места удалены в v3: используйте персональный контейнер и проекты; SSH настраивается через /api/me/ssh.")
 }
 
+// handleWorkspaceStop — POST …/stop: надгробие v3 (HTTP 410).
 func (s *Server) handleWorkspaceStop(w http.ResponseWriter, r *http.Request, id identity) {
 	writeErr(w, http.StatusGone, "Рабочие места удалены в v3: используйте персональный контейнер и проекты; SSH настраивается через /api/me/ssh.")
 }
 
+// handleWorkspaceDelete — DELETE /api/workspaces/{id}: удаление записи
+// legacy-места; файлы с диска чистит purgeWorkspaceFiles с проверкой путей.
 func (s *Server) handleWorkspaceDelete(w http.ResponseWriter, r *http.Request, id identity) {
 	writeErr(w, http.StatusGone, "Рабочие места удалены в v3: используйте персональный контейнер и проекты; SSH настраивается через /api/me/ssh.")
 }
 
 // purgeWorkspaceFiles удаляет артефакты воркспейса с диска хоста и возвращает
+// текст для audit-лога. Каждый путь проверяется: непустой и внутри
+// AGCTL_HOME — случайный путь из БД стереть нельзя. Опустевшие
+// каталоги-обёртки (work/<id>, repos/<owner>) убираются, только если пустые.
+// purgeWorkspaceFiles удаляет артефакты места с диска хоста и возвращает
 // текст для audit-лога. Каждый путь проверяется: непустой и внутри
 // AGCTL_HOME — случайный путь из БД стереть нельзя. Опустевшие
 // каталоги-обёртки (work/<id>, repos/<owner>) убираются, только если пустые.
@@ -273,6 +305,8 @@ func (s *Server) purgeWorkspaceFiles(ws *store.Workspace) string {
 }
 
 // pathUnder — путь p лежит внутри каталога home (после нормализации).
+// pathUnder — путь p лежит внутри каталога home (после нормализации); защита
+// от выхода за пределы дома через `..`.
 func pathUnder(home, p string) bool {
 	abs, err := filepath.Abs(p)
 	if err != nil {
@@ -297,6 +331,9 @@ const maxWorkspaceLogTail = 2000
 
 // redactWorkspaceLogs — runtime boot-логи могут включать dsh login token и
 // случайно напечатанные credentials; UI/API отдаёт только санитизированный хвост.
+// redactWorkspaceLogs — runtime boot-логи могут включать dsh login token и
+// случайно напечатанные credentials; UI/API отдаёт только санитизированный хвост
+// (query-токены, Bearer, AGCTL_LLM_API_KEY, dsh-auth cookie, sk-ключи).
 func redactWorkspaceLogs(logs string) string {
 	logs = workspaceLogQueryTokenRE.ReplaceAllString(logs, `${1}[redacted]`)
 	logs = workspaceLogBearerRE.ReplaceAllString(logs, `${1}[redacted]`)
@@ -305,6 +342,8 @@ func redactWorkspaceLogs(logs string) string {
 	return workspaceLogAPIKeyRE.ReplaceAllString(logs, "[redacted]")
 }
 
+// handleWorkspaceLogs — GET /api/workspaces/{id}/logs: хвост логов
+// контейнера (по умолчанию 200 строк, максимум 2000) после санитизации.
 func (s *Server) handleWorkspaceLogs(w http.ResponseWriter, r *http.Request, id identity) {
 	ws, err := s.loadWS(r, id)
 	if errors.Is(err, errForbidden) {
@@ -345,11 +384,17 @@ func sshHostPortFor(ws store.Workspace) int {
 // handleWorkspaceSSH — задать/снять публичный ключ SSH-канала воркспейса
 // (концепция v2 §9.2: «агент живёт на сервере, редактор — локально»).
 // Если место запущено, контейнер пересоздаётся с новым ключом/портом.
+// handleWorkspaceSSH — PATCH /api/workspaces/{id}/ssh: задать/снять публичный
+// ключ SSH-канала места; в v3 — надгробие (HTTP 410), ключ задаётся через
+// /api/me/ssh для персонального рантайма.
 func (s *Server) handleWorkspaceSSH(w http.ResponseWriter, r *http.Request, id identity) {
 	writeErr(w, http.StatusGone, "Рабочие места удалены в v3: используйте персональный контейнер и проекты; SSH настраивается через /api/me/ssh.")
 }
 
 // recreateForSSH применяет ключ/порт к запущенному контейнеру. SSHPubKey
+// берётся заново из БД, plaintext-ключ в журнал не попадает.
+// recreateForSSH применяет ключ/порт к запущенному контейнеру legacy-места:
+// forgetToken, удаление контейнера, старт заново с новым ключом; SSHPubKey
 // берётся заново из БД, plaintext-ключ в журнал не попадает.
 func (s *Server) recreateForSSH(wsID string, paths provision.Layout, p provision.Provider, actor string) {
 	s.provMu.Lock()
@@ -375,11 +420,16 @@ func (s *Server) recreateForSSH(wsID string, paths provision.Layout, p provision
 
 // handleWorkspaceProvider — PATCH /api/workspaces/{id}/provider: смена Base URL,
 // моделей и токена. Токен возвращается в env контейнера, но никогда в API.
+// handleWorkspaceProvider — PATCH /api/workspaces/{id}/provider: смена Base URL,
+// моделей и токена. Токен возвращается в env контейнера, но никогда в API.
+// В v3 — надгробие (HTTP 410).
 func (s *Server) handleWorkspaceProvider(w http.ResponseWriter, r *http.Request, id identity) {
 	writeErr(w, http.StatusGone, "Рабочие места удалены в v3: используйте персональный контейнер и проекты; SSH настраивается через /api/me/ssh.")
 }
 
 // recreateForProvider — пересоздание контейнера после смены провайдера.
+// recreateForProvider — пересоздание контейнера legacy-места после смены
+// провайдера (forgetToken, Remove, Start), статус и audit обновляются.
 func (s *Server) recreateForProvider(wsID string, paths provision.Layout, p provision.Provider, actor string) {
 	s.provMu.Lock()
 	defer s.provMu.Unlock()
@@ -404,6 +454,7 @@ func (s *Server) recreateForProvider(wsID string, paths provision.Layout, p prov
 
 // ── админка ─────────────────────────────────────────────────────────────────
 
+// handleAdminUsers — GET /api/admin/users: список учётных записей платформы.
 func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request, _ identity) {
 	users, err := s.db.UsersList()
 	if err != nil {
@@ -423,6 +474,7 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request, _ iden
 	writeJSON(w, http.StatusOK, map[string]any{"users": out})
 }
 
+// handleAdminAudit — GET /api/admin/audit: свежие события журнала безопасности.
 func (s *Server) handleAdminAudit(w http.ResponseWriter, r *http.Request, _ identity) {
 	events, err := s.db.AuditList(atoiDefault(r.URL.Query().Get("limit"), 200))
 	if err != nil {
@@ -445,6 +497,8 @@ func (s *Server) handleAdminAudit(w http.ResponseWriter, r *http.Request, _ iden
 
 // ── вспомогательное ─────────────────────────────────────────────────────────
 
+// autosaveOne выполняет go-git autosave (commit) для одного legacy-места;
+// места без work-каталога пропускаются, факт push логируется.
 func (s *Server) autosaveOne(ws store.Workspace) error {
 	if ws.WorkPath == "" {
 		return nil
@@ -471,12 +525,15 @@ type wsRequestOut struct {
 	CreatedAt string `json:"createdAt"`
 }
 
+// wsReqJSON приводит заявку к форме ответа API (без payload/служебных полей).
 func wsReqJSON(r store.WorkspaceRequest) wsRequestOut {
 	return wsRequestOut{ID: r.ID, Name: r.Name, Kit: r.Kit, Status: r.Status,
 		Reason: r.Reason, Login: r.Login, CreatedAt: r.CreatedAt}
 }
 
 // handleConfig — публичные для авторизованного клиента флаги платформы
+// (панель Кабинета подстраивает форму создания места).
+// handleConfig — GET /api/config: публичные для клиента флаги платформы
 // (панель Кабинета подстраивает форму создания места).
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -486,16 +543,21 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleWorkspaceRequestCreate — POST /api/workspace-requests.
+// handleWorkspaceRequestCreate — POST /api/workspace-requests: в v3 —
+// надгробие (HTTP 410).
 func (s *Server) handleWorkspaceRequestCreate(w http.ResponseWriter, r *http.Request, id identity) {
 	writeErr(w, http.StatusGone, "Рабочие места удалены в v3: используйте персональный контейнер и проекты; SSH настраивается через /api/me/ssh.")
 }
 
+// handleWorkspaceRequestsList — legacy endpoint kept as a tombstone in v3.
 // handleWorkspaceRequestsList — legacy endpoint kept as a tombstone in v3.
 func (s *Server) handleWorkspaceRequestsList(w http.ResponseWriter, r *http.Request, id identity) {
 	writeErr(w, http.StatusGone, "заявки на отдельные рабочие места демонтированы в v3; используйте /api/role-requests")
 }
 
 // handleWorkspaceRequestDecision — POST /api/workspace-requests/{id}/approve|reject (админ).
+// handleWorkspaceRequestDecision — POST /api/workspace-requests/{id}/approve|reject (админ);
+// в v3 — надгробие (HTTP 410).
 func (s *Server) handleWorkspaceRequestDecision(approve bool) func(http.ResponseWriter, *http.Request, identity) {
 	return func(w http.ResponseWriter, r *http.Request, id identity) {
 		writeErr(w, http.StatusGone, "Рабочие места удалены в v3: используйте персональный контейнер и проекты; SSH настраивается через /api/me/ssh.")
