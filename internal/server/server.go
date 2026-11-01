@@ -411,6 +411,8 @@ func (s *Server) StartBackground(ctx context.Context) {
 	}()
 }
 
+// autosaveAll выполняет страховочный go-git commit по всем running-воркспейсам
+// с work-каталогом (фоновый тикер autosave).
 func (s *Server) autosaveAll() {
 	wss, err := s.db.WorkspacesAll()
 	if err != nil {
@@ -523,12 +525,14 @@ type apiErr struct {
 	Error string `json:"error"`
 }
 
+// writeErr отдаёт JSON-ошибку вида {"error": msg} с HTTP-кодом.
 func writeErr(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(apiErr{Error: msg})
 }
 
+// writeJSON сериализует v в JSON-ответ с HTTP-кодом.
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(code)
@@ -541,11 +545,15 @@ type identity struct {
 	Role  string
 }
 
+// who распознаёт пользователя запроса по cookie-сессии; ошибка =
+// ErrUnauthorized (нет/просрочена сессия).
 func (s *Server) who(r *http.Request) (identity, error) {
 	id, login, role, err := s.authN.User(r)
 	return identity{ID: id, Login: login, Role: role}, err
 }
 
+// requireUser оборачивает обработчик: без валидной сессии — 401, иначе
+// в обработчик передаётся identity (ID, login, role).
 func (s *Server) requireUser(next func(http.ResponseWriter, *http.Request, identity)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := s.who(r)
@@ -557,6 +565,7 @@ func (s *Server) requireUser(next func(http.ResponseWriter, *http.Request, ident
 	}
 }
 
+// requireAdmin наслаивается на requireUser: не-admin получает 403.
 func (s *Server) requireAdmin(next func(http.ResponseWriter, *http.Request, identity)) http.HandlerFunc {
 	return s.requireUser(func(w http.ResponseWriter, r *http.Request, id identity) {
 		if id.Role != "admin" {
@@ -567,6 +576,8 @@ func (s *Server) requireAdmin(next func(http.ResponseWriter, *http.Request, iden
 	})
 }
 
+// logMiddleware пишет в лог метод/путь/длительность для /api/* запросов;
+// остальная статика не логируется.
 func (s *Server) logMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
@@ -617,6 +628,9 @@ func (s *Server) chatToken(ctx context.Context, handle agctlrt.ChatHandle) strin
 	})
 }
 
+// cachedBootToken возвращает boot-токен dsh: из кэша по ключу инстанса либо
+// скрейпом логов контейнера (последнее совпадение — повторный start оставляет
+// старые startup-строки выше нового токена); найденное кешируется.
 func (s *Server) cachedBootToken(ctx context.Context, key string, load func(context.Context) (string, error)) string {
 	s.tokMu.Lock()
 	t := s.tokens[key]
@@ -649,6 +663,8 @@ func (s *Server) forgetToken(wsID string) {
 	s.tokMu.Unlock()
 }
 
+// wsJSON приводит workspace к форме ответа API: URL работает только у
+// running, списки нормализуются (nil → пустой список, scalar-алиасы).
 func (s *Server) wsJSON(ctx context.Context, w store.Workspace, owner string) map[string]any {
 	components := w.Components
 	if components == nil {
@@ -734,6 +750,7 @@ func (s *Server) providerOf(w store.Workspace, ownerID int64, req ProviderReq) (
 	return provision.Provider{BaseURL: firstModel(urls), BaseURLs: urls, Model: firstModel(ms), Models: ms, APIKey: req.APIKey}, nil
 }
 
+// firstModel — первая модель списка или пустая строка (scalar-алиас legacy).
 func firstModel(models []string) string {
 	if len(models) > 0 {
 		return models[0]
@@ -792,6 +809,8 @@ func (r ProviderReq) allModels() []string {
 	return out
 }
 
+// validateBaseURLs проверяет список endpoints: 1–8 штук, каждый — корректный
+// http(s):// URL без логина/пароля/query/fragment.
 func validateBaseURLs(urls []string) error {
 	if len(urls) == 0 {
 		return errors.New("укажите хотя бы один Base URL провайдера")
@@ -808,6 +827,7 @@ func validateBaseURLs(urls []string) error {
 	return nil
 }
 
+// validate — форма провайдера целиком: endpoints и модели непусты и корректны.
 func (r ProviderReq) validate() error {
 	if err := validateBaseURLs(r.allBaseURLs()); err != nil {
 		return err
@@ -827,6 +847,8 @@ func (s *Server) saveSecret(userID int64, p provision.Provider) error {
 	return s.db.SecretUpsert(userID, p.BaseURL, p.DefaultModel(), p.AllModels(), cipher)
 }
 
+// atoiDefault парсит положительное целое из строки запроса; ошибка или
+// неположительное значение — дефолт.
 func atoiDefault(s string, def int) int {
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
