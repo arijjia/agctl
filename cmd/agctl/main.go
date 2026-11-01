@@ -46,6 +46,9 @@ var version = "dev"
 // prescanFlag достаёт значение флага из argv до штатного разбора (нужен,
 // чтобы дефолты остальных флагов зависели от профиля). Поддерживает
 // --name=v и --name v.
+// prescanFlag достаёт значение флага из argv до штатного разбора flag:
+// дефолты остальных флагов зависят от профиля, который задаётся этими же
+// флагами. Понимает формы --name=v, --name v и -name v.
 func prescanFlag(args []string, name, def string) string {
 	prefix := "--" + name + "="
 	for i, a := range args {
@@ -61,6 +64,9 @@ func prescanFlag(args []string, name, def string) string {
 	return def
 }
 
+// main — диспетчер подкоманд CLI: serve, migrate, init-chat-home,
+// seed-demo-users, backlog, workspace, connect, local, sync, version.
+// Неизвестная команда печатает usage и завершает процесс кодом 2.
 func main() {
 	log.SetFlags(log.Ltime)
 	if len(os.Args) < 2 {
@@ -102,6 +108,8 @@ func main() {
 	}
 }
 
+// usage печатает краткую справку по подкомандам и переменным окружения
+// в стандартный поток ошибок.
 func usage() {
 	fmt.Fprint(os.Stderr, `agctl — платформа агентских рабочих мест (один бинарь)
 
@@ -122,6 +130,9 @@ func usage() {
 `)
 }
 
+// defaultHome возвращает дом данных agctl: $AGCTL_HOME, если задан,
+// иначе ~/.agctl (или .agctl в текущем каталоге, если домашний каталог
+// определить не удалось).
 func defaultHome() string {
 	if h := os.Getenv("AGCTL_HOME"); h != "" {
 		return h
@@ -133,6 +144,8 @@ func defaultHome() string {
 	return filepath.Join(home, ".agctl")
 }
 
+// requireHome создаёт каталог дома при необходимости и возвращает его
+// абсолютный путь; ошибка создания оборачивается контекстом имени дома.
 func requireHome(dir string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("home %s: %w", dir, err)
@@ -140,6 +153,10 @@ func requireHome(dir string) (string, error) {
 	return filepath.Abs(dir)
 }
 
+// cmdServe — подкоманда serve: разрешает профиль организации, собирает
+// конфигурацию из флагов/среды/профиля, открывает дом (мастер-ключ + SQLite),
+// инициализирует LLM-провайдера по умолчанию, строит server.Server и слушает
+// адрес до сигнала завершения (graceful shutdown с остановкой рантаймов).
 func cmdServe(args []string) {
 	// Профиль разрешается до регистрации флагов: от него зависят дефолты
 	// (LLM-провайдер и брендинг сервера). Имя ищется во встроенных профилях,
@@ -267,6 +284,8 @@ func cmdServe(args []string) {
 	}
 }
 
+// cmdMigrate — подкоманда migrate: открывает базу и применяет все
+// неприменённые миграции схемы до актуального состояния.
 func cmdMigrate(args []string) {
 	fsSet := flag.NewFlagSet("migrate", flag.ExitOnError)
 	home := fsSet.String("home", defaultHome(), "каталог данных agctl")
@@ -322,6 +341,9 @@ func cmdInitChatHome(args []string) {
 	}
 }
 
+// initChatHome готовит DSH_HOME для init-контейнера Kubernetes: сеет скелет
+// в пустой том, при refresh обновляет настройки LLM-провайдера, иначе
+// оставляет существующий дом нетронутым. Возвращает флаги, что именно сделано.
 func initChatHome(home string, provider provision.Provider, refresh bool, skel fs.FS) (seeded, refreshed bool, err error) {
 	if home == "" {
 		return false, false, fmt.Errorf("init-chat-home: home is empty")
@@ -344,6 +366,8 @@ func initChatHome(home string, provider provision.Provider, refresh bool, skel f
 	return false, false, nil
 }
 
+// dockerStatus возвращает человекочитаемую строку о доступности Docker:
+// найден ли ожидаемый путь сокета/пайпа демона на текущей ОС.
 func dockerStatus() string {
 	if _, err := os.Stat(dockerHintPath()); err == nil {
 		return "сокет найден"
@@ -351,6 +375,9 @@ func dockerStatus() string {
 	return "если демон не запущен — стартуйте Docker Desktop / dockerd"
 }
 
+// dockerHintPath возвращает ожидаемый путь к сокету Docker для текущей
+// платформы (macOS: ~/.docker/run/docker.sock, Windows: named pipe,
+// прочие: /var/run/docker.sock) — только для подсказки в логе.
 func dockerHintPath() string {
 	home, _ := os.UserHomeDir()
 	switch runtime.GOOS {
@@ -363,6 +390,8 @@ func dockerHintPath() string {
 	}
 }
 
+// envOr возвращает значение переменной среды key или def, если она пуста
+// либо не задана.
 func envOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -370,6 +399,8 @@ func envOr(key, def string) string {
 	return def
 }
 
+// firstNonEmpty возвращает первую непустую строку из аргументов или пустую
+// строку, если все пусты.
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if v != "" {
@@ -379,6 +410,8 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
+// splitCSV разбивает строку по запятым, обрезая пробелы и пропуская пустые
+// элементы.
 func splitCSV(s string) []string {
 	out := make([]string, 0, 4)
 	for _, part := range strings.Split(s, ",") {
