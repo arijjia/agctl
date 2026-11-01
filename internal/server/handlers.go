@@ -202,7 +202,7 @@ func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request, i
 }
 
 // provisionJob — файловая часть + запуск контейнера.
-// provisionJob — legacy-джоба provizии v2 (файлы + запуск контейнера + ожидание
+// provisionJob — legacy-джоба провизии v2 (файлы + запуск контейнера + ожидание
 // boot-токена dsh до 45 сек); сериализуется provMu, статус/audit обновляются
 // по стадиям. Живёт для совместимости старых записей БД.
 func (s *Server) provisionJob(ws store.Workspace, ownerLogin string, p provision.Provider) {

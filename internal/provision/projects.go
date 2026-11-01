@@ -67,6 +67,8 @@ func ProjectWorkRoot(home string, userID int64, create bool) (string, error) {
 	return root, nil
 }
 
+// projectDirectory проверяет/создаёт каталог проекта: только реальный каталог
+// без symlink (create — опционально).
 func projectDirectory(path string, create bool) error {
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) && create {
@@ -101,6 +103,8 @@ func ProjectDirectory(home string, userID int64, name string) (string, error) {
 	return path, nil
 }
 
+// projectDescriptor — дескриптор проекта для API: имя и путь /workspace/<имя>
+// (как каталог виден изнутри контейнера).
 func projectDescriptor(name string) Project {
 	return Project{Name: name, Directory: "/workspace/" + name}
 }
@@ -262,6 +266,8 @@ func cloneInto(path, cloneURL string) (Project, error) {
 	return projectDescriptor(filepath.Base(path)), nil
 }
 
+// projectSecret — путь содержит секрет (.env*, .credentials*, .ssh):
+// такие пути исключаются из git и из списков проектов.
 func projectSecret(path string) bool {
 	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
 		if part == ".env" || strings.HasPrefix(part, ".env.") || strings.HasPrefix(part, ".credentials") || part == ".ssh" {

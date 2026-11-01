@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+// cmdSync — agctl sync: диспетчер подкоманд Mutagen (create|list|pause|
+// resume|flush|terminate); без аргументов печатает usage.
 func cmdSync(args []string) {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "usage: agctl sync <create|list|pause|resume|flush|terminate> ...")
@@ -25,6 +27,7 @@ func cmdSync(args []string) {
 	}
 }
 
+// cmdSyncCreate — sync create: разбирает флаги пары и запускает Mutagen.
 func cmdSyncCreate(args []string) {
 	fs := flag.NewFlagSet("sync create", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -79,6 +82,9 @@ func cmdSyncCreate(args []string) {
 	runMutagen(argv)
 }
 
+// syncCreateArgs строит argv двухсторонней синхронизации
+// локальный-каталог ↔ /workspace с игнорированием секретов (.env*,
+// credentials, .ssh) и node_modules.
 func syncCreateArgs(name, localPath, user, host string, port int) []string {
 	remote := fmt.Sprintf("%s@%s:%d:/workspace", user, host, port)
 	return []string{
@@ -89,6 +95,8 @@ func syncCreateArgs(name, localPath, user, host string, port int) []string {
 	}
 }
 
+// runMutagen находит mutagen в PATH и прозрачно выполняет команду
+// (stdin/stdout/stderr наследуются); бинарника нет — exit 127.
 func runMutagen(args []string) {
 	binary, err := exec.LookPath("mutagen")
 	if err != nil {

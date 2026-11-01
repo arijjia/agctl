@@ -141,6 +141,8 @@ type storedCredential struct {
 	ConnectorToken string `json:"connector_token"`
 }
 
+// defaultCredentialFile — путь durable-credential коннектора:
+// ~/.agctl-local/connector-<host>-<port>.json.
 func defaultCredentialFile(serverURL string) string {
 	base, err := os.UserHomeDir()
 	if err != nil || base == "" {
@@ -154,6 +156,8 @@ func defaultCredentialFile(serverURL string) string {
 	return filepath.Join(base, ".agctl-local", "connector-"+safe+".json")
 }
 
+// readStoredCredential читает сохранённый connector-токен; отсутствующий
+// или битый файл — пустая строка.
 func readStoredCredential(path string) string {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -166,6 +170,8 @@ func readStoredCredential(path string) string {
 	return stored.ConnectorToken
 }
 
+// storeCredentialFile сохраняет connector-токен в JSON-файл с правами 0600
+// (каталог создаётся с 0700).
 func storeCredentialFile(path, serverURL, token string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err

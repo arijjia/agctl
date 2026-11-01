@@ -130,6 +130,8 @@ func (rt *Runtime) EnsureImage(ctx context.Context) error {
 	return nil
 }
 
+// findLinuxBinary ищет Linux-сборку agctl в binDir (агл-порядок arm64→amd64,
+// fallback — архитектура хоста); нет сборки → ошибка с подсказкой `make image`.
 func findLinuxBinary(binDir string) (string, error) {
 	// при запуске на mac собираем под архитектуру демона docker; на практике
 	// make image кладёт dist/agctl-linux-<arm64|amd64> — берём обе по очереди.
@@ -145,6 +147,8 @@ func findLinuxBinary(binDir string) (string, error) {
 	return "", errors.New("нет linux-сборки agctl: выполните `make image` (она собирает dist/agctl-linux-*)")
 }
 
+// extractFS распаковывает поддерево embed-FS (префикс prefix) в каталог dst:
+// каталоги 0755, файлы 0644.
 func extractFS(fsys fs.FS, prefix, dst string) error {
 	return fs.WalkDir(fsys, prefix, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -163,6 +167,7 @@ func extractFS(fsys fs.FS, prefix, dst string) error {
 	})
 }
 
+// copyFile копирует файл src → dst (права — как у исходника).
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -217,6 +222,7 @@ func tarDir(dir string, tw *tar.Writer) error {
 	})
 }
 
+// tail возвращает последние n байт строки (ограниченные превью логов).
 func tail(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -441,6 +447,8 @@ func (rt *Runtime) HealthStatus(ctx context.Context, containerID string) (string
 	return string(insp.Container.State.Health.Status), nil
 }
 
+// Logs возвращает хвост логов контейнера, убирая multiplexed-заголовки
+// демона Docker, если они есть.
 func (rt *Runtime) Logs(ctx context.Context, containerID string, tailN string) (string, error) {
 	res, err := rt.cli.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
 		ShowStdout: true, ShowStderr: true, Tail: tailN,
@@ -470,6 +478,8 @@ func (rt *Runtime) HasActiveSSH(ctx context.Context, handle agctlrt.ChatHandle) 
 	return hasActiveSSHProcess(top.Processes), nil
 }
 
+// hasActiveSSHProcess — true, если среди процессов контейнера есть живой
+// sshd-сеанс (не [listener]): полная команда в последней колонке ps.
 func hasActiveSSHProcess(processes [][]string) bool {
 	for _, row := range processes {
 		if len(row) == 0 {
@@ -505,6 +515,8 @@ func stripDockerStream(b []byte) string {
 	return string(b)
 }
 
+// isNotFound распознаёт ошибки отсутствия контейнера/ресурса Docker по
+// тексту (Docker API не даёт типизированной ошибки).
 func isNotFound(err error) bool {
 	if err == nil {
 		return false

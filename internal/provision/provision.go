@@ -167,6 +167,8 @@ func Paths(home, ownerLogin, wsID, name string) Layout {
 	}
 }
 
+// sanitize приводит имя к допустимому для каталогов/git: нижний регистр,
+// [a-z0-9-_], пробелы и точки → дефис.
 func sanitize(s string) string {
 	s = strings.TrimSpace(strings.ToLower(s))
 	var b strings.Builder
@@ -276,6 +278,7 @@ func ProvisionWithComponents(l Layout, p Provider, kitID string, components []st
 	return nil
 }
 
+// signature — автор коммитов go-git autosave.
 func signature() *object.Signature {
 	return &object.Signature{Name: "agctl", Email: "agctl@localhost", When: time.Now()}
 }

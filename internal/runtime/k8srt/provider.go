@@ -171,6 +171,8 @@ func (p *Provider) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	return agctlrt.ChatHandle{RuntimeID: spec.RuntimeID, InstanceID: instanceID, Endpoint: endpoint}, nil
 }
 
+// ensurePVC создаёт PersistentVolumeClaim тома пользователя, если его нет
+// (ReadWriteOnce; размер и storage-класс — из конфигурации провайдера).
 func (p *Provider) ensurePVC(ctx context.Context, name string, labels map[string]string) error {
 	api := p.client.CoreV1().PersistentVolumeClaims(p.cfg.Namespace)
 	if _, err := api.Get(ctx, name, metav1.GetOptions{}); err == nil {
@@ -197,6 +199,8 @@ func (p *Provider) ensurePVC(ctx context.Context, name string, labels map[string
 	return nil
 }
 
+// ensureLLMSecret кладёт API-ключ LLM в k8s Secret и возвращает имя секрета;
+// пустой ключ — секрет не создаётся (пустая строка).
 func (p *Provider) ensureLLMSecret(ctx context.Context, name string, labels map[string]string, apiKey string) (string, error) {
 	if apiKey == "" {
 		return "", nil
@@ -227,6 +231,7 @@ func (p *Provider) ensureLLMSecret(ctx context.Context, name string, labels map[
 	return name, nil
 }
 
+// ensureService создаёт ClusterIP-сервис чат-пода, если сервиса нет.
 func (p *Provider) ensureService(ctx context.Context, name string, labels map[string]string) error {
 	api := p.client.CoreV1().Services(p.cfg.Namespace)
 	if _, err := api.Get(ctx, name, metav1.GetOptions{}); err == nil {
@@ -279,6 +284,8 @@ func (p *Provider) ensureNetworkPolicy(ctx context.Context, name string, labels 
 	return nil
 }
 
+// ensurePod возвращает живой чат-под: terminal-поды удаляются с предложением
+// retry; новый под создаётся с PVC, env провайдера и health.
 func (p *Provider) ensurePod(ctx context.Context, name, pvcName, secretName string, labels map[string]string, spec agctlrt.ChatSpec) (*corev1.Pod, error) {
 	api := p.client.CoreV1().Pods(p.cfg.Namespace)
 	if existing, err := api.Get(ctx, name, metav1.GetOptions{}); err == nil {
@@ -384,6 +391,7 @@ func (p *Provider) ensurePod(ctx context.Context, name, pvcName, secretName stri
 	return created, nil
 }
 
+// resources — requests/limits CPU и памяти пода из конфигурации провайдера.
 func (p *Provider) resources() corev1.ResourceRequirements {
 	return corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
@@ -437,6 +445,8 @@ func (p *Provider) HasActiveSSH(ctx context.Context, handle agctlrt.ChatHandle) 
 	return false, nil
 }
 
+// resourceName — имя чат-пода детерминировано из runtimeID (sha256, 8 hex):
+// новая генерация рантайма — новое имя.
 func resourceName(runtimeID string) string {
 	sum := sha256.Sum256([]byte(runtimeID))
 	return "agctl-chat-" + hex.EncodeToString(sum[:8])
@@ -450,6 +460,8 @@ func storageResourceName(storageID string) string {
 	return "agctl-storage-" + hex.EncodeToString(sum[:8])
 }
 
+// labelValue ужимает значение до валидной k8s-метки (≤63 символа;
+// невалидное → короткий хеш).
 func labelValue(value string) string {
 	if len(value) <= 63 && validation.IsValidLabelValue(value) == nil {
 		return value

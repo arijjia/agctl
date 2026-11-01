@@ -28,6 +28,8 @@ var demoAccounts = []demoAccount{
 	{login: "demo-admin", password: "DemoAdmin-2026!", role: "admin"},
 }
 
+// seedDemoAccounts создаёт демо-учётки (существующие пропускаются без
+// ротации пароля) после первой admin-учётки; возвращает число созданных.
 func seedDemoAccounts(home string) (int, error) {
 	absHome, err := requireHome(home)
 	if err != nil {
@@ -66,6 +68,8 @@ func seedDemoAccounts(home string) (int, error) {
 	return created, nil
 }
 
+// cmdSeedDemoUsers — подкоманда seed-demo-users: открывает дом и сеет
+// демо-учётки в SQLite.
 func cmdSeedDemoUsers(args []string) {
 	fsSet := flag.NewFlagSet("seed-demo-users", flag.ExitOnError)
 	home := fsSet.String("home", defaultHome(), "каталог данных agctl")

@@ -100,6 +100,7 @@ func (d *DB) DecideRoleRequest(id int64, status, decidedBy string) (int64, error
 	return userID, wrap("role request user", err)
 }
 
+// UpdateUserRole меняет роль учётки (approve заявки developer / откат роли).
 func (d *DB) UpdateUserRole(userID int64, role string) error {
 	_, err := d.Exec(`UPDATE users SET role = ? WHERE id = ?`, role, userID)
 	return wrap("update user role", err)

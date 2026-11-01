@@ -74,6 +74,8 @@ func openingTagEnd(s, name string) int {
 	return -1
 }
 
+// htmlTagEnd — позиция закрывающей «>» тега, открытого с позиции start
+// (кавычки атрибутов уважаются); -1 — тег не закрыт.
 func htmlTagEnd(s string, start int) int {
 	var quote byte
 	for i := start; i < len(s); i++ {
@@ -93,6 +95,8 @@ func htmlTagEnd(s string, start int) int {
 	return -1
 }
 
+// rawTextClose ищет закрывающий </name> для raw-text элемента от позиции
+// from; -1 — не найден (документ обрывается — вставка не выполняется).
 func rawTextClose(lower string, from int, name string) int {
 	needle := "</" + name
 	for from < len(lower) {
@@ -110,6 +114,7 @@ func rawTextClose(lower string, from int, name string) int {
 	return -1
 }
 
+// isHTMLNameByte — символ имени HTML-тега: буквы, цифры, «:», «-».
 func isHTMLNameByte(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == ':' || c == '-'
 }
@@ -126,6 +131,8 @@ func asciiLower(s string) string {
 	return string(b)
 }
 
+// isHTMLRawText — тег с raw-text содержимым, внутри которого literal
+// «</name>» не завершает элемент (script/style/title/textarea/…).
 func isHTMLRawText(tag string) bool {
 	switch tag {
 	case "script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes":
@@ -135,6 +142,8 @@ func isHTMLRawText(tag string) bool {
 	}
 }
 
+// doctypeEnd — конец doctype-объявления (вставка после него не ломает
+// режим совместимости документа).
 func doctypeEnd(s string) int {
 	lower := asciiLower(s)
 	i := strings.Index(lower, "<!doctype")

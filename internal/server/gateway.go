@@ -199,6 +199,7 @@ func sameOriginAuthority(origin, authority string) bool {
 	return strings.EqualFold(u.Hostname(), host.Hostname()) && originPort == hostPort
 }
 
+// defaultPort — порт по схеме upstream: 443 для https, иначе 80.
 func defaultPort(scheme string) string {
 	if scheme == "https" {
 		return "443"
@@ -213,6 +214,8 @@ type mintTransport struct {
 	token func() string
 }
 
+// RoundTrip повторяет запрос с ?token=<boot> при upstream-401 (нативный
+// cookie-mint dsh); токен добавляется только на участке backend→upstream.
 func (t *mintTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.base.RoundTrip(req)
 	if err != nil || resp.StatusCode != http.StatusUnauthorized {

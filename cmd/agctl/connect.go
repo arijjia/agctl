@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+// cmdConnect — agctl connect: собирает и запускает ssh к dev-контейнеру
+// (валидация host/port; --print — только напечатать команду).
 func cmdConnect(args []string) {
 	fs := flag.NewFlagSet("connect", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -57,6 +59,8 @@ func cmdConnect(args []string) {
 	}
 }
 
+// shellQuote безопасно квотирует аргумент для shell: «безопасные» символы —
+// как есть, остальное — в одинарных кавычках.
 func shellQuote(s string) string {
 	if s != "" && strings.IndexFunc(s, func(r rune) bool {
 		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_./:@+-", r))

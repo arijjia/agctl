@@ -94,6 +94,8 @@ func (s *Server) resolveLocalConnectorAuth(r *http.Request) (int64, string, erro
 	return userID, connectorToken, nil
 }
 
+// handleLocalBackendStatus — GET /api/local-backend/status: есть ли живой
+// коннектор у пользователя; флаг выключен → 404.
 func (s *Server) handleLocalBackendStatus(w http.ResponseWriter, _ *http.Request, id identity) {
 	if !s.localBridgeEnabled() {
 		writeErr(w, http.StatusNotFound, "локальный connector не включён")

@@ -12,6 +12,8 @@ import (
 	"github.com/arijjia/agctl/internal/provision"
 )
 
+// handleProjectsList — GET /api/projects: реальные каталоги-проекты
+// пользователя (без скрытых и secret-путей).
 func (s *Server) handleProjectsList(w http.ResponseWriter, r *http.Request, id identity) {
 	projects, err := provision.ListProjects(s.cfg.Home, id.ID)
 	if err != nil {
@@ -21,6 +23,9 @@ func (s *Server) handleProjectsList(w http.ResponseWriter, r *http.Request, id i
 	writeJSON(w, http.StatusOK, map[string]any{"projects": projects})
 }
 
+// handleProjectCreate — POST /api/projects: создать проект (пустой каталог
+// или клон публичного GitHub — только developer); тело ≤4 KiB и строго один
+// JSON-объект.
 func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request, id identity) {
 	var req struct {
 		Name     string `json:"name"`

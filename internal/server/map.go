@@ -16,6 +16,7 @@ import (
 
 var mapNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*\.html$`)
 
+// mapEntries — имена HTML-диаграмм во встроенной карте (под регулярку имени).
 func mapEntries() []string {
 	entries, err := fs.ReadDir(system.Map(), ".")
 	if err != nil {

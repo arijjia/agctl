@@ -147,6 +147,7 @@ func Resolve(name, dir string, search ...string) (*Data, error) {
 		name, strings.Join(EmbeddedNames(), ", "), strings.Join(nonEmpty(search), ", "))
 }
 
+// nonEmpty фильтрует пустые и пробельные строки из списка.
 func nonEmpty(in []string) []string {
 	out := make([]string, 0, len(in))
 	for _, s := range in {
@@ -157,6 +158,8 @@ func nonEmpty(in []string) []string {
 	return out
 }
 
+// loadFS читает профиль из embed-FS: profile.yaml + опциональный логотип
+// (путь из brand.logo, относительно каталога профиля).
 func loadFS(fsys embed.FS, dir, source string) (*Data, error) {
 	raw, err := fsys.ReadFile(filepath.Join(dir, "profile.yaml"))
 	if err != nil {

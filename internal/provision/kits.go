@@ -176,6 +176,8 @@ func CopySelectedComponents(templateFS fs.FS, kitID string, selected []string, d
 	return nil
 }
 
+// copyComponentPath копирует компонент комплекта (файл или каталог) из
+// embed-FS в место назначения, валидируя путь источника.
 func copyComponentPath(fsys fs.FS, root, rel, dst string) error {
 	source := path.Clean(path.Join(root, rel))
 	if !fs.ValidPath(source) {

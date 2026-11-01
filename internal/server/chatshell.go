@@ -130,6 +130,8 @@ func jsq(s string) string {
 	return string(b)
 }
 
+// chatShellScript подставляет бренд/тэглайн/букву из вью профиля в шаблон
+// скрипта (значения экранируются jsq — валидные JS-литералы).
 func chatShellScript(v profile.View) string {
 	return strings.NewReplacer(
 		"__AGCTL_BRAND_NAME__", jsq(v.Name),
@@ -283,6 +285,9 @@ func (s *Server) injectDevShellResponse(resp *http.Response) {
 	injectShellResponse(resp, s.injectDevShell)
 }
 
+// injectShellResponse применяет inject к HTML-ответу прокси с ограничениями:
+// только text/html без Content-Encoding, буфер 1 MiB, восстановление
+// исходного потока при ошибке чтения, пересчёт Content-Length.
 func injectShellResponse(resp *http.Response, inject func([]byte) []byte) {
 	if resp == nil || resp.Body == nil || resp.StatusCode != http.StatusOK ||
 		!strings.Contains(resp.Header.Get("Content-Type"), "text/html") ||
@@ -313,4 +318,6 @@ type restoredBody struct {
 	closer io.Closer
 }
 
+// Close реализует io.Closer для восстановленного тела ответа (пробрасывает
+// closer исходного upstream-body).
 func (b *restoredBody) Close() error { return b.closer.Close() }
