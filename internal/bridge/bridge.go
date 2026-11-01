@@ -67,12 +67,14 @@ type peer struct {
 	dshToken string // local DSH boot token for the 401 mint retry
 }
 
+// setToken обновляет boot-токен локального dsh под мьютексом.
 func (p *peer) setToken(token string) {
 	p.tokMu.Lock()
 	p.dshToken = token
 	p.tokMu.Unlock()
 }
 
+// token возвращает текущий boot-токен локального dsh.
 func (p *peer) token() string {
 	p.tokMu.Lock()
 	defer p.tokMu.Unlock()
@@ -90,6 +92,8 @@ type Manager struct {
 	now     func() time.Time
 }
 
+// NewManager создаёт пустой менеджер: без грантов и активных коннекторов;
+// часы подменяемы для тестов.
 func NewManager() *Manager {
 	return &Manager{
 		grants:  make(map[[32]byte]grant),
@@ -124,6 +128,8 @@ func (m *Manager) IssueGrant(userID int64, ttl time.Duration) (string, error) {
 	return token, nil
 }
 
+// ConsumeGrant поглощает одноразовый грант и возвращает userID: повторное
+// использование того же токена и просроченные гранты дают ErrInvalidGrant.
 func (m *Manager) ConsumeGrant(token string) (int64, error) {
 	secret, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil || len(secret) != 32 {
@@ -379,6 +385,9 @@ type dshMintTransport struct {
 	token func() string
 }
 
+// RoundTrip выполняет запрос через базовый транспорт; при 401 от локального
+// dsh один раз повторяет запрос с boot-токеном в query (сервер↔dsh),
+// коротко подождав его появления на control-потоке.
 func (t *dshMintTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.base.RoundTrip(req)
 	if err != nil || resp.StatusCode != http.StatusUnauthorized {
@@ -403,6 +412,8 @@ func (t *dshMintTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	return minted, nil
 }
 
+// stripTokenParam удаляет ?token= из query браузера: посторонний токен не
+// должен прокидываться к локальному dsh.
 func stripTokenParam(rawQuery string) string {
 	if !strings.Contains(rawQuery, "token=") && !strings.HasSuffix(rawQuery, "&token") && rawQuery != "token" {
 		return rawQuery
@@ -454,6 +465,8 @@ func (m *Manager) DSHToken(userID int64) string {
 	return p.token()
 }
 
+// stripPlatformCookies убирает cookie платформы (agctl_*): к локальному dsh
+// идут только cookie самого dsh.
 func stripPlatformCookies(req *http.Request) {
 	cookies := req.Cookies()
 	if len(cookies) == 0 {
@@ -470,6 +483,8 @@ func stripPlatformCookies(req *http.Request) {
 
 // Revoke closes any active connector and forgets all unconsumed grants for the
 // user. This is in-memory in the prototype; durable revocation is a later step.
+// Revoke закрывает активный коннектор пользователя и забывает все его
+// непоглощённые гранты (в прототипе — только в памяти процесса).
 func (m *Manager) Revoke(userID int64) {
 	m.mu.Lock()
 	for hash, g := range m.grants {
@@ -486,6 +501,8 @@ func (m *Manager) Revoke(userID int64) {
 	}
 }
 
+// Close закрывает все сессии коннекторов и стирает гранты (выключение
+// сервера).
 func (m *Manager) Close() {
 	m.mu.Lock()
 	peers := make([]*peer, 0, len(m.peers))
@@ -500,6 +517,8 @@ func (m *Manager) Close() {
 	}
 }
 
+// openStream открывает новый yamux-поток к коннектору пользователя;
+// нет живого коннектора → ErrNoConnector.
 func (m *Manager) openStream(userID int64) (net.Conn, error) {
 	m.mu.RLock()
 	p := m.peers[userID]
@@ -514,6 +533,8 @@ func (m *Manager) openStream(userID int64) (net.Conn, error) {
 	return stream, nil
 }
 
+// register сохраняет peer пользователя и возвращает предыдущего (его сессия
+// закрывается вызывающим); будит ожидающих WaitConnected.
 func (m *Manager) register(userID int64, p *peer) *peer {
 	m.mu.Lock()
 	old := m.peers[userID]
@@ -523,6 +544,8 @@ func (m *Manager) register(userID int64, p *peer) *peer {
 	return old
 }
 
+// unregister удаляет peer, если это всё ещё та же сессия (защита от гонки с
+// новым подключением), и будит ожидающих.
 func (m *Manager) unregister(userID int64, p *peer) {
 	m.mu.Lock()
 	if m.peers[userID] == p {
@@ -532,6 +555,8 @@ func (m *Manager) unregister(userID int64, p *peer) {
 	m.mu.Unlock()
 }
 
+// signalChangedLocked закрывает канал ожидания пользователя; вызывается под
+// мьютексом.
 func (m *Manager) signalChangedLocked(userID int64) {
 	if ch := m.changed[userID]; ch != nil {
 		close(ch)
@@ -539,6 +564,8 @@ func (m *Manager) signalChangedLocked(userID int64) {
 	}
 }
 
+// relayStream подключает yamux-поток к локальному loopback-адресу dsh и
+// копирует байты в обе стороны до первого обрыва.
 func relayStream(ctx context.Context, stream net.Conn, localAddr string) {
 	defer stream.Close()
 	local, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", localAddr)
@@ -559,6 +586,8 @@ func relayStream(ctx context.Context, stream net.Conn, localAddr string) {
 	}
 }
 
+// muxConfig — параметры yamux: keepalive 20s, окно потока 1 MiB, логи
+// подавлены.
 func muxConfig() *yamux.Config {
 	cfg := yamux.DefaultConfig()
 	cfg.LogOutput = io.Discard
@@ -571,6 +600,8 @@ func muxConfig() *yamux.Config {
 	return cfg
 }
 
+// BearerToken извлекает токен из заголовка Authorization: Bearer …
+// (пусто — если формат не совпадает).
 func BearerToken(header string) string {
 	const prefix = "Bearer "
 	if !strings.HasPrefix(header, prefix) {
@@ -605,6 +636,8 @@ func pumpControl(p *peer, decoder *json.Decoder) {
 	}
 }
 
+// writeHello отправляет hello-кадр (локальный authority) на control-поток
+// с дедлайном записи.
 func writeHello(control net.Conn, localAddr string) error {
 	if err := control.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
 		return fmt.Errorf("bridge: control deadline: %w", err)
@@ -661,6 +694,8 @@ func forwardTokens(ctx context.Context, control net.Conn, tokens <-chan string) 
 	}
 }
 
+// validateConnectorURL пропускает только wss:// везде и ws:// на loopback
+// (локальная разработка); прод-развёртывания обязаны использовать WSS.
 func validateConnectorURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || u.User != nil {
@@ -675,6 +710,8 @@ func validateConnectorURL(raw string) error {
 	return ErrBadEndpoint
 }
 
+// isLoopbackAuthority проверяет, что authority вида host:port указывает на
+// loopback-хост с корректным номером порта.
 func isLoopbackAuthority(authority string) bool {
 	host, port, err := net.SplitHostPort(authority)
 	if err != nil {
@@ -684,6 +721,7 @@ func isLoopbackAuthority(authority string) bool {
 	return err == nil && portNumber > 0 && portNumber <= 65535 && isLoopbackHost(host)
 }
 
+// isLoopbackHost — true для localhost и любого loopback-IP.
 func isLoopbackHost(host string) bool {
 	if strings.EqualFold(host, "localhost") {
 		return true
