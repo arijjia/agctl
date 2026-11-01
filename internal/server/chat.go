@@ -61,6 +61,8 @@ func (s *Server) chatRuntimeID(userID int64) string {
 	return fmt.Sprintf("%s-%x-u%d", chatNamePrefix, sum[:4], userID)
 }
 
+// chatStorageID — стабильный StorageID тома пользователя: u<ID>; переживает
+// пересоздание контейнера.
 func chatStorageID(userID int64) string { return "u" + strconv.FormatInt(userID, 10) }
 
 const (
@@ -88,10 +90,13 @@ type chatFoldersState struct {
 	PendingFolder  *chatFolderPending           `json:"pendingFolder,omitempty"`
 }
 
+// emptyChatFoldersState — пустое состояние папок с непустыми коллекциями
+// (JSON без null после маршалинга).
 func emptyChatFoldersState() chatFoldersState {
 	return chatFoldersState{Folders: []string{}, Assign: map[string]string{}, Settings: map[string]chatFolderSetting{}, HiddenProjects: []string{}}
 }
 
+// chatFoldersSettingKey — ключ KV-настройки с состоянием папок пользователя.
 func chatFoldersSettingKey(userID int64) string {
 	return "chat-folders-u" + strconv.FormatInt(userID, 10)
 }
@@ -114,6 +119,8 @@ func (s *Server) handleChatFoldersGet(w http.ResponseWriter, r *http.Request, id
 	writeJSON(w, http.StatusOK, map[string]any{"folders": state})
 }
 
+// handleChatFoldersPut — PUT /api/chat/folders: сохранить состояние виртуальных
+// папок (лимит размера, нормализация и валидация, запись в settings, audit).
 func (s *Server) handleChatFoldersPut(w http.ResponseWriter, r *http.Request, id identity) {
 	r.Body = http.MaxBytesReader(w, r.Body, chatFoldersStateMaxBytes)
 	var state chatFoldersState
@@ -142,6 +149,8 @@ func (s *Server) handleChatFoldersPut(w http.ResponseWriter, r *http.Request, id
 	writeJSON(w, http.StatusOK, map[string]any{"folders": state})
 }
 
+// normalizeChatFoldersState заменяет nil-коллекции пустыми (детерминированный
+// JSON).
 func normalizeChatFoldersState(state *chatFoldersState) {
 	if state.Folders == nil {
 		state.Folders = []string{}
@@ -157,6 +166,8 @@ func normalizeChatFoldersState(state *chatFoldersState) {
 	}
 }
 
+// normalizeAndValidateChatFoldersState нормализует состояние и проверяет
+// лимиты: число папок, назначений, длину инструкций и имена папок.
 func normalizeAndValidateChatFoldersState(state *chatFoldersState) error {
 	normalizeChatFoldersState(state)
 	if len(state.Folders) > maxChatFoldersPerUser || len(state.Assign) > maxChatFolderAssignments || len(state.HiddenProjects) > maxChatFoldersPerUser {
@@ -335,6 +346,9 @@ func (s *Server) handleProjectInstructions(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]any{"project": name, "updated": updated, "instructionsFile": "AGENTS.local.md"})
 }
 
+// writeManagedFolderInstructions атомарно обновляет управляемый блок agctl в
+// AGENTS.local.md проекта: symlink запрещён, пустой файл удаляется; возвращает
+// признак «содержимое изменилось».
 func writeManagedFolderInstructions(dir, folder, instructions string) (bool, error) {
 	path := filepath.Join(dir, "AGENTS.local.md")
 	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
@@ -363,6 +377,8 @@ func writeManagedFolderInstructions(dir, folder, instructions string) (bool, err
 	return true, nil
 }
 
+// safeChatSessionDir возвращает канонический каталог сессии внутри дома
+// пользователя (валидация ID, EvalSymlinks, защита от выхода за дом).
 func safeChatSessionDir(home string, userID int64, sessionID string, create bool) (string, error) {
 	if !validChatSessionID(sessionID) {
 		return "", errInvalidChatSessionPath
@@ -421,6 +437,8 @@ func safeChatSessionDir(home string, userID int64, sessionID string, create bool
 	return sessionDir, nil
 }
 
+// validChatSessionID — ID сессии: префикс session-, ≤120 символов, только
+// буквы/цифры/дефис, без вложенных путей.
 func validChatSessionID(id string) bool {
 	if !strings.HasPrefix(id, "session-") || len(id) > 120 {
 		return false
@@ -433,6 +451,9 @@ func validChatSessionID(id string) bool {
 	return filepath.Base(id) == id
 }
 
+// mergeFolderInstructions заменяет управляемый блок agctl в AGENTS.local.md:
+// непарный/перекрёстный блок — ошибка сохранения, пустые инструкции = удалить
+// блок, пустой файл после удаления — вернуть пустое содержимое.
 func mergeFolderInstructions(existing []byte, folder, instructions string) ([]byte, error) {
 	if instructions != "" && folder == "" {
 		return nil, fmt.Errorf("сначала выберите папку")
@@ -457,6 +478,8 @@ func mergeFolderInstructions(existing []byte, folder, instructions string) ([]by
 	return []byte(strings.TrimRight(text, "\r\n") + "\n\n" + block + "\n"), nil
 }
 
+// atomicWriteFile пишет файл через временный файл в том же каталоге + rename:
+// читатели не видят частичное содержимое.
 func atomicWriteFile(dir, target string, data []byte, mode os.FileMode) error {
 	tmp, err := os.CreateTemp(dir, ".agctl-folder-*")
 	if err != nil {
@@ -825,6 +848,8 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 	proxy.ServeHTTP(w, r)
 }
 
+// chatTokenCacheKey — ключ кэша boot-токена: chat/<runtimeID>/<instanceID>;
+// новый инстанс после сна/пересоздания получает свежий токен.
 func chatTokenCacheKey(handle agctlrt.ChatHandle) string {
 	return "chat/" + handle.RuntimeID + "/" + handle.InstanceID
 }
