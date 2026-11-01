@@ -109,6 +109,32 @@ agctl completion fish > ~/.config/fish/completions/agctl.fish
 генерацию той же командой. В чистом окружении порядок такой: Go, Docker,
 Node по быстрому старту выше → `make go_build` → две команды установки.
 
+### Конфигурация CLI (~/.config/agctl/config.yaml)
+
+Дефолты serve живут в конфиге в стиле остальных тулз окружения
+(`~/.config/gitctl`, `~/.config/tunnelctl`, `~/.config/dutyctl`).
+Приоритет источников: **флаги CLI > env (`AGCTL_*`) > config.yaml >
+встроенные дефолты**.
+
+```yaml
+# ~/.config/agctl/config.yaml
+profile: utmn              # профиль организации по умолчанию (см. выше)
+# profile_dir: ~/src/org-profiles/utmn   # каталог профиля с диска
+serve:
+  addr: 127.0.0.1:8929     # адрес UI/API
+  chat_ttl_min: 60         # idle TTL персонального контейнера
+  mem_gb: 2                # лимиты персонального контейнера
+  cpus: 2
+  # image: agctl-dsh:0.2.2
+  # cors_origins: https://chat.example
+```
+
+Путь к конфигу переопределяется `AGCTL_CONFIG` (удобно для стендов).
+Секреты (LLM-ключи) в конфиге не хранятся — только env/флаги. Проверить,
+что реально подхватилось: `agctl config` (путь + эффективные значения).
+Профиль из конфига подхватывают и `make up`/`make corp` через дефолт
+`PROFILE` в `bin/run.mk`.
+
 Дефолты провайдера приходят из профиля; точечные переопределения — env
 (`AGCTL_LLM_BASE_URL`, `AGCTL_LLM_MODELS`, `AGCTL_LLM_MODEL`) или
 `CORP_LLM_*` в make. Свой профиль организации — каталог с `profile.yaml` и
@@ -272,6 +298,7 @@ agctl serve     # UI + API + личные runtime пользователей
 agctl migrate   # накатить миграции SQLite
 agctl backlog <new|list|top|check|start|done|cancel|note|migrate>
 agctl completion fish  # скрипт автодополнения для fish (см. «Установка CLI»)
+agctl config           # эффективный ~/.config/agctl/config.yaml (см. «Конфигурация CLI»)
 agctl connect --port SSH_PORT [--host HOST] [--identity KEY] [--print]
 agctl local connect --server URL --grant TOKEN [--launch-dsh] [--dsh-token TOKEN]
 agctl init-chat-home --home DSH_HOME   # внутренний: init-container K8s-чата

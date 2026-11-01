@@ -86,6 +86,8 @@ func main() {
 		os.Exit(backlog.Main(os.Args[2:], os.Stdout, os.Stderr))
 	case "completion":
 		cmdCompletion(os.Args[2:])
+	case "config":
+		cmdConfig(os.Args[2:])
 	case "connect":
 		cmdConnect(os.Args[2:])
 	case "local":
@@ -119,6 +121,7 @@ func usage() {
   seed-demo-users [--home DIR]  (локальные тестовые роли; запускать после первого admin)
   backlog <new|list|top|check|start|done|cancel|note|migrate> [флаги]
   completion [fish]  (скрипт автодополнения для fish)
+  config             (показать эффективный ~/.config/agctl/config.yaml)
   connect --port SSH_PORT [--host HOST] [--user root] [--identity KEY] [--print]
   local connect --server URL --grant TOKEN [--local 127.0.0.1:3080] [--launch-dsh]
       [--dsh-bin dsh] [--dsh-port 3080] [--dsh-token TOKEN]
@@ -126,7 +129,9 @@ func usage() {
   sync list|pause|resume|flush|terminate [Mutagen args]
   version
 
-Переменные окружения: AGCTL_HOME (по умолчанию ~/.agctl), AGCTL_ADDR, AGCTL_PROFILE.
+Переменные окружения: AGCTL_HOME (по умолчанию ~/.agctl), AGCTL_ADDR,
+AGCTL_PROFILE, AGCTL_CONFIG (путь к config.yaml; по умолчанию
+~/.config/agctl/config.yaml — дефолты serve, стиль webmalex-тулз).
 `)
 }
 
@@ -160,9 +165,20 @@ func requireHome(dir string) (string, error) {
 func cmdServe(args []string) {
 	// Профиль разрешается до регистрации флагов: от него зависят дефолты
 	// (LLM-провайдер и брендинг сервера). Имя ищется во встроенных профилях,
+	// Дефолты: флаги > env > ~/.config/agctl/config.yaml > встроенные.
+	// Конфиг читаем до разбора флагов: его значения — дефолты serve.
+	cfg, cfgPath, cfgErr := loadUserConfig()
+	if cfgErr != nil {
+		log.Fatal(cfgErr)
+	}
+	if cfgPath != "" {
+		if _, statErr := os.Stat(cfgPath); statErr == nil {
+			log.Printf("config: %s", cfgPath)
+		}
+	}
 	// затем в ./profiles и $AGCTL_HOME/profiles (make profile-fetch).
-	profileName := prescanFlag(args, "profile", envOr("AGCTL_PROFILE", "agctl"))
-	profileDir := prescanFlag(args, "profile-dir", os.Getenv("AGCTL_PROFILE_DIR"))
+	profileName := prescanFlag(args, "profile", envOr("AGCTL_PROFILE", firstNonEmpty(cfg.Profile, "agctl")))
+	profileDir := prescanFlag(args, "profile-dir", firstNonEmpty(os.Getenv("AGCTL_PROFILE_DIR"), cfg.ProfileDir))
 	prof, err := profile.Resolve(profileName, profileDir, "profiles", filepath.Join(defaultHome(), "profiles"))
 	if err != nil {
 		log.Fatal(err)
@@ -171,16 +187,16 @@ func cmdServe(args []string) {
 
 	fsSet := flag.NewFlagSet("serve", flag.ExitOnError)
 	home := fsSet.String("home", defaultHome(), "каталог данных agctl")
-	addr := fsSet.String("addr", envOr("AGCTL_ADDR", "127.0.0.1:8929"), "адрес UI/API")
-	image := fsSet.String("image", "agctl-dsh:0.2.2", "тег образа agctl-dsh")
+	addr := fsSet.String("addr", envOr("AGCTL_ADDR", firstNonEmpty(cfg.Serve.Addr, "127.0.0.1:8929")), "адрес UI/API")
+	image := fsSet.String("image", firstNonEmpty(cfg.Serve.Image, "agctl-dsh:0.2.2"), "тег образа agctl-dsh")
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
 	experimentalLocalBridge := fsSet.Bool("experimental-local-bridge", false, "experimental local connector pairing API (requires trusted TLS ingress and --secure-cookies)")
-	chatTTLMin := fsSet.Int("chat-ttl-min", 60, "минуты простоя персонального контейнера до сна (том пользователя сохраняется)")
-	corsOrigins := fsSet.String("cors-origin", envOr("AGCTL_CORS_ORIGINS", ""), "точные origins через запятую, которым разрешён кросс-доменный /api (кабинет-плагин dsh web); пусто = CORS выключен")
+	chatTTLMin := fsSet.Int("chat-ttl-min", nonZeroOr(cfg.Serve.ChatTTLMin, 60), "минуты простоя персонального контейнера до сна (том пользователя сохраняется)")
+	corsOrigins := fsSet.String("cors-origin", envOr("AGCTL_CORS_ORIGINS", cfg.Serve.CORSOrigins), "точные origins через запятую, которым разрешён кросс-доменный /api (кабинет-плагин dsh web); пусто = CORS выключен")
 	tier0 := fsSet.Bool("tier0", true, "поднимать общий чат (Tier 0) и отдавать корень платформы в него")
-	memGB := fsSet.Float64("mem-gb", 2, "лимит памяти контейнера, ГБ")
-	cpus := fsSet.Float64("cpus", 2, "лимит CPU контейнера")
+	memGB := fsSet.Float64("mem-gb", nonZeroOr(cfg.Serve.MemGB, 2), "лимит памяти контейнера, ГБ")
+	cpus := fsSet.Float64("cpus", nonZeroOr(cfg.Serve.CPUs, 2), "лимит CPU контейнера")
 	profileFlag := fsSet.String("profile", profileName, "профиль платформы: встроенный agctl (нейтральный) или имя каталога из ./profiles и $AGCTL_HOME/profiles")
 	profileDirFlag := fsSet.String("profile-dir", profileDir, "каталог профиля с диска (profile.yaml + assets) — кастомизация без пересборки бинаря")
 	// Платформенный LLM по умолчанию для режима Chat: дефолты приходят из
