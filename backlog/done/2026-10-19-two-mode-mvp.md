@@ -1,16 +1,18 @@
 ---
-schema: 1.0.0
+schema: 1.1.0
 id: two-mode-mvp
 title: "Два режима agctl v2: личный DSH-чат и разработка через Кабинет"
-status: in-progress
+status: cancelled
 priority: P1
 size: L
 area: platform
 repo: arijjia/agctl
 created: 2026-10-19
-updated: 2026-10-22
+updated: 2026-11-01
 tags: ["two-mode", "night-shift"]
 depends: []
+sessions:
+  - session-46bfb32f-a37f-4058-aba7-caf4764cba76:work
 ---
 ## Описание
 
@@ -37,3 +39,4 @@ depends: []
 - 2026-10-20: Chat UX regression закрыта: session.create теперь привязывает Session к скрытому Workspace per-session cwd, chat-brand скрывает все directory rows, файлы/terminal/access controls и оставляет flat «Сессии». Постоянный Playwright e2e проверяет mouse New Session + отправку/ответ fake LLM; 2026-10-20 PASS.
 - 2026-10-20: 2026-10-20: local connector carrier prototype landed behind no production route/default. Docker remains only runnable backend; bridge is transport proof-of-concept, not a user-facing mode. Full pairing UI, durable connector identity/revoke/reconnect and pinned DSH end-to-end remain open.
 - 2026-10-22: 2026-10-22 bugfix: владелец увидела dsh-модал API key на :8929 — новый бинарь был запущен без --llm-*/env, платформенный дефолт не персистентен. Исправлено: DefaultLLM сохраняется зашифрованным в SQLite (settings/migration 009) при старте с флагами и восстанавливается при рестарте без env; при полном отсутствии — предупреждение в логе вместо молчаливого модала. Test: restart-persistence через fake runtime.
+- 2026-11-01: cancelled — superseded by v3-unified-runtime: решение владельца 2026-10-25 объединяет режимы в единый рантайм с ролями. Волны two-mode выполнены, живые хвосты ведутся отдельными карточками (prewarm, version-drift, k8s-адаптеры).

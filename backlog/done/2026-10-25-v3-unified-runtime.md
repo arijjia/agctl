@@ -1,16 +1,18 @@
 ---
-schema: 1.0.0
+schema: 1.1.0
 id: v3-unified-runtime
 title: "v3: единый рантайм на пользователя — роль developer, SSH, TTL 1 час"
-status: open
+status: done
 priority: P1
 size: L
 area: platform
 repo: arijjia/agctl
 created: 2026-10-25
-updated: 2026-10-25
+updated: 2026-11-01
 tags: ["v3", "architecture"]
 depends: []
+sessions:
+  - session-46bfb32f-a37f-4058-aba7-caf4764cba76:work
 ---
 ## Описание (понимание новой архитектуры)
 
@@ -92,3 +94,4 @@ RAM (кластер), TTL 60 мин = 12–19 ГБ (один сервер). По
   capacity, secure-gateway); физическая карта не менялась — волны B–D не
   добавляют процессов/портов (go-git — внутри agctl, проекты — файлы тома).
 - 2026-10-25: Follow-up после волн A–D: реализован P1 chat-activity-aware-ttl — активная SSH-сессия продлевает lease через Docker ContainerTop, detached-job detection после разрыва SSH пока не входит в scope.
+- 2026-11-01: done — Волны A-D выполнены и проверены: роль developer по заявке с апрувом, TTL 60 мин, SSH в едином контейнере, проекты с go-git autosave, демонтаж legacy-мест, доки и карта под v3. Хвосты разнесены в отдельные карточки (chat-prewarm-pool, chat-runtime-version-drift).
