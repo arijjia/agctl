@@ -8,8 +8,8 @@
 #
 # Правила сверки (единственные разрешённые расхождения):
 #   - *.py, tests/, demo-project/, pyproject.toml — байт-в-байт;
-#   - .env.example — кроме первых 2 строк шапки (mvp/.env vs scripts/.env);
-#   - SKILL.md — кроме замены mvp/ → scripts/ (раскладка рабочего места).
+#   - .env.example — кроме первых 2 строк шапки (mvp/.env vs bin/.env);
+#   - SKILL.md — кроме замены mvp/ → bin/ (раскладка рабочего места).
 # Плюс гигиена embed: под templates/1c-vibe нет __pycache__/.venv/.env/*.pyc.
 set -euo pipefail
 
@@ -58,12 +58,12 @@ else
   fail ".env.example (тело) разошёлся"
 fi
 
-# 4. SKILL.md — равна с точностью до замены mvp/ → scripts/
-if diff -q <(sed 's|mvp/|scripts/|g' "$VIBE/mvp/skills/1c-vibe-demo/SKILL.md") \
+# 4. SKILL.md — равна с точностью до замены mvp/ → bin/
+if diff -q <(sed 's|mvp/|bin/|g' "$VIBE/mvp/skills/1c-vibe-demo/SKILL.md") \
           "$TPL/skills/1c-vibe-demo/SKILL.md" >/dev/null; then
   pass "SKILL.md (mvp→scripts)"
 else
-  fail "SKILL.md разошёлся шире замены mvp/→scripts/"
+  fail "SKILL.md разошёлся шире замены mvp/→bin/"
 fi
 
 # 5. обязательные файлы шаблона на месте

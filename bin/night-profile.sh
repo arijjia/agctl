@@ -4,9 +4,9 @@
 # $DSH_HOME, порт 3080) не затрагивается: всё в отдельном DSH_HOME и на
 # своём порту.
 #
-#   scripts/night-profile.sh                 # поднять/перезапустить
-#   PORT=3556 scripts/night-profile.sh       # другой порт
-#   scripts/night-profile.sh stop            # остановить
+#   bin/night-profile.sh                 # поднять/перезапустить
+#   PORT=3556 bin/night-profile.sh       # другой порт
+#   bin/night-profile.sh stop            # остановить
 #
 # После старта печатает URL (в т.ч. с boot-токеном из лога — по нему
 # браузер логинится без ручного ввода) и делает smoke-проверку curl.

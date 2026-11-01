@@ -327,8 +327,8 @@ SSH-туннель и укажи его локальные host/port.
 | `node --test dsh-plugins/chat-brand/test/*.test.js` | smoke структуры дерева папок → DSH Workspace проекта |
 | `node --test dsh-plugins/cabinet/test/*.test.cjs` | mock-тесты роли developer, SSH, проекты и отсутствия legacy UI |
 | `node --test dsh-plugins/chat-session-files/test/*.test.js` | default-session cwd и сохранение cwd реального project Workspace |
-| `scripts/e2e-local-bridge.sh` | experimental-тест локального backend (сценарий отложен; не часть v3 user flow) |
-| `scripts/e2e-cabinet*.sh`, `scripts/e2e-ssh.sh` | старые e2e отдельных workspace/seat; требуют переписывания под v3, не текущий smoke |
+| `bin/e2e-local-bridge.sh` | experimental-тест локального backend (сценарий отложен; не часть v3 user flow) |
+| `bin/e2e-cabinet*.sh`, `bin/e2e-ssh.sh` | старые e2e отдельных workspace/seat; требуют переписывания под v3, не текущий smoke |
 
 `tests/e2e-ui` пока содержит сценарии до v3 (отдельное workspace + апрув).
 Перед запуском их нужно переписать на поток «роль developer → проект-папка →

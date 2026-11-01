@@ -3,7 +3,7 @@
 # agctl-hq/docs/agctl-mvp-e2e-test-guide.md. Всё в своём TEST_HOME,
 # свой тег образа, свой порт; секреты/токены не печатаются.
 #
-#   TEST_IMAGE=agctl-dsh:0.2.0-rc2-e2e-n1 scripts/e2e-smoke.sh
+#   TEST_IMAGE=agctl-dsh:0.2.0-rc2-e2e-n1 bin/e2e-smoke.sh
 #
 # Переменные:
 #   TEST_IMAGE  (обяз.) тег уже собранного образа
@@ -57,7 +57,7 @@ preflight() {
 start_fake_llm() {
   [ "${FAKE_LLM:-0}" = "1" ] || return 0
   FAKE_BIND="${FAKE_LLM_BIND:-127.0.0.1}"
-  python3 "$REPO_ROOT/scripts/fake-llm.py" --port "$FAKE_PORT" --bind "$FAKE_BIND" \
+  python3 "$REPO_ROOT/bin/fake-llm.py" --port "$FAKE_PORT" --bind "$FAKE_BIND" \
     >"/tmp/agctl-fake-llm-$RUN_ID.log" 2>&1 &
   FAKE_PID=$!
   for _ in 1 2 3 4 5 6 7 8 9 10; do

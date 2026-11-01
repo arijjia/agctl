@@ -3,7 +3,7 @@
 # Изолированный TEST_HOME, уникальный порт, стаб LLM. На выходе — таблица
 # markdown с числами и сырой JSON в /tmp.
 #
-#   TEST_IMAGE=agctl-dsh:0.2.0-rc2-e2e-n1 scripts/capacity-bench.sh [N]
+#   TEST_IMAGE=agctl-dsh:0.2.0-rc2-e2e-n1 bin/capacity-bench.sh [N]
 #
 # Замеряет на каждом воркспейсе:
 #   cold_start_s  — create → running (первый бут: provision + контейнер)
@@ -51,7 +51,7 @@ if nc -z 127.0.0.1 "$TEST_PORT" 2>/dev/null; then
 fi
 [ -x "$AGCTL_BIN" ] || { echo "нет бинаря $AGCTL_BIN" >&2; exit 2; }
 
-python3 scripts/fake-llm.py --port "$FAKE_PORT" >"/tmp/agctl-cap-llm-$RUN_ID.log" 2>&1 &
+python3 bin/fake-llm.py --port "$FAKE_PORT" >"/tmp/agctl-cap-llm-$RUN_ID.log" 2>&1 &
 FAKE_PID=$!
 sleep 1
 

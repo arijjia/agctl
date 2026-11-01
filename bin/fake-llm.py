@@ -6,7 +6,7 @@
 Нужен только чтобы проверить живой провод provision → контейнер → модель
 без реального токена. Секретов не содержит; наружу слушает loopback.
 
-Запуск: scripts/fake-llm.py [--port 18765] [--reply "..."]
+Запуск: bin/fake-llm.py [--port 18765] [--reply "..."]
 """
 import argparse
 import json

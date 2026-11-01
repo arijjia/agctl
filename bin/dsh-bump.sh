@@ -2,12 +2,12 @@
 # dsh-bump: сверка пина @deepseek-ai/dsh в internal/assets/image/Dockerfile
 # с dist-tags npm. Карточка backlog: dsh-pin-bump-automation.
 #
-#   scripts/dsh-bump.sh --check     # exit 1, если пин != latest
-#   scripts/dsh-bump.sh --update    # обновить pinned Dockerfile до latest rc/stable
-#   scripts/dsh-bump.sh             # просто показать текущий пин и latest
+#   bin/dsh-bump.sh --check     # exit 1, если пин != latest
+#   bin/dsh-bump.sh --update    # обновить pinned Dockerfile до latest rc/stable
+#   bin/dsh-bump.sh             # просто показать текущий пин и latest
 #
 # Политика: пинуем rc/stable; alpha/beta/next не ставим. После --update
-# собрать образ и прогнать e2e: make img_build && FAKE_LLM=1 scripts/e2e-smoke.sh.
+# собрать образ и прогнать e2e: make img_build && FAKE_LLM=1 bin/e2e-smoke.sh.
 set -eu
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DOCKERFILE="${DSH_BUMP_DOCKERFILE:-$REPO_ROOT/internal/assets/image/Dockerfile}"
@@ -50,7 +50,7 @@ if text.count(needle) != 1:
     raise SystemExit(f"dsh-bump: expected one {needle!r} in {path}")
 p.write_text(text.replace(needle, f"@deepseek-ai/dsh@{new}"))
 PY
-  echo "dsh-bump: pin обновлён до $LATEST; далее: make img_build && FAKE_LLM=1 scripts/e2e-smoke.sh"
+  echo "dsh-bump: pin обновлён до $LATEST; далее: make img_build && FAKE_LLM=1 bin/e2e-smoke.sh"
   ;;
 --check)
   if [ "$PINNED" = "$LATEST" ]; then
@@ -63,12 +63,12 @@ PY
     exit 0
     ;;
   esac
-  echo "dsh-bump: ДРИФТ — scripts/dsh-bump.sh --update, затем make img_build и e2e-смоук" >&2
+  echo "dsh-bump: ДРИФТ — bin/dsh-bump.sh --update, затем make img_build и e2e-смоук" >&2
   exit 1
   ;;
 *)
   if [ "$PINNED" != "$LATEST" ]; then
-    echo "dsh-bump: есть дрейф; выполните scripts/dsh-bump.sh --update для rc/stable"
+    echo "dsh-bump: есть дрейф; выполните bin/dsh-bump.sh --update для rc/stable"
   fi
   ;;
 esac

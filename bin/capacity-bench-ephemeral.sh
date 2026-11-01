@@ -4,7 +4,7 @@
 # Методика как в capacity-bench.sh: изолированный DSH_HOME, стаб LLM,
 # замеры real/RSS. Никакого agctl/Docker — измеряется сам движок.
 #
-#   scripts/capacity-bench-ephemeral.sh
+#   bin/capacity-bench-ephemeral.sh
 #
 # Серии:
 #   warmup    — первый бут профиля + импорт settings.yaml (не считается)
@@ -38,7 +38,7 @@ command -v dsh >/dev/null 2>&1 || { echo "нет dsh в PATH" >&2; exit 2; }
 echo "bench-ephemeral $RUN_ID: home=$BENCH_HOME fake=:$FAKE_PORT" >&2
 
 # 1) стаб LLM
-python3 "$REPO_ROOT/scripts/fake-llm.py" --port "$FAKE_PORT" >"/tmp/agctl-eph-llm-$RUN_ID.log" 2>&1 &
+python3 "$REPO_ROOT/bin/fake-llm.py" --port "$FAKE_PORT" >"/tmp/agctl-eph-llm-$RUN_ID.log" 2>&1 &
 FAKE_PID=$!
 
 # 2) настройки провайдера (формат — как agctl RefreshProvider пишет в dsh-home)

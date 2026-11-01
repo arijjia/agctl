@@ -2,7 +2,7 @@
 # e2e-ssh: real Docker SSH-channel test (container public-key auth on 127.0.0.1).
 # Requires a built agctl-dsh image with openssh-server (make img_build IMG=...).
 #
-#   IMG=agctl-dsh:0.2.0-ssh-night scripts/e2e-ssh.sh
+#   IMG=agctl-dsh:0.2.0-ssh-night bin/e2e-ssh.sh
 #
 # The test creates an isolated TEST_HOME + ephemeral SSH key, provisions a
 # workspace with sshPubKey, connects with the system ssh client, and cleans
@@ -64,7 +64,7 @@ docker image inspect "$IMG" >/dev/null 2>&1 || { echo "image $IMG не найд�
 
 go build -o "$BIN" ./cmd/agctl || exit 2
 ssh-keygen -q -t ed25519 -N '' -f "$TEST_HOME/id_ed25519"
-python3 scripts/fake-llm.py --port "$FAKE_PORT" >"$TEST_HOME/fake.log" 2>&1 &
+python3 bin/fake-llm.py --port "$FAKE_PORT" >"$TEST_HOME/fake.log" 2>&1 &
 FAKE_PID=$!
 "$BIN" serve --home "$TEST_HOME/data" --addr "$ADDR" --image "$IMG" >"$TEST_HOME/serve.log" 2>&1 &
 AGCTL_PID=$!

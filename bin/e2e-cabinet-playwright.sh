@@ -59,7 +59,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-python3 scripts/fake-llm.py --port "$FAKE_PORT" --bind 0.0.0.0 >"$TEST_HOME/fake.log" 2>&1 &
+python3 bin/fake-llm.py --port "$FAKE_PORT" --bind 0.0.0.0 >"$TEST_HOME/fake.log" 2>&1 &
 FAKE_PID=$!
 AGCTL_LLM_API_KEY=e2e-fake-key-not-a-secret "$BIN" serve --home "$TEST_HOME/data" --addr "$ADDR" --image "$IMG" \
   --require-approval --chat-ttl-min 15 --llm-base-url "$LLM_BASE_URL" \

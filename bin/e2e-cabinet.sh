@@ -2,7 +2,7 @@
 # e2e-cabinet: автоматическая проверка панели кабинета (без ручного клика).
 # Эпик night-dsh-plugins; карточки cabinet-plugin-in-image + cabinet-panel-e2e.
 #
-#   scripts/e2e-cabinet.sh [--skip-docker]
+#   bin/e2e-cabinet.sh [--skip-docker]
 #
 # Секция A (docker): собрать/взять образ, поднять agctl serve на тестовом
 #   home, создать воркспейс, дождаться running, проверить через шлюз
@@ -70,7 +70,7 @@ echo "== e2e-cabinet $RUN_ID (img=$IMG) =="
 
 # ── Секция A: воркспейс из образа, панель через шлюз ────────────────────────
 if [ "$SKIP_DOCKER" != "--skip-docker" ]; then
-  python3 scripts/fake-llm.py --port 18769 >"$TEST_HOME/fake.log" 2>&1 &
+  python3 bin/fake-llm.py --port 18769 >"$TEST_HOME/fake.log" 2>&1 &
   FAKE_PID=$!
   nohup "$BIN" serve --home "$TEST_HOME" --addr "$ADDR" --image "$IMG" \
     --cors-origin "http://127.0.0.1:3555" > "$TEST_HOME/serve.log" 2>&1 &
@@ -118,7 +118,7 @@ else
 fi
 
 # ── Секция B: изолированный dsh web с панелью (night-profile) ──────────────
-DSH_HOME_TEST="$NIGHT_HOME" PORT="$NIGHT_PORT" scripts/night-profile.sh >"$NIGHT_LOG" 2>&1 || fail "night-profile не поднялся"
+DSH_HOME_TEST="$NIGHT_HOME" PORT="$NIGHT_PORT" bin/night-profile.sh >"$NIGHT_LOG" 2>&1 || fail "night-profile не поднялся"
 if [ -f "$NIGHT_HOME/web-$NIGHT_PORT.log" ]; then
   T=$(grep -o 'token=[A-Za-z0-9_-]*' "$NIGHT_HOME/web-$NIGHT_PORT.log" | head -1 | cut -d= -f2)
   curl -s -c "$TEST_HOME/night-jar" "http://127.0.0.1:$NIGHT_PORT/?token=$T" -o /dev/null
