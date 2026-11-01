@@ -26,7 +26,6 @@ var coreScopes = []string{
 	"internal",
 	"dsh-plugins",
 	"web/src",
-	"scripts",
 	"bin",
 	"system",
 	"Makefile",
