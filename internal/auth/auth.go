@@ -79,6 +79,8 @@ func VerifyPassword(password, encoded string) (bool, error) {
 	return subtle.ConstantTimeCompare(got, want) == 1, nil
 }
 
+// newToken генерирует 256-битный случайный токен в URL-safe base64
+// (cookie-значение сессии).
 func newToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

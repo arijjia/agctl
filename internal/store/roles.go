@@ -16,6 +16,8 @@ type RoleRequest struct {
 	CreatedAt  string
 }
 
+// CreateRoleRequest сохраняет заявку пользователя на роль developer и
+// возвращает её ID.
 func (d *DB) CreateRoleRequest(userID int64, motivation string) (int64, error) {
 	res, err := d.Exec(`INSERT INTO role_requests(user_id, motivation) VALUES(?,?)`,
 		userID, motivation)
@@ -25,6 +27,7 @@ func (d *DB) CreateRoleRequest(userID int64, motivation string) (int64, error) {
 	return res.LastInsertId()
 }
 
+// RoleRequestByID выбирает заявку по идентификатору; нет записи → ErrNotFound.
 func (d *DB) RoleRequestByID(id int64) (RoleRequest, error) {
 	r := RoleRequest{}
 	err := d.QueryRow(`SELECT id, user_id, status, motivation, decided_by, decided_at, created_at
@@ -33,6 +36,7 @@ func (d *DB) RoleRequestByID(id int64) (RoleRequest, error) {
 	return r, wrap("role request by id", err)
 }
 
+// RoleRequestsForUser — все заявки пользователя, свежие сверху.
 func (d *DB) RoleRequestsForUser(userID int64) ([]RoleRequest, error) {
 	rows, err := d.Query(`SELECT id, user_id, status, motivation, decided_by, decided_at, created_at
 		FROM role_requests WHERE user_id = ? ORDER BY created_at DESC`, userID)
@@ -51,6 +55,7 @@ func (d *DB) RoleRequestsForUser(userID int64) ([]RoleRequest, error) {
 	return out, rows.Err()
 }
 
+// RoleRequestsAll — все заявки платформы с логинами (очередь админа).
 func (d *DB) RoleRequestsAll() ([]RoleRequest, error) {
 	rows, err := d.Query(`SELECT rr.id, rr.user_id, COALESCE(u.login, ''), rr.status, rr.motivation,
 		rr.decided_by, rr.decided_at, rr.created_at

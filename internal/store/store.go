@@ -40,6 +40,9 @@ func Open(path string) (*DB, error) {
 	return d, nil
 }
 
+// migrate применяет встроенные миграции по порядку имён: каждая — в
+// транзакции, версия схемы фиксируется PRAGMA user_version; уже применённые
+// (номер ≤ текущей версии) пропускаются.
 func (d *DB) migrate() error {
 	var version int
 	if err := d.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
