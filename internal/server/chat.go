@@ -54,11 +54,24 @@ func shouldSleepChat(lastSeen, now time.Time, ttl time.Duration) bool {
 	return now.Sub(lastSeen) >= ttl
 }
 
+// chatHomeHash — короткий хеш дома agctl: один Docker-демон может обслуживать
+// несколько установок, имена ресурсов не должны пересекаться.
+func chatHomeHash(home string) string {
+	sum := sha256.Sum256([]byte(filepath.Clean(home)))
+	return fmt.Sprintf("%x", sum[:4])
+}
+
+// chatContainerNamePrefix — префикс имён Docker-контейнеров чат-рантаймов дома
+// (полное имя = "agctl-" + RuntimeID); по нему стартовый свип ищет хвосты
+// прошлых сборок.
+func chatContainerNamePrefix(home string) string {
+	return "agctl-" + chatNamePrefix + "-" + chatHomeHash(home) + "-"
+}
+
 // chatRuntimeID namespaces resource names by agctl home, so deployments sharing
 // a Docker daemon or Kubernetes namespace do not collide.
 func (s *Server) chatRuntimeID(userID int64) string {
-	sum := sha256.Sum256([]byte(filepath.Clean(s.cfg.Home)))
-	return fmt.Sprintf("%s-%x-u%d", chatNamePrefix, sum[:4], userID)
+	return fmt.Sprintf("%s-%s-u%d", chatNamePrefix, chatHomeHash(s.cfg.Home), userID)
 }
 
 // chatStorageID — стабильный StorageID тома пользователя: u<ID>; переживает
@@ -807,6 +820,11 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 			s.chatMu.Lock()
 			rt.downSince = time.Time{}
 			s.chatMu.Unlock()
+			// Плагинные ассеты dsh (/profiles/**) браузер кэширует без
+			// revalidation: после обновления плагина (EnsureChatPlugins при
+			// каждом ленивом старте) клиент ходит на старый client.js до
+			// hard-refresh. no-cache = условный запрос: без изменений — 304.
+			revalidateProfileAssets(resp)
 			// Pre-paint чат-шелл — bounded, identity-encoded HTML; при слишком
 			// большом или ошибочно читаемом документе helper возвращает исходный поток.
 			injectChatShell := func(r *http.Response) { s.injectChatShellResponseForRole(r, id.Role) }
@@ -852,4 +870,23 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 // новый инстанс после сна/пересоздания получает свежий токен.
 func chatTokenCacheKey(handle agctlrt.ChatHandle) string {
 	return "chat/" + handle.RuntimeID + "/" + handle.InstanceID
+}
+
+// revalidateProfileAssets требует revalidation для JS/CSS плагинов dsh из
+// /profiles/**: dsh отдаёт их без явных заголовков кэша, браузер держит копию
+// до hard-refresh, и обновление плагина не доезжает до клиента. GET/HEAD и
+// только успешные ответы; 304 и стриминг не затрагиваются.
+func revalidateProfileAssets(resp *http.Response) {
+	if resp == nil || resp.Request == nil || resp.Request.Method != http.MethodGet ||
+		resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Request.URL.Path, "/profiles/") {
+		return
+	}
+	ct := resp.Header.Get("Content-Type")
+	if !strings.Contains(ct, "javascript") && !strings.Contains(ct, "css") {
+		return
+	}
+	if resp.Header.Get("Cache-Control") != "" {
+		return // рантайм уже управляет кэшем сам — не спорим
+	}
+	resp.Header.Set("Cache-Control", "no-cache")
 }

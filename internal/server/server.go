@@ -41,7 +41,8 @@ type Config struct {
 	NanoCPUs                int64
 	Image                   string
 	BinDir                  string
-	SecureCookies           bool // true when agctl is served behind a trusted HTTPS terminator
+	Version                 string // версия agctl (метка контейнеров, диагностика дрейфа сборок)
+	SecureCookies           bool   // true when agctl is served behind a trusted HTTPS terminator
 	AutosaveEvery           time.Duration
 	CORSOrigins             []string           // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
 	Tier0                   bool               // корень платформы ведёт в персональный чат (/chat/)
@@ -99,11 +100,25 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 		BinDir:      cfg.BinDir,
 		Home:        cfg.Home,
 		DshSkel:     assetsSkel,
+		Version:     cfg.Version,
 	}, assets.Image)
 	if err != nil {
 		return nil, err
 	}
-	return NewWithRuntimeProviders(db, sec, cfg, rt, rt)
+	s, err := NewWithRuntimeProviders(db, sec, cfg, rt, rt)
+	if err != nil {
+		return nil, err
+	}
+	// Стартовый свип дрейфа: чат-контейнеры прошлой сборки переживают рестарт
+	// (новый серв про них не знает, TTL-рипер их не усыплёт) и продолжают
+	// раздавать старый dsh web. Сносим заранее; /chat/ пересоздаёт среды
+	// лениво — данные пользователей живут на маунтах, не в контейнере.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if n := rt.SweepVersionDrift(ctx, chatContainerNamePrefix(cfg.Home)); n > 0 {
+		log.Printf("[chat] свип дрейфа: удалены контейнеры прошлой сборки: %d", n)
+	}
+	return s, nil
 }
 
 // NewWithRuntimeProviders is the injection point for orchestrated deployments.

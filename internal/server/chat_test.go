@@ -349,3 +349,86 @@ func TestChatProxyRecreatesRuntimeAfterDowntime(t *testing.T) {
 		t.Fatal("recreated runtime must be cached and healthy")
 	}
 }
+
+// TestChatContainerNamePrefix — префикс стартового свипа дрейфа покрывает имена
+// контейнеров, которые dockerrt.Start создаёт из chatRuntimeID ("agctl-"+ID),
+// и различает дома на общем Docker-демоне.
+func TestChatContainerNamePrefix(t *testing.T) {
+	srv := &Server{cfg: Config{Home: t.TempDir()}}
+	prefix := chatContainerNamePrefix(srv.cfg.Home)
+	name := "agctl-" + srv.chatRuntimeID(7)
+	if !strings.HasPrefix(name, prefix) {
+		t.Fatalf("container name %q does not carry sweep prefix %q", name, prefix)
+	}
+	other := &Server{cfg: Config{Home: t.TempDir()}}
+	if other.chatRuntimeID(7) == srv.chatRuntimeID(7) {
+		t.Fatal("separate homes must not share runtime ids")
+	}
+	if chatContainerNamePrefix(other.cfg.Home) == prefix {
+		t.Fatal("separate homes must not share sweep prefix")
+	}
+}
+
+// TestRevalidateProfileAssets — gateway просит revalidation только для JS/CSS
+// плагинов из /profiles/** успешного GET без собственных заголовков кэша.
+func TestRevalidateProfileAssets(t *testing.T) {
+	set := func(path, ct string) *http.Response {
+		req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1"+path, nil)
+		resp := &http.Response{StatusCode: http.StatusOK, Request: req, Header: http.Header{}}
+		if ct != "" {
+			resp.Header.Set("Content-Type", ct)
+		}
+		return resp
+	}
+	fresh := set("/profiles/web/plugins/agctl-brand/client.js", "application/javascript")
+	revalidateProfileAssets(fresh)
+	if got := fresh.Header.Get("Cache-Control"); got != "no-cache" {
+		t.Fatalf("plugin client.js: Cache-Control = %q, ждали no-cache", got)
+	}
+	css := set("/profiles/web/plugins/agctl-brand/style.css", "text/css")
+	revalidateProfileAssets(css)
+	if css.Header.Get("Cache-Control") != "no-cache" {
+		t.Fatal("plugin css must be revalidated too")
+	}
+	untouched := []*http.Response{
+		set("/chat/", "text/html"),                 // html страница чата
+		set("/profiles/web/logo.png", "image/png"), // картинки не трогаем
+		mustOwnCache(t),                            // рантайм сам управляет кэшем
+		mustNotModified(),                          // условный ответ не переписываем
+		mustPost(),                                 // только безопасные методы
+	}
+	for i, resp := range untouched {
+		revalidateProfileAssets(resp)
+		want := ""
+		if i == 2 {
+			want = "max-age=60" // собственная политика рантайма сохранена
+		}
+		if got := resp.Header.Get("Cache-Control"); got != want {
+			t.Errorf("case %d: Cache-Control = %q, ждали %q", i, got, want)
+		}
+	}
+}
+
+// mustOwnCache — ответ, у которого рантайм уже выставил свой Cache-Control.
+func mustOwnCache(t *testing.T) *http.Response {
+	t.Helper()
+	resp := profileAssetResponse(http.MethodGet, http.StatusOK)
+	resp.Header.Set("Cache-Control", "max-age=60")
+	return resp
+}
+
+// mustNotModified — условный 304-ответ на плагинный ассет.
+func mustNotModified() *http.Response {
+	return profileAssetResponse(http.MethodGet, http.StatusNotModified)
+}
+
+// mustPost — POST на плагинный ассет (не GET — не переписываем).
+func mustPost() *http.Response {
+	return profileAssetResponse(http.MethodPost, http.StatusOK)
+}
+
+// profileAssetResponse — ответ dsh-прокси с JS-контентом из /profiles/**.
+func profileAssetResponse(method string, status int) *http.Response {
+	req, _ := http.NewRequest(method, "http://127.0.0.1/profiles/web/plugins/x/client.js", nil)
+	return &http.Response{StatusCode: status, Request: req, Header: http.Header{"Content-Type": {"application/javascript"}}}
+}

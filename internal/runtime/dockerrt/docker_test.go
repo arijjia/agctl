@@ -97,6 +97,57 @@ func itoaTest(n int) string {
 	return string(b[i:])
 }
 
+// TestAgctlDrifted — дрейф по фактическому образу: make up пересобирает образ
+// под тем же тегом, сравнивать нужно sha, нормализуя sha256:-префиксы.
+func TestAgctlDrifted(t *testing.T) {
+	const fresh = "sha256:aaaa1111"
+	cases := []struct {
+		name      string
+		container string
+		current   string
+		wantDrift bool
+	}{
+		{"тот же образ", "sha256:aaaa1111", fresh, false},
+		{"другая сборка того же тега", "sha256:bbbb2222", fresh, true},
+		{"префиксы с одной стороны", "aaaa1111", fresh, false},
+		{"пустой образ контейнера", "", fresh, true},
+		{"текущий неизвестен — не считаем дрейфом", "sha256:bbbb2222", "", false},
+	}
+	for _, c := range cases {
+		if got := agctlDrifted(c.container, c.current); got != c.wantDrift {
+			t.Errorf("%s: agctlDrifted(%q, %q) = %v, ждали %v", c.name, c.container, c.current, got, c.wantDrift)
+		}
+	}
+}
+
+// TestSweepCandidate — свип трогает только agctl-контейнеры этого дома,
+// работающие не на текущем образе; чужие и свежие сборки проходят мимо.
+func TestSweepCandidate(t *testing.T) {
+	const prefix = "agctl-chat-ab12-"
+	const fresh = "sha256:aaaa1111"
+	ours := map[string]string{labelWorkspace: "chat-ab12-u1"}
+	foreign := map[string]string{"app": "x"}
+	cases := []struct {
+		name      string
+		names     []string
+		image     string
+		labels    map[string]string
+		wantSweep bool
+	}{
+		{"наш дрейф-хвост", []string{"/" + prefix + "u7"}, "sha256:bbbb2222", ours, true},
+		{"наш контейнер без sha-префикса", []string{prefix + "u7"}, "bbbb2222", ours, true},
+		{"наша свежая сборка", []string{"/" + prefix + "u7"}, fresh, ours, false},
+		{"чужой контейнер с тем же именем", []string{"/" + prefix + "u7"}, "sha256:bbbb2222", foreign, false},
+		{"наш дрейф, но другой дом", []string{"/agctl-chat-cd34-u1"}, "sha256:bbbb2222", ours, false},
+		{"имя не совпало", []string{"/agctl-other"}, "sha256:bbbb2222", ours, false},
+	}
+	for _, c := range cases {
+		if got := sweepCandidate(c.names, c.image, c.labels, prefix, fresh); got != c.wantSweep {
+			t.Errorf("%s: sweepCandidate = %v, ждали %v", c.name, got, c.wantSweep)
+		}
+	}
+}
+
 // TestNewWithoutDockerFailsFast — без доступного docker-сокета New возвращает
 // ошибку (а не панику); на машинах с docker проверяем ещё и успешный клиент.
 func TestNewSmoke(t *testing.T) {

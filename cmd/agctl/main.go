@@ -232,6 +232,7 @@ func cmdServe(args []string) {
 		NanoCPUs:                int64(*cpus * 1e9),
 		Image:                   *image,
 		BinDir:                  firstNonEmpty(*binDir, "dist"),
+		Version:                 version,
 		SecureCookies:           *secureCookies,
 		ExperimentalLocalBridge: *experimentalLocalBridge,
 		CORSOrigins:             splitCSV(*corsOrigins),

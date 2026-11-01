@@ -40,7 +40,14 @@ type Config struct {
 	BinDir      string // каталог с linux-сборками agctl (dist/)
 	Home        string // local Docker adapter storage root; K8s adapters use PVCs instead
 	DshSkel     fs.FS  // embedded DSH home seed for lazy Chat runtimes
+	Version     string // версия agctl (метка контейнера для диагностики дрейфа)
 }
+
+// Метки контейнеров agctl.
+const (
+	labelWorkspace = "agctl.workspace" // владение: контейнер создан agctl
+	labelVersion   = "agctl.version"   // версия agctl, создавшего контейнер
+)
 
 // Runtime — docker-реализация.
 type Runtime struct {
@@ -67,6 +74,9 @@ func New(cfg Config, imageFS fs.FS) (*Runtime, error) {
 	}
 	if cfg.Image == "" {
 		cfg.Image = "agctl-dsh:0.2.2"
+	}
+	if cfg.Version == "" {
+		cfg.Version = "dev"
 	}
 	_ = ping
 	return &Runtime{cli: cli, cfg: cfg, imageFS: imageFS}, nil
@@ -254,6 +264,19 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 	if err := rt.EnsureImage(ctx); err != nil {
 		return StartResult{}, err
 	}
+	// Дрейф версий: контейнер прошлой сборки (пережил рестарт серва) раздавал
+	// бы старый dsh web, хотя make up пересобрал образ под тем же тегом.
+	// Сравниваем фактический образ контейнера с текущим тегом и бонсим дрейф.
+	imageID := rt.currentImageID(ctx)
+	name := "agctl-" + wsID
+	if imageID != "" {
+		stale, err := rt.removeDriftedByName(ctx, name, imageID)
+		if err != nil {
+			log.Printf("[dockerrt] %s: проверка дрейфа версии: %v", wsID, err)
+		} else if stale {
+			log.Printf("[dockerrt] %s: контейнер собран не текущим образом — пересоздаю (дрейф версии; данные на маунтах не тронуты)", wsID)
+		}
+	}
 	// гонки за порт: docker сам отдаст ошибку, если порт занят.
 	// Все Base URL могут иметь разные split-DNS corporate hosts; резолвим
 	// каждый на хосте и добавляем --add-host при создании контейнера.
@@ -280,11 +303,14 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		portBindings[network.MustParsePort("2222/tcp")] = []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: fmt.Sprint(opts.SSHHostPort)}}
 	}
 	cfg := client.ContainerCreateOptions{
-		Name: "agctl-" + wsID,
+		Name: name,
 		Config: &container.Config{
-			Image:  rt.cfg.Image,
-			Env:    env,
-			Labels: map[string]string{"agctl.workspace": wsID},
+			Image: rt.cfg.Image,
+			Env:   env,
+			Labels: map[string]string{
+				labelWorkspace: wsID,
+				labelVersion:   rt.cfg.Version,
+			},
 		},
 		HostConfig: &container.HostConfig{
 			Binds: []string{
@@ -306,7 +332,7 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 	if err != nil {
 		// контейнер с таким именем мог остаться от прошлого прогона — уберём и повторим
 		if strings.Contains(err.Error(), "already in use") {
-			_ = rt.removeByName(ctx, "agctl-"+wsID)
+			_ = rt.removeByName(ctx, name)
 			res, err = rt.cli.ContainerCreate(ctx, cfg)
 		}
 		if err != nil {
@@ -328,6 +354,102 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 func (rt *Runtime) Resume(ctx context.Context, containerID string) error {
 	_, err := rt.cli.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
 	return err
+}
+
+// ── дрейф версий ─────────────────────────────────────────────────────────────
+
+// currentImageID — ID образа под текущим тегом; "" если инспект недоступен
+// (дрейф-контроль в этом запуске деградирует до прежнего поведения).
+// ID, а не тег/строку версии: make up пересобирает образ под тем же тегом
+// (agctl-dsh:0.2.2), и только ID отличает свежую сборку от прошлой.
+func (rt *Runtime) currentImageID(ctx context.Context) string {
+	insp, err := rt.cli.ImageInspect(ctx, rt.cfg.Image)
+	if err != nil {
+		return ""
+	}
+	return insp.ID
+}
+
+// removeDriftedByName удаляет контейнер name, если он работает на образе,
+// отличном от текущего тега. true — контейнер удалён как дрейф.
+// InspectResponse.Image здесь — sha образа (не символическое имя, как в Summary).
+func (rt *Runtime) removeDriftedByName(ctx context.Context, name, currentImageID string) (bool, error) {
+	insp, err := rt.cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
+	if err != nil {
+		if isNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !agctlDrifted(insp.Container.Image, currentImageID) {
+		return false, nil
+	}
+	_, err = rt.cli.ContainerRemove(ctx, insp.Container.ID, client.ContainerRemoveOptions{Force: true})
+	return true, err
+}
+
+// SweepVersionDrift удаляет контейнеры agctl (метка agctl.workspace) с именами
+// по префиксу — чат-рантаймы этого дома, — работающие на образе не текущего
+// тега. Хвосты убитого серва переживают рестарт и продолжают раздавать старый
+// dsh web; свип на старте serve сносит их заранее, /chat/ пересоздаёт среды
+// лениво (данные — на маунтах, не в контейнере). Возвращает число удалённых;
+// ошибки отдельных удалений пишутся в лог и не прерывают свип.
+func (rt *Runtime) SweepVersionDrift(ctx context.Context, namePrefix string) int {
+	currentImageID := rt.currentImageID(ctx)
+	if currentImageID == "" {
+		return 0
+	}
+	list, err := rt.cli.ContainerList(ctx, client.ContainerListOptions{All: true})
+	if err != nil {
+		log.Printf("[dockerrt] свип дрейфа версий: %v", err)
+		return 0
+	}
+	removed := 0
+	for _, c := range list.Items {
+		// В Summary.Image — символическое имя (как в docker ps), sha живёт в
+		// ImageID; в InspectResponse — наоборот, Image это sha. Не перепутать.
+		if !sweepCandidate(c.Names, c.ImageID, c.Labels, namePrefix, currentImageID) {
+			continue
+		}
+		if _, err := rt.cli.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true}); err != nil {
+			log.Printf("[dockerrt] свип дрейфа: удаление %s: %v", c.ID, err)
+			continue
+		}
+		removed++
+		log.Printf("[dockerrt] свип дрейфа: контейнер %v собран не текущим образом — удалён (среда пересоздастся лениво)", c.Names)
+	}
+	return removed
+}
+
+// agctlDrifted — контейнер работает на образе, отличном от текущего тега
+// (sha-префиксы нормализуем: одна и та же суть в разных полях API). Неизвестный
+// текущий образ — решения нет: дрейфом не считаем.
+func agctlDrifted(containerImage, currentImageID string) bool {
+	if currentImageID == "" {
+		return false
+	}
+	return imageDigest(containerImage) != imageDigest(currentImageID)
+}
+
+// sweepCandidate — кандидата свипа удалять: контейнер наш (метка
+// agctl.workspace), чей-то чужой контейнер с подходящим именем не трогаем;
+// работает не на текущем образе (containerImageID — sha из Summary.ImageID);
+// имя попадает под префикс дома.
+func sweepCandidate(names []string, containerImageID string, labels map[string]string, namePrefix, currentImageID string) bool {
+	if currentImageID == "" || labels[labelWorkspace] == "" || !agctlDrifted(containerImageID, currentImageID) {
+		return false
+	}
+	for _, n := range names {
+		if strings.HasPrefix(strings.TrimPrefix(n, "/"), namePrefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// imageDigest нормализует ссылку на образ к голому hex-дайджесту.
+func imageDigest(ref string) string {
+	return strings.TrimPrefix(strings.TrimSpace(ref), "sha256:")
 }
 
 // Stop останавливает и удаляет контейнер воркспейса: контейнер эфемерен,
