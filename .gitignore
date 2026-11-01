@@ -22,3 +22,6 @@ tests/e2e-ui/node_modules/
 # профили организаций подключаются данными (make profile-fetch / --profile-dir),
 # не коммитятся в ядро
 profiles/
+
+# локальная сборка бинаря (go build ./cmd/... кладёт его в корень)
+/agctl
