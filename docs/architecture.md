@@ -216,7 +216,7 @@ host port; это не «слушать всю LAN». Почему релея н
 ## 6. Legacy compatibility и отложенное
 
 - Создание/изменение отдельных workspace seats и workspace request API
-  отвечает HTTP 410; CLI `agctl workspace create` отключена.
+  отвечает HTTP 410; CLI `agctl workspace` удалён из бинаря.
 - GET старых workspace-записей и `/w/{id}` proxy пока оставлены для
   совместимости с записями старого тома/низкоуровневых тестов; новых seats
   на чистом пилоте нет. Полное удаление кода/таблиц — cleanup backlog.

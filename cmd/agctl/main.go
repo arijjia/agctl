@@ -65,7 +65,7 @@ func prescanFlag(args []string, name, def string) string {
 }
 
 // main — диспетчер подкоманд CLI: serve, migrate, init-chat-home,
-// seed-demo-users, backlog, workspace, connect, local, sync, version.
+// seed-demo-users, backlog, connect, local, sync, version.
 // Неизвестная команда печатает usage и завершает процесс кодом 2.
 func main() {
 	log.SetFlags(log.Ltime)
@@ -84,8 +84,6 @@ func main() {
 		cmdSeedDemoUsers(os.Args[2:])
 	case "backlog":
 		os.Exit(backlog.Main(os.Args[2:], os.Stdout, os.Stderr))
-	case "workspace":
-		cmdWorkspace(os.Args[2:])
 	case "connect":
 		cmdConnect(os.Args[2:])
 	case "local":
@@ -118,7 +116,6 @@ func usage() {
   migrate [--home DIR]
   seed-demo-users [--home DIR]  (локальные тестовые роли; запускать после первого admin)
   backlog <new|list|top|check|start|done|cancel|note|migrate> [флаги]
-  workspace (legacy create отключён в v3)
   connect --port SSH_PORT [--host HOST] [--user root] [--identity KEY] [--print]
   local connect --server URL --grant TOKEN [--local 127.0.0.1:3080] [--launch-dsh]
       [--dsh-bin dsh] [--dsh-port 3080] [--dsh-token TOKEN]

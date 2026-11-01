@@ -15,7 +15,7 @@
 | **A. Роль + единый runtime** | `role_requests` → admin approve → постоянная `users.role=developer`; SSH key-only в том же личном контейнере; TTL default 60 min; HEALTHCHECK :3099 + reconcile unhealthy | ✅ done |
 | **B. Проекты + invisible Git** | `/api/projects`; реальный каталог + локальная `.git`; host plugin boot-регистрирует `/workspace/*` в DSH WorkspaceRegistry; native Workspaces browser + Add Workspace dialog (empty/GitHub); native Session cwd; go-git autosave без push | ✅ done |
 | **C. Профиль/Кабинет v3.2** | Нижний user-chip popup (профиль/DSH Settings/help); role + requests + token projections/activity + SSH; никаких runtime controls и отдельного workspace списка | ✅ done |
-| **D. Демонтаж seats** | UI создания мест/local-backend убран; создание/мутации legacy workspace и workspace-request → 410; CLI `agctl workspace create` отключена | ✅ done |
+| **D. Демонтаж seats** | UI создания мест/local-backend убран; создание/мутации legacy workspace и workspace-request → 410; CLI `agctl workspace` удалена | ✅ done |
 
 Пилот стартует с **чистого тома** — перенос старых `chats/` и `work/` не
 выполняется. Для диагностических тестов/старых записей GET и `/w/{id}`

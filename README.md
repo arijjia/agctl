@@ -246,7 +246,6 @@ agctl init-chat-home --home DSH_HOME   # внутренний: init-container K8
 agctl sync create --name NAME --local DIR --port SSH_PORT [--host HOST] [--user root] [--print]
 agctl sync list|pause|resume|flush|terminate [mutagen args]
 agctl version
-# agctl workspace create — legacy-команда отключена в v3
 ```
 
 `agctl serve` — основные флаги:
@@ -386,7 +385,7 @@ SSH-туннель и укажи его локальные host/port.
   миграции старых `chats/` и `work/` нет.
 - Legacy `/w/{id}` и GET старых workspace-записей пока оставлены для
   совместимости/низкоуровневых тестов; создание/изменение seats и весь API
-  заявок на места — 410. CLI `agctl workspace create` отключён.
+  заявок на места — 410. CLI `agctl workspace` удалён (команда из v3 демонтирована).
 - «Локальный backend» владелец решила осмыслить позже. Код остаётся за
   `--experimental-local-bridge` (выключен по умолчанию); это не текущий
   сценарий developer.
