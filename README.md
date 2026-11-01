@@ -78,6 +78,37 @@ make corp                     # фоновый запуск с провайде�
 make logs                     # хвост лога; остановка — make stop
 ```
 
+### Установка CLI глобально и автодополнение (fish)
+
+Бинарь agctl самодостаточен (Go, без рантайм-зависимостей) — глобальная
+установка это копия в каталог из PATH:
+
+```bash
+make go_build                                  # свежая сборка в dist/agctl
+mkdir -p ~/.local/bin && cp dist/agctl ~/.local/bin/
+agctl version                                  # проверка
+```
+
+Если `~/.local/bin` ещё не в PATH (чистое окружение), в fish это одна строка
+в `~/.config/fish/config.fish` (или разовая команда):
+
+```fish
+fish_add_path ~/.local/bin
+```
+
+Автодополнение fish — подсказки подкоманд, флагов и значений (приоритеты
+бэклога, пути к каталогам):
+
+```bash
+mkdir -p ~/.config/fish/completions
+agctl completion fish > ~/.config/fish/completions/agctl.fish
+# проверить: напечатать «agctl » и нажать Tab
+```
+
+Скрипт статический: после обновления agctl (новые команды/флаги) повторить
+генерацию той же командой. В чистом окружении порядок такой: Go, Docker,
+Node по быстрому старту выше → `make go_build` → две команды установки.
+
 Дефолты провайдера приходят из профиля; точечные переопределения — env
 (`AGCTL_LLM_BASE_URL`, `AGCTL_LLM_MODELS`, `AGCTL_LLM_MODEL`) или
 `CORP_LLM_*` в make. Свой профиль организации — каталог с `profile.yaml` и
@@ -240,6 +271,7 @@ Go-процесса agctl каждые две минуты; для роли user
 agctl serve     # UI + API + личные runtime пользователей
 agctl migrate   # накатить миграции SQLite
 agctl backlog <new|list|top|check|start|done|cancel|note|migrate>
+agctl completion fish  # скрипт автодополнения для fish (см. «Установка CLI»)
 agctl connect --port SSH_PORT [--host HOST] [--identity KEY] [--print]
 agctl local connect --server URL --grant TOKEN [--launch-dsh] [--dsh-token TOKEN]
 agctl init-chat-home --home DSH_HOME   # внутренний: init-container K8s-чата

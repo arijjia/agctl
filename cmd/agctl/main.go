@@ -84,6 +84,8 @@ func main() {
 		cmdSeedDemoUsers(os.Args[2:])
 	case "backlog":
 		os.Exit(backlog.Main(os.Args[2:], os.Stdout, os.Stderr))
+	case "completion":
+		cmdCompletion(os.Args[2:])
 	case "connect":
 		cmdConnect(os.Args[2:])
 	case "local":
@@ -116,6 +118,7 @@ func usage() {
   migrate [--home DIR]
   seed-demo-users [--home DIR]  (локальные тестовые роли; запускать после первого admin)
   backlog <new|list|top|check|start|done|cancel|note|migrate> [флаги]
+  completion [fish]  (скрипт автодополнения для fish)
   connect --port SSH_PORT [--host HOST] [--user root] [--identity KEY] [--print]
   local connect --server URL --grant TOKEN [--local 127.0.0.1:3080] [--launch-dsh]
       [--dsh-bin dsh] [--dsh-port 3080] [--dsh-token TOKEN]
@@ -123,7 +126,7 @@ func usage() {
   sync list|pause|resume|flush|terminate [Mutagen args]
   version
 
-Переменные окружения: AGCTL_HOME (по умолчанию ~/.agctl), AGCTL_ADDR.
+Переменные окружения: AGCTL_HOME (по умолчанию ~/.agctl), AGCTL_ADDR, AGCTL_PROFILE.
 `)
 }
 
@@ -406,6 +409,16 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// nonZeroOr — численный аналог firstNonEmpty для дефолтов из config.yaml:
+// нулевое значение конфига означает «не задано» (0 в yaml — очевидный маркер
+// отсутствия настройки, отдельный «нулевой» лимит смысла не имеет).
+func nonZeroOr[T int | float64](v, def T) T {
+	if v != 0 {
+		return v
+	}
+	return def
 }
 
 // splitCSV разбивает строку по запятым, обрезая пробелы и пропуская пустые
