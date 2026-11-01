@@ -102,6 +102,8 @@ func DecodeBaseURLs(raw, fallback string) []string {
 	return urls
 }
 
+// normalizeBaseURLs обрезает пробелы, выбрасывает пустые и дубли,
+// сохраняя первый порядок следования.
 func normalizeBaseURLs(urls []string) []string {
 	seen := make(map[string]bool, len(urls))
 	out := make([]string, 0, len(urls))
@@ -125,6 +127,8 @@ func EncodeIDs(ids []string) string {
 	return string(b)
 }
 
+// DecodeIDs читает JSON-список component IDs; пустая строка или битый
+// JSON дают nil (компоненты опциональны).
 func DecodeIDs(raw string) []string {
 	if raw == "" {
 		return nil
@@ -146,6 +150,8 @@ type AuditEvent struct {
 	Details string
 }
 
+// wrap приводит ошибки SQL к ошибкам домена: sql.ErrNoRows превращается в
+// ErrNotFound, остальное оборачивается с именем операции.
 func wrap(op string, err error) error {
 	if err == nil {
 		return nil
@@ -158,6 +164,8 @@ func wrap(op string, err error) error {
 
 // ── users ────────────────────────────────────────────────────────────────────
 
+// CreateUser добавляет учётную запись и возвращает её ID; занятый логин
+// распознаётся по UNIQUE-ошибке и оборачивается человекочитаемой ошибкой.
 func (d *DB) CreateUser(login, passwordHash, role string) (int64, error) {
 	res, err := d.Exec(`INSERT INTO users(login, password_hash, role) VALUES(?,?,?)`,
 		login, passwordHash, role)
@@ -170,30 +178,35 @@ func (d *DB) CreateUser(login, passwordHash, role string) (int64, error) {
 	return res.LastInsertId()
 }
 
+// CountUsers возвращает число учётных записей (нулевое = первый станет admin).
 func (d *DB) CountUsers() (int, error) {
 	var n int
 	err := d.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n)
 	return n, wrap("count users", err)
 }
 
+// scanUser сканирует строку users в структуру User (общая для всех выборок).
 func scanUser(row *sql.Row) (User, error) {
 	var u User
 	err := row.Scan(&u.ID, &u.Login, &u.PasswordHash, &u.Role, &u.CreatedAt)
 	return u, err
 }
 
+// UserByLogin выбирает учётку по логину; нет записи → ErrNotFound.
 func (d *DB) UserByLogin(login string) (User, error) {
 	u, err := scanUser(d.QueryRow(
 		`SELECT id, login, password_hash, role, created_at FROM users WHERE login = ?`, login))
 	return u, wrap("user by login", err)
 }
 
+// UserByID выбирает учётку по идентификатору; нет записи → ErrNotFound.
 func (d *DB) UserByID(id int64) (User, error) {
 	u, err := scanUser(d.QueryRow(
 		`SELECT id, login, password_hash, role, created_at FROM users WHERE id = ?`, id))
 	return u, wrap("user by id", err)
 }
 
+// UsersList возвращает все учётные записи по возрастанию ID (админка).
 func (d *DB) UsersList() ([]User, error) {
 	rows, err := d.Query(`SELECT id, login, password_hash, role, created_at FROM users ORDER BY id`)
 	if err != nil {
@@ -213,12 +226,15 @@ func (d *DB) UsersList() ([]User, error) {
 
 // ── sessions ─────────────────────────────────────────────────────────────────
 
+// CreateSession сохраняет токен сессии с UTC-меткой истечения.
 func (d *DB) CreateSession(token string, userID int64, expires time.Time) error {
 	_, err := d.Exec(`INSERT INTO sessions(token, user_id, expires_at) VALUES(?,?,?)`,
 		token, userID, expires.UTC().Format("2006-01-02 15:04:05"))
 	return wrap("create session", err)
 }
 
+// SessionUser возвращает пользователя по живому (не истёкшему) токену;
+// просроченный или неизвестный токен → ErrNotFound.
 func (d *DB) SessionUser(token string) (User, error) {
 	u, err := scanUser(d.QueryRow(`
 		SELECT u.id, u.login, u.password_hash, u.role, u.created_at
@@ -227,11 +243,13 @@ func (d *DB) SessionUser(token string) (User, error) {
 	return u, wrap("session user", err)
 }
 
+// DeleteSession удаляет сессию (logout).
 func (d *DB) DeleteSession(token string) error {
 	_, err := d.Exec(`DELETE FROM sessions WHERE token = ?`, token)
 	return wrap("delete session", err)
 }
 
+// DeleteExpiredSessions чистит истёкшие сессии (фоновая гигиена).
 func (d *DB) DeleteExpiredSessions() error {
 	_, err := d.Exec(`DELETE FROM sessions WHERE expires_at <= datetime('now')`)
 	return wrap("delete expired sessions", err)
@@ -243,6 +261,8 @@ const wsCols = `id, owner_id, name, template, status, repo_path, work_path, dsh_
 	container_id, host_port, base_url, base_urls, model, models, components, error, created_at, updated_at,
 	ssh_pub_key, ssh_port`
 
+// scanWS сканирует строку workspaces, разворачивая TEXT-колонки
+// (base_urls JSON, models, components) в поля структуры.
 func scanWS(row interface{ Scan(...any) error }) (Workspace, error) {
 	var w Workspace
 	var baseURLsRaw, modelsRaw, componentsRaw string
@@ -260,6 +280,8 @@ func scanWS(row interface{ Scan(...any) error }) (Workspace, error) {
 	return w, err
 }
 
+// InsertWorkspace добавляет workspace; занятое имя распознаётся по
+// UNIQUE-ошибке. BaseURL без списка дублируется в base_urls.
 func (d *DB) InsertWorkspace(w Workspace) error {
 	baseURLs := w.BaseURLs
 	if len(baseURLs) == 0 && w.BaseURL != "" {
@@ -280,15 +302,18 @@ func (d *DB) InsertWorkspace(w Workspace) error {
 	return nil
 }
 
+// WorkspaceByID выбирает workspace по идентификатору; нет записи → ErrNotFound.
 func (d *DB) WorkspaceByID(id string) (Workspace, error) {
 	w, err := scanWS(d.QueryRow(`SELECT `+wsCols+` FROM workspaces WHERE id = ?`, id))
 	return w, wrap("workspace by id", err)
 }
 
+// WorkspacesByOwner — все места пользователя, свежие сверху (legacy-поток).
 func (d *DB) WorkspacesByOwner(ownerID int64) ([]Workspace, error) {
 	return d.wsList(`SELECT `+wsCols+` FROM workspaces WHERE owner_id = ? ORDER BY created_at DESC`, ownerID)
 }
 
+// WorkspacesAll — все места платформы с логином владельца (админка).
 func (d *DB) WorkspacesAll() ([]Workspace, error) {
 	return d.wsList(`SELECT w.id, w.owner_id, w.name, w.template, w.status, w.repo_path, w.work_path,
 		w.dsh_home, w.container_id, w.host_port, w.base_url, w.base_urls, w.model, w.models, w.components, w.error,
@@ -297,6 +322,7 @@ func (d *DB) WorkspacesAll() ([]Workspace, error) {
 		ORDER BY w.created_at DESC`)
 }
 
+// wsList исполняет готовый запрос списка workspaces и сканирует строки.
 func (d *DB) wsList(q string, args ...any) ([]Workspace, error) {
 	rows, err := d.Query(q, args...)
 	if err != nil {
@@ -321,18 +347,23 @@ func (d *DB) WorkspaceOwnerLogin(ownerID int64) string {
 	return login
 }
 
+// UpdateWorkspaceStatus меняет статус и текст ошибки, трогая updated_at.
 func (d *DB) UpdateWorkspaceStatus(id, status, errText string) error {
 	_, err := d.Exec(`UPDATE workspaces SET status = ?, error = ?, updated_at = ? WHERE id = ?`,
 		status, errText, now(), id)
 	return wrap("update ws status", err)
 }
 
+// UpdateWorkspaceRuntime фиксирует привязку контейнера и опубликованный
+// порт, сбрасывая текст ошибки и выставляя статус.
 func (d *DB) UpdateWorkspaceRuntime(id, containerID string, hostPort int, status string) error {
 	_, err := d.Exec(`UPDATE workspaces SET container_id = ?, host_port = ?, status = ?,
 		error = '', updated_at = ? WHERE id = ?`, containerID, hostPort, status, now(), id)
 	return wrap("update ws runtime", err)
 }
 
+// UpdateWorkspacePaths сохраняет хост-пути (repo/work/dsh-home) после
+// создания места.
 func (d *DB) UpdateWorkspacePaths(id, repoPath, workPath, dshHome string) error {
 	_, err := d.Exec(`UPDATE workspaces SET repo_path = ?, work_path = ?, dsh_home = ?,
 		updated_at = ? WHERE id = ?`, repoPath, workPath, dshHome, now(), id)
@@ -346,6 +377,7 @@ func (d *DB) UpdateWorkspaceSSH(id, pubKey string, port int) error {
 	return wrap("update ws ssh", err)
 }
 
+// DeleteWorkspace удаляет запись места (файлы чистит вызывающий).
 func (d *DB) DeleteWorkspace(id string) error {
 	_, err := d.Exec(`DELETE FROM workspaces WHERE id = ?`, id)
 	return wrap("delete workspace", err)
@@ -353,6 +385,8 @@ func (d *DB) DeleteWorkspace(id string) error {
 
 // ── secrets (LLM-токены, шифротекст) ────────────────────────────────────────
 
+// SecretUpsert сохраняет настройки LLM-провайдера пользователя (upsert по
+// user_id); ciphertext шифрует вызывающий (secrets.Manager).
 func (d *DB) SecretUpsert(userID int64, baseURL, model string, models []string, ciphertext string) error {
 	_, err := d.Exec(`INSERT INTO secrets(user_id, base_url, model, models, ciphertext, updated_at)
 		VALUES(?,?,?,?,?,?)
@@ -363,6 +397,8 @@ func (d *DB) SecretUpsert(userID int64, baseURL, model string, models []string, 
 	return wrap("secret upsert", err)
 }
 
+// SecretByUser возвращает сохранённые настройки провайдера пользователя;
+// нет записи → ErrNotFound.
 func (d *DB) SecretByUser(userID int64) (Secret, error) {
 	var s Secret
 	var modelsRaw string
@@ -387,6 +423,8 @@ type LocalConnector struct {
 	LastSeenAt string
 }
 
+// LocalConnectorCreate регистрирует durable-учётную запись ноутбука
+// (хранится только хеш токена) и возвращает её ID.
 func (d *DB) LocalConnectorCreate(userID int64, tokenHash, label string) (int64, error) {
 	res, err := d.Exec(`INSERT INTO local_connectors(user_id, token_hash, label, created_at, last_seen_at)
 		VALUES(?,?,?,?,?)`, userID, tokenHash, label, now(), now())
@@ -397,6 +435,7 @@ func (d *DB) LocalConnectorCreate(userID int64, tokenHash, label string) (int64,
 	return id, wrap("local connector id", err)
 }
 
+// LocalConnectorByHash находит pairing-запись по хешу токена.
 func (d *DB) LocalConnectorByHash(tokenHash string) (LocalConnector, error) {
 	var c LocalConnector
 	err := d.QueryRow(`SELECT id, user_id, token_hash, label, created_at, last_seen_at
@@ -405,11 +444,13 @@ func (d *DB) LocalConnectorByHash(tokenHash string) (LocalConnector, error) {
 	return c, wrap("local connector by hash", err)
 }
 
+// LocalConnectorTouch обновляет last_seen_at (живость коннектора).
 func (d *DB) LocalConnectorTouch(id int64) error {
 	_, err := d.Exec(`UPDATE local_connectors SET last_seen_at = ? WHERE id = ?`, now(), id)
 	return wrap("local connector touch", err)
 }
 
+// LocalConnectorsDeleteForUser отзывает все pairing-записи пользователя.
 func (d *DB) LocalConnectorsDeleteForUser(userID int64) error {
 	_, err := d.Exec(`DELETE FROM local_connectors WHERE user_id = ?`, userID)
 	return wrap("local connectors delete", err)
@@ -417,6 +458,8 @@ func (d *DB) LocalConnectorsDeleteForUser(userID int64) error {
 
 // ── settings (платформенные KV-настройки; значение шифрует вызывающий) ──────
 
+// SettingSet пишет KV-настройку платформы (upsert по key); значение шифрует
+// вызывающий.
 func (d *DB) SettingSet(key, value string) error {
 	_, err := d.Exec(`INSERT INTO settings(key, value, updated_at) VALUES(?,?,?)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
@@ -424,6 +467,7 @@ func (d *DB) SettingSet(key, value string) error {
 	return wrap("setting set", err)
 }
 
+// SettingGet читает KV-настройку; нет ключа → ErrNotFound.
 func (d *DB) SettingGet(key string) (string, error) {
 	var value string
 	err := d.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
@@ -442,12 +486,14 @@ func (d *DB) UpdateWorkspaceProvider(id, baseURL string, baseURLs []string, mode
 
 // ── audit_log (РСБ) ─────────────────────────────────────────────────────────
 
+// Audit дописывает событие в журнал безопасности (actor/action/target/details).
 func (d *DB) Audit(actor, action, target, details string) error {
 	_, err := d.Exec(`INSERT INTO audit_log(actor, action, target, details) VALUES(?,?,?,?)`,
 		actor, action, target, details)
 	return wrap("audit", err)
 }
 
+// AuditList возвращает свежие события журнала (лимит нормализуется, дефолт 200).
 func (d *DB) AuditList(limit int) ([]AuditEvent, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 200
@@ -530,6 +576,7 @@ type WorkspaceRequest struct {
 	Login       string // login, заполняется при join
 }
 
+// scanWSReq сканирует строку workspace_requests, разворачивая components.
 func scanWSReq(row interface{ Scan(...any) error }) (WorkspaceRequest, error) {
 	var r WorkspaceRequest
 	var componentsRaw string
@@ -542,6 +589,8 @@ func scanWSReq(row interface{ Scan(...any) error }) (WorkspaceRequest, error) {
 	return r, err
 }
 
+// InsertWorkspaceRequest сохраняет заявку на рабочее место (payload —
+// шифротекст провайдера, расшифровка только при approve).
 func (d *DB) InsertWorkspaceRequest(r WorkspaceRequest) error {
 	_, err := d.Exec(`INSERT INTO workspace_requests(id, user_id, name, kit, components,
 		payload, ssh_pub_key, status, decided_by, decided_at, reason, workspace_id,
@@ -556,11 +605,13 @@ const wsReqCols = `r.id, r.user_id, r.name, r.kit, r.components, r.payload,
 	r.ssh_pub_key, r.status, r.decided_by, r.decided_at, r.reason,
 	r.workspace_id, r.created_at, r.updated_at`
 
+// WorkspaceRequestByID выбирает заявку по идентификатору.
 func (d *DB) WorkspaceRequestByID(id string) (WorkspaceRequest, error) {
 	r, err := scanWSReq(d.QueryRow(`SELECT `+wsReqCols+` FROM workspace_requests r WHERE r.id = ?`, id))
 	return r, wrap("workspace request by id", err)
 }
 
+// WorkspaceRequestsByUser — заявки пользователя, свежие сверху, с логином.
 func (d *DB) WorkspaceRequestsByUser(userID int64) ([]WorkspaceRequest, error) {
 	rows, err := d.Query(`SELECT `+wsReqCols+`, u.login FROM workspace_requests r
 		JOIN users u ON u.id = r.user_id WHERE r.user_id = ? ORDER BY r.created_at DESC`, userID)
@@ -571,6 +622,7 @@ func (d *DB) WorkspaceRequestsByUser(userID int64) ([]WorkspaceRequest, error) {
 	return d.wsReqList(rows)
 }
 
+// WorkspaceRequestsAll — все заявки платформы с логинами (админка).
 func (d *DB) WorkspaceRequestsAll() ([]WorkspaceRequest, error) {
 	rows, err := d.Query(`SELECT ` + wsReqCols + `, u.login FROM workspace_requests r
 		JOIN users u ON u.id = r.user_id ORDER BY r.created_at DESC`)
@@ -581,6 +633,7 @@ func (d *DB) WorkspaceRequestsAll() ([]WorkspaceRequest, error) {
 	return d.wsReqList(rows)
 }
 
+// wsReqList сканирует строки заявок (включая join-логин владельца).
 func (d *DB) wsReqList(rows *sql.Rows) ([]WorkspaceRequest, error) {
 	var out []WorkspaceRequest
 	for rows.Next() {
@@ -598,6 +651,8 @@ func (d *DB) wsReqList(rows *sql.Rows) ([]WorkspaceRequest, error) {
 	return out, rows.Err()
 }
 
+// UpdateWorkspaceRequestStatus фиксирует решение по заявке (approve/reject,
+// кто, причина) и связанный workspace_id.
 func (d *DB) UpdateWorkspaceRequestStatus(id, status, decidedBy, reason, workspaceID string) error {
 	_, err := d.Exec(`UPDATE workspace_requests SET status = ?, decided_by = ?,
 		decided_at = ?, reason = ?, workspace_id = ?, updated_at = ? WHERE id = ?`,
