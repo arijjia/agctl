@@ -110,31 +110,6 @@ func main() {
 	}
 }
 
-// usage печатает краткую справку по подкомандам и переменным окружения
-// в стандартный поток ошибок.
-func usage() {
-	fmt.Fprint(os.Stderr, `agctl — платформа агентских рабочих мест (один бинарь)
-
-Команды:
-  serve [--home DIR] [--addr H:P] [--image T] [--bin-dir D]
-  migrate [--home DIR]
-  seed-demo-users [--home DIR]  (локальные тестовые роли; запускать после первого admin)
-  backlog <new|list|top|check|start|done|cancel|note|migrate> [флаги]
-  completion [fish]  (скрипт автодополнения для fish)
-  config             (показать эффективный ~/.config/agctl/config.yaml)
-  connect --port SSH_PORT [--host HOST] [--user root] [--identity KEY] [--print]
-  local connect --server URL --grant TOKEN [--local 127.0.0.1:3080] [--launch-dsh]
-      [--dsh-bin dsh] [--dsh-port 3080] [--dsh-token TOKEN]
-  sync create --name NAME --local DIR --host HOST --port SSH_PORT [--user root] [--print]
-  sync list|pause|resume|flush|terminate [Mutagen args]
-  version
-
-Переменные окружения: AGCTL_HOME (по умолчанию ~/.agctl), AGCTL_ADDR,
-AGCTL_PROFILE, AGCTL_CONFIG (путь к config.yaml; по умолчанию
-~/.config/agctl/config.yaml — дефолты serve, стиль webmalex-тулз).
-`)
-}
-
 // defaultHome возвращает дом данных agctl: $AGCTL_HOME, если задан,
 // иначе ~/.agctl (или .agctl в текущем каталоге, если домашний каталог
 // определить не удалось).
