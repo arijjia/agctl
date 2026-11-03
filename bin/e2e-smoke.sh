@@ -99,7 +99,7 @@ start_fake_llm
 
 say "Сервис agctl"
 "$AGCTL_BIN" serve --home "$TEST_HOME" --addr "$TEST_ADDR" \
-  --image "$TEST_IMAGE" --max-per-user 3 --mem-gb 2 --cpus 2 \
+  --image "$TEST_IMAGE" --mem-gb 2 --cpus 2 \
   >"/tmp/agctl-serve-$RUN_ID.log" 2>&1 &
 SERVE_PID=$!
 BASE_URL="http://$TEST_ADDR"
@@ -108,7 +108,14 @@ for _ in $(seq 1 40); do
   [ "$(curl -sS -o /dev/null -w '%{http_code}' "$BASE_URL/" 2>/dev/null)" = "200" ] && { up=1; break; }
   sleep 0.5
 done
-[ "$up" = 1 ] && pass "UI отвечает 200 на $BASE_URL" || fail "UI не поднялся"
+if [ "$up" != 1 ]; then
+  # Без работающего UI остальное бессмысленно: вместо 5 минут красных FAIL —
+  # сразу причина (хвост журнала serve; чаще всего CLI-флаг, которого нет).
+  fail "UI не поднялся — хвост журнала serve:"
+  tail -n 30 "/tmp/agctl-serve-$RUN_ID.log" | sed 's/^/  | /'
+  exit 1
+fi
+pass "UI отвечает 200 на $BASE_URL"
 
 say "Регистрация и роли"
 code=$(curl -sS -c "$COOKIES_ADMIN" -o "$LAST" -w '%{http_code}' -H 'Content-Type: application/json' \
@@ -129,7 +136,16 @@ code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_USER" "$BASE_URL/api
 say "Создание рабочего места (base, выбрана только память/бэклог; провайдер=$PROVIDER_URL)"
 code=$(api "$COOKIES_ADMIN" POST /api/workspaces \
   "{\"name\":\"e2e-base\",\"kit\":\"base\",\"components\":[\"core-workspace\"],\"baseURL\":\"$PROVIDER_URL\",\"models\":[\"stub-model\"],\"apiKey\":\"sk-e2e-fake-not-a-secret\"}")
-[ "$code" = 202 ] && pass "create → 202 Accepted" || { fail "create: $code"; cat "$LAST"; }
+if [ "$code" != 202 ]; then
+  # Дальше без воркспейса проверять нечего: одна ясная причина вместо
+  # полутора десятков гарантированных FAIL (воркспейсы удалены в v3 —
+  # сценарий требует переписывания под персональный контейнер/проекты).
+  fail "create: $code"
+  cat "$LAST" 2>/dev/null
+  tail -n 15 "/tmp/agctl-serve-$RUN_ID.log" | sed 's/^/  | /'
+  exit 1
+fi
+pass "create → 202 Accepted"
 WS_ID=$(jsonget "['workspace']['id']")
 [ -n "${WS_ID:-}" ] && pass "ws id: получен" || fail "нет id воркспейса"
 
@@ -140,6 +156,9 @@ else
   fail "не перешёл в running за 180с"
   api "$COOKIES_ADMIN" GET "/api/workspaces/${WS_ID:-x}" >/dev/null
   printf '  error=%s\n' "$(jsonget "['workspace']['error']")"
+  if [ -n "${WS_ID:-}" ]; then
+    docker logs --tail 30 "agctl-$WS_ID" 2>&1 | sed 's/^/  | /'
+  fi
   WS_ID="${WS_ID:-}"
 fi
 WS_URL=""
