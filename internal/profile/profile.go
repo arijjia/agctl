@@ -89,7 +89,9 @@ func EmbeddedNames() []string {
 
 // Embedded загружает профиль, встроенный в бинарь (profiles/<name>/).
 func Embedded(name string) (*Data, error) {
-	return loadFS(embedded, filepath.Join("profiles", name), "embedded:"+name)
+	// Пути в embed.FS всегда через «/»: filepath.Join на Windows даёт «\»,
+	// и embed не находит profiles\agctl\profile.yaml.
+	return loadFS(embedded, "profiles/"+name, "embedded:"+name)
 }
 
 // LoadDir загружает дисковый профиль: dir/profile.yaml + ассеты.
@@ -161,7 +163,8 @@ func nonEmpty(in []string) []string {
 // loadFS читает профиль из embed-FS: profile.yaml + опциональный логотип
 // (путь из brand.logo, относительно каталога профиля).
 func loadFS(fsys embed.FS, dir, source string) (*Data, error) {
-	raw, err := fsys.ReadFile(filepath.Join(dir, "profile.yaml"))
+	// dir и логотип всегда со слэшами: embed.FS не понимает «\» (windows).
+	raw, err := fsys.ReadFile(dir + "/profile.yaml")
 	if err != nil {
 		return nil, fmt.Errorf("profile.yaml: %w", err)
 	}
@@ -173,7 +176,7 @@ func loadFS(fsys embed.FS, dir, source string) (*Data, error) {
 		return nil, err
 	}
 	if p := d.Brand.Logo; p != "" {
-		logo, err := fsys.ReadFile(filepath.Join(dir, filepath.FromSlash(p)))
+		logo, err := fsys.ReadFile(dir + "/" + p)
 		if err != nil {
 			return nil, fmt.Errorf("логотип %s: %w", p, err)
 		}

@@ -4,11 +4,22 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
+
+// fileURL — file://-URL из локального пути на любой ОС: на Windows путь
+// «C:\Users\…», и «file://»+путь парсится как host «C:» с мусорным портом.
+func fileURL(p string) string {
+	s := filepath.ToSlash(p)
+	if !strings.HasPrefix(s, "/") {
+		s = "/" + s
+	}
+	return "file://" + s
+}
 
 func TestProjectNames(t *testing.T) {
 	for _, name := range []string{"demo", "Мой проект", "hello-world_2.0"} {
@@ -259,7 +270,7 @@ func TestCloneProjectFromLocalRepo(t *testing.T) {
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cloneInto(dir, "file://"+src); err != nil {
+	if _, err := cloneInto(dir, fileURL(src)); err != nil {
 		t.Fatalf("clone: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "README.md")); err != nil {
@@ -271,7 +282,7 @@ func TestCloneProjectFromLocalRepo(t *testing.T) {
 	if _, err := CloneProject(home, 7, "Демо", "https://github.com/u/r.git"); !errors.Is(err, ErrProjectExists) {
 		t.Fatalf("duplicate clone = %v, want ErrProjectExists", err)
 	}
-	if _, err := CloneProject(home, 7, "Другой", "file://"+src); !errors.Is(err, ErrInvalidProject) {
+	if _, err := CloneProject(home, 7, "Другой", fileURL(src)); !errors.Is(err, ErrInvalidProject) {
 		t.Fatalf("file:// past ValidCloneURL = %v, want ErrInvalidProject", err)
 	}
 	if _, err := CloneProject(home, 7, "Ещё", "https://"); !errors.Is(err, ErrInvalidProject) {

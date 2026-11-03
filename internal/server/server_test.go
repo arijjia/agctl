@@ -169,6 +169,9 @@ func newTestEnvWith(t *testing.T, maxPerUser int, tune func(*Config)) *testEnv {
 	if err != nil {
 		t.Fatalf("store: %v", err)
 	}
+	// Close регистрируем сразу: если конструирование ниже запаникует,
+	// Windows не сможет удалить открытый test.db в cleanup t.TempDir.
+	t.Cleanup(func() { _ = db.Close() })
 	keyPath, err := secrets.EnsureMasterKey(home)
 	if err != nil {
 		t.Fatalf("key: %v", err)
@@ -191,7 +194,6 @@ func newTestEnvWith(t *testing.T, maxPerUser int, tune func(*Config)) *testEnv {
 	webFS := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<!doctype html><title>agctl</title>")}}
 	api := httptest.NewServer(s.Routes(webFS))
 	t.Cleanup(api.Close)
-	t.Cleanup(func() { _ = db.Close() })
 	env := &testEnv{t: t, srv: s, api: api, rt: rt, home: home, db: db}
 	env.admin = env.newClient()
 	return env

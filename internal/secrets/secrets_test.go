@@ -3,6 +3,7 @@ package secrets
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -104,7 +105,8 @@ func TestEnsureMasterKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode().Perm() != 0o600 {
+	// На Windows нет POSIX-прав: файл всегда 0666, chmod 0600 не имеет эффекта.
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("права ключа = %v, ждали 0600", fi.Mode().Perm())
 	}
 	key, err := os.ReadFile(p1)

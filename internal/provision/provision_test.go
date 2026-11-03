@@ -3,6 +3,7 @@ package provision
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -101,8 +102,13 @@ func TestProvisionFull(t *testing.T) {
 	if !strings.Contains(string(b), "sk-test-token") || !strings.Contains(string(b), "AGCTL_LLM_API_KEY") {
 		t.Fatalf(".credentials.yaml без токена/ref: %s", b)
 	}
-	if fi, err := os.Stat(creds); err != nil || fi.Mode().Perm() != 0o600 {
-		t.Fatalf(".credentials.yaml должен быть 0600")
+	// На Windows нет POSIX-прав: файл всегда 0666, chmod 0600 не имеет эффекта.
+	fi, err := os.Stat(creds)
+	if err != nil {
+		t.Fatalf("нет .credentials.yaml: %v", err)
+	}
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
+		t.Fatalf(".credentials.yaml должен быть 0600, есть %v", fi.Mode().Perm())
 	}
 	settings, err := os.ReadFile(filepath.Join(l.DshHome, "settings.yaml"))
 	if err != nil {
