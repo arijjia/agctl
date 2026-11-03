@@ -1,8 +1,11 @@
 name: dsh-bump
 
+# Еженедельный cron снят: его гейт e2e-smoke.sh проверяет v2-workspaces,
+# удалённые в v3 (POST /api/workspaces → 410), поэтому расписание давало
+# гарантированно красный запуск каждый понедельник. Вернуть cron после
+# v3-сценария e2e (персональный контейнер + проекты). Ручной запуск:
+#   gh workflow run dsh-bump --repo arijjia/agctl
 on:
-  schedule:
-    - cron: "23 4 * * 1" # еженедельно по понедельникам
   workflow_dispatch:
 
 permissions:
