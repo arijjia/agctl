@@ -273,3 +273,19 @@ func TestInjectChatShellResponseRestoresReadError(t *testing.T) {
 		t.Fatalf("read-error prefix was not restored: %q", got)
 	}
 }
+
+// TestChatShellScriptStrictModeDeclarations — инлайн-скрипт чат-шелла имеет
+// атрибуты по умолчанию (без type=module), но написан в strict mode; любая
+// запись в необъявленную переменную — ReferenceError, который убивает весь
+// скрипт (дефект D6-эпохи: fixChrome присваивал `found` без var, из-за чего
+// MutationObserver бренда не устанавливался вовсе). Гард требует объявления
+// рабочих переменных в fixChrome.
+func TestChatShellScriptStrictModeDeclarations(t *testing.T) {
+	script := chatShellScript(fixtureView(t))
+	if !strings.Contains(script, `"use strict"`) {
+		t.Fatal("chat shell script must stay strict mode: silent globals would hide regressions")
+	}
+	if !strings.Contains(script, "var titles=[],found=[];") {
+		t.Fatal("fixChrome must declare `found` (var) — bare assignment throws ReferenceError in strict mode and kills the brand MutationObserver")
+	}
+}

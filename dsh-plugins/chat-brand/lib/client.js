@@ -157,12 +157,16 @@ window.__ModuleLoader__.load({
 			return out;
 		}
 
-		function fixAll() {
+		function fixAll(ctx) {
 			try { closePreviewNotice(); } catch (e) {}
 			try { applyBrand(); } catch (e) {}
 			try { fixPlaceholder(); } catch (e) {}
 			try { fixModels(); } catch (e) {}
+			// Лечение D6 (застрявший выбор воркспейса) — каждый тик, как и бренд:
+			// состояние видно только по DOM, других наблюдателей у плагина нет.
+			if (ctx) { try { healStuckWorkspacePick(ctx); } catch (e) {} }
 		}
+
 
 		// ── создание воркспейса через родную кнопку ─────────────────────────────
 		// Родная кнопка "Add workspace" в шапке Workspaces открывает наш диалог:
@@ -172,6 +176,8 @@ window.__ModuleLoader__.load({
 		let brandCtx = null;
 		let roleCanUseDevTools = false;
 		let devToolsStop = null;
+		let stuckPickTicks = 0;
+
 
 		function workspaceSvc() {
 			try { return (brandCtx && brandCtx.get && brandCtx.get("workspaces")) || null; }
@@ -274,27 +280,29 @@ window.__ModuleLoader__.load({
 		}
 
 		async function syncRoleControls(ctx) {
-			const developerTools = ctx.configForms && ctx.configForms.developerTools && ctx.configForms.developerTools.enabled;
-			if (!developerTools) return;
+			// dsh 0.2.1-rc.2: ctx.configForms.developerTools — DeveloperToolsPreference
+			// с полем enabled (observable) и методом setEnabled на самой preference.
+			// Прошлый код звал setEnabled на observable — TypeError в подписке.
+			const preference = ctx.configForms && ctx.configForms.developerTools;
+			const enabledStore = preference && preference.enabled;
+			if (!preference || !enabledStore || typeof enabledStore.getSnapshot !== "function") return;
 			const response = await fetch("/api/me", { credentials: "include", headers: { Accept: "application/json" } });
-			if (!response.ok) return;
+			if (!response.ok) return; // fail closed: pre-paint CSS уже схлопнул dev-поверхности
 			const data = await response.json();
 			roleCanUseDevTools = !!(data && data.user && ["developer", "admin"].includes(data.user.role));
-			// Правой панелью управляет штатный DSH Layout API. Обычному user
-			// закрываем её без переходного кадра (pre-paint CSS в gateway); dev/admin
-			// получаем полный нативный rightbar.
+			// Правой панелью управляет штатный DSH Layout API: обычному user закрываем
+			// (pre-paint CSS схлопнул колонку до этого кадра); developer/admin оставляем
+			// нативное поведение — openRightbar самим не зовём, чтобы не сражаться с
+			// штатным состоянием панели (дефект D8: мигание пустой колонки).
 			const layout = (ctx.get && ctx.get("layout")) || ctx.layout;
-			if (layout) {
-				if (roleCanUseDevTools && typeof layout.openRightbar === "function") layout.openRightbar(true, false);
-				if (!roleCanUseDevTools && typeof layout.closeRightbar === "function") layout.closeRightbar();
-			}
+			if (!roleCanUseDevTools && layout && typeof layout.closeRightbar === "function") layout.closeRightbar();
 			// Пользователь может увидеть этот нативный toggle в Settings → General.
 			// Держим его выключенным при любых последующих изменениях, чтобы PTC/
 			// Minimal и правые developer-поверхности оставались только developer/admin.
-			if (!devToolsStop && typeof developerTools.subscribe === "function") {
-				devToolsStop = developerTools.subscribe(() => {
-					if (!roleCanUseDevTools && developerTools.getSnapshot()) {
-						void developerTools.setEnabled(false).catch((e) => console.warn("[agctl] developer tools gate:", e));
+			if (!devToolsStop && typeof enabledStore.subscribe === "function") {
+				devToolsStop = enabledStore.subscribe(() => {
+					if (!roleCanUseDevTools && enabledStore.getSnapshot()) {
+						void preference.setEnabled(false).catch((e) => console.warn("[agctl] developer tools gate:", e));
 					}
 				});
 				ctx.effect(() => () => {
@@ -302,15 +310,104 @@ window.__ModuleLoader__.load({
 					devToolsStop = null;
 				}, "agctl-chat-brand.role-gate");
 			}
-			const enabled = !!developerTools.getSnapshot();
+			const enabled = !!enabledStore.getSnapshot();
 			if (roleCanUseDevTools !== enabled) {
-				await developerTools.setEnabled(roleCanUseDevTools);
+				await preference.setEnabled(roleCanUseDevTools);
 			}
+		}
+
+		// ── первая сессия и застрявший выбор воркспейса (дефект D6) ────────────
+		// dsh 0.2.1-rc.2 в двух местах может оставить пользователя на пунктирном
+		// composer'е «Выберите воркспейс»: (1) холодный старт без сессий —
+		// восстановление выбора не создаёт первую сессию, если бэкенд ещё греется;
+		// (2) выбор воркспейса в hero-picker'е: навигация отменяется соседней
+		// (layout.selectPanel/beginNavigation) или создание сессии падает молча —
+		// чип уже показывает папку, а сессия не открыта и композер остаётся
+		// неактивным навсегда. Штатный выход — кнопка «New session» у папки;
+		// оба авто-лечебника делают ровно тот же штатный uiWorkspace.startSession.
+
+		function uiWorkspaceSvc(ctx) {
+			try { return (ctx.get && ctx.get("uiWorkspace")) || ctx.uiWorkspace || null; }
+			catch (e) { return null; }
+		}
+
+		function heroState() {
+			if (typeof document === "undefined") return null;
+			const composer = document.querySelector('[data-composer-input]');
+			const content = document.querySelector('[data-conversation-content]');
+			if (!composer || !content) return null;
+			const session = content.getAttribute('data-conversation-session') || '';
+			const chip = [...document.querySelectorAll('button[aria-haspopup="menu"]')]
+				.find((b) => /workspace|воркспейс/i.test(b.getAttribute('aria-label') || ''));
+			if (!chip) return null;
+			return {
+				composerEditable: composer.getAttribute('contenteditable') === 'true',
+				session: session,
+				chipText: (chip.textContent || '').trim(),
+				chipOpen: chip.getAttribute('aria-expanded') === 'true',
+				menuVisible: !!document.querySelector('[role="menu"]'),
+			};
+		}
+
+		// ensureFirstWorkspaceSession: холодный старт (списки готовы, сессий нет —
+		// ни активных, ни архивных) → открыть первую сессию Default workspace тем же
+		// переходом, что и кнопка «New session». Одна попытка на загрузку страницы.
+		function ensureFirstWorkspaceSession(ctx) {
+			const uiWorkspace = uiWorkspaceSvc(ctx);
+			const workspaceList = uiWorkspace && uiWorkspace.workspaces && uiWorkspace.workspaces.list;
+			const sessionList = uiWorkspace && uiWorkspace.sessions && uiWorkspace.sessions.list;
+			if (!uiWorkspace || typeof uiWorkspace.startSession !== "function" || !workspaceList || !sessionList) return;
+			ctx.effect(() => {
+				let started = false;
+				const tryStart = () => {
+					if (started) return;
+					const workspaces = workspaceList.getSnapshot && workspaceList.getSnapshot();
+					const sessions = sessionList.getSnapshot && sessionList.getSnapshot();
+					if (!workspaces || !sessions || workspaces.phase !== "ready" || sessions.phase !== "ready") return;
+					if ((sessions.ids || []).length > 0 || (workspaces.archivedSessionIds || []).length > 0) return;
+					const workspace = (workspaces.items || []).find((item) => item.path === "/workspace" || item.title === "Default workspace");
+					if (!workspace) return;
+					started = true;
+					uiWorkspace.startSession(workspace.workspaceId);
+				};
+				const stops = [];
+				if (typeof workspaceList.subscribe === "function") stops.push(workspaceList.subscribe(tryStart));
+				if (typeof sessionList.subscribe === "function") stops.push(sessionList.subscribe(tryStart));
+				tryStart();
+				return () => stops.forEach((stop) => stop());
+			}, "agctl-chat-brand.first-workspace-session");
+		}
+
+		// healStuckWorkspacePick: hero без сессии, но чип уже показывает выбранную
+		// папку — выбор не доехал до сессии (отменённая навигация/тихий отказ RPC).
+		// Состояние должно продержаться два подряд тика (~3 с), чтобы не воевать с
+		// штатной навигацией, которая в полёте; меню выбора должно быть закрыто.
+		function healStuckWorkspacePick(ctx) {
+			const uiWorkspace = uiWorkspaceSvc(ctx);
+			if (!uiWorkspace || typeof uiWorkspace.startSession !== "function") return;
+			const state = heroState();
+			if (!state || state.composerEditable || state.session || state.chipOpen || state.menuVisible) {
+				stuckPickTicks = 0;
+				return;
+			}
+			if (!state.chipText || /^choose workspace$|^выберите воркспейс$/i.test(state.chipText)) {
+				stuckPickTicks = 0; // выбор ещё не сделан — это штатный hero, не трогаем
+				return;
+			}
+				stuckPickTicks += 1;
+			if (stuckPickTicks < 2) return;
+			stuckPickTicks = 0;
+			uiWorkspace.startSession(); // без аргумента = недавний воркспейс: тот же путь, что у «+» у папки
 		}
 
 		function apply(ctx) {
 			brandCtx = ctx;
 			bindWorkspaceCreate();
+			// D6 (1): холодный старт без сессий — открыть первую сессию Default
+			// workspace штатным uiWorkspace.startSession (тот же переход, что у
+			// кнопки «New session» у папки). Сервис приходит инъекцией; если
+			// недоступен — функция мягко выходит, композер живёт как раньше.
+			try { ensureFirstWorkspaceSession(ctx); } catch (e) { console.warn("[agctl] first workspace session:", e); }
 			// Русский composer hint — штатным locale-контрактом dsh: словарь для
 			// namespace conversation + язык ru с fallback en. Прямая подмена
 			// data-placeholder перезаписывалась React'ом; словарь — устойчив.
@@ -318,16 +415,19 @@ window.__ModuleLoader__.load({
 			// Developer Tools и правая панель доступны только developer/admin.
 			void syncRoleControls(ctx).catch((e) => console.warn("[agctl] role settings:", e));
 			if (window.__agctlChatBrandTimer) return;
-			fixAll();
-			setTimeout(fixAll, 1000);
-			setTimeout(fixAll, 4000);
-			window.__agctlChatBrandTimer = setInterval(fixAll, 1500);
+			fixAll(ctx);
+			setTimeout(() => fixAll(ctx), 1000);
+			setTimeout(() => fixAll(ctx), 4000);
+			window.__agctlChatBrandTimer = setInterval(() => fixAll(ctx), 1500);
 		}
 
-		exports.inject = ["configForms", "locale", "layout"];
+		exports.inject = ["configForms", "locale", "layout", "uiWorkspace"];
 		exports.apply = apply;
 		// Unit-test seam: role policy is independent of the UI renderer.
 		exports.__testSyncRoleControls = syncRoleControls;
+		exports.__testHealStuckWorkspacePick = healStuckWorkspacePick;
+		exports.__testEnsureFirstWorkspaceSession = ensureFirstWorkspaceSession;
+		exports.__testHeroState = heroState;
 		return module.exports;
 	},
 });

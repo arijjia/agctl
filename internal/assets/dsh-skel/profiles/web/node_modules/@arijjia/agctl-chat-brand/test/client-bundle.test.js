@@ -37,7 +37,14 @@ async function loadClientFactory() {
 test("клиентский бандл загружается и объявляет apply с мягким inject", async () => {
 	const exports = await loadClientFactory();
 	assert.equal(typeof exports.apply, "function");
-	assert.deepEqual(exports.inject, ["configForms", "locale", "layout"]);
+	// uiWorkspace — штатный сервис dsh (ui-workspace): через него идут
+	// автостарт первой сессии и лечение застрявшего выбора воркспейса (D6).
+	assert.deepEqual(exports.inject, ["configForms", "locale", "layout", "uiWorkspace"]);
+	const pkg = JSON.parse(await readFile(path.join(here, "..", "package.json"), "utf8"));
+	assert.ok(
+		pkg.dsh.client.inject.includes("@deepseek-ai/dsh-client-ui-workspace"),
+		"boot-граф обязан доставлять бандл ui-workspace до материализации плагина",
+	);
 });
 
 test("нативный Workspaces-браузер dsh остаётся единственным обозревателем сессий", async () => {
@@ -89,18 +96,25 @@ test("composer hint — штатный locale dsh, не DOM-патч", async () 
 	assert.doesNotMatch(src, /Message or run a task/, "английский текст открытой сессии больше не патчится");
 });
 
-test("role gate: user фиксирует Standard, developer/admin включают native presets", async () => {
+test("role gate: user фиксирует Standard, developer/admin оставляют нативный режим", async () => {
 	async function check(role, initial) {
 		const exports = await loadClientFactory();
 		let enabled = initial;
 		const listeners = new Set();
-		const developerTools = {
+		// Форма dsh 0.2.1-rc.2: setEnabled живёт на самой preference,
+		// а .enabled — только observable (getSnapshot/subscribe).
+		const enabledStore = {
 			getSnapshot: () => enabled,
+			subscribe: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
+		};
+		let setEnabledCalls = [];
+		const preference = {
+			enabled: enabledStore,
 			setEnabled: async (next) => {
 				enabled = next;
+				setEnabledCalls.push(next);
 				for (const listener of [...listeners]) listener();
 			},
-			subscribe: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
 		};
 		const layoutCalls = [];
 		const layout = {
@@ -108,7 +122,7 @@ test("role gate: user фиксирует Standard, developer/admin включа�
 			closeRightbar: () => layoutCalls.push(["close"]),
 		};
 		const ctx = {
-			configForms: { developerTools: { enabled: developerTools } },
+			configForms: { developerTools: preference },
 			get: (name) => name === "layout" ? layout : undefined,
 			effect: (register) => register(),
 		};
@@ -116,7 +130,7 @@ test("role gate: user фиксирует Standard, developer/admin включа�
 		globalThis.fetch = async () => ({ ok: true, json: async () => ({ user: { role } }) });
 		try {
 			await exports.__testSyncRoleControls(ctx);
-			return { enabled, developerTools, layoutCalls };
+			return { enabled, preference, layoutCalls, setEnabledCalls };
 		} finally {
 			if (oldFetch === undefined) delete globalThis.fetch;
 			else globalThis.fetch = oldFetch;
@@ -126,12 +140,94 @@ test("role gate: user фиксирует Standard, developer/admin включа�
 	const user = await check("user", true);
 	assert.equal(user.enabled, false, "user получает только Standard");
 	assert.deepEqual(user.layoutCalls, [["close"]], "user right pane закрывается");
-	await user.developerTools.setEnabled(true); // попытка включить toggle в Settings
+	assert.deepEqual(user.setEnabledCalls, [false], "setEnabled зовётся на preference, не на observable");
+	await user.preference.setEnabled(true); // попытка включить toggle в Settings
 	assert.equal(user.enabled, false, "toggle user сразу возвращается в off");
 	const developer = await check("developer", false);
 	assert.equal(developer.enabled, true);
-	assert.deepEqual(developer.layoutCalls, [["open", true, false]], "developer получает полный right pane");
+	// D8: панель developer не открываем принудительно — видимость решает
+	// нативный DSH rightbar, иначе пустая колонка мигает до готовности.
+	assert.deepEqual(developer.layoutCalls, [], "developer right pane не трогается из плагина");
 	const admin = await check("admin", false);
 	assert.equal(admin.enabled, true);
-	assert.deepEqual(admin.layoutCalls, [["open", true, false]], "admin получает полный right pane");
+	assert.deepEqual(admin.layoutCalls, [], "admin right pane не трогается из плагина");
+});
+
+// ── D6: пунктирный composer «Выберите воркспейс» ────────────────────────────
+
+function stubHeroDom({ editable, session, chipText, chipOpen, menu }) {
+	const composer = {
+		attrs: { "data-composer-input": "true", contenteditable: editable ? "true" : "false" },
+		getAttribute: (name) => composer.attrs[name] ?? null,
+	};
+	const content = {
+		attrs: { "data-conversation-content": "", "data-conversation-session": session || "" },
+		getAttribute: (name) => content.attrs[name] ?? null,
+	};
+	const chip = {
+		labels: ["Choose workspace".replace("Choose workspace", chipText || "Choose workspace")],
+		textContent: chipText || "Choose workspace",
+		expanded: !!chipOpen,
+		getAttribute: (name) => (name === "aria-label" ? "Choose workspace" : name === "aria-expanded" ? (chip.expanded ? "true" : "false") : name === "aria-haspopup" ? "menu" : null),
+	};
+	const oldDocument = globalThis.document;
+	globalThis.document = {
+		querySelector: (selector) => (selector === "[data-composer-input]" ? composer : selector === "[data-conversation-content]" ? content : null),
+		querySelectorAll: (selector) => (selector === 'button[aria-haspopup="menu"]' ? [chip] : selector === '[role="menu"]' ? (menu ? [{}] : []) : []),
+	};
+	return () => {
+		if (oldDocument === undefined) delete globalThis.document;
+		else globalThis.document = oldDocument;
+	};
+}
+
+test("D6: застрявший выбор воркспейса доезжает до startSession на втором тике", async () => {
+	const exports = await loadClientFactory();
+	let startSessionCalls = 0;
+	const ctx = {
+		get: (name) => (name === "uiWorkspace" ? { startSession: () => { startSessionCalls += 1; } } : undefined),
+		effect: (register) => register(),
+	};
+	const restoreDom = stubHeroDom({ editable: false, session: "", chipText: "1", chipOpen: false, menu: false });
+	try {
+		exports.__testHealStuckWorkspacePick(ctx);
+		assert.equal(startSessionCalls, 0, "первый тик — наблюдение, не воюем с навигацией в полёте");
+		exports.__testHealStuckWorkspacePick(ctx);
+		assert.equal(startSessionCalls, 1, "второй подряд тик — штатный startSession(недавний воркспейс)");
+	} finally {
+		restoreDom();
+	}
+});
+
+test("D6: живые состояния композера лечению не подлежат", async () => {
+	const exports = await loadClientFactory();
+	let startSessionCalls = 0;
+	const ctx = {
+		get: (name) => (name === "uiWorkspace" ? { startSession: () => { startSessionCalls += 1; } } : undefined),
+		effect: (register) => register(),
+	};
+	const cases = [
+		{ why: "композер активен (сессия открыта)", dom: { editable: true, session: "s1", chipText: "1", chipOpen: false, menu: false } },
+		{ why: "hero без выбора — штатный пустой чат", dom: { editable: false, session: "", chipText: "Choose workspace", chipOpen: false, menu: false } },
+		{ why: "меню выбора открыто — пользователь выбирает", dom: { editable: false, session: "", chipText: "1", chipOpen: true, menu: true } },
+	];
+	for (const { why, dom } of cases) {
+		const restoreDom = stubHeroDom(dom);
+		try {
+			for (let tick = 0; tick < 3; tick++) exports.__testHealStuckWorkspacePick(ctx);
+			assert.equal(startSessionCalls, 0, why);
+		} finally {
+			restoreDom();
+		}
+	}
+});
+
+test("D6: автостарт первой сессии объявлен и звёт штатный startSession", async () => {
+	const src = await readFile(clientPath, "utf8");
+	assert.match(src, /ensureFirstWorkspaceSession/, "автостарт первой сессии на месте");
+	assert.match(src, /healStuckWorkspacePick/, "лечение застрявшего выбора на месте");
+	assert.match(src, /item\.path === "\/workspace" \|\| item\.title === "Default workspace"/, "первая сессия — Default workspace платформы");
+	assert.match(src, /workspaces\.phase !== "ready" \|\| sessions\.phase !== "ready"/, "автостарт ждёт готовности списков");
+	assert.match(src, /\(sessions\.ids \|\| \[\]\)\.length > 0 \|\| \(workspaces\.archivedSessionIds \|\| \[\]\)\.length > 0/, "автостарт не срабатывает, когда сессии уже есть");
+	assert.match(src, /uiWorkspace\.startSession\(\); \/\/ без аргумента/, "лечение идёт тем же штатным переходом, что у «+» у папки");
 });

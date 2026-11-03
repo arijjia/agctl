@@ -77,7 +77,7 @@ function fixIdentity(root){
 function fixChrome(root){
   if(!root||!root.querySelectorAll)return;
   fixIdentity(root);
-  var titles=[];
+  var titles=[],found=[];
   if(root.matches&&root.matches('[class*="pXSMma_titleGroup"]'))titles.push(root);
   found=root.querySelectorAll('[class*="pXSMma_titleGroup"]');
   for(var i=0;i<found.length;i++)titles.push(found[i]);
@@ -87,7 +87,7 @@ function fixChrome(root){
   var heads=[];
   if(root.matches&&root.matches('[class*="_heading_"]'))heads.push(root);
   found=root.querySelectorAll('[class*="_heading_"]');
-  for(var i=0;i<found.length;i++)heads.push(found[i]);
+  for(i=0;i<found.length;i++)heads.push(found[i]);
   for(var i=0;i<heads.length;i++){
     var h=heads[i];
     if((h.textContent||'').trim()!=='DeepSeek')continue;

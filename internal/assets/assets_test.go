@@ -113,7 +113,9 @@ func TestChatBrandPluginSkeletonPresentButDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(manifest, []byte(`"inject": ["configForms", "locale", "layout"]`)) || !bytes.Contains(manifest, []byte(`"platform": "web"`)) {
-		t.Fatal("chat-brand client must request configForms, locale and layout services and target web platform")
+	// uiWorkspace доставляется boot-графом до материализации плагина: через него
+	// работают автостарт первой сессии и лечение застрявшего выбора (D6).
+	if !bytes.Contains(manifest, []byte(`"inject": ["configForms", "locale", "layout", "@deepseek-ai/dsh-client-ui-workspace"]`)) || !bytes.Contains(manifest, []byte(`"platform": "web"`)) {
+		t.Fatal("chat-brand client must request configForms, locale, layout and ui-workspace bundle and target web platform")
 	}
 }
