@@ -242,5 +242,20 @@ test("D6: автостарт первой сессии объявлен и зв�
 	assert.match(src, /item\.path === "\/workspace" \|\| item\.title === "Default workspace"/, "первая сессия — Default workspace платформы");
 	assert.match(src, /workspaces\.phase !== "ready" \|\| sessions\.phase !== "ready"/, "автостарт ждёт готовности списков");
 	assert.match(src, /\(sessions\.ids \|\| \[\]\)\.length > 0 \|\| \(workspaces\.archivedSessionIds \|\| \[\]\)\.length > 0/, "автостарт не срабатывает, когда сессии уже есть");
-	assert.match(src, /uiWorkspace\.startSession\(\); \/\/ без аргумента/, "лечение идёт тем же штатным переходом, что у «+» у папки");
+	assert.match(src, /uiWorkspace\.startSession\(undefined, userSessionPreset\(\)\)/, "лечение идёт тем же штатным переходом, что у «+» у папки");
+});
+
+test("D7: пути плагина для user идут с явным agentPreset danger-full-access", async () => {
+	const exports = await loadClientFactory();
+	// Роль неизвестна — пресет не задаём (developer/admin решают сами).
+	assert.deepEqual(exports.__testUserSessionPreset(), undefined);
+	const src = await readFile(clientPath, "utf8");
+	assert.match(src, /let roleKnown = false;/, "роль фиксируется после ответа /api/me");
+	assert.match(src, /roleKnown = !!\(data && data\.user && data\.user\.role\)/, "roleKnown выставляется вместе с ролью");
+	assert.match(src, /roleKnown && !roleCanUseDevTools \? \{ agentPreset: "danger-full-access" \} : undefined/,
+		"userSessionPreset задаёт danger-full-access только известной user-роли");
+	assert.match(src, /uiWorkspace\.startSession\(workspace\.workspaceId, userSessionPreset\(\)\)/,
+		"автостарт первой сессии передаёт preset");
+	assert.match(src, /uiWorkspace\.startSession\(undefined, userSessionPreset\(\)\)/,
+		"лечение застрявшего выбора передаёт preset");
 });

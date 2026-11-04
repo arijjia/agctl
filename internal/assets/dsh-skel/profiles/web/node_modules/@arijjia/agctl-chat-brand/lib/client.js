@@ -175,6 +175,7 @@ window.__ModuleLoader__.load({
 		// списке. Встроенный DirectoryPicker контейнерных каталогов не используем.
 		let brandCtx = null;
 		let roleCanUseDevTools = false;
+		let roleKnown = false;
 		let devToolsStop = null;
 		let stuckPickTicks = 0;
 
@@ -362,6 +363,7 @@ window.__ModuleLoader__.load({
 			if (!response.ok) return; // fail closed: pre-paint CSS уже схлопнул dev-поверхности
 			const data = await response.json();
 			roleCanUseDevTools = !!(data && data.user && ["developer", "admin"].includes(data.user.role));
+			roleKnown = !!(data && data.user && data.user.role);
 			// Правой панелью управляет штатный DSH Layout API: обычному user закрываем
 			// (pre-paint CSS схлопнул колонку до этого кадра); developer/admin оставляем
 			// нативное поведение — openRightbar самим не зовём, чтобы не сражаться с
@@ -404,10 +406,22 @@ window.__ModuleLoader__.load({
 		// чип уже показывает папку, а сессия не открыта и композер остаётся
 		// неактивным навсегда. Штатный выход — кнопка «New session» у папки;
 		// оба авто-лечебника делают ровно тот же штатный uiWorkspace.startSession.
+		//
+		// D7: роль user получает agentPreset danger-full-access явно — reuse
+		// пустых blank-сессий на хосте сохраняет их исходный пресет, поэтому у
+		// «старых» учёток (blank'ы до включения дефолта) новые сессии без явного
+		// preset остаются в workspace-write.
 
 		function uiWorkspaceSvc(ctx) {
 			try { return (ctx.get && ctx.get("uiWorkspace")) || ctx.uiWorkspace || null; }
 			catch (e) { return null; }
+		}
+
+		// userSessionPreset — пресет для сессий user-роли; undefined для остальных
+		// (developer/admin управляют режимом сами). Роль известна после
+		// syncRoleControls; до ответа /api/me считаем пресет не заданным.
+		function userSessionPreset() {
+			return roleKnown && !roleCanUseDevTools ? { agentPreset: "danger-full-access" } : undefined;
 		}
 
 		function heroState() {
@@ -447,7 +461,7 @@ window.__ModuleLoader__.load({
 					const workspace = (workspaces.items || []).find((item) => item.path === "/workspace" || item.title === "Default workspace");
 					if (!workspace) return;
 					started = true;
-					uiWorkspace.startSession(workspace.workspaceId);
+					uiWorkspace.startSession(workspace.workspaceId, userSessionPreset());
 				};
 				const stops = [];
 				if (typeof workspaceList.subscribe === "function") stops.push(workspaceList.subscribe(tryStart));
@@ -476,7 +490,9 @@ window.__ModuleLoader__.load({
 				stuckPickTicks += 1;
 			if (stuckPickTicks < 2) return;
 			stuckPickTicks = 0;
-			uiWorkspace.startSession(); // без аргумента = недавний воркспейс: тот же путь, что у «+» у папки
+			// без workspaceId = недавний воркспейс: тот же путь, что у «+» у папки;
+			// user получает agentPreset явно (D7: reuse чужих blank'ов сохраняет их пресет)
+			uiWorkspace.startSession(undefined, userSessionPreset());
 		}
 
 		function apply(ctx) {
@@ -507,6 +523,7 @@ window.__ModuleLoader__.load({
 		exports.__testHealStuckWorkspacePick = healStuckWorkspacePick;
 		exports.__testEnsureFirstWorkspaceSession = ensureFirstWorkspaceSession;
 		exports.__testHeroState = heroState;
+		exports.__testUserSessionPreset = userSessionPreset;
 		return module.exports;
 	},
 });
