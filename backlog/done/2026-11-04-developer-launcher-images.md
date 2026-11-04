@@ -2,7 +2,7 @@
 schema: 1.1.0
 id: developer-launcher-images
 title: "Лаунчер developer: выбор образа перед запуском, свои контейнеры, стоп/рестарт"
-status: open
+status: done
 priority: P1
 size: L
 area: server
@@ -50,3 +50,4 @@ sessions:
 - 2026-11-04: создано (`gitctl backlog new`).
 - 2026-11-04: требование владельца зафиксировано (лаунчер выбора образа,
   свои контейнеры, стоп/рестарт; демо-кейс «образ без SSH / образ с SSH»).
+- 2026-11-04: done — итог v1 в ветке agent/developer-launcher (d58bed6, поверх admin-panel): developer → /launcher (контейнер не стартует до выбора), каталог образов --dev-images/Nexus, старт/стоп/свои контейнеры, ChatSpec.Image + дрейф по желаемому образу + пересоздание на живом, пара образов с-SSH/без-SSH (AGCTL_NO_SSHD, порт 2222 не публикуется на nossh), тесты launcher_test; live-смоук пройден (sshd есть/нет по образу, смена образа на лету). Хвост: несколько контейнеров на developer — отдельная карточка.
