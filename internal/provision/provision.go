@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"gopkg.in/yaml.v3"
 )
 
 // Provider — настройки LLM-провайдера воркспейса (из личного кабинета).
@@ -98,6 +99,28 @@ func ParseModels(text, fallback string) []string {
 		add(fallback)
 	}
 	return out
+}
+
+// ScenarioPreset — готовый сценарий рабочего места, который клиент показывает
+// одной кнопкой в диалоге создания воркспейса: репка-донор клонируется всем
+// одинаковая, сценарий настраивается уже на сервере (компоненты, скиллы).
+type ScenarioPreset struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	CloneURL    string `json:"cloneUrl"`
+}
+
+// ScenarioPresets — каталог сценариев платформы. 1c-vibe: полный цикл
+// 1С-разработки (Jira → ветка → правка выгрузки → самопроверка → MR) из
+// преднастроенной репки arijjia/1c-vibe.
+var ScenarioPresets = []ScenarioPreset{
+	{
+		ID:          "1c-vibe",
+		Title:       "1С-vibe (готовый сценарий)",
+		Description: "Клонировать репку 1c-vibe: скилл 1C Vibe, инструменты Jira/GitLab/BSL и демо-проект. Компоненты настраиваются потом в консоли воркспейсов.",
+		CloneURL:    "https://github.com/arijjia/1c-vibe",
+	},
 }
 
 // Template — зарегистрированный шаблон репки.
@@ -314,6 +337,63 @@ func SeedDshHome(home string, p Provider, skelFS fs.FS) error {
 		return err
 	}
 	return RefreshProvider(home, p)
+}
+
+// EnsurePermissionDefaults — роль user: закрепить пресет разрешений
+// danger-full-access дефолтом свежих сессий в профиле DSH (permission-presets).
+// Для developer/admin роль-запись удаляется: пресет-селектор остаётся штатным.
+// Идемпотентно: повторный ensure обновляет запись, снятие флага её удаляет.
+func EnsurePermissionDefaults(home string, fullAccess bool) error {
+	profileDir := filepath.Join(home, "profiles", "web")
+	patchPath := filepath.Join(profileDir, "cordis.patch.yml")
+	if err := os.MkdirAll(profileDir, 0o755); err != nil {
+		return fmt.Errorf("provision: permission defaults dir: %w", err)
+	}
+	type patchEntry = map[string]any
+	var entries []patchEntry
+	if raw, err := os.ReadFile(patchPath); err == nil {
+		if len(bytes.TrimSpace(raw)) > 0 {
+			if err := yaml.Unmarshal(raw, &entries); err != nil {
+				return fmt.Errorf("provision: permission defaults parse %s: %w", patchPath, err)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("provision: permission defaults read %s: %w", patchPath, err)
+	}
+	const presetPlugin = "@deepseek-ai/dsh-permission-presets"
+	kept := entries[:0]
+	found := false
+	for _, entry := range entries {
+		if name, _ := entry["name"].(string); name == presetPlugin {
+			found = true
+			continue // перевставляем ниже с актуальным конфигом
+		}
+		kept = append(kept, entry)
+	}
+	if !fullAccess && !found {
+		return nil // developer/admin без прежней user-настройки: файл не трогаем
+	}
+	if fullAccess {
+		kept = append(kept, patchEntry{
+			"id":   "permission",
+			"name": presetPlugin,
+			"config": map[string]any{
+				"defaultPreset": "danger-full-access",
+			},
+		})
+	}
+	if len(kept) == 0 && !found {
+		return nil // нечего и незачем создавать
+	}
+	out, err := yaml.Marshal(kept)
+	if err != nil {
+		return fmt.Errorf("provision: permission defaults marshal: %w", err)
+	}
+	header := []byte("# agctl: defaults пресетов разрешений синхронизируются с ролью пользователя.\n")
+	if err := os.WriteFile(patchPath, append(header, out...), 0o644); err != nil {
+		return fmt.Errorf("provision: permission defaults write %s: %w", patchPath, err)
+	}
+	return nil
 }
 
 // EnsureChatPlugins synchronizes the Host/client plugins used only by Chat

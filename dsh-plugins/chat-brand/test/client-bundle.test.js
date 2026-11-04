@@ -128,12 +128,23 @@ test("role gate: user фиксирует Standard, developer/admin оставл�
 		};
 		const oldFetch = globalThis.fetch;
 		globalThis.fetch = async () => ({ ok: true, json: async () => ({ user: { role } }) });
+		// D8: syncRoleControls снимает pre-paint схлопывание правой колонки
+		// флагом на documentElement — стабилизируем DOM-часть.
+		const html = { dataset: {} };
+		const oldDocument = globalThis.document;
+		globalThis.document = { documentElement: html };
+		const oldRAF = globalThis.requestAnimationFrame;
+		globalThis.requestAnimationFrame = (fn) => fn();
 		try {
 			await exports.__testSyncRoleControls(ctx);
-			return { enabled, preference, layoutCalls, setEnabledCalls };
+			return { enabled, preference, layoutCalls, setEnabledCalls, readyFlag: html.dataset.agctlDeveloperToolsReady === "1" };
 		} finally {
 			if (oldFetch === undefined) delete globalThis.fetch;
 			else globalThis.fetch = oldFetch;
+			if (oldDocument === undefined) delete globalThis.document;
+			else globalThis.document = oldDocument;
+			if (oldRAF === undefined) delete globalThis.requestAnimationFrame;
+			else globalThis.requestAnimationFrame = oldRAF;
 		}
 	}
 
@@ -141,10 +152,12 @@ test("role gate: user фиксирует Standard, developer/admin оставл�
 	assert.equal(user.enabled, false, "user получает только Standard");
 	assert.deepEqual(user.layoutCalls, [["close"]], "user right pane закрывается");
 	assert.deepEqual(user.setEnabledCalls, [false], "setEnabled зовётся на preference, не на observable");
+	assert.equal(user.readyFlag, false, "user не снимает pre-paint схлопывание (панели у него нет)");
 	await user.preference.setEnabled(true); // попытка включить toggle в Settings
 	assert.equal(user.enabled, false, "toggle user сразу возвращается в off");
 	const developer = await check("developer", false);
 	assert.equal(developer.enabled, true);
+	assert.equal(developer.readyFlag, true, "developer снимает pre-paint схлопывание флагом готовности");
 	// D8: панель developer не открываем принудительно — видимость решает
 	// нативный DSH rightbar, иначе пустая колонка мигает до готовности.
 	assert.deepEqual(developer.layoutCalls, [], "developer right pane не трогается из плагина");

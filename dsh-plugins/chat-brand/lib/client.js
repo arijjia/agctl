@@ -314,6 +314,13 @@ window.__ModuleLoader__.load({
 			if (roleCanUseDevTools !== enabled) {
 				await preference.setEnabled(roleCanUseDevTools);
 			}
+			if (roleCanUseDevTools) {
+				// D8: снимаем pre-paint схлопывание правой колонки после принятия
+				// роли и включения controls. Дальше видимость решает нативный DSH
+				// rightbar — пустую колонку плагин сам не открывает.
+				await new Promise((resolve) => typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => resolve()) : setTimeout(resolve, 0));
+				if (typeof document !== "undefined" && document.documentElement) document.documentElement.dataset.agctlDeveloperToolsReady = "1";
+			}
 		}
 
 		// ── первая сессия и застрявший выбор воркспейса (дефект D6) ────────────

@@ -47,6 +47,11 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	if err := provision.EnsureChatPlugins(dshHome, rt.cfg.DshSkel); err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
+	// Дефолт пресета синхронизируется с текущей ролью на каждом старте:
+	// user получает danger-full-access, developer/admin сохраняют штатный выбор.
+	if err := provision.EnsurePermissionDefaults(dshHome, spec.DefaultFullAccess); err != nil {
+		return agctlrt.ChatHandle{}, fmt.Errorf("dockerrt: permission defaults: %w", err)
+	}
 	port, err := FreePort()
 	if err != nil {
 		return agctlrt.ChatHandle{}, err

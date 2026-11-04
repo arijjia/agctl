@@ -289,3 +289,26 @@ func TestChatShellScriptStrictModeDeclarations(t *testing.T) {
 		t.Fatal("fixChrome must declare `found` (var) — bare assignment throws ReferenceError in strict mode and kills the brand MutationObserver")
 	}
 }
+
+// TestChatShellRoleSpecificRightPane уже проверяет user-стиль; здесь — D8:
+// developer/admin получают pre-paint схлопывание колонки с флагом готовности,
+// который снимает клиентский плагин после подтверждения роли.
+func TestChatShellDeveloperReadyFlag(t *testing.T) {
+	srv := &Server{brand: fixtureView(t)}
+	for _, role := range []string{"developer", "admin"} {
+		head := string(srv.injectChatShellForRole([]byte("<html><head></head></html>"), role))
+		if !strings.Contains(head, `chat-shell-developer`) {
+			t.Fatalf("роль %s: нет developer-стиля схлопывания", role)
+		}
+		if !strings.Contains(head, `html:not([data-agctl-developer-tools-ready="1"])`) {
+			t.Fatalf("роль %s: схлопывание не привязано к флагу готовности", role)
+		}
+		if strings.Contains(head, `chat-shell-user`) {
+			t.Fatalf("роль %s: случайно получил user-стиль", role)
+		}
+	}
+	head := string(srv.injectChatShellForRole([]byte("<html><head></head></html>"), "user"))
+	if strings.Contains(head, `chat-shell-developer`) {
+		t.Fatal("роль user: не должен получать developer-стиль")
+	}
+}

@@ -37,6 +37,14 @@ button[aria-label^="Workspace files"]{display:none!important}
 div[style*="grid-template-columns"][class*="_frame"]{grid-template-columns:auto minmax(0px,1fr) minmax(0px,0px)!important}
 </style>`
 
+// chatShellDeveloperStyle — developer/admin: правая колонка схлопнута до
+// подтверждения роли и готовности содержимого (плагин снимает флаг
+// data-agctl-developer-tools-ready). Это не даёт показать пустое
+// зарезервированное место при старте (дефект D8: мигание пустой панели).
+const chatShellDeveloperStyle = `<style data-agctl="chat-shell-developer">
+html:not([data-agctl-developer-tools-ready="1"]) div[style*="grid-template-columns"][class*="_frame"]{grid-template-columns:auto minmax(0px,1fr) minmax(0px,0px)!important}
+</style>`
+
 // Document-start: шапка фиксится только в известных UI-селекторах; текст
 // сообщения/кода/вставленного пользователем HTML никогда не переписывается.
 // Бренд и тэглайн подставляются из профиля (jsq-экранирование json.Marshal).
@@ -141,12 +149,16 @@ func chatShellScript(v profile.View) string {
 }
 
 // chatShellHeadForRole — ранняя инъекция. Обычная роль скрывает right dev pane
-// до первого кадра; developer/admin получают только бренд и полный нативный dsh UI.
+// до первого кадра; developer/admin держат колонку схлопнутой до подтверждения
+// роли клиентским плагином (без мигания пустой панелью), затем видят полный
+// нативный dsh UI.
 // BrandBootScript (window.__AGCTL_BRAND__) идёт первым: его читают плагины
 // (chat-brand, cabinet) в том же документе.
 func chatShellHeadForRole(role string, v profile.View) string {
 	style := chatShellStyle
-	if role != "developer" && role != "admin" {
+	if role == "developer" || role == "admin" {
+		style += chatShellDeveloperStyle
+	} else {
 		style += chatShellUserStyle
 	}
 	return v.BrandBootScript() + style + chatShellScript(v)
