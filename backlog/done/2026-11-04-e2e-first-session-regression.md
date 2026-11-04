@@ -2,7 +2,7 @@
 schema: 1.1.0
 id: e2e-first-session-regression
 title: "Playwright-регрессия D6: чистый браузер, первый запуск — композер активен"
-status: open
+status: done
 priority: P3
 size: M
 area: infra
@@ -62,3 +62,4 @@ Unit-тесты не ловят классы регресса на стыке с
   (/tmp/d6-repro: verify2.mjs — три роли fresh-context; coldstart.mjs —
   503-окно ленивого старта контейнера): логику перенести в репо, не
   изобретать заново.
+- 2026-11-04: done — bin/e2e-first-session.sh + tests/e2e-ui/first-session-ui.mjs: свежий профиль -> первый запуск -> композер активен + reload-путь + гард фатальных ошибок консоли; own-home изоляция как в cabinet-playwright. Проверено на двух ревизиях: e16fce9 (plugin 0.5.0) красный (found/setEnabled ошибки), e956694+ зелёный. Оговорка в README: детерминированный e2e-сценарий 'застрявшего выбора' невоспроизводим - лечебник покрыт юнит-тестами chat-brand. agctl 809f9db
