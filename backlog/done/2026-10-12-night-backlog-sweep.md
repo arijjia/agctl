@@ -1,6 +1,6 @@
 ---
 schema: 1.0.0
-id: night-backlog-sweep-2026-10-12
+id: night-backlog-sweep
 title: "Ночная смена 2026-10-12: закрыть бэклог agctl волнами с максимальным тестированием"
 status: done
 priority: P1
