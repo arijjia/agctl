@@ -2,7 +2,7 @@
 schema: 1.1.0
 id: dsh-image-bump-rc5
 title: "Пин dsh в образе чата: 0.2.1-rc.2 → 0.2.1-rc.5+"
-status: open
+status: done
 priority: P3
 size: M
 area: runtime
@@ -65,3 +65,4 @@ DOM-селекторы брендинга в chatshell/chat-brand.
 - 2026-11-04: создано (`gitctl backlog new`). Контекст: тур D6
   (03.11, agctl e956694) показал, что rc.2 требует двух компенсаторов
   в chat-brand; апгрейд пина — путь их убрать.
+- 2026-11-04: done — Пин обновлён bin/dsh-bump.sh --update (dist-tags.latest=rc.5), образ пересобран (sha 3d9c30f4f2f, dsh --version=0.2.1-rc.5). Контракт-аудит по исходникам тега: uiWorkspace.startSession/closeRightbar/developerTools preference-форма - идентичны rc.2-форме chat-brand 0.6.x. Верификация: bin/e2e-first-session.sh зелёный на rc.5 (первый запуск + reload), D7/D8 DOM-пробы на изолированном стенде - user Full access/кнопка скрыта, developer readyFlag=1+Workspace Write, defaultPreset в живом dsh-home. Примечание: bin/e2e-smoke.sh упал на легаси-create 410 (v3-надгробие) - смок не адаптирован к v…
