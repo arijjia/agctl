@@ -2,7 +2,7 @@
 schema: 1.1.0
 id: admin-panel-super-admin
 title: "Админка супер-админа: статистика, контейнеры, запросы, траектории, квоты"
-status: open
+status: in-progress
 priority: P1
 size: L
 area: server

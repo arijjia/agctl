@@ -284,20 +284,24 @@ func (e *testEnv) getChatHTML(c *http.Client) (int, string) {
 func TestChatProxyRecreatesRuntimeAfterDowntime(t *testing.T) {
 	e := newTestEnvWith(t, 3, func(c *Config) { c.Tier0 = true }) // маршруты /chat/
 	e.register(e.admin, "anna", "secret1")
-	uid := int64(1) // первый зарегистрированный пользователь в чистой test-db
+	// Чат-жизненный цикл проверяем на обычном пользователе: админу личный
+	// чат не выдаётся (admin → /admin, см. auditedChat).
+	user := e.newClient()
+	e.register(user, "bob", "secret2")
+	uid := int64(2) // второй зарегистрированный пользователь в чистой test-db
 
 	chat, err := e.srv.ensureChat(uid)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Фейковый endpoint — мёртвый порт: имитируем погибший контейнер.
-	if got := chat.handle.Endpoint; got != "http://127.0.0.1:40001" {
+	if got := chat.handle.Endpoint; got != "http://127.0.0.1:40002" {
 		t.Fatalf("fixture endpoint = %q, want dead fake port", got)
 	}
 
 	// 1) Первый dial-отказ: страница прогрева, кэш ЖИВ (не пересоздаём —
 	// так работает и нормальный первый прогрев dsh).
-	code, body := e.getChatHTML(e.admin)
+	code, body := e.getChatHTML(user)
 	if code != http.StatusServiceUnavailable || !strings.Contains(body, "запускается") {
 		t.Fatalf("warm page: code=%d body=%q", code, body)
 	}
@@ -323,7 +327,7 @@ func TestChatProxyRecreatesRuntimeAfterDowntime(t *testing.T) {
 	defer live.Close()
 	e.rt.chatEndpointOverride = live.URL
 
-	code, body = e.getChatHTML(e.admin)
+	code, body = e.getChatHTML(user)
 	if code != http.StatusServiceUnavailable || !strings.Contains(body, "запускается") {
 		t.Fatalf("eviction request: code=%d body=%q", code, body)
 	}
@@ -335,7 +339,7 @@ func TestChatProxyRecreatesRuntimeAfterDowntime(t *testing.T) {
 	}
 
 	// 3) Как следующий авто-refresh браузера: рантайм пересоздан, прокси живой.
-	code, body = e.getChatHTML(e.admin)
+	code, body = e.getChatHTML(user)
 	if code != http.StatusOK || !strings.Contains(body, "chat-is-alive") {
 		t.Fatalf("recovered proxy: code=%d body=%q", code, body)
 	}

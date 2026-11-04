@@ -722,6 +722,17 @@ func (s *Server) markChatDown(userID int64, rt *chatRuntime) bool {
 	return time.Since(rt.downSince) >= chatDownGrace
 }
 
+// evictChatByUser — забыть кэшированный runtime пользователя, не имея его
+// указателя (админ-операции над контейнером снаружи). Сам контейнер не
+// трогается: следующий /chat/ пройдёт через ensureChat и пересоздаст его.
+func (s *Server) evictChatByUser(userID int64) {
+	s.chatMu.Lock()
+	if s.chats != nil {
+		delete(s.chats, userID)
+	}
+	s.chatMu.Unlock()
+}
+
 // evictChat забывает мёртвый runtime. Контейнер не трогаем (его может уже не
 // быть), персистентные данные живут на маунтах: следующий /chat/ пройдёт через
 // ensureChat → EnsureChat, которая идемпотентно пересоздаёт контейнер.
@@ -741,12 +752,18 @@ func writeWarmChatPage(w http.ResponseWriter) {
 	_, _ = fmt.Fprintf(w, `<!doctype html><meta charset="utf-8"><title>agctl: прогрев</title><meta http-equiv="refresh" content="2"><p style="font-family:system-ui;padding:2rem">Личный чат запускается… <a href="/chat/">Повторить сейчас</a></p>`)
 }
 
-// rootEntry — корень платформы: залогинен → свой чат, иначе → страница входа
-// (единственная страница фронта agctl). no-store, чтобы после входа корень
-// всегда перенаправлял в /chat/, а не отдавал закэшированную форму.
+// rootEntry — корень платформы: залогинен → по роли (admin → админ-панель,
+// остальные → свой чат), иначе → страница входа (единственная страница
+// фронта agctl). no-store, чтобы после входа корень всегда перенаправлял,
+// а не отдавал закэшированную форму.
 func (s *Server) rootEntry(w http.ResponseWriter, r *http.Request, webFS fs.FS) {
-	if _, err := s.who(r); err == nil {
-		http.Redirect(w, r, "/chat/", http.StatusTemporaryRedirect)
+	if id, err := s.who(r); err == nil {
+		target := "/chat/"
+		if id.Role == "admin" {
+			// Админ — не пользователь платформы: контейнер ему не поднимаем.
+			target = "/admin"
+		}
+		http.Redirect(w, r, target, http.StatusTemporaryRedirect)
 		return
 	}
 	index, err := fs.ReadFile(webFS, "index.html")
