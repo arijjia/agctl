@@ -240,6 +240,31 @@ func TestValidCloneURL(t *testing.T) {
 	}
 }
 
+func TestProjectNameFromCloneURL(t *testing.T) {
+	for raw, want := range map[string]string{
+		"https://github.com/arijjia/1c-vibe":      "1c-vibe",
+		"https://github.com/arijjia/1c-vibe.git":  "1c-vibe",
+		"https://github.com/arijjia/1c-vibe/":     "1c-vibe",
+		"https://github.com/arijjia/My_Repo.v2":   "My_Repo.v2",
+		"https://github.com/arijjia/demo-project": "demo-project",
+	} {
+		got, err := ProjectNameFromCloneURL(raw)
+		if err != nil || got != want {
+			t.Errorf("%q = %q, %v; want %q", raw, got, err, want)
+		}
+	}
+	for _, raw := range []string{"", "https://github.com/arijjia/", "https://github.com/arijjia"} {
+		if got, err := ProjectNameFromCloneURL(raw); err == nil {
+			t.Errorf("accepted %q as %q", raw, got)
+		}
+	}
+	// Пустое имя при клонировании: выводится из URL; с битым URL — ошибка.
+	home := t.TempDir()
+	if _, err := CloneProject(home, 1, "", "https://"); !errors.Is(err, ErrInvalidProject) {
+		t.Fatalf("empty name + bad URL = %v, want ErrInvalidProject", err)
+	}
+}
+
 func TestCloneProjectFromLocalRepo(t *testing.T) {
 	home := t.TempDir()
 	// Готовим источник: локальный репо с одним коммитом (транспорт file://).

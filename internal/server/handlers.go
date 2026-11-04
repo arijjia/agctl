@@ -539,6 +539,9 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"requireApproval": s.cfg.RequireApproval,
 		"tier0":           s.cfg.Tier0,
+		// Готовые сценарии рабочего места («1c-vibe» и будущие): клиент
+		// показывает их кнопками в диалоге создания воркспейса.
+		"presets": provision.ScenarioPresets,
 	})
 }
 

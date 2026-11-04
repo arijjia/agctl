@@ -119,3 +119,37 @@ func TestChatBrandPluginSkeletonPresentButDisabled(t *testing.T) {
 		t.Fatal("chat-brand client must request configForms, locale, layout and ui-workspace bundle and target web platform")
 	}
 }
+
+// The workspace console ships to chat homes dynamically (EnsureChatPlugins),
+// so the dev skeleton must contain the package files but never enable it.
+func TestWorkspaceConsolePluginSkeletonPresentButDisabled(t *testing.T) {
+	src := filepath.Join("..", "..", "dsh-plugins", "workspace-console")
+	dst := filepath.Join("dsh-skel", "profiles", "web", "node_modules", "@arijjia", "agctl-workspace-console")
+	for _, f := range []string{"package.json", "cordis.patch.yml", "README.md", filepath.Join("lib", "index.js"), filepath.Join("lib", "client.js"), filepath.Join("test", "console.test.cjs")} {
+		want, err := os.ReadFile(filepath.Join(src, f))
+		if err != nil {
+			t.Fatalf("workspace-console source %s: %v", f, err)
+		}
+		got, err := os.ReadFile(filepath.Join(dst, f))
+		if err != nil {
+			t.Fatalf("workspace-console skeleton %s missing: %v", f, err)
+		}
+		if !bytes.Equal(want, got) {
+			t.Fatalf("workspace-console drift at %s; recopy dsh-plugins/workspace-console", f)
+		}
+	}
+	pj, err := os.ReadFile(filepath.Join("dsh-skel", "profiles", "web", "package.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(pj, []byte("@arijjia/agctl-workspace-console")) {
+		t.Fatal("skel web bundles must not enable workspace-console (dev workspaces stay clean)")
+	}
+	manifest, err := os.ReadFile(filepath.Join(dst, "package.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(manifest, []byte(`"inject": ["@deepseek-ai/dsh-client-ui-layout"]`)) || !bytes.Contains(manifest, []byte(`"platform": "web"`)) {
+		t.Fatal("workspace-console client must request the ui-layout bundle and target web platform")
+	}
+}

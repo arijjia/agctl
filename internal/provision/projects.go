@@ -205,11 +205,45 @@ func ValidCloneURL(raw string) bool {
 	return true
 }
 
+// ProjectNameFromCloneURL выводит имя проекта из HTTPS GitHub URL: последний
+// сегмент пути без хвоста «.git» (регистр и пробелы сохраняем — имя видно
+// пользователю, безопасность проверяет ValidProjectName). Служит для
+// автоподстановки «клонишь репу — имя подставилось само».
+func ProjectNameFromCloneURL(raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", ErrInvalidProject
+	}
+	parts := strings.Split(strings.Trim(u.EscapedPath(), "/"), "/")
+	if len(parts) != 2 { // owner/repo — имя берём только из полного репо-URL
+		return "", ErrInvalidProject
+	}
+	name := parts[len(parts)-1]
+	if decoded, decErr := url.PathUnescape(name); decErr == nil {
+		name = decoded
+	}
+	name = strings.TrimSuffix(name, ".git")
+	if !ValidProjectName(name) {
+		return "", ErrInvalidProject
+	}
+	return name, nil
+}
+
 // CloneProject creates the project directory by cloning a remote repository.
 // No credentials are used or stored — only public/pre-authorized URLs; the
 // remote origin is configured by the clone itself, while autosave stays
 // local-only. Existing directories are never overwritten or adopted.
+// An empty name is derived from the repository URL (1c-vibe scenario:
+// клонирование преднастроенной репки не должно требовать придумывания имени).
 func CloneProject(home string, userID int64, name, cloneURL string) (Project, error) {
+	cloneURL = strings.TrimSpace(cloneURL)
+	if name == "" {
+		derived, err := ProjectNameFromCloneURL(cloneURL)
+		if err != nil {
+			return Project{}, ErrInvalidProject
+		}
+		name = derived
+	}
 	if !ValidProjectName(name) || !ValidCloneURL(cloneURL) {
 		return Project{}, ErrInvalidProject
 	}
@@ -326,6 +360,10 @@ func AutosaveLocalProject(home string, userID int64, name string) (bool, error) 
 			wt.Excludes = append(wt.Excludes, gitignore.ParsePattern(pattern, nil))
 		}
 	}
+	// Серверный stash выключенных компонентов (консоль воркспейсов) не
+	// коммитится никогда: go-git прячет .git из worktree-FS, поэтому
+	// .git/info/exclude для него не авторитетен — паттерн добавляется явно.
+	wt.Excludes = append(wt.Excludes, StashIgnorePattern)
 	// Remove credentials directly from the index, without deleting user's files.
 	idx, err := repo.Storer.Index()
 	if err != nil {

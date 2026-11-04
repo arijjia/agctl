@@ -403,7 +403,7 @@ func EnsureChatPlugins(home string, skelFS fs.FS) error {
 	if skelFS == nil {
 		return fmt.Errorf("provision: chat plugin skeleton is nil")
 	}
-	bundles := []string{cabinetBundle, chatSessionFilesBundle, chatBrandBundle}
+	bundles := []string{cabinetBundle, chatSessionFilesBundle, chatBrandBundle, workspaceConsoleBundle}
 	for _, bundle := range bundles {
 		dst := filepath.Join(home, "profiles", "web", "node_modules", filepath.FromSlash(bundle))
 		src := "dsh-skel/profiles/web/node_modules/" + bundle
@@ -490,6 +490,7 @@ func EnsureChatPlugins(home string, skelFS fs.FS) error {
 		{"agctl-cabinet", cabinetBundle},
 		{"agctl-chat-session-files", chatSessionFilesBundle},
 		{"agctl-chat-brand", chatBrandBundle},
+		{"agctl-workspace-console", workspaceConsoleBundle},
 	}
 	for _, item := range entries {
 		if bytes.Contains(patch, []byte(item.bundle)) {
@@ -518,6 +519,7 @@ const (
 	cabinetBundle          = "@arijjia/agctl-cabinet"
 	chatSessionFilesBundle = "@arijjia/agctl-chat-session-files"
 	chatBrandBundle        = "@arijjia/agctl-chat-brand"
+	workspaceConsoleBundle = "@arijjia/agctl-workspace-console"
 )
 
 // pruneStaleBundleFiles удаляет файлы в dst, которых нет в скелете src.

@@ -198,12 +198,67 @@ window.__ModuleLoader__.load({
 			}, true);
 		}
 
+		// repoNameFromURL — имя воркспейса из GitHub-URL (последний сегмент
+		// пути без .git). Чистое имя не отдаем, если это не owner/repo путь.
+		function repoNameFromURL(raw) {
+			if (!raw) return "";
+			let parts;
+			try { parts = new URL(raw).pathname.split('/').filter(Boolean); }
+			catch (e) { return ""; }
+			if (parts.length !== 2) return "";
+			const name = parts[1].replace(/\.git$/i, "");
+			return /^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u.test(name) ? name : "";
+		}
+
+		// fetchScenarioPresets — готовые сценарии платформы (GET /api/config).
+		async function fetchScenarioPresets() {
+			try {
+				const res = await fetch('/api/config', { credentials: 'include', headers: { Accept: 'application/json' } });
+				const data = await res.json().catch(() => null);
+				return Array.isArray(data && data.presets) ? data.presets : [];
+			} catch (e) { return []; }
+		}
+
+		// presetsRow — ряд кнопок «готовый сценарий»: один клик заполняет URL
+		// и имя; никакой россыпи настроек при создании воркспейса.
+		function presetsRow(presets, card, name, git) {
+			const row = document.createElement('div');
+			row.style.cssText = 'display:flex;flex-direction:column;gap:6px';
+			row.appendChild(Object.assign(document.createElement('span'), {
+				textContent: 'Готовые сценарии', style: 'font-size:12px;font-weight:600',
+			}));
+			const buttons = document.createElement('div');
+			buttons.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap';
+			for (const preset of presets) {
+				const btn = document.createElement('button');
+				btn.type = 'button';
+				btn.textContent = preset.title || preset.id;
+				btn.title = preset.description || '';
+				btn.style.cssText = 'padding:6px 10px;border:1px solid var(--dsw-alias-border-l1,#bbb);border-radius:999px;background:transparent;color:inherit;cursor:pointer;font:inherit;font-size:12px;text-align:left';
+				btn.addEventListener('click', () => {
+					const urlInput = git && git.querySelector('input');
+					const nameInput = name.querySelector('input');
+					if (urlInput && preset.cloneUrl) {
+						urlInput.value = preset.cloneUrl;
+						// Пресет = осознанный выбор сценария: имя подставляем всегда.
+						const derived = repoNameFromURL(preset.cloneUrl);
+						if (derived) nameInput.value = derived;
+					}
+					status.textContent = preset.description || '';
+				});
+				buttons.appendChild(btn);
+			}
+			row.appendChild(buttons);
+			return row;
+		}
+
 		async function openWorkspaceCreateDialog() {
 			if (document.querySelector('[data-agctl-workspace-create]')) return;
 			const meResponse = await fetch('/api/me', { credentials: 'include', headers: { Accept: 'application/json' } });
 			if (!meResponse.ok) throw new Error('Сессия agctl недоступна (HTTP ' + meResponse.status + ')');
 			const meData = await meResponse.json();
 			const canClone = !!(meData && meData.user && ['developer', 'admin'].includes(meData.user.role));
+			const presets = canClone ? await fetchScenarioPresets() : [];
 			const overlay = document.createElement('div');
 			overlay.dataset.agctlWorkspaceCreate = '1';
 			overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.46);display:flex;align-items:center;justify-content:center;padding:20px';
@@ -227,7 +282,11 @@ window.__ModuleLoader__.load({
 			submit.textContent = 'Создать';
 			submit.style.cssText = 'padding:8px 14px;border:1px solid #1459b8;border-radius:8px;background:#1769d2;color:#fff;cursor:pointer;font:inherit;font-size:13px;line-height:18px;font-weight:600';
 			actions.append(cancel, submit);
-			card.append(heading, name);
+			card.append(heading);
+			// Готовые сценарии — по одной кнопке на пресет: без россыпи настроек
+			// при создании (сценарий настраивается потом, в консоли воркспейсов).
+			if (presets.length) card.appendChild(presetsRow(presets, card, name, git));
+			card.append(name);
 			if (git) card.appendChild(git);
 			card.append(status, actions);
 			overlay.appendChild(card);
@@ -235,6 +294,18 @@ window.__ModuleLoader__.load({
 			const close = () => overlay.remove();
 			cancel.addEventListener('click', close);
 			overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(); });
+
+			const nameInput = name.querySelector('input');
+			// Автоподстановка имени: клонировали репу — имя подставилось само
+			// (последний сегмент пути без .git). Пустое имя сервер выводит тоже,
+			// но живой префилл даёт пользователю контроль до отправки.
+			if (git) {
+				const urlInput = git.querySelector('input');
+				urlInput.addEventListener('input', () => {
+					const derived = repoNameFromURL(urlInput.value.trim());
+					if (derived) nameInput.value = derived;
+				});
+			}
 
 			function input(placeholder) {
 				const el = document.createElement('input');
@@ -251,9 +322,10 @@ window.__ModuleLoader__.load({
 
 			card.addEventListener('submit', async (ev) => {
 				ev.preventDefault();
-				const projectName = name.querySelector('input').value.trim();
 				const cloneUrl = git ? git.querySelector('input').value.trim() : "";
-				if (!projectName) { status.textContent = 'Укажите имя воркспейса.'; return; }
+				// Имя можно оставить пустым при клонировании: agctl выведет его из URL.
+				const projectName = nameInput.value.trim();
+				if (!projectName && !cloneUrl) { status.textContent = 'Укажите имя воркспейса или GitHub-URL.'; return; }
 				submit.disabled = true;
 				status.textContent = 'Создаём…';
 				try {

@@ -46,7 +46,7 @@ func TestEnsureChatPluginsMigratesOldChatHomeIdempotently(t *testing.T) {
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	for _, bundle := range []string{"@arijjia/agctl-cabinet", "@arijjia/agctl-chat-session-files", "@arijjia/agctl-chat-brand"} {
+	for _, bundle := range []string{"@arijjia/agctl-cabinet", "@arijjia/agctl-chat-session-files", "@arijjia/agctl-chat-brand", "@arijjia/agctl-workspace-console"} {
 		count := 0
 		for _, got := range manifest.DSH.Profile.Bundles {
 			if got == bundle {
@@ -61,6 +61,7 @@ func TestEnsureChatPluginsMigratesOldChatHomeIdempotently(t *testing.T) {
 		"node_modules/@arijjia/agctl-cabinet/lib/client.js",
 		"node_modules/@arijjia/agctl-chat-session-files/lib/index.js",
 		"node_modules/@arijjia/agctl-chat-brand/lib/client.js",
+		"node_modules/@arijjia/agctl-workspace-console/lib/client.js",
 	} {
 		if _, err := os.Stat(filepath.Join(profile, rel)); err != nil {
 			t.Fatalf("managed chat plugin file %s missing: %v", rel, err)
@@ -70,7 +71,7 @@ func TestEnsureChatPluginsMigratesOldChatHomeIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, bundle := range []string{"@arijjia/agctl-cabinet", "@arijjia/agctl-chat-session-files", "@arijjia/agctl-chat-brand"} {
+	for _, bundle := range []string{"@arijjia/agctl-cabinet", "@arijjia/agctl-chat-session-files", "@arijjia/agctl-chat-brand", "@arijjia/agctl-workspace-console"} {
 		if count := strings.Count(string(patchData), bundle); count != 1 {
 			t.Fatalf("cordis patch bundle %s count = %d, want 1", bundle, count)
 		}

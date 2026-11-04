@@ -242,6 +242,10 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/me", s.handleMe)
 	mux.HandleFunc("GET /api/projects", s.requireUser(s.handleProjectsList))
 	mux.HandleFunc("POST /api/projects", s.requireUser(s.handleProjectCreate))
+	// Консоль компонентов воркспейса (сценарий 1c-vibe): каталог скиллов,
+	// инструментов и промптов проекта + включение/выключение на сервере.
+	mux.HandleFunc("GET /api/projects/{name}/components", s.requireDeveloper(s.handleProjectComponentsGet))
+	mux.HandleFunc("PUT /api/projects/{name}/components", s.requireDeveloper(s.handleProjectComponentsPut))
 	mux.HandleFunc("GET /api/chat/folders", s.requireUser(s.handleChatFoldersGet))
 	mux.HandleFunc("PUT /api/chat/folders", s.requireUser(s.handleChatFoldersPut))
 	mux.HandleFunc("GET /api/templates", s.requireUser(s.handleTemplates)) // legacy

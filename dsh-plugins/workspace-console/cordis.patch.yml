@@ -1,0 +1,3 @@
+- insert:
+    - id: agctl-workspace-console
+      name: '@arijjia/agctl-workspace-console'
