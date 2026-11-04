@@ -51,3 +51,12 @@ export const admin = {
   quotaDelete: (id: number) => req<any>("DELETE", `/api/admin/quotas/${id}`),
   audit: (limit: number) => req<any>("GET", `/api/admin/audit?limit=${limit || 200}`),
 };
+
+// launcher — API лаунчера developer'а (роль user/developer; админ отклоняется).
+export const launcher = {
+  images: () => req<{ images: string[]; default: string; current: string }>("GET", "/api/launcher/images"),
+  pickImage: (image: string) => req<{ image: string }>("PUT", "/api/me/image", { image }),
+  start: () => req<{ status: string }>("POST", "/api/me/runtime/start"),
+  stop: () => req<{ status: string }>("POST", "/api/me/runtime/stop"),
+  containers: () => req<{ containers: any[] }>("GET", "/api/me/containers"),
+};

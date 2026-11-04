@@ -21,6 +21,7 @@ type userConfig struct {
 	Serve      struct {
 		Addr        string  `yaml:"addr"`
 		Image       string  `yaml:"image"`
+		DevImages   string  `yaml:"dev_images"`
 		ChatTTLMin  int     `yaml:"chat_ttl_min"`
 		MemGB       float64 `yaml:"mem_gb"`
 		CPUs        float64 `yaml:"cpus"`

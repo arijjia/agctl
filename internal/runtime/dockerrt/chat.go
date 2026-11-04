@@ -56,7 +56,7 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	if err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
-	opts := StartOpts{HostPort: port}
+	opts := StartOpts{HostPort: port, Image: spec.Image}
 	sshPort := 0
 	if spec.SSHPubKey != "" {
 		// Роль developer: sshd в том же контейнере (key-only, loopback хоста).

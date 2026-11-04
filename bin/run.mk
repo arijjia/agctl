@@ -17,6 +17,9 @@ RUN_CORP_PID := $(RUNTIME_DIR)/corp.pid
 # Ключ провайдера — в .env (AGCTL_LLM_API_KEY); сами дефолты LLM из профиля,
 # точечные переопределения — CORP_LLM_* (пусто = брать из профиля).
 PROFILE ?= $(if $(wildcard profiles/utmn/profile.yaml),utmn,agctl)
+# Каталог образов лаунчера developer'а (карточка developer-launcher-images):
+# дефолт — пара «с SSH» / «без SSH» (второй собирается img_build).
+DEV_IMAGES ?= agctl-dsh:0.2.2,agctl-dsh-nossh:0.2.2
 CORP_LLM_BASE_URL ?=
 CORP_LLM_MODELS ?=
 CORP_LLM_MODEL ?=
@@ -48,7 +51,7 @@ up: web_build go_build img_build | $(RUNTIME_DIR)
 	  echo "⚠ AGCTL_LLM_API_KEY пуст: Qwen-модели будут видны, но запросы не пройдут. Впиши raw-токен в .env (без Bearer/кавычек)."; fi
 	@if [ -f "$(RUN_UP_PID)" ] && kill -0 "$$(cat $(RUN_UP_PID))" 2>/dev/null; then \
 	  echo "agctl уже запущен (pid $$(cat $(RUN_UP_PID))) — make stop"; exit 1; fi
-	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl serve --addr "$(RUN_ADDR)" --profile "$(PROFILE)" >>"$(RUN_UP_LOG)" 2>&1 & echo $$! > "$(RUN_UP_PID)"
+	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl serve --addr "$(RUN_ADDR)" --profile "$(PROFILE)" --dev-images "$(DEV_IMAGES)" >>"$(RUN_UP_LOG)" 2>&1 & echo $$! > "$(RUN_UP_PID)"
 	@sleep 1
 	@if kill -0 "$$(cat $(RUN_UP_PID))" 2>/dev/null; then \
 	  echo "✓ agctl: http://$(RUN_ADDR) (дом: $(RUN_HOME))"; \

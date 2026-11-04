@@ -40,6 +40,11 @@ FROM dsh AS runtime
 COPY --from=mcp-warm /opt/npm-mcp /opt/npm-mcp
 ENV NPM_MCP_CACHE=/opt/npm-mcp
 ENV DSH_HOME=/home/dsh
+# Вариант образа «без SSH» (лаунчер developer'а): собирается с
+# --build-arg AGCTL_NO_SSHD=1 (тег agctl-dsh-nossh:*) — entrypoint не поднимает
+# sshd даже при переданном публичном ключе.
+ARG AGCTL_NO_SSHD=0
+ENV AGCTL_NO_SSHD=${AGCTL_NO_SSHD}
 COPY agctl /usr/local/bin/agctl
 # Скелет DSH_HOME: entrypoint сеет его в пустой том (см. /opt/dsh-skel).
 COPY skel/ /opt/dsh-skel/

@@ -2,7 +2,7 @@
 schema: 1.1.0
 id: developer-launcher-images
 title: "Лаунчер developer: выбор образа перед запуском, свои контейнеры, стоп/рестарт"
-status: open
+status: in-progress
 priority: P1
 size: L
 area: server

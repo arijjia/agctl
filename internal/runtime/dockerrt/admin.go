@@ -61,7 +61,7 @@ func (rt *Runtime) ChatContainers(ctx context.Context) ([]ChatContainerInfo, err
 			}
 		}
 		for _, p := range c.Ports {
-			if p.PublicPort == 2222 {
+			if p.PrivatePort == 2222 { // порт КОНТЕЙНЕРА; PublicPort — хостовый
 				info.SSH = true
 				break
 			}

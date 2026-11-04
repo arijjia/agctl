@@ -24,7 +24,9 @@ fi
 # SSH-канал — включён только при наличии публичного ключа, выданного
 # владельцем воркспейса через PATCH /api/workspaces/{id}/ssh. Порт контейнера
 # 2222 публикуется Docker только на 127.0.0.1 хоста (не в LAN/Internet).
-if [ -n "${AGCTL_SSH_PUBKEY:-}" ]; then
+# Вариант образа «без SSH» (лаунчер developer'а, agctl-dsh-nossh) билдится с
+# ENV AGCTL_NO_SSHD=1 — sshd не поднимается даже при переданном ключе.
+if [ -n "${AGCTL_SSH_PUBKEY:-}" ] && [ "${AGCTL_NO_SSHD:-0}" != "1" ]; then
   mkdir -p /root/.ssh /run/sshd
   printf '%s\n' "$AGCTL_SSH_PUBKEY" > /root/.ssh/authorized_keys
   chmod 700 /root/.ssh

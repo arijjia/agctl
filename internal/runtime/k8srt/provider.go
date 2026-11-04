@@ -301,6 +301,11 @@ func (p *Provider) ensurePod(ctx context.Context, name, pvcName, secretName stri
 	}
 
 	modelsJSON, _ := json.Marshal(spec.Provider.AllModels())
+	// Лаунчер developer'а: желаемый образ из ChatSpec перекрывает дефолт.
+	image := p.cfg.Image
+	if spec.Image != "" {
+		image = spec.Image
+	}
 	providerEnv := []corev1.EnvVar{
 		{Name: "AGCTL_LLM_BASE_URL", Value: spec.Provider.BaseURL},
 		{Name: "AGCTL_LLM_MODEL", Value: spec.Provider.Model},
@@ -324,7 +329,7 @@ func (p *Provider) ensurePod(ctx context.Context, name, pvcName, secretName stri
 	runAsNonRoot, allowEscalation := true, false
 	uid, gid := int64(1000), int64(1000)
 	init := corev1.Container{
-		Name: "seed-dsh-home", Image: p.cfg.Image, ImagePullPolicy: p.cfg.ImagePullPolicy,
+		Name: "seed-dsh-home", Image: image, ImagePullPolicy: p.cfg.ImagePullPolicy,
 		Command: []string{"/bin/sh", "-c"},
 		Args:    []string{"mkdir -p /data/work /data/dsh-home && /usr/local/bin/agctl init-chat-home --home /data/dsh-home"},
 		Env:     initEnv, VolumeMounts: []corev1.VolumeMount{rootMount},
@@ -343,7 +348,7 @@ func (p *Provider) ensurePod(ctx context.Context, name, pvcName, secretName stri
 	}
 	mainEnv = append(mainEnv, providerEnv...)
 	container := corev1.Container{
-		Name: "dsh", Image: p.cfg.Image, ImagePullPolicy: p.cfg.ImagePullPolicy,
+		Name: "dsh", Image: image, ImagePullPolicy: p.cfg.ImagePullPolicy,
 		Ports: []corev1.ContainerPort{{Name: "web", ContainerPort: webPort}},
 		Env:   mainEnv,
 		VolumeMounts: []corev1.VolumeMount{

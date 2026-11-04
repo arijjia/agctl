@@ -47,6 +47,7 @@ type chatRuntime struct {
 	lastSeen  time.Time
 	active    int // streaming HTTP/WS requests; reaper must not stop active sessions
 	downSince time.Time
+	image     string // желаемый образ, из которого создан рантайм (лаунчер: "" = дефолт)
 }
 
 // shouldSleepChat — решение рипера: runtime простаивал дольше TTL.
@@ -538,19 +539,49 @@ func (s *Server) userProvider(userID int64) provision.Provider {
 
 // ensureChat asks the runtime provider to ensure the user's stable Chat runtime
 // is running. First-start locking is per user; different users start in parallel.
-func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
+// cachedChatForEnsure — быстрый путь ensureChat: живой кэш на желаемом
+// образе. При расхождении (лаунчер сменил образ у работающего рантайма)
+// усыпляет старый контейнер (docker-стоп без чат-лока, том остаётся),
+// вытесняет кэш и возвращает nil — вызывающий путь пересоздаст рантайм.
+func (s *Server) cachedChatForEnsure(userID int64) *chatRuntime {
 	s.chatMu.Lock()
-	if s.chats == nil {
-		s.chats = make(map[int64]*chatRuntime)
+	rt := s.chats[userID]
+	s.chatMu.Unlock()
+	if rt == nil {
+		return nil
 	}
-	if s.chatLocks == nil {
-		s.chatLocks = make(map[int64]*sync.Mutex)
-	}
-	if rt, ok := s.chats[userID]; ok {
+	desired := s.developerChatImage(userID)
+	if desired == rt.image {
+		s.chatMu.Lock()
 		rt.lastSeen = time.Now()
 		s.chatMu.Unlock()
+		return rt
+	}
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	if err := s.chatProvider.StopChat(stopCtx, rt.handle); err != nil {
+		log.Printf("[chat] смена образа %s: стоп старого рантайма: %v", rt.handle.RuntimeID, err)
+	}
+	stopCancel()
+	s.evictChatByUser(userID)
+	log.Printf("[chat] пользователь %d: образ сменился (%q → %q) — runtime пересоздаётся", userID, rt.image, desired)
+	return nil
+}
+
+func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
+	if rt := s.cachedChatForEnsure(userID); rt != nil {
 		return rt, nil
 	}
+	if s.chats == nil {
+		s.chatMu.Lock()
+		s.chats = make(map[int64]*chatRuntime)
+		s.chatMu.Unlock()
+	}
+	if s.chatLocks == nil {
+		s.chatMu.Lock()
+		s.chatLocks = make(map[int64]*sync.Mutex)
+		s.chatMu.Unlock()
+	}
+	s.chatMu.Lock()
 	lock := s.chatLocks[userID]
 	if lock == nil {
 		lock = &sync.Mutex{}
@@ -577,6 +608,8 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 		RuntimeID: s.chatRuntimeID(userID), StorageID: chatStorageID(userID),
 		UserID: userID, Provider: s.userProvider(userID),
 		SSHPubKey: s.developerSSHPubKey(userID),
+		// Лаунчер developer'а: желаемый образ из настроек ("" = дефолт сервера).
+		Image: s.developerChatImage(userID),
 		// Роль user: агент всегда в Full Access по умолчанию (пресет-селектор
 		// пользователю не показывается). Ошибка чтения роли -> дефолт не меняем.
 		DefaultFullAccess: s.userRole(userID) == "user",
@@ -588,7 +621,7 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 	if handle.RuntimeID == "" || handle.Endpoint == "" {
 		return nil, fmt.Errorf("chat runtime provider returned an incomplete handle")
 	}
-	rt := &chatRuntime{handle: handle, lastSeen: time.Now()}
+	rt := &chatRuntime{handle: handle, lastSeen: time.Now(), image: spec.Image}
 	s.chatMu.Lock()
 	s.chats[userID] = rt
 	s.chatMu.Unlock()
@@ -759,9 +792,14 @@ func writeWarmChatPage(w http.ResponseWriter) {
 func (s *Server) rootEntry(w http.ResponseWriter, r *http.Request, webFS fs.FS) {
 	if id, err := s.who(r); err == nil {
 		target := "/chat/"
-		if id.Role == "admin" {
+		switch id.Role {
+		case "admin":
 			// Админ — не пользователь платформы: контейнер ему не поднимаем.
 			target = "/admin"
+		case "developer":
+			// Лаунчер: developer выбирает образ до старта контейнера
+			// (карточка developer-launcher-images).
+			target = "/launcher"
 		}
 		http.Redirect(w, r, target, http.StatusTemporaryRedirect)
 		return

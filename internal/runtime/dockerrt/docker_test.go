@@ -121,12 +121,20 @@ func TestAgctlDrifted(t *testing.T) {
 }
 
 // TestSweepCandidate — свип трогает только agctl-контейнеры этого дома,
-// работающие не на текущем образе; чужие и свежие сборки проходят мимо.
+// работающие не на ЖЕЛАЕМОМ образе (метка agctl.image.desired перекрывает
+// глобальный); чужие и свежие сборки проходят мимо.
 func TestSweepCandidate(t *testing.T) {
 	const prefix = "agctl-chat-ab12-"
 	const fresh = "sha256:aaaa1111"
 	ours := map[string]string{labelWorkspace: "chat-ab12-u1"}
 	foreign := map[string]string{"app": "x"}
+	// resolveID для желаемых образов теста: только этот дайджест известен.
+	resolver := func(ref string) string {
+		if ref == "sha256:cccc3333" {
+			return ref
+		}
+		return ""
+	}
 	cases := []struct {
 		name      string
 		names     []string
@@ -140,9 +148,18 @@ func TestSweepCandidate(t *testing.T) {
 		{"чужой контейнер с тем же именем", []string{"/" + prefix + "u7"}, "sha256:bbbb2222", foreign, false},
 		{"наш дрейф, но другой дом", []string{"/agctl-chat-cd34-u1"}, "sha256:bbbb2222", ours, false},
 		{"имя не совпало", []string{"/agctl-other"}, "sha256:bbbb2222", ours, false},
+		// per-user образ: контейнер на желаемом образе (≠ глобальному) — не дрейф
+		{"launched на желаемом образе", []string{"/" + prefix + "u7"}, "sha256:cccc3333",
+			map[string]string{labelWorkspace: "chat-ab12-u1", labelImageDesired: "sha256:cccc3333"}, false},
+		// per-user образ сменился: контейнер на старом желаемом — дрейф
+		{"launched сменил образ", []string{"/" + prefix + "u7"}, "sha256:bbbb2222",
+			map[string]string{labelWorkspace: "chat-ab12-u1", labelImageDesired: "sha256:cccc3333"}, true},
+		// желаемый образ неизвестен резолверу — не трогаем
+		{"желаемый образ не резолвится", []string{"/" + prefix + "u7"}, "sha256:bbbb2222",
+			map[string]string{labelWorkspace: "chat-ab12-u1", labelImageDesired: "sha256:gone"}, false},
 	}
 	for _, c := range cases {
-		if got := sweepCandidate(c.names, c.image, c.labels, prefix, fresh); got != c.wantSweep {
+		if got := sweepCandidate(c.names, c.image, c.labels, prefix, fresh, resolver); got != c.wantSweep {
 			t.Errorf("%s: sweepCandidate = %v, ждали %v", c.name, got, c.wantSweep)
 		}
 	}
