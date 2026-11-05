@@ -193,7 +193,11 @@ button.small { padding: 1px 8px; font-size: 12px; }
 .admin-main { flex: 1; }
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  /* 180px: шесть карточек сводки помещаются в один ряд на стандартной
+     ширине admin-shell — «Образ / лимит» не уезжает на вторую строку. */
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  /* Все карточки сводки одной высоты на случай переноса на узких экранах. */
+  grid-auto-rows: 1fr;
   gap: 12px;
 }
 .stat-card {
@@ -204,6 +208,7 @@ button.small { padding: 1px 8px; font-size: 12px; }
 }
 .stat-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted, #667); }
 .stat-value { font-size: 22px; font-weight: 600; margin-top: 4px; word-break: break-all; }
+.stat-value.long { font-size: 15px; line-height: 1.4; margin-top: 9px; }
 .admin-table {
   width: 100%;
   border-collapse: collapse;
@@ -261,20 +266,39 @@ button.small { padding: 1px 8px; font-size: 12px; }
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  /* Ряды сетки одной высоты: карточки «Самые активные» и «Регистрации»
+     растягиваются до высоты больших графиков. */
+  grid-auto-rows: 1fr;
   gap: 12px;
   margin-top: 14px;
 }
 .chart-card {
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 12px 14px 6px;
+  padding: 12px 14px 10px;
   background: var(--card, #fff);
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
-.chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; flex: none; }
 .chart-title { font-size: 13px; font-weight: 600; }
-.chart-body { position: relative; }
-.chart-body svg { width: 100%; height: auto; display: block; color: var(--text); }
+.chart-body {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.chart-body svg {
+  width: 100%;
+  height: auto;
+  /* Верхняя граница высоты: широкая карточка нижнего ряда не делает график
+     выше карточек верхнего ряда; содержимое леттербоксится без искажений. */
+  max-height: 200px;
+  display: block;
+  color: var(--text);
+}
 .chart-tip {
   position: absolute;
   transform: translateX(-50%);
@@ -290,28 +314,30 @@ button.small { padding: 1px 8px; font-size: 12px; }
   color: var(--text);
 }
 .chart-tip-head { font-weight: 600; }
-.chart-hbars { display: flex; flex-direction: column; gap: 6px; padding: 4px 0 10px; }
+.chart-hbars { display: flex; flex-direction: column; gap: 6px; padding: 4px 0; }
+.chart-hbars .chart-hbar { flex: none; }
 .chart-hbar { display: grid; grid-template-columns: 130px 1fr 52px; gap: 8px; align-items: center; font-size: 12.5px; }
 .chart-hbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chart-hbar-track { display: block; background: rgba(88, 166, 255, 0.12); border-radius: 6px; height: 14px; overflow: hidden; }
 .chart-hbar-fill { display: block; height: 100%; background: linear-gradient(90deg, #1f6feb, #58a6ff); border-radius: 6px; }
 .chart-hbar-value { text-align: right; font-variant-numeric: tabular-nums; }
-.chart-donut { display: flex; align-items: center; gap: 16px; padding: 4px 0 10px; flex-wrap: wrap; }
+.chart-donut { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 4px 0; flex-wrap: wrap; }
 .chart-legend { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; }
 .chart-legend-row { display: flex; align-items: center; gap: 7px; cursor: default; }
 .chart-legend-row .muted { margin-left: auto; font-variant-numeric: tabular-nums; }
 .chart-dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 
 /* ── лаунчер developer (Launcher.tsx) ─────────────────────────────────────── */
-.launcher-wrap { align-items: stretch; }
-/* Карточка шире логина-формы: внутри живёт таблица контейнеров и панель логов
-   (отзыв о узком контейнере лаунчера); на узких экранах сжимается с полями. */
-.launcher-card { max-width: 960px; width: 100%; }
+/* Оформление повторяет админ-панель: тот же admin-shell (фон без рамки,
+   ширина области и заголовок — общие классы). Специфика лаунчера — только
+   список образов колонкой слева (не на всю ширину области) и панель логов. */
 .logs-panel { margin-top: 10px; }
 .logs-panel .logs { margin-top: 6px; max-height: 360px; }
-.launcher-card h2 { margin: 16px 0 6px; }
-.image-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 12px; }
+.image-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 12px; max-width: 560px; }
 .image-option {
+  /* Глобальный label — колонка; опция образа должна быть строкой слева,
+     без центрирования по ширине. */
+  flex-direction: row;
   display: flex; align-items: center; gap: 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -320,3 +346,10 @@ button.small { padding: 1px 8px; font-size: 12px; }
 }
 .image-option:hover { background: var(--bg, #f6f8fa); }
 .link { align-self: center; }
+.admin-main h2.small {
+  font-size: 12.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted, #667);
+  margin: 20px 0 8px;
+}

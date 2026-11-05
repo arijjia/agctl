@@ -5,6 +5,8 @@ import { LogsPanel } from "./LogsPanel";
 // Launcher — лаунчер роли developer (карточка developer-launcher-images):
 // после входа контейнер НЕ стартует автоматически; developer выбирает образ
 // (каталог сервера, например Nexus), видит свои контейнеры и управляет ими.
+// Оформление — то же, что у админ-панели (admin-shell): без рамки-карточки,
+// тот же фон/шрифты/заголовок/ширина области.
 
 type ImagesResp = { images: string[]; default: string; current: string };
 type ContainerRow = {
@@ -23,7 +25,7 @@ export default function Launcher({ user }: { user: User }) {
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
-  const [logsFor, setLogsFor] = useState<string>(""); // "" = дефолтный (первый) свой контейнер; null-маркер — закрыто
+  const [logsFor, setLogsFor] = useState("");
   const [logsOpen, setLogsOpen] = useState(false);
 
   const load = useCallback(() => {
@@ -74,14 +76,26 @@ export default function Launcher({ user }: { user: User }) {
   const fetchLogs = useCallback(() => launcher.logs(logsFor, 300), [logsFor]);
 
   return (
-    <div className="center-wrap launcher-wrap">
-      <form className="card launcher-card" onSubmit={(e) => e.preventDefault()}>
-        <h1>{(window as any).__AGCTL_BRAND__?.name || "agctl"} — лаунчер разработчика</h1>
-        <p className="muted">
-          {user.login} · роль developer. Контейнер не запущен, пока вы не выбрали
-          образ и не нажали «Запустить».
-        </p>
-
+    <div className="admin-shell">
+      <header className="admin-header">
+        <div>
+          <h1>{(window as any).__AGCTL_BRAND__?.name || "agctl"} — лаунчер разработчика</h1>
+          <p className="muted small">
+            {user.login} · роль developer · контейнер не запускается, пока вы не
+            выбрали образ и не нажали «Запустить»
+          </p>
+        </div>
+        <button
+          className="ghost small"
+          onClick={async () => { try { await api.logout(); } catch {} window.location.replace("/"); }}
+        >
+          Выйти
+        </button>
+      </header>
+      <nav className="tabs admin-tabs">
+        <button className="tab active">Рантайм</button>
+      </nav>
+      <main className="admin-main">
         <h2 className="small">Образ запуска</h2>
         <div className="image-list">
           {(images?.images || []).map((img) => (
@@ -146,15 +160,7 @@ export default function Launcher({ user }: { user: User }) {
         {logsOpen && (
           <LogsPanel fetchLogs={fetchLogs} onClose={() => setLogsOpen(false)} />
         )}
-
-        <button
-          className="ghost small"
-          style={{ marginTop: 12 }}
-          onClick={async () => { try { await api.logout(); } catch {} window.location.replace("/"); }}
-        >
-          Выйти
-        </button>
-      </form>
+      </main>
     </div>
   );
 }

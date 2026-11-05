@@ -222,10 +222,12 @@ function OverviewTab() {
 }
 
 function Stat({ label, value, hint }: { label: string; value: any; hint?: string }) {
+  const text = String(value);
   return (
     <div className="stat-card">
       <div className="stat-label">{label}</div>
-      <div className="stat-value">{String(value)}</div>
+      {/* Длинные значения (тег образа) — мельче, чтобы влезали в одну строку */}
+      <div className={text.length > 14 ? "stat-value long" : "stat-value"}>{text}</div>
       {hint && <div className="muted small">{hint}</div>}
     </div>
   );
