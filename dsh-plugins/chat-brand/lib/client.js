@@ -220,6 +220,55 @@ window.__ModuleLoader__.load({
 			} catch (e) { return []; }
 		}
 
+		// fetchCatalogPackages — «возможности воркспейса» из платформенного
+		// каталога (GET /api/catalog): навык+шаблоны одним флагом. Один и тот
+		// же каталог обслуживает консоль воркспейсов — единое место правды.
+		async function fetchCatalogPackages() {
+			try {
+				const res = await fetch('/api/catalog', { credentials: 'include', headers: { Accept: 'application/json' } });
+				const data = await res.json().catch(() => null);
+				return Array.isArray(data && data.packages) ? data.packages : [];
+			} catch (e) { return []; }
+		}
+
+		// packagesRow — компактный выбор возможностей при создании: один
+		// чекбокс на пакет с подписью-описанием (без россыпи настроек — всё
+		// остальное настраивается потом в консоли воркспейсов).
+		function packagesRow(packages) {
+			const row = document.createElement('div');
+			row.style.cssText = 'display:flex;flex-direction:column;gap:6px';
+			row.appendChild(Object.assign(document.createElement('span'), {
+				textContent: 'Возможности (можно добавить и потом — в «Воркспейсы: возможности»)',
+				style: 'font-size:12px;font-weight:600',
+			}));
+			for (const pkg of packages) {
+				const label = document.createElement('label');
+				label.style.cssText = 'display:flex;align-items:flex-start;gap:8px;border:1px solid var(--dsw-alias-border-l1,#bbb);border-radius:8px;padding:7px 9px;cursor:pointer;font:inherit;font-size:12px';
+				const box = document.createElement('input');
+				box.type = 'checkbox';
+				box.dataset.agctlWscPackage = pkg.id;
+				box.style.cssText = 'width:15px;height:15px;margin:1px 0 0;accent-color:#1769d2';
+				const text = document.createElement('div');
+				text.style.cssText = 'min-width:0';
+				const title = document.createElement('div');
+				title.style.cssText = 'font-weight:600';
+				title.textContent = pkg.title || pkg.id;
+				const desc = document.createElement('div');
+				desc.style.cssText = 'color:var(--dsw-alias-label-tertiary,#888);overflow-wrap:anywhere';
+				desc.textContent = pkg.description || '';
+				text.append(title, desc);
+				label.append(box, text);
+				row.appendChild(label);
+			}
+			return row;
+		}
+
+		function selectedPackages(root) {
+			return [...root.querySelectorAll('input[data-agctl-wsc-package]')]
+				.filter((b) => b.checked)
+				.map((b) => b.dataset.agctlWscPackage);
+		}
+
 		// presetsRow — ряд кнопок «готовый сценарий»: один клик заполняет URL
 		// и имя; никакой россыпи настроек при создании воркспейса.
 		function presetsRow(presets, card, name, git) {
@@ -260,6 +309,7 @@ window.__ModuleLoader__.load({
 			const meData = await meResponse.json();
 			const canClone = !!(meData && meData.user && ['developer', 'admin'].includes(meData.user.role));
 			const presets = canClone ? await fetchScenarioPresets() : [];
+			const packages = await fetchCatalogPackages();
 			const overlay = document.createElement('div');
 			overlay.dataset.agctlWorkspaceCreate = '1';
 			overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.46);display:flex;align-items:center;justify-content:center;padding:20px';
@@ -287,6 +337,9 @@ window.__ModuleLoader__.load({
 			// Готовые сценарии — по одной кнопке на пресет: без россыпи настроек
 			// при создании (сценарий настраивается потом, в консоли воркспейсов).
 			if (presets.length) card.appendChild(presetsRow(presets, card, name, git));
+			// Возможности — те же пакеты, что и в консоли воркспейсов: один
+			// серверный каталог, единое место правды о настройках воркспейса.
+			if (packages.length) card.appendChild(packagesRow(packages));
 			card.append(name);
 			if (git) card.appendChild(git);
 			card.append(status, actions);
@@ -332,6 +385,8 @@ window.__ModuleLoader__.load({
 				try {
 					const body = { name: projectName };
 					if (cloneUrl) body.cloneUrl = cloneUrl;
+					const wanted = selectedPackages(card);
+					if (wanted.length) body.packages = wanted;
 					const res = await fetch('/api/projects', {
 						method: 'POST', credentials: 'include',
 						headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
@@ -341,10 +396,14 @@ window.__ModuleLoader__.load({
 					if (!res.ok) throw new Error((data && data.error) || 'HTTP ' + res.status);
 					const directory = data && data.project && data.project.directory;
 					if (!directory) throw new Error('agctl не вернул каталог воркспейса');
+					const failed = Array.isArray(data.packagesFailed) ? data.packagesFailed : [];
 					const workspaces = workspaceSvc();
 					if (!workspaces || typeof workspaces.create !== 'function') throw new Error('DSH Workspace service недоступен');
 					await workspaces.create({ path: directory });
 					close();
+					if (failed.length) {
+						window.alert('Воркспейс создан, но пакеты не установились: ' + failed.join(', ') + '. Установите их позже через «Воркспейсы: возможности».');
+					}
 				} catch (error) {
 					status.textContent = String(error.message || error);
 					submit.disabled = false;

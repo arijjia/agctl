@@ -1,13 +1,19 @@
-// agctl workspace-console — консоль компонентов воркспейсов (сценарий 1c-vibe).
-// Отдельный плагин вместо вкладки в диалоге создания: список проектов
-// пользователя с его скиллами/инструментами/промптами и галочками
-// включения. Состояние применяется на сервере (PUT /api/projects/<name>/
-// components) и физически переносит выключенные компоненты в stash
-// /workspace/<name>/.agctl/stash, невидимый агенту и git-autosave.
+// agctl workspace-console — консоль воркспейсов: единое место настройки
+// возможностей воркспейса. Список проектов пользователя; для каждого —
+// платформенный каталог пакетов («Возможности», например презентации по
+// шаблону вуза), системный промт (AGENTS.md) и каталог компонентов
+// (скиллы/инструменты/данные/промпты) с галочками включения. То же самое
+// доступно при создании воркспейса (диалог chat-brand) — один и тот же
+// серверный каталог, одно место правды.
 //
-// Чип в нативном слоте sidebar.footer.action (второй ряд под чипом
-// кабинета), виден только developer/admin: как и клонирование из GitHub,
-// консоль — developer-возможность.
+// Состояние применяется на сервере: выключенные компоненты физически
+// переносятся в stash /workspace/<name>/.agctl/stash (невидимы агенту и
+// git-autosave), пакеты ставятся в .dsh/skills (dsh подхватывает их сам).
+//
+// Чип в нативном слоте sidebar.footer.action; виден всем ролям: обычному
+// пользователю консоль нужна не меньше разработчика (возможности и промт
+// его воркспейсов). Специально developer-возможности (клонирование из
+// GitHub) живут в диалоге создания и в консоли не дублируются.
 window.__ModuleLoader__.load({
 	id: "@arijjia/agctl-workspace-console",
 	factory: (require) => {
@@ -33,6 +39,14 @@ window.__ModuleLoader__.load({
 				}
 				[data-agctl-wsc-overlay] .wsc-btn.secondary { background:transparent;color:inherit;border-color:var(--dsw-alias-border-l1,#555);font-weight:400; }
 				[data-agctl-wsc-overlay] .wsc-btn:disabled { opacity:.6; cursor:not-allowed; }
+				[data-agctl-wsc-overlay] .wsc-prompt {
+					width:100%;min-height:96px;box-sizing:border-box;resize:vertical;
+					border:1px solid var(--dsw-alias-border-l1,#555);border-radius:8px;padding:8px;
+					background:transparent;color:inherit;font:inherit;font-size:12.5px;
+				}
+				[data-agctl-wsc-overlay] .wsc-badge {
+					font-size:10px;padding:1px 7px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1,#555);color:var(--dsw-alias-label-tertiary,#888);
+				}
 			`;
 			document.head.appendChild(style);
 		}
@@ -60,16 +74,17 @@ window.__ModuleLoader__.load({
 
 		// ── чистые функции (test seams) ────────────────────────────────────────
 
-		// shouldShowChip — консоль видна роли developer и admin.
+		// shouldShowChip — консоль видна всем ролям (у админа личных
+		// воркспейсов нет, чип безвреден: список будет пустым).
 		function shouldShowChip(me) {
-			return !!(me && ["developer", "admin"].includes(me.role));
+			return !!(me && ["user", "developer", "admin"].includes(me.role));
 		}
 
 		// groupComponents — разбивка каталога по секциям консоли.
 		function groupComponents(components) {
 			const groups = { skills: [], tools: [], data: [], docs: [] };
 			for (const comp of components || []) {
-				if (comp.kind === "skill") groups.skills.push(comp);
+				if (comp.kind === "skill" || comp.kind === "dshskill") groups.skills.push(comp);
 				else if (comp.kind === "tool") groups.tools.push(comp);
 				else if (comp.kind === "data") groups.data.push(comp);
 				else groups.docs.push(comp);
@@ -97,7 +112,7 @@ window.__ModuleLoader__.load({
 			docs: "Промпты и инструкции",
 		};
 		const GROUP_HINTS = {
-			skills: "Процедуры работы агента (skills/*/SKILL.md).",
+			skills: "Процедуры работы агента (skills/ и .dsh/skills — автозагрузка).",
 			tools: "CLI-инструменты контура (scripts/*.py).",
 			data: "Фикстуры и демо-конфигурации для локальных проверок.",
 			docs: "Системные инструкции воркспейса — выключать нельзя.",
@@ -111,9 +126,9 @@ window.__ModuleLoader__.load({
 			close.setAttribute("aria-label", "Закрыть консоль воркспейсов");
 			close.addEventListener("click", () => overlay.remove());
 			sheet.appendChild(close);
-			sheet.appendChild(el("h2", "margin:2px 0 4px;font-size:18px;font-weight:650", "Воркспейсы и компоненты"));
+			sheet.appendChild(el("h2", "margin:2px 0 4px;font-size:18px;font-weight:650", "Воркспейсы: возможности, промт, компоненты"));
 			sheet.appendChild(el("p", "margin:0 0 18px;font-size:12px;color:var(--dsw-alias-label-tertiary,#888)",
-				"Скиллы, инструменты и промпты каждого воркспейса. Выключенный компонент прячется на сервере и не виден агенту; репка не правится."));
+				"Единое место настройки воркспейсов: возможности из каталога платформы, системный промт и компоненты. Выключенный компонент прячется на сервере и не виден агенту; репка не правится."));
 			overlay.appendChild(sheet);
 			overlay.addEventListener("click", (ev) => { if (ev.target === overlay) overlay.remove(); });
 			document.body.appendChild(overlay);
@@ -135,12 +150,70 @@ window.__ModuleLoader__.load({
 			const text = el("div", "min-width:0;flex:1");
 			const title = el("div", "font-size:13px;font-weight:600;display:flex;gap:8px;align-items:baseline");
 			title.appendChild(el("span", null, comp.title || comp.name));
-			if (!comp.enabled) title.appendChild(el("span", "font-size:10px;padding:1px 7px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1,#555);color:var(--dsw-alias-label-tertiary,#888)", "выключен"));
-			if (comp.locked) title.appendChild(el("span", "font-size:10px;color:var(--dsw-alias-label-tertiary,#888)", "базовый"));
+			if (!comp.enabled) title.appendChild(el("span", "wsc-badge", "выключен"));
+			if (comp.kind === "dshskill") title.appendChild(el("span", "wsc-badge", "автозагрузка"));
+			if (comp.locked) title.appendChild(el("span", "wsc-badge", "базовый"));
 			const meta = [comp.path, comp.description].filter(Boolean).join(" — ");
 			text.append(title, el("div", "font-size:11px;color:var(--dsw-alias-label-tertiary,#888);overflow-wrap:anywhere", meta));
 			row.append(box, text);
 			return row;
+		}
+
+		// catalogRow — строка пакета «Возможностей»: название, описание и
+		// кнопка Установить/Убрать.
+		function catalogRow(api, pkg, installed, refresh) {
+			const row = el("div", "wsc-row");
+			const text = el("div", "min-width:0;flex:1");
+			const title = el("div", "font-size:13px;font-weight:600;display:flex;gap:8px;align-items:baseline");
+			title.appendChild(el("span", null, pkg.title || pkg.id));
+			if (installed) title.appendChild(el("span", "wsc-badge", "установлен"));
+			text.append(title, el("div", "font-size:11px;color:var(--dsw-alias-label-tertiary,#888);overflow-wrap:anywhere", pkg.description || ""));
+			const btn = el("button", "wsc-btn secondary;flex:none", installed ? "Убрать" : "Установить");
+			btn.addEventListener("click", async () => {
+				btn.disabled = true;
+				try {
+					if (installed) {
+						await api("/api/projects/" + encodeURIComponent(pkg._project) + "/catalog/" + pkg.id, "DELETE");
+					} else {
+						await api("/api/projects/" + encodeURIComponent(pkg._project) + "/catalog/" + pkg.id + "/install", "POST");
+					}
+					refresh();
+				} catch (err) {
+					btn.textContent = String(err.message || err).slice(0, 60);
+					btn.disabled = false;
+				}
+			});
+			row.append(text, btn);
+			return row;
+		}
+
+		// promptSection — редактор системного промта воркспейса (AGENTS.md).
+		function promptSection(api, project, statusLine) {
+			const wrap = el("div", null, null);
+			const head = el("div", "margin:12px 0 2px;font-size:12px;font-weight:700", "Системный промт воркспейса (AGENTS.md)");
+			const hint = el("p", "margin:0 0 6px;font-size:11px;color:var(--dsw-alias-label-tertiary,#888)",
+				"Один промт на воркспейс: агент читает его в каждой сессии этого воркспейса.");
+			const ta = el("textarea", "wsc-prompt");
+			ta.placeholder = "Например: презентации собирать по шаблону вуза, отчёты — по ГОСТ…";
+			const save = el("button", "wsc-btn secondary;margin-top:6px", "Сохранить промт");
+			save.disabled = true;
+			ta.addEventListener("input", () => { save.disabled = false; });
+			save.addEventListener("click", async () => {
+				save.disabled = true;
+				statusLine.textContent = "Сохраняем промт…";
+				try {
+					await api("/api/projects/" + encodeURIComponent(project.name) + "/prompt", "PUT", { prompt: ta.value });
+					statusLine.textContent = "Промт сохранён.";
+				} catch (err) {
+					statusLine.textContent = String(err.message || err);
+					save.disabled = false;
+				}
+			});
+			api("/api/projects/" + encodeURIComponent(project.name) + "/prompt")
+				.then((d) => { ta.value = (d && d.prompt) || ""; })
+				.catch((err) => { ta.placeholder = "Не удалось загрузить: " + (err.message || err); });
+			wrap.append(head, hint, ta, save);
+			return wrap;
 		}
 
 		function projectCard(api, project) {
@@ -164,14 +237,40 @@ window.__ModuleLoader__.load({
 					body.style.display = body.style.display === "none" ? "block" : "none";
 					return;
 				}
+				await loadBody();
+			});
+
+			async function loadBody() {
 				toggle.disabled = true;
-				statusLine.textContent = "Читаем компоненты…";
+				statusLine.textContent = "Читаем настройки воркспейса…";
 				try {
-					const data = await api("/api/projects/" + encodeURIComponent(project.name) + "/components");
-					const components = Array.isArray(data.components) ? data.components : [];
+					const encName = encodeURIComponent(project.name);
+					const [catData, compData] = await Promise.all([
+						api("/api/projects/" + encName + "/catalog"),
+						api("/api/projects/" + encName + "/components"),
+					]);
+					const packages = Array.isArray(catData.packages) ? catData.packages : [];
+					const components = Array.isArray(compData.components) ? compData.components : [];
 					const enabledByID = new Set(components.filter((c) => c.enabled).map((c) => c.id));
 					const dirty = () => { save.disabled = false; statusLine.textContent = "Есть изменения — нажмите «Сохранить»."; };
 					body.replaceChildren();
+
+					// ── Возможности (платформенный каталог) ────────────────────
+					body.appendChild(el("h3", "margin:12px 0 2px;font-size:12px;font-weight:700", "Возможности"));
+					body.appendChild(el("p", "margin:0 0 4px;font-size:11px;color:var(--dsw-alias-label-tertiary,#888)",
+						"Пакеты платформы: навык + шаблоны/скрипты одним кликом. Ставятся в .dsh/skills и видны агенту в этом воркспейсе."));
+					for (const pkg of packages) {
+						pkg._project = project.name;
+						body.appendChild(catalogRow(api, pkg, !!pkg.installed, () => loadBody()));
+					}
+					if (!packages.length) {
+						body.appendChild(el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888)", "Каталог платформы пуст."));
+					}
+
+					// ── Системный промт ────────────────────────────────────────
+					body.appendChild(promptSection(api, project, statusLine));
+
+					// ── Компоненты ─────────────────────────────────────────────
 					const groups = groupComponents(components);
 					for (const key of ["skills", "tools", "data", "docs"]) {
 						if (!groups[key].length) continue;
@@ -180,8 +279,9 @@ window.__ModuleLoader__.load({
 						for (const comp of groups[key]) body.appendChild(componentRow(comp, enabledByID, dirty));
 					}
 					if (!components.length) {
-						body.appendChild(el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888)", "Каталог пуст: в воркспейсе нет навыков и инструментов."));
+						body.appendChild(el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888)", "В воркспейсе нет скиллов и инструментов."));
 					}
+
 					const save = el("button", "wsc-btn", "Сохранить");
 					save.disabled = true;
 					save.addEventListener("click", async () => {
@@ -189,7 +289,7 @@ window.__ModuleLoader__.load({
 						statusLine.textContent = "Применяем…";
 						try {
 							const disabled = buildDisabledIDs(components, enabledByID);
-							await api("/api/projects/" + encodeURIComponent(project.name) + "/components", "PUT", { disabled });
+							await api("/api/projects/" + encName + "/components", "PUT", { disabled });
 							// Следующее раскрытие перечитает каталог с сервера
 							// (истина о состоянии — рабочее дерево проекта).
 							loaded = false;
@@ -211,7 +311,7 @@ window.__ModuleLoader__.load({
 				} finally {
 					toggle.disabled = false;
 				}
-			});
+			}
 			return card;
 		}
 
@@ -226,7 +326,7 @@ window.__ModuleLoader__.load({
 				list.replaceChildren();
 				if (!projects.length) {
 					list.appendChild(el("p", "font-size:13px;color:var(--dsw-alias-label-tertiary,#888)",
-						"Воркспейсов пока нет. Создайте их кнопкой «+» в списке Workspaces — пустым или клоном GitHub-репозитория (например, сценарий 1С-vibe)."));
+						"Воркспейсов пока нет. Создайте первый кнопкой «+» в списке Workspaces — там же можно сразу выбрать возможности (например, «Презентации по шаблону вуза»)."));
 					return;
 				}
 				for (const project of projects) list.appendChild(projectCard(api, project));
@@ -287,11 +387,11 @@ window.__ModuleLoader__.load({
 			const chip = el("button", null, null);
 			chip.type = "button";
 			chip.dataset.agctlWscChip = "1";
-			chip.setAttribute("aria-label", "Консоль воркспейсов: навыки, инструменты и промпты");
+			chip.setAttribute("aria-label", "Воркспейсы: возможности, промт и компоненты");
 			const icon = el("span", "width:24px;height:24px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;background:rgba(23,105,210,.18);color:#4d8de8;font-size:13px;font-weight:700", "⛁");
 			const label = el("span", "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap");
 			label.dataset.agctlWscLabel = "1";
-			label.textContent = "Воркспейсы и компоненты";
+			label.textContent = "Воркспейсы: возможности";
 			chip.append(icon, label);
 			const api = apiFactory();
 			chip.addEventListener("click", (ev) => {

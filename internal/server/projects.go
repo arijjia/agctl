@@ -24,14 +24,16 @@ func (s *Server) handleProjectsList(w http.ResponseWriter, r *http.Request, id i
 }
 
 // handleProjectCreate — POST /api/projects: создать проект (пустой каталог
-// или клон публичного GitHub — только developer); тело ≤4 KiB и строго один
-// JSON-объект.
+// или клон публичного GitHub — только developer); тело ≤8 KiB и строго один
+// JSON-объект. packages — id платформенного каталога, ставятся сразу после
+// создания (тот же механизм, что «Возможности» в консоли воркспейсов).
 func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request, id identity) {
 	var req struct {
-		Name     string `json:"name"`
-		CloneUrl string `json:"cloneUrl"`
+		Name     string   `json:"name"`
+		CloneUrl string   `json:"cloneUrl"`
+		Packages []string `json:"packages"`
 	}
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "неверный JSON проекта")
@@ -40,6 +42,16 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request, id 
 	if err := dec.Decode(new(any)); err != io.EOF {
 		writeErr(w, http.StatusBadRequest, "ожидался один JSON объект")
 		return
+	}
+	if len(req.Packages) > 16 {
+		writeErr(w, http.StatusBadRequest, "слишком много пакетов")
+		return
+	}
+	for _, pkgID := range req.Packages {
+		if _, err := provision.FindCatalogPackage(assetsCatalog, pkgID); err != nil {
+			writeErr(w, http.StatusBadRequest, "неизвестный пакет: "+err.Error())
+			return
+		}
 	}
 	clone := strings.TrimSpace(req.CloneUrl) != ""
 	// Клонирование по URL — developer-настройка: это сетевой запрос с сервера,
@@ -73,7 +85,29 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request, id 
 		}
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"project": project})
+	// Пакеты каталога («возможности воркспейса») — сразу после создания.
+	// Ошибка установки не сносит воркспейс: сообщаем в ответе списком.
+	hostDir, dirErr := provision.ProjectDirectory(s.cfg.Home, id.ID, project.Name)
+	failed := []string{}
+	if dirErr != nil {
+		log.Printf("[projects] u%d %s: каталог воркспейса не разрешён", id.ID, project.Name)
+		failed = append(failed, req.Packages...)
+	} else {
+		for _, pkgID := range req.Packages {
+			pkg, err := provision.FindCatalogPackage(assetsCatalog, pkgID)
+			if err == nil {
+				err = provision.InstallCatalogPackage(hostDir, assetsCatalog, pkg)
+			}
+			if err != nil {
+				log.Printf("[projects] u%d %s: пакет %s не установлен", id.ID, project.Name, pkgID)
+				failed = append(failed, pkgID)
+			}
+		}
+	}
+	if len(failed) > 0 {
+		_ = s.db.Audit(id.Login, "project.create.package-failed", project.Name, strings.Join(failed, ","))
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"project": project, "packagesFailed": failed})
 }
 
 // autosaveLocalProjects runs for every user's personal volume, including sleeping

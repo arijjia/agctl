@@ -33,12 +33,13 @@ func TestProjectComponentsAPI(t *testing.T) {
 	user := e.newClient()
 	e.register(user, "boris", "secret2")
 
-	// Роль user к консоли компонентов не допускается.
-	if code, body := e.do(user, "GET", "/api/projects/vibe/components", nil); code != 403 {
-		t.Fatalf("user GET = %d %s, want 403", code, body)
+	// Консоль компонентов открыта всем ролям, но только для СВОИХ воркспейсов:
+	// чужого проекта у boris нет — 404 (это и есть граница доступа).
+	if code, _ := e.do(user, "GET", "/api/projects/vibe/components", nil); code != 404 {
+		t.Fatalf("user GET чужого = %d, want 404", code)
 	}
-	if code, body := e.do(user, "PUT", "/api/projects/vibe/components", map[string]any{"disabled": []string{}}); code != 403 {
-		t.Fatalf("user PUT = %d %s, want 403", code, body)
+	if code, _ := e.do(user, "PUT", "/api/projects/vibe/components", map[string]any{"disabled": []string{}}); code != 404 {
+		t.Fatalf("user PUT чужого = %d, want 404", code)
 	}
 	// Несуществующий проект — 404, мусорное имя — 400 (маршрутизатор чистит
 	// `../`, поэтому проверяем валидацию имени, а не обход каталогов).

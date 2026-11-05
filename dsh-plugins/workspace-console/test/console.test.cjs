@@ -32,11 +32,11 @@ function loadModule({ slots } = {}) {
 	return { exports, registrations };
 }
 
-test('консоль видна только developer и admin', () => {
+test('консоль видна всем ролям (единое место настройки воркспейсов)', () => {
 	const { exports } = loadModule();
 	assert.equal(exports.shouldShowChip({ role: 'developer' }), true);
 	assert.equal(exports.shouldShowChip({ role: 'admin' }), true);
-	assert.equal(exports.shouldShowChip({ role: 'user' }), false);
+	assert.equal(exports.shouldShowChip({ role: 'user' }), true);
 	assert.equal(exports.shouldShowChip(null), false);
 });
 

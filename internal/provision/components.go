@@ -27,9 +27,13 @@ import (
 // Component kinds (агентские поверхности, которые видно в консоли).
 const (
 	ComponentKindSkill = "skill" // skills/<dir>/SKILL.md — процедура работы агента
-	ComponentKindTool  = "tool"  // scripts/*.py — CLI-инструменты контура
-	ComponentKindData  = "data"  // scripts/<dir> — демо-данные/фикстуры
-	ComponentKindDocs  = "docs"  // промпты/инструкции (AGENTS.md) — только просмотр
+	// ComponentKindDshSkill — скилл в автозагружаемом корне .dsh/skills (dsh
+	// подхватывает его сам, без указаний в AGENTS.md); сюда ставит пакеты
+	// платформенного каталога.
+	ComponentKindDshSkill = "dshskill"
+	ComponentKindTool     = "tool" // scripts/*.py — CLI-инструменты контура
+	ComponentKindData     = "data" // scripts/<dir> — демо-данные/фикстуры
+	ComponentKindDocs     = "docs" // промпты/инструкции (AGENTS.md) — только просмотр
 )
 
 // ProjectComponent — единица каталога воркспейса для консоли.
@@ -55,26 +59,35 @@ var stashRel = filepath.Join(".agctl", "stash")
 // распространяет).
 var StashIgnorePattern = gitignore.ParsePattern(".agctl/", nil)
 
-// ScanProjectComponents читает каталог компонентов из рабочего дерева
-// проекта: skills/*/SKILL.md, scripts/*.py, каталоги данных scripts и
-// базовые инструкции. dir уже провалидирован вызывающим (ProjectDirectory).
-func ScanProjectComponents(dir string) []ProjectComponent {
+// scanSkillDir — общий обход корня скиллов (skills/ и .dsh/skills/): каталоги
+// с SKILL.md становятся компонентами указанного kind.
+func scanSkillDir(dir, root, kind string) []ProjectComponent {
 	var out []ProjectComponent
-	skillsDir := filepath.Join(dir, "skills")
-	if entries, err := os.ReadDir(skillsDir); err == nil {
+	if entries, err := os.ReadDir(filepath.Join(dir, root)); err == nil {
 		for _, entry := range entries {
 			if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || strings.HasPrefix(entry.Name(), ".") {
 				continue
 			}
 			name := entry.Name()
 			comp := ProjectComponent{
-				ID: ComponentKindSkill + ":" + name, Kind: ComponentKindSkill, Name: name,
-				Path: "skills/" + name, Enabled: true,
+				ID: kind + ":" + name, Kind: kind, Name: name,
+				Path: root + "/" + name, Enabled: true,
 			}
-			comp.Title, comp.Description = readSkillMeta(filepath.Join(skillsDir, name, "SKILL.md"), name)
+			comp.Title, comp.Description = readSkillMeta(filepath.Join(dir, root, name, "SKILL.md"), name)
 			out = append(out, comp)
 		}
 	}
+	return out
+}
+
+// ScanProjectComponents читает каталог компонентов из рабочего дерева
+// проекта: skills/*/SKILL.md, .dsh/skills/*/SKILL.md (автозагрузка dsh),
+// scripts/*.py, каталоги данных scripts и базовые инструкции. dir уже
+// провалидирован вызывающим (ProjectDirectory).
+func ScanProjectComponents(dir string) []ProjectComponent {
+	var out []ProjectComponent
+	out = append(out, scanSkillDir(dir, "skills", ComponentKindSkill)...)
+	out = append(out, scanSkillDir(dir, ".dsh/skills", ComponentKindDshSkill)...)
 	scriptsDir := filepath.Join(dir, "scripts")
 	if entries, err := os.ReadDir(scriptsDir); err == nil {
 		for _, entry := range entries {
@@ -131,7 +144,7 @@ func ScanProjectComponents(dir string) []ProjectComponent {
 		}
 		comp := ProjectComponent{ID: id, Kind: kind, Name: name, Path: treeRelPath(kind, name), Enabled: false}
 		switch kind {
-		case ComponentKindSkill:
+		case ComponentKindSkill, ComponentKindDshSkill:
 			comp.Title, comp.Description = readSkillMeta(filepath.Join(path, "SKILL.md"), name)
 		case ComponentKindTool:
 			comp.Title = strings.TrimSuffix(name, ".py")
@@ -153,6 +166,8 @@ func treeRelPath(kind, name string) string {
 		return "scripts/" + name
 	case ComponentKindDocs:
 		return name
+	case ComponentKindDshSkill:
+		return ".dsh/skills/" + name
 	default: // skill и всё неизвестное живёт в skills/
 		return "skills/" + name
 	}
@@ -160,7 +175,10 @@ func treeRelPath(kind, name string) string {
 
 // sortComponents — детерминированный порядок: kind, затем имя.
 func sortComponents(comps []ProjectComponent) {
-	rank := map[string]int{ComponentKindDocs: 0, ComponentKindSkill: 1, ComponentKindTool: 2, ComponentKindData: 3}
+	rank := map[string]int{
+		ComponentKindDocs: 0, ComponentKindSkill: 1, ComponentKindDshSkill: 1,
+		ComponentKindTool: 2, ComponentKindData: 3,
+	}
 	sort.Slice(comps, func(i, j int) bool {
 		if rank[comps[i].Kind] != rank[comps[j].Kind] {
 			return rank[comps[i].Kind] < rank[comps[j].Kind]

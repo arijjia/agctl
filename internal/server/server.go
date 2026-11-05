@@ -247,10 +247,18 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/me", s.handleMe)
 	mux.HandleFunc("GET /api/projects", s.requireUser(s.handleProjectsList))
 	mux.HandleFunc("POST /api/projects", s.requireUser(s.handleProjectCreate))
-	// Консоль компонентов воркспейса (сценарий 1c-vibe): каталог скиллов,
-	// инструментов и промптов проекта + включение/выключение на сервере.
-	mux.HandleFunc("GET /api/projects/{name}/components", s.requireDeveloper(s.handleProjectComponentsGet))
-	mux.HandleFunc("PUT /api/projects/{name}/components", s.requireDeveloper(s.handleProjectComponentsPut))
+	// Консоль воркспейсов («Возможности»): каталог компонентов скиллов,
+	// инструментов и промптов проекта + включение/выключение на сервере, и
+	// платформенный каталог пакетов (например, презентации по шаблону вуза).
+	// Доступен всем ролям: пользователь настраивает свои воркспейсы сам.
+	mux.HandleFunc("GET /api/catalog", s.requireUser(s.handleCatalogList))
+	mux.HandleFunc("GET /api/projects/{name}/catalog", s.requireUser(s.handleProjectCatalogGet))
+	mux.HandleFunc("POST /api/projects/{name}/catalog/{id}/install", s.requireUser(s.handleProjectCatalogInstall))
+	mux.HandleFunc("DELETE /api/projects/{name}/catalog/{id}", s.requireUser(s.handleProjectCatalogDelete))
+	mux.HandleFunc("GET /api/projects/{name}/prompt", s.requireUser(s.handleProjectPromptGet))
+	mux.HandleFunc("PUT /api/projects/{name}/prompt", s.requireUser(s.handleProjectPromptPut))
+	mux.HandleFunc("GET /api/projects/{name}/components", s.requireUser(s.handleProjectComponentsGet))
+	mux.HandleFunc("PUT /api/projects/{name}/components", s.requireUser(s.handleProjectComponentsPut))
 	mux.HandleFunc("GET /api/chat/folders", s.requireUser(s.handleChatFoldersGet))
 	mux.HandleFunc("PUT /api/chat/folders", s.requireUser(s.handleChatFoldersPut))
 	mux.HandleFunc("GET /api/templates", s.requireUser(s.handleTemplates)) // legacy
