@@ -14,8 +14,9 @@ PROFILE_REPO ?= ../agctl-profile-utmn
 ## profile-fetch: подтянуть профиль организации в ./profiles/utmn (локальный каталог или git-URL)
 profile-fetch:
 	@if [ -f "$(PROFILE_REPO)/profile.yaml" ]; then \
-	  mkdir -p "$(PROFILES_DIR)/utmn" && cp -R "$(PROFILE_REPO)/." "$(PROFILES_DIR)/utmn/" && \
-	  echo "✓ профиль скопирован из $(PROFILE_REPO) в $(PROFILES_DIR)/utmn"; \
+	  mkdir -p "$(PROFILES_DIR)/utmn" && cp -R "$(PROFILE_REPO)/." "$(PROFILES_DIR)/utmn/" 2>/dev/null; \
+	  rm -rf "$(PROFILES_DIR)/utmn/.git" && \
+	  echo "✓ профиль скопирован из $(PROFILE_REPO) в $(PROFILES_DIR)/utmn (.git источника не тащим)"; \
 	elif echo "$(PROFILE_REPO)" | grep -qE '^(https?|git|ssh)://'; then \
 	  git clone --depth 1 "$(PROFILE_REPO)" "$(PROFILES_DIR)/utmn" && \
 	  echo "✓ профиль склонирован из $(PROFILE_REPO)"; \
