@@ -51,6 +51,11 @@ up: web_build go_build img_build | $(RUNTIME_DIR)
 	  echo "⚠ AGCTL_LLM_API_KEY пуст: Qwen-модели будут видны, но запросы не пройдут. Впиши raw-токен в .env (без Bearer/кавычек)."; fi
 	@if [ -f "$(RUN_UP_PID)" ] && kill -0 "$$(cat $(RUN_UP_PID))" 2>/dev/null; then \
 	  echo "agctl уже запущен (pid $$(cat $(RUN_UP_PID))) — make stop"; exit 1; fi
+	@# Порт занят вне-pidfile инстансом → упадём на bind только после сборки.
+	@# Лучше поймать сразу и подсказать stop (fallback stop убивает agctl-процесс на порту).
+	@port=$$(printf '%s' "$(RUN_ADDR)" | awk -F: '{print $$NF}'); \
+	if lsof -nP -ti "tcp:$$port" -sTCP:LISTEN >/dev/null 2>&1; then \
+	  echo "✗ порт $(RUN_ADDR) уже занят (инстанс вне make?) — сделай make stop и повтори up"; exit 1; fi
 	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl serve --addr "$(RUN_ADDR)" --profile "$(PROFILE)" --dev-images "$(DEV_IMAGES)" >>"$(RUN_UP_LOG)" 2>&1 & echo $$! > "$(RUN_UP_PID)"
 	@sleep 1
 	@if kill -0 "$$(cat $(RUN_UP_PID))" 2>/dev/null; then \
@@ -95,7 +100,24 @@ stop:
 	  else echo "  подчищен мёртвый pidfile $$f"; rm -f "$$f"; fi; \
 	done; \
 	[ "$$found" = 1 ] || echo "инстансов, поднятых make, нет (.runtime/*.pid пусто)"
-
+	@# Fallback: инстанс на RUN_ADDR вне pidfile (запущен вручную или другой
+	@# сессией) — иначе stop «ничего не сделал», а порт занят. Убиваем только
+	@# процессы, чья командная строка — agctl serve; чужое на порту не трогаем.
+	@port=$$(printf '%s' "$(RUN_ADDR)" | awk -F: '{print $$NF}'); \
+	pids=$$(lsof -nP -ti "tcp:$$port" -sTCP:LISTEN 2>/dev/null || true); \
+	[ -n "$$pids" ] || exit 0; \
+	for pid in $$pids; do \
+	  cmd=$$(ps -p "$$pid" -o command= 2>/dev/null || true); \
+	  case "$$cmd" in \
+	    *agctl\ serve*) \
+	      echo "останов вне-pidfile инстанс на $(RUN_ADDR): pid $$pid (SIGTERM, ждём до 45с)"; \
+	      kill -TERM "$$pid"; \
+	      i=0; while kill -0 "$$pid" 2>/dev/null && [ $$i -lt 45 ]; do sleep 1; i=$$((i+1)); done; \
+	      if kill -0 "$$pid" 2>/dev/null; then echo "  ⚠ pid $$pid ещё завершается"; \
+	      else echo "  ✓ вне-pidfile инстанс остановлен"; fi ;; \
+	    *) echo "  ⚠ порт $(RUN_ADDR) держит не agctl (pid $$pid: $$cmd) — не трогаю" ;; \
+	  esac; \
+	done
 ## down: stop + docker stop всех контейнеров agctl (тома остаются на диске)
 down: stop
 	@if ! command -v docker >/dev/null 2>&1; then \
