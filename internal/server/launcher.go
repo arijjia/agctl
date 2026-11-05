@@ -7,10 +7,14 @@ package server
 // чат. Админу личный контейнер не выдаётся вовсе (см. auditedChat/rootEntry).
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/arijjia/agctl/internal/runtime/dockerrt"
 )
 
 const chatImageSettingPrefix = "chat-image-u"
@@ -133,6 +137,62 @@ func (s *Server) handleMeRuntimeStop(w http.ResponseWriter, r *http.Request, id 
 	s.evictChatByUser(id.ID)
 	_ = s.db.Audit(id.Login, "launcher.runtime.stop", rt.handle.RuntimeID, "том сохранён")
 	writeJSON(w, http.StatusOK, map[string]any{"status": "sleeping"})
+}
+
+// maxLauncherLogTail — верхняя граница хвоста логов за один запрос
+// (санитизация всё равно проходит по всей строке).
+const maxLauncherLogTail = 2000
+
+// handleMeRuntimeLogs — GET /api/me/runtime/logs?tail=&container=: хвост
+// логов своего чат-контейнера (лаунчер developer'а). Контейнер ищется по
+// списку agctl-чатов (чужие имена не адресуемы); логи прогоняются через
+// redactWorkspaceLogs, как и legacy /api/workspaces/{id}/logs.
+func (s *Server) handleMeRuntimeLogs(w http.ResponseWriter, r *http.Request, id identity) {
+	if id.Role == "admin" {
+		writeErr(w, http.StatusForbidden, "личный runtime админу не выдаётся")
+		return
+	}
+	list, ok := s.listChatContainers()
+	if !ok {
+		writeErr(w, http.StatusServiceUnavailable, "docker-рантайм недоступен")
+		return
+	}
+	want := r.URL.Query().Get("container")
+	var own []dockerrt.ChatContainerInfo
+	for _, c := range list {
+		if c.UserID == id.ID {
+			own = append(own, c)
+		}
+	}
+	if len(own) == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"logs": "(контейнера нет — нажмите «Запустить»)"})
+		return
+	}
+	var target *dockerrt.ChatContainerInfo
+	for i := range own {
+		if own[i].Name == want {
+			target = &own[i]
+			break
+		}
+	}
+	if target == nil {
+		target = &own[0]
+	}
+	tail := atoiDefault(r.URL.Query().Get("tail"), 200)
+	if tail > maxLauncherLogTail {
+		tail = maxLauncherLogTail
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	logs, err := s.rt.Logs(ctx, target.ID, strconv.Itoa(tail))
+	if err != nil {
+		logs = "(контейнер не отвечает: " + err.Error() + ")"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"container": target.Name,
+		"state":     target.State,
+		"logs":      redactWorkspaceLogs(logs),
+	})
 }
 
 // handleMeContainers — GET /api/me/containers: свои контейнеры (лаунчер).

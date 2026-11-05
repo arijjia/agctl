@@ -33,8 +33,8 @@ func TestMyRuntimeStatusReadOnly(t *testing.T) {
 	}
 
 	// Лifecycle-эндпоинты лаунчера: developer стартует/останавливает себя,
-	// логи по-прежнему не маршрутизируются (агентские логи читает agctl),
-	// админ и обычный user lifecycle не получают.
+	// логи своего контейнера читает через /api/me/runtime/logs (админ и
+	// обычный user lifecycle не получают).
 	dev := makeDeveloper(e, "dev1", "devpass1")
 	if code, body := e.do(dev, "POST", "/api/me/runtime/start", nil); code != http.StatusOK || !strings.Contains(body, `"status":"running"`) {
 		t.Fatalf("developer start = %d %s", code, body)
@@ -42,8 +42,8 @@ func TestMyRuntimeStatusReadOnly(t *testing.T) {
 	if code, body := e.do(dev, "POST", "/api/me/runtime/stop", nil); code != http.StatusOK || !strings.Contains(body, `"status":"sleeping"`) {
 		t.Fatalf("developer stop = %d %s", code, body)
 	}
-	if code, _ := e.do(dev, "GET", "/api/me/runtime/logs", nil); code != http.StatusNotFound && code != http.StatusMethodNotAllowed {
-		t.Fatalf("logs = %d, want non-routable", code)
+	if code, _ := e.do(dev, "GET", "/api/me/runtime/logs", nil); code != http.StatusOK {
+		t.Fatalf("logs = %d, ждём 200 (просмотр логов своего контейнера)", code)
 	}
 	for _, tc := range []struct{ method, path string }{
 		{"POST", "/api/me/runtime/start"},

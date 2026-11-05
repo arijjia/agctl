@@ -5,8 +5,11 @@ package server
 // маршрутизация developer → /launcher.
 
 import (
+	"context"
 	"net/http"
 	"testing"
+
+	"github.com/arijjia/agctl/internal/runtime/dockerrt"
 )
 
 // makeDeveloper — регистрирует пользователя и апрувит ему роль developer.
@@ -227,3 +230,74 @@ func TestLauncherStartStop(t *testing.T) {
 }
 
 // contains определён в map_test.go (strings.Contains); здесь переиспользуем.
+
+// listerRT — fakeRuntime с каталогом чат-контейнеров (containerLister):
+// для тестов просмотра логов /api/me/runtime/logs и /api/admin/containers.
+type listerRT struct {
+	*fakeRuntime
+	containers []dockerrt.ChatContainerInfo
+}
+
+func (f *listerRT) ChatContainers(ctx context.Context) ([]dockerrt.ChatContainerInfo, error) {
+	return f.containers, nil
+}
+
+// TestLauncherRuntimeLogs — developer смотрит логи только своих контейнеров;
+// чужое имя из пути не адресуемо (фолбэк на свой), boot-токен санитизируется.
+func TestLauncherRuntimeLogs(t *testing.T) {
+	fake := newFakeRuntime()
+	fake.logs["c1"] = "agctl boot ok\ndsh web listening on http://0.0.0.0:3080/?token=super-secret-boot-token"
+	rt := &listerRT{fakeRuntime: fake, containers: []dockerrt.ChatContainerInfo{
+		{ID: "c1", Name: "agctl-chat-u2-alpha", Workspace: "chat-u2-alpha", UserID: 2, State: "running", Status: "Up 2 minutes"},
+		{ID: "c2", Name: "agctl-chat-u3-beta", Workspace: "chat-u3-beta", UserID: 3, State: "exited"},
+	}}
+	env := newTestEnvWithRuntime(t, 3, func(c *Config) { c.Tier0 = true }, rt)
+	env.register(env.admin, "anna", "secret1")
+	dev := makeDeveloper(env, "devlogs", "devpass1")
+
+	// свой контейнер: логи на месте, токен закрыт
+	code, body := env.do(dev, "GET", "/api/me/runtime/logs?tail=100", nil)
+	if code != 200 || !contains(body, "agctl-chat-u2-alpha") || !contains(body, "agctl boot ok") {
+		t.Fatalf("logs: %d %s", code, body)
+	}
+	if contains(body, "super-secret-boot-token") || !contains(body, "token=[redacted]") {
+		t.Fatalf("boot-токен не санитизирован: %s", body)
+	}
+	if tail := rt.logTails["c1"]; tail != "100" {
+		t.Fatalf("tail = %q, ждём 100", tail)
+	}
+	// чужое имя контейнера не адресуемо — фолбэк на свой
+	code, body = env.do(dev, "GET", "/api/me/runtime/logs?container=agctl-chat-u3-beta", nil)
+	if code != 200 || contains(body, "agctl-chat-u3-beta") {
+		t.Fatalf("чужой контейнер адресуем: %d %s", code, body)
+	}
+	// нет контейнеров — честный пустой ответ
+	rt.containers = nil
+	if code, body = env.do(dev, "GET", "/api/me/runtime/logs", nil); code != 200 || !contains(body, "контейнера нет") {
+		t.Fatalf("no containers: %d %s", code, body)
+	}
+	// админ не смотрит личные логи (личного рантайма у него нет)
+	if code, _ := env.do(env.admin, "GET", "/api/me/runtime/logs", nil); code != 403 {
+		t.Fatalf("admin logs: %d, ждём 403", code)
+	}
+}
+
+// TestAdminContainerLogs — админ читает логи чат-контейнера по имени.
+func TestAdminContainerLogs(t *testing.T) {
+	fake := newFakeRuntime()
+	fake.logs["c9"] = "container line 1\nAGCTL_LLM_API_KEY=hunter2"
+	rt := &listerRT{fakeRuntime: fake, containers: []dockerrt.ChatContainerInfo{
+		{ID: "c9", Name: "agctl-chat-u2-alpha", Workspace: "chat-u2-alpha", UserID: 2, State: "running"},
+	}}
+	env := newTestEnvWithRuntime(t, 3, func(c *Config) { c.Tier0 = true }, rt)
+	env.register(env.admin, "anna", "secret1")
+
+	code, body := env.do(env.admin, "GET", "/api/admin/containers/agctl-chat-u2-alpha/logs", nil)
+	if code != 200 || !contains(body, "container line 1") || contains(body, "hunter2") {
+		t.Fatalf("admin logs: %d %s", code, body)
+	}
+	// имя вне списка agctl-чатов — 404
+	if code, _ = env.do(env.admin, "GET", "/api/admin/containers/other-nginx/logs", nil); code != 404 {
+		t.Fatalf("чужой контейнер: %d, ждём 404", code)
+	}
+}

@@ -259,7 +259,11 @@ button.small { padding: 1px 8px; font-size: 12px; }
 
 /* ── лаунчер developer (Launcher.tsx) ─────────────────────────────────────── */
 .launcher-wrap { align-items: stretch; }
-.launcher-card { max-width: 640px; width: 100%; }
+/* Карточка шире логина-формы: внутри живёт таблица контейнеров и панель логов
+   (отзыв о узком контейнере лаунчера); на узких экранах сжимается с полями. */
+.launcher-card { max-width: 960px; width: 100%; }
+.logs-panel { margin-top: 10px; }
+.logs-panel .logs { margin-top: 6px; max-height: 360px; }
 .launcher-card h2 { margin: 16px 0 6px; }
 .image-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 12px; }
 .image-option {

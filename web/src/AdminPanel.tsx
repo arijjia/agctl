@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { admin, api, type User } from "./api";
+import { LogsPanel } from "./LogsPanel";
 
 // AdminPanel — админ-панель супер-админа (карточка admin-panel-super-admin).
 // Админ — не пользователь платформы: личного чата у него нет, вместо этого
@@ -160,6 +161,7 @@ function ContainersTab() {
   const [rows, setRows] = useState<ContainerRow[]>([]);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
+  const [logsFor, setLogsFor] = useState("");
   const load = useCallback(() => {
     admin.containers().then((r) => setRows(r.containers || [])).catch((e) => setErr(e.message));
   }, []);
@@ -176,6 +178,7 @@ function ContainersTab() {
       setErr(e.message);
     }
   };
+  const fetchLogs = useCallback(() => admin.containerLogs(logsFor, 300), [logsFor]);
   return (
     <div>
       <button className="ghost small" onClick={load}>Обновить</button>
@@ -196,6 +199,7 @@ function ContainersTab() {
               <td>{c.memBytes ? fmtBytes(c.memBytes) : "—"}</td>
               <td>{c.cpuPercent ? `${c.cpuPercent.toFixed(1)}%` : "—"}</td>
               <td className="actions">
+                <button className="ghost small" onClick={() => setLogsFor(c.name)}>Логи</button>
                 <button className="ghost small" onClick={() => op(c.name, "restart")}>Рестарт</button>
                 {c.state === "running" ? (
                   <button className="ghost small danger" onClick={() => op(c.name, "stop")}>Стоп</button>
@@ -208,6 +212,9 @@ function ContainersTab() {
           {!rows.length && <tr><td colSpan={8} className="muted">контейнеров нет</td></tr>}
         </tbody>
       </table>
+      {logsFor && (
+        <LogsPanel fetchLogs={fetchLogs} onClose={() => setLogsFor("")} />
+      )}
     </div>
   );
 }

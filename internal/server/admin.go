@@ -246,6 +246,31 @@ func (s *Server) handleAdminContainerRestart(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, map[string]any{"status": "restarted", "name": c.Name})
 }
 
+// handleAdminContainerLogs — GET /api/admin/containers/{name}/logs?tail=:
+// хвост логов чат-контейнера (админ-панель), санитизация как в launcher.
+func (s *Server) handleAdminContainerLogs(w http.ResponseWriter, r *http.Request, _ identity) {
+	c, ok := s.adminContainerFromPath(r)
+	if !ok {
+		writeErr(w, http.StatusNotFound, "контейнер не найден или docker недоступен")
+		return
+	}
+	tail := atoiDefault(r.URL.Query().Get("tail"), 200)
+	if tail > maxLauncherLogTail {
+		tail = maxLauncherLogTail
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	logs, err := s.rt.Logs(ctx, c.ID, strconv.Itoa(tail))
+	if err != nil {
+		logs = "(контейнер не отвечает: " + err.Error() + ")"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"container": c.Name,
+		"state":     c.State,
+		"logs":      redactWorkspaceLogs(logs),
+	})
+}
+
 // handleAdminRequests — GET /api/admin/requests?user_id=&limit=: журнал
 // запросов, проксированных шлюзом /chat/ (метаданные, не тела).
 func (s *Server) handleAdminRequests(w http.ResponseWriter, r *http.Request, _ identity) {

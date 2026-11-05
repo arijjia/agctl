@@ -163,6 +163,12 @@ func newTestEnv(t *testing.T, maxPerUser int) *testEnv {
 
 // newTestEnvWith позволяет тестам включать experimental-флаги конфигурации.
 func newTestEnvWith(t *testing.T, maxPerUser int, tune func(*Config)) *testEnv {
+	return newTestEnvWithRuntime(t, maxPerUser, tune, nil)
+}
+
+// newTestEnvWithRuntime — как newTestEnvWith, но с подменным рантаймом
+// (например, реализующим containerLister для тестов контейнеров/логов).
+func newTestEnvWithRuntime(t *testing.T, maxPerUser int, tune func(*Config), rt RuntimeIface) *testEnv {
 	t.Helper()
 	home := t.TempDir()
 	db, err := store.Open(filepath.Join(home, "test.db"))
@@ -180,13 +186,20 @@ func newTestEnvWith(t *testing.T, maxPerUser int, tune func(*Config)) *testEnv {
 	if err != nil {
 		t.Fatalf("secrets: %v", err)
 	}
-	rt := newFakeRuntime()
-	rt.chatHome = home
+	fake := newFakeRuntime()
+	fake.chatHome = home
+	if rt == nil {
+		rt = fake
+	}
 	cfg := Config{Home: home, Addr: "test", MaxPerUser: maxPerUser, AutosaveEvery: time.Hour}
 	if tune != nil {
 		tune(&cfg)
 	}
-	s, err := NewWithRuntimeProviders(db, sec, cfg, rt, rt)
+	chatProvider, _ := rt.(agctlrt.ChatProvider)
+	if chatProvider == nil {
+		chatProvider = fake
+	}
+	s, err := NewWithRuntimeProviders(db, sec, cfg, rt, chatProvider)
 	if err != nil {
 		t.Fatalf("server runtime injection: %v", err)
 	}
@@ -194,7 +207,7 @@ func newTestEnvWith(t *testing.T, maxPerUser int, tune func(*Config)) *testEnv {
 	webFS := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<!doctype html><title>agctl</title>")}}
 	api := httptest.NewServer(s.Routes(webFS))
 	t.Cleanup(api.Close)
-	env := &testEnv{t: t, srv: s, api: api, rt: rt, home: home, db: db}
+	env := &testEnv{t: t, srv: s, api: api, rt: fake, home: home, db: db}
 	env.admin = env.newClient()
 	return env
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { launcher, api, type User } from "./api";
+import { LogsPanel } from "./LogsPanel";
 
 // Launcher — лаунчер роли developer (карточка developer-launcher-images):
 // после входа контейнер НЕ стартует автоматически; developer выбирает образ
@@ -22,6 +23,8 @@ export default function Launcher({ user }: { user: User }) {
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [logsFor, setLogsFor] = useState<string>(""); // "" = дефолтный (первый) свой контейнер; null-маркер — закрыто
+  const [logsOpen, setLogsOpen] = useState(false);
 
   const load = useCallback(() => {
     launcher.images().then((r) => {
@@ -68,6 +71,7 @@ export default function Launcher({ user }: { user: User }) {
   };
 
   const running = containers.some((c) => c.state === "running");
+  const fetchLogs = useCallback(() => launcher.logs(logsFor, 300), [logsFor]);
 
   return (
     <div className="center-wrap launcher-wrap">
@@ -116,7 +120,7 @@ export default function Launcher({ user }: { user: User }) {
 
         <h2 className="small">Мои контейнеры</h2>
         <table className="admin-table">
-          <thead><tr><th>Имя</th><th>Образ</th><th>Состояние</th><th>Статус</th><th>SSH</th></tr></thead>
+          <thead><tr><th>Имя</th><th>Образ</th><th>Состояние</th><th>Статус</th><th>SSH</th><th></th></tr></thead>
           <tbody>
             {containers.map((c) => (
               <tr key={c.name}>
@@ -125,11 +129,23 @@ export default function Launcher({ user }: { user: User }) {
                 <td><span className={`badge state-${c.state}`}>{c.state}</span></td>
                 <td className="muted small">{c.status}</td>
                 <td>{c.ssh ? "2222 (loopback)" : "—"}</td>
+                <td className="actions">
+                  <button
+                    className="ghost small"
+                    onClick={() => { setLogsFor(c.name); setLogsOpen(true); }}
+                  >
+                    Логи
+                  </button>
+                </td>
               </tr>
             ))}
-            {!containers.length && <tr><td colSpan={5} className="muted">контейнеров нет — нажмите «Запустить»</td></tr>}
+            {!containers.length && <tr><td colSpan={6} className="muted">контейнеров нет — нажмите «Запустить»</td></tr>}
           </tbody>
         </table>
+
+        {logsOpen && (
+          <LogsPanel fetchLogs={fetchLogs} onClose={() => setLogsOpen(false)} />
+        )}
 
         <button
           className="ghost small"

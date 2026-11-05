@@ -40,6 +40,11 @@ export const admin = {
   containers: () => req<any>("GET", "/api/admin/containers"),
   containerOp: (name: string, op: "stop" | "start" | "restart") =>
     req<any>("POST", `/api/admin/containers/${encodeURIComponent(name)}/${op}`),
+  containerLogs: (name: string, tail: number) =>
+    req<{ container: string; state: string; logs: string }>(
+      "GET",
+      `/api/admin/containers/${encodeURIComponent(name)}/logs?tail=${tail || 200}`,
+    ),
   requests: (userId: number, limit: number) =>
     req<any>("GET", `/api/admin/requests?user_id=${userId || 0}&limit=${limit || 200}`),
   sessions: (userId: number) => req<any>("GET", `/api/admin/users/${userId}/sessions`),
@@ -59,4 +64,9 @@ export const launcher = {
   start: () => req<{ status: string }>("POST", "/api/me/runtime/start"),
   stop: () => req<{ status: string }>("POST", "/api/me/runtime/stop"),
   containers: () => req<{ containers: any[] }>("GET", "/api/me/containers"),
+  logs: (container: string, tail: number) =>
+    req<{ container: string; state: string; logs: string }>(
+      "GET",
+      `/api/me/runtime/logs?tail=${tail || 200}${container ? `&container=${encodeURIComponent(container)}` : ""}`,
+    ),
 };
