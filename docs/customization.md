@@ -87,3 +87,20 @@ env-эквиваленты: `AGCTL_PROFILE`, `AGCTL_PROFILE_DIR`. Порядок
 Данные профиля агctl-репо не коммитятся (`profiles/` в `.gitignore`) —
 профиль организации живёт в своём репозитории (пример: `agctl-profile-utmn`)
 и может быть приватным независимо от ядра.
+
+## 5. Живой пример: профиль ИИ-мастерской ТюмГУ
+
+Репозиторий `arijjia/agctl-profile-utmn` (приватный, GitHub) — рабочий
+профиль пилота: брендинг ТюмГУ + модельный контур подписки Z.AI GLM
+Coding Plan (`api.z.ai/api/coding/paas/v4`; `glm-5.3`, `glm-5.3-flash`
+дефолт, `glm-4.5-flash`, `glm-4.5v`). Ключ в репо не хранится — он в
+`.env` хоста (`AGCTL_LLM_API_KEY`), при первом старте шифруется в SQLite.
+
+Полный онбординг «клонировал профиль → вписал ключ → `make up` →
+платформа как у владельца» — в README того репозитория. Кратко:
+
+```bash
+git clone https://github.com/arijjia/agctl-profile-utmn profiles/utmn   # из checkout agctl
+printf 'AGCTL_LLM_API_KEY=<ключ>\n' > .env
+make up    # PROFILE=utmn выбирается автоматически, профиль уже на месте
+```
