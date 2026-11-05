@@ -129,12 +129,28 @@ window.__ModuleLoader__.load({
 				<h2 style="margin:0 0 14px;font-size:18px">${helpTitle}</h2>
 				<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.5">
 					<li><b>Воркспейсы</b> — папки проектов в боковой панели. Новая сессия, созданная внутри папки, работает в каталоге этого проекта.</li>
-					<li><b>Создать воркспейс</b> — кнопка в шапке списка Workspaces: пустой или клон публичного GitHub-репозитория.</li>
+					<li><b>Создать воркспейс</b> — кнопка в шапке списка Workspaces: пустой или клон публичного GitHub-репозитория. При создании можно сразу отметить «возможности» (например, презентации по шаблону вуза); менять их потом — в «Воркспейсы: возможности».</li>
 					<li><b>SSH</b> (роли developer/admin) — открой отдельную вкладку «SSH-доступ»: там поле для публичного ключа, готовая команда подключения и микро-гайд. Порт появляется, когда рантайм работает; доступ — только с самого сервера или через туннель.</li>
-					<li><b>Рантайм</b> управляется agctl автоматически: просыпается при открытии чата и засыпает после часа бездействия; активная SSH-сессия продлевает работу. Запускать и останавливать вручную не нужно.</li>
+					<li><b>Рантайм</b> управляется agctl автоматически: просыпается при открытии чата и засыпает после часа бездействия; активная SSH-сессия продлевает работу. Логи своего контейнера разработчик смотрит в лаунчере.</li>
 					<li><b>Git</b> — история воркспейса сохраняется автоматически; автопуш во внешний Git не выполняется.</li>
 				</ul>`;
 			sheet.appendChild(box);
+			// Архитектурная карта платформы (/map — archify-диаграммы) нужна
+			// именно developer'ам и админам: ссылка только для этих ролей.
+			ensureAgctlUser().then((me) => {
+				if (!box.isConnected || !me) return;
+				if (me.role !== "developer" && me.role !== "admin") return;
+				const card = el("div", "border:1px solid var(--dsw-alias-border-l1,#333);border-radius:12px;padding:12px 14px;margin-top:14px");
+				card.appendChild(el("div", "font-size:12px;font-weight:600;margin-bottom:4px", "Архитектурная карта платформы"));
+				card.appendChild(el("p", "font-size:11.5px;color:var(--dsw-alias-label-tertiary,#888);margin:0 0 8px",
+					"Как устроен agctl: физическая карта процессов/портов/протоколов, вход и роли, шлюз и админ-API. Открывается в новой вкладке."));
+				const link = el("a", "font-size:12.5px;font-weight:600", "Открыть карту системы (архитектура) →");
+				link.href = "/map";
+				link.target = "_blank";
+				link.rel = "noopener";
+				card.appendChild(link);
+				box.appendChild(card);
+			});
 		}
 
 		function statsBlock() {
