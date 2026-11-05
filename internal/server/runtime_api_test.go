@@ -42,8 +42,8 @@ func TestMyRuntimeStatusReadOnly(t *testing.T) {
 	if code, body := e.do(dev, "POST", "/api/me/runtime/stop", nil); code != http.StatusOK || !strings.Contains(body, `"status":"sleeping"`) {
 		t.Fatalf("developer stop = %d %s", code, body)
 	}
-	if code, _ := e.do(dev, "GET", "/api/me/runtime/logs", nil); code != http.StatusOK {
-		t.Fatalf("logs = %d, ждём 200 (просмотр логов своего контейнера)", code)
+	if code, _ := e.do(dev, "GET", "/api/me/runtime/logs", nil); code != http.StatusServiceUnavailable {
+		t.Fatalf("logs = %d, ждём 503 (fake-рантайм без каталога контейнеров; с каталогом — TestLauncherRuntimeLogs)", code)
 	}
 	for _, tc := range []struct{ method, path string }{
 		{"POST", "/api/me/runtime/start"},

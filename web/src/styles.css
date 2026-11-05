@@ -257,6 +257,51 @@ button.small { padding: 1px 8px; font-size: 12px; }
   .stat-card { background: transparent; }
 }
 
+/* ── графики обзора (charts.tsx) ───────────────────────────────────────────── */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.chart-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px 6px;
+  background: var(--card, #fff);
+  min-width: 0;
+}
+.chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.chart-title { font-size: 13px; font-weight: 600; }
+.chart-body { position: relative; }
+.chart-body svg { width: 100%; height: auto; display: block; color: var(--text); }
+.chart-tip {
+  position: absolute;
+  transform: translateX(-50%);
+  background: rgba(13, 17, 23, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 12px;
+  line-height: 1.45;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 5;
+  color: var(--text);
+}
+.chart-tip-head { font-weight: 600; }
+.chart-hbars { display: flex; flex-direction: column; gap: 6px; padding: 4px 0 10px; }
+.chart-hbar { display: grid; grid-template-columns: 130px 1fr 52px; gap: 8px; align-items: center; font-size: 12.5px; }
+.chart-hbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chart-hbar-track { display: block; background: rgba(88, 166, 255, 0.12); border-radius: 6px; height: 14px; overflow: hidden; }
+.chart-hbar-fill { display: block; height: 100%; background: linear-gradient(90deg, #1f6feb, #58a6ff); border-radius: 6px; }
+.chart-hbar-value { text-align: right; font-variant-numeric: tabular-nums; }
+.chart-donut { display: flex; align-items: center; gap: 16px; padding: 4px 0 10px; flex-wrap: wrap; }
+.chart-legend { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; }
+.chart-legend-row { display: flex; align-items: center; gap: 7px; cursor: default; }
+.chart-legend-row .muted { margin-left: auto; font-variant-numeric: tabular-nums; }
+.chart-dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
 /* ── лаунчер developer (Launcher.tsx) ─────────────────────────────────────── */
 .launcher-wrap { align-items: stretch; }
 /* Карточка шире логина-формы: внутри живёт таблица контейнеров и панель логов

@@ -299,6 +299,7 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/admin/containers/{name}/restart", s.requireAdmin(s.handleAdminContainerRestart))
 	mux.HandleFunc("GET /api/admin/containers/{name}/logs", s.requireAdmin(s.handleAdminContainerLogs))
 	mux.HandleFunc("GET /api/admin/requests", s.requireAdmin(s.handleAdminRequests))
+	mux.HandleFunc("GET /api/admin/activity", s.requireAdmin(s.handleAdminActivity))
 	mux.HandleFunc("GET /api/admin/quotas", s.requireAdmin(s.handleAdminQuotasList))
 	mux.HandleFunc("PUT /api/admin/quotas", s.requireAdmin(s.handleAdminQuotaPut))
 	mux.HandleFunc("DELETE /api/admin/quotas/{id}", s.requireAdmin(s.handleAdminQuotaDelete))

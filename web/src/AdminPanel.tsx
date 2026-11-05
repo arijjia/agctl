@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { admin, api, type User } from "./api";
 import { LogsPanel } from "./LogsPanel";
+import { AreaChart, BarChart, Donut, HBarList, bucketLabel, bucketTip } from "./charts";
 
 // AdminPanel — админ-панель супер-админа (карточка admin-panel-super-admin).
 // Админ — не пользователь платформы: личного чата у него нет, вместо этого
@@ -78,25 +79,91 @@ function Err({ msg }: { msg: string }) {
   return msg ? <div className="error">{msg}</div> : null;
 }
 
+type ActivityData = {
+  hourly: { t: string; requests: number; users: number; errors: number; avgMs: number }[];
+  daily: { t: string; requests: number; users: number; errors: number; avgMs: number }[];
+  topUsers: { login: string; requests: number; errors: number; avgMs: number; bytesOut: number }[];
+  statuses: { ok: number; redirect: number; clientError: number; serverError: number };
+  registrations: { t: string; count: number }[];
+};
+
 // ── вкладки ─────────────────────────────────────────────────────────────────
 
 function OverviewTab() {
   const [data, setData] = useState<Overview | null>(null);
+  const [act, setAct] = useState<ActivityData | null>(null);
   const [err, setErr] = useState("");
-  useEffect(() => {
+  const load = useCallback(() => {
     admin.overview().then(setData).catch((e) => setErr(e.message));
+    admin.activity().then(setAct).catch(() => setAct(null));
   }, []);
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 60000); // график живёт: обновление раз в минуту
+    return () => clearInterval(t);
+  }, [load]);
   if (err) return <Err msg={err} />;
   if (!data) return <p className="muted">…</p>;
   const mem = data.memoryBytes ? `${fmtBytes(data.memoryBytes)} суммарно` : "—";
+  const st = act?.statuses;
   return (
-    <div className="stat-grid">
-      <Stat label="Пользователей" value={data.users.total} hint={Object.entries(data.users.byRole).map(([k, v]) => `${k}: ${v}`).join(" · ")} />
-      <Stat label="Активных сессий" value={data.sessions} hint="cookie-сессии в базе" />
-      <Stat label="Контейнеров" value={`${data.containers.running}/${data.containers.known}`} hint="живых / известных" />
-      <Stat label="Память контейнеров" value={mem} hint="one-shot docker stats" />
-      <Stat label="Запросов сегодня" value={data.requestsToday} hint="журнал шлюза /chat/" />
-      <Stat label="Образ / лимит" value={data.image} hint={`TTL сна: ${data.chatTTLMinutes} мин · v${data.version}`} />
+    <div>
+      <div className="stat-grid">
+        <Stat label="Пользователей" value={data.users.total} hint={Object.entries(data.users.byRole).map(([k, v]) => `${k}: ${v}`).join(" · ")} />
+        <Stat label="Активных сессий" value={data.sessions} hint="cookie-сессии в базе" />
+        <Stat label="Контейнеров" value={`${data.containers.running}/${data.containers.known}`} hint="живых / известных" />
+        <Stat label="Память контейнеров" value={mem} hint="one-shot docker stats" />
+        <Stat label="Запросов сегодня" value={data.requestsToday} hint="журнал шлюза /chat/" />
+        <Stat label="Образ / лимит" value={data.image} hint={`TTL сна: ${data.chatTTLMinutes} мин · v${data.version}`} />
+      </div>
+      {act && (
+        <div className="chart-grid">
+          <AreaChart
+            title="Запросы шлюза — 24 часа"
+            hint="кто-то прямо сейчас работает: линия растёт"
+            data={act.hourly.map((p) => ({ label: bucketLabel(p.t, "hour"), value: p.requests, extra: bucketTip(p.t) }))}
+            second={act.hourly.map((p) => ({ label: bucketLabel(p.t, "hour"), value: p.avgMs }))}
+            secondName="средняя задержка, мс"
+          />
+          <BarChart
+            title="Запросы по дням — 14 дней"
+            hint="дневная активность платформы"
+            color="#58a6ff"
+            valueName="запросов"
+            data={act.daily.map((p) => ({
+              label: bucketLabel(p.t, "day"),
+              value: p.requests,
+              extra: `${bucketTip(p.t)} · ${p.users} польз. · ошибок: ${p.errors}`,
+            }))}
+          />
+          <Donut
+            title="Статусы ответов — 7 дней"
+            hint="здоровье шлюза: 4xx/5xx — повод посмотреть журнал"
+            segments={[
+              { key: "ok", label: "2xx успешно", value: st?.ok || 0 },
+              { key: "redirect", label: "3xx редиректы", value: st?.redirect || 0 },
+              { key: "clientError", label: "4xx ошибки клиента", value: st?.clientError || 0 },
+              { key: "serverError", label: "5xx ошибки сервера", value: st?.serverError || 0 },
+            ]}
+          />
+          <HBarList
+            title="Самые активные — 7 дней"
+            hint="кто нагружает шлюз; в тултипе — задержка и трафик"
+            data={(act.topUsers || []).map((u) => ({
+              label: u.login,
+              value: u.requests,
+              extra: `${u.login}: ср. ${Math.round(u.avgMs)} мс · исходящий ${fmtBytes(u.bytesOut)} · ошибок ${u.errors}`,
+            }))}
+          />
+          <BarChart
+            title="Регистрации — 14 дней"
+            hint="новые учётки платформы"
+            color="#a371f7"
+            valueName="регистраций"
+            data={(act.registrations || []).map((r) => ({ label: bucketLabel(r.t, "day"), value: r.count, extra: bucketTip(r.t) }))}
+          />
+        </div>
+      )}
     </div>
   );
 }

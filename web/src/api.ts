@@ -47,6 +47,7 @@ export const admin = {
     ),
   requests: (userId: number, limit: number) =>
     req<any>("GET", `/api/admin/requests?user_id=${userId || 0}&limit=${limit || 200}`),
+  activity: () => req<any>("GET", "/api/admin/activity"),
   sessions: (userId: number) => req<any>("GET", `/api/admin/users/${userId}/sessions`),
   trace: (userId: number, workspace: string, session: string) =>
     req<any>("GET", `/api/admin/users/${userId}/sessions/${encodeURIComponent(workspace)}/${encodeURIComponent(session)}`),

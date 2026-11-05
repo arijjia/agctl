@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/arijjia/agctl/internal/runtime/dockerrt"
+	"github.com/arijjia/agctl/internal/store"
 )
 
 // containerLister / containerStatser — опциональные способности docker-рантайма
@@ -269,6 +270,102 @@ func (s *Server) handleAdminContainerLogs(w http.ResponseWriter, r *http.Request
 		"state":     c.State,
 		"logs":      redactWorkspaceLogs(logs),
 	})
+}
+
+// handleAdminActivity — GET /api/admin/activity: временные ряды для графиков
+// вкладки «Обзор» (запросы шлюза по часам/дням, топ пользователей, статусы,
+// регистрации). Пустые бакеты досыпаются, чтобы линия/столбцы были сплошными.
+func (s *Server) handleAdminActivity(w http.ResponseWriter, r *http.Request, _ identity) {
+	hourly, err := s.db.ProxyRequestsHourly(24)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	daily, err := s.db.ProxyRequestsDaily(14)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	topUsers, err := s.db.ProxyRequestsTopUsers(7, 10)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	statuses, err := s.db.ProxyRequestsStatuses(7)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	registrations, err := s.db.UsersRegisteredDaily(14)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"hourly":        fillHourBuckets(hourly, 24),
+		"daily":         fillDayBuckets(daily, 14),
+		"topUsers":      topUsers,
+		"statuses":      statuses,
+		"registrations": fillDayCounts(registrations, 14),
+	})
+}
+
+// fillHourBuckets — непрерывный ряд последних hours часовых бакетов (UTC):
+// отсутствующие часы становятся нулевыми точками.
+func fillHourBuckets(points []store.ActivityPoint, hours int) []store.ActivityPoint {
+	byKey := make(map[string]store.ActivityPoint, len(points))
+	for _, p := range points {
+		byKey[p.Bucket] = p
+	}
+	now := time.Now().UTC().Truncate(time.Hour)
+	out := make([]store.ActivityPoint, 0, hours)
+	for i := hours - 1; i >= 0; i-- {
+		key := now.Add(-time.Duration(i) * time.Hour).Format("2006-01-02T15:00:00Z")
+		if p, ok := byKey[key]; ok {
+			out = append(out, p)
+			continue
+		}
+		out = append(out, store.ActivityPoint{Bucket: key})
+	}
+	return out
+}
+
+// fillDayBuckets — непрерывный ряд последних days дневных бакетов (UTC).
+func fillDayBuckets(points []store.ActivityPoint, days int) []store.ActivityPoint {
+	byKey := make(map[string]store.ActivityPoint, len(points))
+	for _, p := range points {
+		byKey[p.Bucket] = p
+	}
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	out := make([]store.ActivityPoint, 0, days)
+	for i := days - 1; i >= 0; i-- {
+		key := today.AddDate(0, 0, -i).Format("2006-01-02T00:00:00Z")
+		if p, ok := byKey[key]; ok {
+			out = append(out, p)
+			continue
+		}
+		out = append(out, store.ActivityPoint{Bucket: key})
+	}
+	return out
+}
+
+// fillDayCounts — непрерывный ряд счётчиков по дням (регистрации).
+func fillDayCounts(counts []store.DayCount, days int) []store.DayCount {
+	byKey := make(map[string]store.DayCount, len(counts))
+	for _, c := range counts {
+		byKey[c.Day] = c
+	}
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	out := make([]store.DayCount, 0, days)
+	for i := days - 1; i >= 0; i-- {
+		key := today.AddDate(0, 0, -i).Format("2006-01-02T00:00:00Z")
+		if c, ok := byKey[key]; ok {
+			out = append(out, c)
+			continue
+		}
+		out = append(out, store.DayCount{Day: key})
+	}
+	return out
 }
 
 // handleAdminRequests — GET /api/admin/requests?user_id=&limit=: журнал

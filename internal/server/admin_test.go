@@ -318,3 +318,64 @@ func TestAdminOverviewNumbers(t *testing.T) {
 		t.Fatalf("overview containers: %+v", ov.Containers)
 	}
 }
+
+// TestAdminActivity — графики активности: доступ только админу, ряды
+// приходят непрерывными (пустые бакеты досыпаются), структура полная.
+func TestAdminActivity(t *testing.T) {
+	env := newTestEnv(t, 2)
+	env.register(env.admin, "anna", "secret1")
+	alice := env.newClient()
+	env.register(alice, "alice", "alicepw1")
+
+	// обычному пользователю график не отдаётся
+	if code, _ := env.do(alice, "GET", "/api/admin/activity", nil); code != 403 {
+		t.Fatalf("user activity: %d, ждём 403", code)
+	}
+
+	// запрос через шлюз писать нечем (нет живого контейнера), но регистрации
+	// пользователей уже есть: 2 учётки сегодня
+	code, body := env.do(env.admin, "GET", "/api/admin/activity", nil)
+	if code != 200 {
+		t.Fatalf("activity: %d %s", code, body)
+	}
+	var act struct {
+		Hourly []struct {
+			T        string  `json:"t"`
+			Requests int64   `json:"requests"`
+			AvgMs    float64 `json:"avgMs"`
+		} `json:"hourly"`
+		Daily []struct {
+			T        string `json:"t"`
+			Requests int64  `json:"requests"`
+			Users    int64  `json:"users"`
+		} `json:"daily"`
+		TopUsers      []map[string]any `json:"topUsers"`
+		Statuses      map[string]int64 `json:"statuses"`
+		Registrations []struct {
+			T     string `json:"t"`
+			Count int64  `json:"count"`
+		} `json:"registrations"`
+	}
+	if err := json.Unmarshal([]byte(body), &act); err != nil {
+		t.Fatalf("decode: %v: %s", err, body)
+	}
+	if len(act.Hourly) != 24 {
+		t.Fatalf("hourly = %d точек, ждём 24", len(act.Hourly))
+	}
+	if len(act.Daily) != 14 {
+		t.Fatalf("daily = %d точек, ждём 14", len(act.Daily))
+	}
+	if len(act.Registrations) != 14 {
+		t.Fatalf("registrations = %d, ждём 14", len(act.Registrations))
+	}
+	var regToday int64
+	for _, r := range act.Registrations {
+		regToday += r.Count
+	}
+	if regToday != 2 {
+		t.Fatalf("регистраций сегодня = %d, ждём 2 (%s)", regToday, body)
+	}
+	if act.Statuses == nil {
+		t.Fatalf("statuses пустой: %s", body)
+	}
+}
