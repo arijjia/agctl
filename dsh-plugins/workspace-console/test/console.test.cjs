@@ -32,12 +32,29 @@ function loadModule({ slots } = {}) {
 	return { exports, registrations };
 }
 
-test('консоль видна всем ролям (единое место настройки воркспейсов)', () => {
+test('консоль — панель в списке панелей и вкладка main под одним ключом', () => {
+	const registrations = [];
+	const slots = {
+		inject(slot, register) { register(); },
+		register(entry) { registrations.push(entry); return entry; },
+	};
 	const { exports } = loadModule();
-	assert.equal(exports.shouldShowChip({ role: 'developer' }), true);
-	assert.equal(exports.shouldShowChip({ role: 'admin' }), true);
-	assert.equal(exports.shouldShowChip({ role: 'user' }), true);
-	assert.equal(exports.shouldShowChip(null), false);
+	const ctx = {
+		slots,
+		get(name) { return name === 'workspaces' ? { marker: 1 } : null; },
+	};
+	exports.apply(ctx);
+	assert.equal(registrations.length, 2, 'панель + страница');
+
+	const row = registrations.find((r) => r.name === 'sidebar.panellist');
+	const main = registrations.find((r) => r.name === 'main');
+	assert.ok(row && main, 'регистрируются оба слота');
+	assert.equal(row.id, exports.PANEL_ID);
+	assert.equal(row.order, 20, 'после штатных Plugins(0)/Automation tasks(10), перед More');
+	assert.equal(typeof row.label(), 'string');
+	assert.equal(main.key, exports.PANEL_ID, 'ключ страницы = id панели');
+	const injected = main.inject();
+	assert.ok(injected && Object.keys(injected).length === 0, 'страница без внешних пропсов');
 });
 
 test('каталог группируется по секциям', () => {
@@ -45,12 +62,11 @@ test('каталог группируется по секциям', () => {
 	const groups = exports.groupComponents([
 		{ id: 'tool:lint.py', kind: 'tool' },
 		{ id: 'skill:1c-vibe-demo', kind: 'skill' },
+		{ id: 'dshskill:presentations', kind: 'dshskill' },
 		{ id: 'data:demo-project', kind: 'data' },
 		{ id: 'docs:AGENTS.md', kind: 'docs' },
-		{ id: 'skill:backlog', kind: 'skill' },
 	]);
-	// Массивы приходят из vm-реалма: сравниваем локальные копии.
-	assert.deepEqual([...groups.skills.map((c) => c.id)], ['skill:1c-vibe-demo', 'skill:backlog']);
+	assert.deepEqual([...groups.skills.map((c) => c.id)], ['skill:1c-vibe-demo', 'dshskill:presentations']);
 	assert.deepEqual([...groups.tools.map((c) => c.id)], ['tool:lint.py']);
 	assert.deepEqual([...groups.data.map((c) => c.id)], ['data:demo-project']);
 	assert.deepEqual([...groups.docs.map((c) => c.id)], ['docs:AGENTS.md']);
@@ -75,17 +91,32 @@ test('buildDisabledIDs отдаёт только изменения и проп�
 	assert.equal([...exports.buildDisabledIDs(components, off)].includes('docs:AGENTS.md'), false);
 });
 
-test('чип регистрируется в штатном слоте сайдбара', () => {
-	const registrations = [];
+test('deleteProject: сначала каталог (agctl), затем запись реестра dsh', async () => {
+	const { exports } = loadModule();
+	const calls = [];
+	const api = async (path, method) => { calls.push(method + ' ' + path); return { ok: true }; };
+	const project = { name: 'vibe', directory: '/workspace/vibe' };
+
+	// сирота: записи реестра нет — только agctl-ручка
+	await exports.deleteProject(api, project);
+	assert.deepEqual(calls, ['DELETE /api/projects/vibe']);
+
+	// запись есть — снимается штатным workspaces.delete тем же вызовом
+	// (dshWorkspaces прокидывается через apply-контекст)
 	const slots = {
 		inject(slot, register) { register(); },
-		register(entry) { registrations.push(entry); return entry; },
+		register(entry) { return entry; },
 	};
-	const { exports } = loadModule();
-	const ctx = { slots };
-	exports.apply({ slots: ctx.slots });
-	assert.equal(registrations.length, 1);
-	assert.equal(registrations[0].name, 'sidebar.footer.action');
-	assert.equal(registrations[0].id, 'agctl-workspace-console-chip');
-	assert.equal(registrations[0].order, 11);
+	const ctx = {
+		slots,
+		get(name) {
+			return name === 'workspaces'
+				? { list: { getSnapshot: () => ({ items: [{ workspaceId: 'w1', path: '/workspace/vibe' }] }) }, delete: async (id) => { calls.push('dsh.delete ' + id); } }
+				: null;
+		},
+	};
+	exports.apply(ctx);
+	calls.length = 0; // часть 1 (сирота) уже проверена
+	await exports.deleteProject(api, project);
+	assert.deepEqual(calls, ['DELETE /api/projects/vibe', 'dsh.delete w1']);
 });
