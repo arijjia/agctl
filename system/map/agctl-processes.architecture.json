@@ -3,26 +3,28 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "agctl — физика: процессы, порты, протоколы",
-    "output": ".archify/architecture-agctl-processes-20261030-003200/agctl-processes.html",
+    "output": ".archify/architecture-agctl-processes-20261105-130250/agctl-processes.html",
     "quality_profile": "showcase",
     "repository": {
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "72fa4218b5ed4935747efb2a39e884a15bf21912"
+      "revision": "eaa04287ce7c8cba1675955a6894d39b0621282e"
     },
     "views": [
       {
         "id": "v-login",
-        "label": "Вход: что запущено",
+        "label": "Вход и роли: админ · лаунчер · чат",
         "focus": [
           "browser",
           "serve",
           "dockerd",
           "agdb",
-          "seckey"
+          "seckey",
+          "dshchat",
+          "sshd"
         ],
-        "note": "Логин +0 процессов; файлы/том — отдельны от процессов runtime"
+        "note": "логин +0; админ всегда +0 (панели отдаёт serve); developer в /launcher +0 до старта; /chat/ → +1 dsh web (+1 sshd)"
       },
       {
         "id": "v-chat",
@@ -80,7 +82,7 @@
       "id": "browser",
       "type": "frontend",
       "label": "Вкладка браузера",
-      "sublabel": "вход — SPA agctl · чат — dsh SPA",
+      "sublabel": "вход · /admin · /launcher · /chat dsh",
       "pos": [
         24,
         320
@@ -92,15 +94,21 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 318,
-          "end_line": 330,
-          "label": "корень: вход → /chat/, сессия → /chat/"
+          "line": 364,
+          "end_line": 368,
+          "label": "GET /admin и /launcher — страницы SPA"
         },
         {
-          "path": "internal/server/chatshell.go",
-          "line": 3,
-          "end_line": 27,
-          "label": "pre-paint чат-шелла + brand-boot"
+          "path": "internal/server/chat.go",
+          "line": 785,
+          "end_line": 806,
+          "label": "rootEntry: редирект по роли из сессии"
+        },
+        {
+          "path": "internal/server/launcher.go",
+          "line": 42,
+          "end_line": 155,
+          "label": "лаунчер-API: каталог образов, старт/стоп"
         }
       ]
     },
@@ -108,7 +116,7 @@
       "id": "serve",
       "type": "backend",
       "label": "agctl serve — 1 Go-процесс",
-      "sublabel": ":8929 · auth · /api · шлюзы /chat /w · роли",
+      "sublabel": ":8929 · auth · /api · шлюзы · админ-API · квоты",
       "pos": [
         430,
         300
@@ -119,22 +127,22 @@
       ],
       "sources": [
         {
-          "path": "cmd/agctl/main.go",
-          "line": 143,
-          "end_line": 264,
-          "label": "cmdServe startup + HTTP listener"
-        },
-        {
           "path": "internal/server/server.go",
-          "line": 221,
-          "end_line": 311,
-          "label": "API/gateway routes + auth middleware"
+          "line": 241,
+          "end_line": 373,
+          "label": "маршруты: API, шлюзы, админ-API, лаунчер"
         },
         {
           "path": "internal/server/chat.go",
-          "line": 505,
-          "end_line": 581,
-          "label": "lazy per-user runtime + TTL reaper"
+          "line": 546,
+          "end_line": 740,
+          "label": "кэш рантайма, смена образа, TTL reaper"
+        },
+        {
+          "path": "internal/server/admin.go",
+          "line": 356,
+          "end_line": 390,
+          "label": "гейт роли + журнал шлюза"
         }
       ]
     },
@@ -159,9 +167,15 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 270,
-          "end_line": 276,
+          "line": 298,
+          "end_line": 312,
           "label": "публикация портов на 127.0.0.1"
+        },
+        {
+          "path": "internal/runtime/dockerrt/admin.go",
+          "line": 33,
+          "end_line": 100,
+          "label": "ChatContainers + статы (админ-API)"
         }
       ]
     },
@@ -169,7 +183,7 @@
       "id": "agdb",
       "type": "database",
       "label": "agctl.db — SQLite WAL",
-      "sublabel": "users · sessions · roles · audit",
+      "sublabel": "users · sessions · audit · квоты · журнал",
       "pos": [
         880,
         430
@@ -184,6 +198,12 @@
           "line": 210,
           "end_line": 213,
           "label": "store.Open($AGCTL_HOME/agctl.db)"
+        },
+        {
+          "path": "internal/store/migrations/012_admin_panel.sql",
+          "line": 7,
+          "end_line": 24,
+          "label": "proxy_requests + quotas (миграция 012)"
         }
       ]
     },
@@ -231,15 +251,15 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 288,
-          "end_line": 291,
+          "line": 315,
+          "end_line": 320,
           "label": "dsh-home → /home/dsh bind"
         },
         {
-          "path": "internal/assets/image/entrypoint.sh",
-          "line": 10,
-          "end_line": 15,
-          "label": "seed при первом старте"
+          "path": "internal/server/admin_sessions.go",
+          "line": 63,
+          "end_line": 119,
+          "label": "сессии/траектории читает админ-API"
         }
       ]
     },
@@ -316,7 +336,7 @@
         {
           "path": "internal/assets/image/entrypoint.sh",
           "line": 49,
-          "end_line": 51,
+          "end_line": 53,
           "label": "выбор eth0-IP + exec dsh web"
         },
         {
@@ -328,8 +348,8 @@
         {
           "path": "internal/runtime/dockerrt/chat.go",
           "line": 17,
-          "end_line": 71,
-          "label": "EnsureChat: seed + Start (+SSH developer)"
+          "end_line": 78,
+          "label": "EnsureChat: seed + Start (+SSH developer, +образ"
         }
       ]
     },
@@ -349,14 +369,14 @@
       "sources": [
         {
           "path": "internal/assets/image/entrypoint.sh",
-          "line": 27,
-          "end_line": 46,
-          "label": "sshd только при AGCTL_SSH_PUBKEY"
+          "line": 29,
+          "end_line": 50,
+          "label": "sshd при ключе; AGCTL_NO_SSHD=1 отключает даже с"
         },
         {
           "path": "internal/server/chat.go",
-          "line": 560,
-          "end_line": 565,
+          "line": 608,
+          "end_line": 621,
           "label": "ключ — только у роли developer"
         }
       ]
@@ -365,7 +385,7 @@
       "id": "llm",
       "type": "external",
       "label": "LLM gateway — из профиля",
-      "sublabel": "llm.corp.example · :443",
+      "sublabel": "api.z.ai · :443 · GLM",
       "pos": [
         1555,
         140
@@ -380,6 +400,12 @@
           "line": 251,
           "end_line": 260,
           "label": "host-gateway + DNS-пины провайдеров"
+        },
+        {
+          "path": "cmd/agctl/main.go",
+          "line": 180,
+          "end_line": 186,
+          "label": "дефолты LLM из профиля utmn"
         }
       ]
     },
@@ -465,7 +491,7 @@
       "id": "profile",
       "type": "database",
       "label": "Профиль организации",
-      "sublabel": "файлы: profile.yaml + logo.png",
+      "sublabel": "profile.yaml + logo · репо на GitHub",
       "pos": [
         400,
         620
@@ -480,12 +506,6 @@
           "line": 96,
           "end_line": 130,
           "label": "LoadDir/Resolve: embed + дисковые каталоги"
-        },
-        {
-          "path": "cmd/agctl/main.go",
-          "line": 147,
-          "end_line": 154,
-          "label": "--profile/--profile-dir при старте serve"
         },
         {
           "path": "internal/profile/guard_test.go",
@@ -730,6 +750,8 @@
         "Сервер всегда: 2 — agctl serve + dockerd; SQLite и git — файлы и библиотека в процессе, не процессы",
         "Вход/логин: +0 — экран рисует SPA agctl (go:embed), dsh ещё не существует",
         "Открылся /chat/: +1 — dsh web (bind на eth0); до готовности agctl отдаёт свой HTML прогрева",
+        "Админ (/admin): +0 — панели рисует SPA agctl, данные отдаёт serve; личный контейнер админу не создаётся",
+        "Developer в /launcher: +0, пока не нажал «Запустить»; старт → +1 dsh web (+1 sshd при ключе)",
         "Агент работает: + недолговечные дети dsh web (bash, python3, git, npx MCP)",
         "Разработчик: +1 — sshd в его персональном контейнере (роль developer, при переданном ключе)",
         "Сон по TTL (1 ч простоя) удаляет все процессы контейнера; том пользователя живёт"
@@ -742,7 +764,8 @@
         "Наружу — только 127.0.0.1:8929 — единственный порт (TLS agctl не терминирует: впереди ingress)",
         "Хост-порты контейнеров — динамические, только на loopback: web :3080, ssh :2222 (роль developer)",
         "Путь чата: браузер → :8929 → proxy + mint ?token= → DNAT → dsh :3080 (bind eth0) → LLM :443",
-        "Апстрим dsh запрещает только wildcard-бинд — dsh слушает eth0 контейнера напрямую, релея в образе нет"
+        "Апстрим dsh запрещает только wildcard-бинд — dsh слушает eth0 контейнера напрямую, релея в образе нет",
+        "/admin и /launcher — страницы того же SPA на :8929; роль из сессии решает редирект корня"
       ]
     },
     {
@@ -754,7 +777,8 @@
         "Сейчас в коде: $AGCTL_HOME/chats/u<id>/{dsh-home,work}; цель v3 — u<id>/{dsh-home,workspace/<project>}, миграции пока нет",
         "Рамка Git: версии — workspace/<project> и history store; вне Git — dsh-home, agctl.db, secrets.key, контейнеры",
         "Контейнер можно удалить — том остаётся. Бэкап платформы = копия $AGCTL_HOME",
-        "Git history store (bare) — сейчас repos/; целевой путь модель не зафиксировала, уточнит MVP"
+        "Git history store (bare) — сейчас repos/; целевой путь модель не зафиксировала, уточнит MVP",
+        "Миграция 012 добавила в agctl.db proxy_requests (журнал запросов шлюза) и quotas (бюджеты токенов на роль/юзера)"
       ]
     },
     {
@@ -765,7 +789,8 @@
         "Проверяет сессию и роль, обслуживает API и шлюзы; в целевой v3-модели лениво запускает через Docker один runtime пользователя.",
         "TTL/reaper останавливает вычисления, но оставляет том. agctl serve не запускает команды агента и не проксирует файловые записи.",
         "dsh и дочерние инструменты читают и пишут напрямую через RW bind mount; фоновые задачи, включая Git autosave, выполняются в Go-процессе как горутины. SQLite и секреты — данные платформы в AGCTL_HOME.",
-        "Брендинг и LLM-дефолты — из профиля организации (internal/profile: данные, не код; --profile/--profile-dir, make profile-fetch): шлюз инжектит window.__AGCTL_BRAND__ в <head> до первого кадра; в ядре нет литералов организаций — guard-тест TestCoreIsOrganizationFree"
+        "Брендинг и LLM-дефолты — из профиля организации (internal/profile: данные, не код; --profile/--profile-dir, make profile-fetch): шлюз инжектит window.__AGCTL_BRAND__ в <head> до первого кадра; в ядре нет литералов организаций — guard-тест TestCoreIsOrganizationFree",
+        "Админ-API: обзор, список/стат контейнеров, стоп/старт/рестарт, запросы шлюза, траектории (чтение sessions/ из томов), квоты — всё под requireAdmin и в audit"
       ]
     },
     {
@@ -785,7 +810,19 @@
         "Ядро agctl — универсальное: ни одного литерала организации в коде; проверяет guard-тест TestCoreIsOrganizationFree (internal/profile/guard_test.go)",
         "Кастомизация — данные-профиль: profile.yaml + assets/logo.png в отдельном репо (agctl-profile-utmn), приватность не зависит от ядра",
         "agctl serve читает профиль при старте (--profile/--profile-dir, make profile-fetch) и инжектит window.__AGCTL_BRAND__ в <head> до первого кадра",
-        "Дефолты чата и подпись LLM на этой карте берутся из профиля; секреты (API-ключи) в профиль не входят — env/SQLite как раньше"
+        "Дефолты чата и подпись LLM на этой карте берутся из профиля; секреты (API-ключи) в профиль не входят — env/SQLite как раньше",
+        "Профиль utmn живёт на GitHub (arijjia/agctl-profile-utmn, приватный): клон в profiles/utmn; модели — Z.AI GLM Coding Plan, ключ только в .env хоста"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Роли и образы (админка + лаунчер)",
+      "items": [
+        "admin — не пользователь платформы: /chat/ отдаёт 403/редирект, контейнер никогда не создаётся",
+        "developer после входа попадает в /launcher — контейнер не стартует до выбора образа и «Запустить»",
+        "Каталог образов из --dev-images (Nexus и пр.); желаемый образ — метка agctl.image.desired на контейнере",
+        "agctl-dsh-nossh (ENV AGCTL_NO_SSHD=1): sshd не поднимается даже с ключом, порт 2222 не публикуется",
+        "Смена образа на живом рантайме: serve усыпляет контейнер и пересоздаёт на желаемом образе (том сохраняется)"
       ]
     }
   ]
