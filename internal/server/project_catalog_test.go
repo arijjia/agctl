@@ -173,3 +173,41 @@ func TestCatalogCreateResponse(t *testing.T) {
 		t.Fatalf("resp: %+v", resp)
 	}
 }
+
+// TestProjectDeleteAPI — DELETE /api/projects/{name}: свой воркспейс
+// удаляется с диска (идемпотентно), чужой — 404.
+func TestProjectDeleteAPI(t *testing.T) {
+	env := newTestEnv(t, 3)
+	env.register(env.admin, "anna", "secret1")
+	user := env.newClient()
+	env.register(user, "boris", "secret2")
+	if code, _ := env.do(user, "POST", "/api/projects", map[string]string{"name": "gone"}); code != 201 {
+		t.Fatal("create")
+	}
+	dir := projectDirOf(env, 2, "gone")
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("dir: %v", err)
+	}
+	// чужой пользователь не удаляет чужое: у админа такого воркспейса нет —
+	// идемпотентный успех, но каталог boris не тронут
+	if code, _ := env.do(env.admin, "DELETE", "/api/projects/gone", nil); code != 200 {
+		t.Fatalf("чужой delete: %d", code)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("чужой удалил каталог: %v", err)
+	}
+	// свой: удаление + идемпотентный повтор
+	if code, body := env.do(user, "DELETE", "/api/projects/gone", nil); code != 200 || !contains(body, `"deleted":true`) {
+		t.Fatalf("delete: %d %s", code, body)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("каталог не удалён: %v", err)
+	}
+	if code, _ := env.do(user, "DELETE", "/api/projects/gone", nil); code != 200 {
+		t.Fatalf("re-delete: %d, ждём 200 (идемпотентно)", code)
+	}
+	// в списке проектов его больше нет
+	if code, body := env.do(user, "GET", "/api/projects", nil); code != 200 || contains(body, "gone") {
+		t.Fatalf("list: %d %s", code, body)
+	}
+}

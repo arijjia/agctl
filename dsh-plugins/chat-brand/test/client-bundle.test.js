@@ -259,3 +259,17 @@ test("D7: пути плагина для user идут с явным agentPreset
 	assert.match(src, /uiWorkspace\.startSession\(undefined, userSessionPreset\(\)\)/,
 		"лечение застрявшего выбора передаёт preset");
 });
+
+test("удаление воркспейса = удаление каталога: имя из пути и границы", async () => {
+	const exports = await loadClientFactory();
+	const fromPath = exports.__testProjectNameFromWorkspacePath;
+	assert.equal(fromPath("/workspace/1c-vibe"), "1c-vibe");
+	assert.equal(fromPath("/workspace/О_себе"), "О_себе");
+	// дефолтный воркспейс и вложенные пути agctl-проектом не считаются
+	assert.equal(fromPath("/workspace"), "");
+	assert.equal(fromPath("/workspace/a/b"), "");
+	assert.equal(fromPath("/workspace/"), "");
+	assert.equal(fromPath("/other/x"), "");
+	assert.equal(fromPath(undefined), "");
+	assert.equal(fromPath(null), "");
+});

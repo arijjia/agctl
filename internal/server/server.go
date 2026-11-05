@@ -247,6 +247,9 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/me", s.handleMe)
 	mux.HandleFunc("GET /api/projects", s.requireUser(s.handleProjectsList))
 	mux.HandleFunc("POST /api/projects", s.requireUser(s.handleProjectCreate))
+	// Удаление воркспейса вместе с каталогом на диске (нативное удаление dsh
+	// снимает только запись реестра — клиент-плагин дёргает эту ручку).
+	mux.HandleFunc("DELETE /api/projects/{name}", s.requireUser(s.handleProjectDelete))
 	// Консоль воркспейсов («Возможности»): каталог компонентов скиллов,
 	// инструментов и промптов проекта + включение/выключение на сервере, и
 	// платформенный каталог пакетов (например, презентации по шаблону вуза).

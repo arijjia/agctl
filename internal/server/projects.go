@@ -12,6 +12,33 @@ import (
 	"github.com/arijjia/agctl/internal/provision"
 )
 
+// handleProjectDelete — DELETE /api/projects/{name}: удалить воркспейс
+// вместе с каталогом на диске (данные проекта стираются безвозвратно;
+// подтверждение — на клиенте). Сессионные записи dsh (том) не трогаются:
+// история чатов сохраняется, воркспейс исчезает из списка.
+func (s *Server) handleProjectDelete(w http.ResponseWriter, r *http.Request, id identity) {
+	name := r.PathValue("name")
+	if _, code, msg := s.resolveProjectDir(id.ID, name); code != 0 && code != http.StatusNotFound {
+		writeErr(w, code, msg)
+		return
+	}
+	err := provision.DeleteProject(s.cfg.Home, id.ID, name)
+	switch {
+	case err == nil:
+	case errors.Is(err, provision.ErrInvalidProject):
+		writeErr(w, http.StatusBadRequest, "некорректное имя проекта")
+		return
+	case os.IsNotExist(err):
+		// Уже нет (повторное удаление) — идемпотентный успех.
+	default:
+		log.Printf("[projects] u%d delete %q failed", id.ID, name)
+		writeErr(w, http.StatusInternalServerError, "не удалось удалить каталог воркспейса")
+		return
+	}
+	_ = s.db.Audit(id.Login, "project.delete", name, "каталог удалён с диска")
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "project": name})
+}
+
 // handleProjectsList — GET /api/projects: реальные каталоги-проекты
 // пользователя (без скрытых и secret-путей).
 func (s *Server) handleProjectsList(w http.ResponseWriter, r *http.Request, id identity) {
@@ -74,7 +101,7 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request, id 
 		case errors.Is(err, provision.ErrInvalidProject):
 			writeErr(w, http.StatusBadRequest, "недопустимое имя проекта; клон — только публичный HTTPS URL github.com/owner/repository")
 		case errors.Is(err, provision.ErrProjectExists):
-			writeErr(w, http.StatusConflict, "воркспейс уже существует")
+			writeErr(w, http.StatusConflict, "воркспейс уже существует: на диске есть непустой каталог с этим именем; старый можно удалить в «Воркспейсы: возможности»")
 		default:
 			log.Printf("[projects] u%d create failed (clone=%t)", id.ID, clone)
 			if clone {

@@ -109,6 +109,51 @@ func projectDescriptor(name string) Project {
 	return Project{Name: name, Directory: "/workspace/" + name}
 }
 
+// dirIsEmpty — каталог существует и не содержит ни одной записи (включая
+// скрытые файлы). Ошибка чтения трактируется как «не пуст» вызывающим.
+func dirIsEmpty(path string) (bool, error) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return false, err
+	}
+	return len(entries) == 0, nil
+}
+
+// DeleteProject — удалить воркспейс-проект с диска (каталог с содержимым).
+// Границы: имя валидировано, каталог строго на один уровень внутри личного
+// work-корня пользователя, симлинки не переходятся (Lstat). Вызывающий
+// (сервер) пишет аудит; подтверждение — на клиенте.
+func DeleteProject(home string, userID int64, name string) error {
+	projectMu.Lock()
+	defer projectMu.Unlock()
+	if !ValidProjectName(name) {
+		return ErrInvalidProject
+	}
+	root, err := ProjectWorkRoot(home, userID, false)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(root, name)
+	// Только подкаталог work-корня: сам корень и выход за него запрещены.
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return ErrInvalidProject
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return os.ErrNotExist
+		}
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%q не является каталогом воркспейса", name)
+	}
+	// Содержимое проекта — данные пользователя по его явному запросу на
+	// удаление; тома dsh-home это не касается.
+	return os.RemoveAll(path)
+}
+
 // ListProjects lists real top-level directories, excluding hidden/session state,
 // invalid names and symlinks. It never imports an arbitrary directory into git.
 func ListProjects(home string, userID int64) ([]Project, error) {
@@ -147,10 +192,22 @@ func CreateProject(home string, userID int64, name string) (Project, error) {
 	}
 	path := filepath.Join(root, name)
 	if err := os.Mkdir(path, 0o700); err != nil {
-		if os.IsExist(err) {
+		if !os.IsExist(err) {
+			return Project{}, err
+		}
+		// Каталог уже есть. Нормальный случай после нативного удаления
+		// воркспейса в dsh (удаление записи) или ручной чистки: пустой каталог
+		// усыновляем — создание воркспейса с тем же именем снова работает.
+		// Непустой остаётся ошибкой «уже существует» (данные не трогаем).
+		// Гард как в ProjectDirectory: симлинк adoption-у не подлежит.
+		info, lstatErr := os.Lstat(path)
+		if lstatErr != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			return Project{}, ErrProjectExists
 		}
-		return Project{}, err
+		empty, emptyErr := dirIsEmpty(path)
+		if emptyErr != nil || !empty {
+			return Project{}, ErrProjectExists
+		}
 	}
 	// On failure keep the new directory for diagnosis; never recursively remove
 	// paths in a volume concurrently writable by the user's container.

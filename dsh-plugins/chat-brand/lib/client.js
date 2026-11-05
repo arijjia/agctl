@@ -554,9 +554,85 @@ window.__ModuleLoader__.load({
 			uiWorkspace.startSession(undefined, userSessionPreset());
 		}
 
+		// ── удаление воркспейса удаляет каталог (agctl-семантика) ───────────────
+		// Нативное удаление dsh снимает только запись реестра ("The folder and
+		// session logs will be kept") — каталог на диске оставался, и повторное
+		// создание воркспейса с тем же именем падало «уже существует».
+		// Оборачиваем штатный workspaces.delete: сначала agctl удаляет каталог
+		// (DELETE /api/projects/<имя>), затем снимается запись реестра. Один и
+		// тот же сервис используют и нативный сайдбар, и консоль воркспейсов.
+
+		// projectNameFromWorkspacePath — имя agctl-проекта из пути воркспейса.
+		// "/workspace/<имя>" → "<имя>"; сам дефолтный "/workspace" и любые
+		// вложенные/чужие пути → "" (agctl-проекты всегда один сегмент).
+		function projectNameFromWorkspacePath(path) {
+			if (typeof path !== "string") return "";
+			if (!path.startsWith("/workspace/")) return "";
+			const name = path.slice("/workspace/".length);
+			if (!name || name.includes("/")) return "";
+			return name;
+		}
+
+		function installWorkspaceDeleteHook(ctx) {
+			const svc = workspaceSvc();
+			if (!svc || typeof svc.delete !== "function" || svc.__agctlDeleteHooked) return;
+			const original = svc.delete.bind(svc);
+			svc.delete = async (workspaceId) => {
+				let path = "";
+				try {
+					const snap = svc.list && svc.list.getSnapshot ? svc.list.getSnapshot() : null;
+					const item = snap && Array.isArray(snap.items)
+						? snap.items.find((w) => w && w.workspaceId === workspaceId)
+						: null;
+					path = item && item.path;
+				} catch (e) { path = ""; }
+				const name = projectNameFromWorkspacePath(path);
+				if (name) {
+					const res = await fetch("/api/projects/" + encodeURIComponent(name), {
+						method: "DELETE", credentials: "include", headers: { Accept: "application/json" },
+					});
+					if (!res.ok) {
+						let msg = "HTTP " + res.status;
+						try {
+							const data = await res.json();
+							if (data && data.error) msg = data.error;
+						} catch (e) { /* тело не JSON */ }
+						throw new Error("agctl не удалил каталог воркспейса: " + msg);
+					}
+				}
+				return original(workspaceId);
+			};
+			svc.__agctlDeleteHooked = true;
+		}
+
+		// installWorkspaceDeleteLocale — честный русский текст нативного диалога
+		// удаления (namespace "workspace" принадлежит dsh-client-ui-workspace;
+		// dsh регистрирует zh/en, ru свободен). Частичный словарь: недостающие
+		// ключи падают в en-fallback как раньше.
+		function installWorkspaceDeleteLocale(ctx) {
+			const locale = ctx.locale;
+			if (!locale || typeof locale.register !== "function") return;
+			let removeDictionary = () => {};
+			try {
+				removeDictionary = locale.register("workspace", "ru", {
+					"delete.workspace": "Удалить воркспейс",
+					"delete.desc": "Воркспейс «{name}» будет удалён из списка, а его каталог на диске — стёрт вместе с файлами проекта. История сессий в чате останется.",
+					"delete.pending": "Удаляем воркспейс и каталог…",
+					"cancel": "Отмена",
+				});
+			} catch (error) {
+				console.warn("[agctl] workspace delete locale:", error);
+				return;
+			}
+			ctx.effect(() => removeDictionary, "agctl-chat-brand.workspace-delete-locale");
+		}
+
 		function apply(ctx) {
 			brandCtx = ctx;
 			bindWorkspaceCreate();
+			// Удаление воркспейса = удаление каталога (agctl-семантика).
+			try { installWorkspaceDeleteHook(ctx); } catch (e) { console.warn("[agctl] delete hook:", e); }
+			try { installWorkspaceDeleteLocale(ctx); } catch (e) { console.warn("[agctl] delete locale:", e); }
 			// D6 (1): холодный старт без сессий — открыть первую сессию Default
 			// workspace штатным uiWorkspace.startSession (тот же переход, что у
 			// кнопки «New session» у папки). Сервис приходит инъекцией; если
@@ -583,6 +659,7 @@ window.__ModuleLoader__.load({
 		exports.__testEnsureFirstWorkspaceSession = ensureFirstWorkspaceSession;
 		exports.__testHeroState = heroState;
 		exports.__testUserSessionPreset = userSessionPreset;
+		exports.__testProjectNameFromWorkspacePath = projectNameFromWorkspacePath;
 		return module.exports;
 	},
 });

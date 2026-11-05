@@ -72,6 +72,29 @@ window.__ModuleLoader__.load({
 			};
 		}
 
+		// Ссылка на штатный сервис воркспейсов dsh: удаление снимает запись
+		// реестра (chat-brand дополнительно удаляет каталог через agctl).
+		let dshWorkspaces = null;
+
+		// deleteProject — удалить воркспейс с диска и из списка. Порядок
+		// детерминированный: сначала agctl-каталог (DELETE /api/projects/<имя>),
+		// затем запись dsh-реестра, если она есть. Для сироты (каталог есть,
+		// записи нет — например, после старого нативного удаления) достаточно
+		// первого шага.
+		async function deleteProject(api, project) {
+			await api("/api/projects/" + encodeURIComponent(project.name), "DELETE");
+			let record = null;
+			try {
+				const snap = dshWorkspaces && dshWorkspaces.list && dshWorkspaces.list.getSnapshot
+					? dshWorkspaces.list.getSnapshot() : null;
+				const items = snap && Array.isArray(snap.items) ? snap.items : [];
+				record = items.find((w) => w && w.path === project.directory) || null;
+			} catch (e) { record = null; }
+			if (record && dshWorkspaces && typeof dshWorkspaces.delete === "function") {
+				await dshWorkspaces.delete(record.workspaceId);
+			}
+		}
+
 		// ── чистые функции (test seams) ────────────────────────────────────────
 
 		// shouldShowChip — консоль видна всем ролям (у админа личных
@@ -128,7 +151,7 @@ window.__ModuleLoader__.load({
 			sheet.appendChild(close);
 			sheet.appendChild(el("h2", "margin:2px 0 4px;font-size:18px;font-weight:650", "Воркспейсы: возможности, промт, компоненты"));
 			sheet.appendChild(el("p", "margin:0 0 18px;font-size:12px;color:var(--dsw-alias-label-tertiary,#888)",
-				"Единое место настройки воркспейсов: возможности из каталога платформы, системный промт и компоненты. Выключенный компонент прячется на сервере и не виден агенту; репка не правится."));
+				"Единое место настройки воркспейсов: возможности из каталога платформы, системный промт и компоненты. «Удалить» стирает воркспейс вместе с каталогом на диске. Выключенный компонент прячется на сервере и не виден агенту; репка не правится."));
 			overlay.appendChild(sheet);
 			overlay.addEventListener("click", (ev) => { if (ev.target === overlay) overlay.remove(); });
 			document.body.appendChild(overlay);
@@ -216,13 +239,19 @@ window.__ModuleLoader__.load({
 			return wrap;
 		}
 
-		function projectCard(api, project) {
+		function projectCard(api, project, onDeleted) {
 			const card = el("div", "wsc-card");
 			const head = el("div", "display:flex;align-items:center;gap:10px");
 			head.appendChild(el("strong", "font-size:14px", project.name));
 			head.appendChild(el("span", "font-size:11px;color:var(--dsw-alias-label-tertiary,#888)", project.directory));
-			const toggle = el("button", "wsc-btn secondary;margin-left:auto", "Настроить");
-			head.appendChild(toggle);
+			const headRight = el("div", "margin-left:auto;display:flex;gap:6px");
+			const remove = el("button", "wsc-btn secondary", "Удалить");
+			remove.style.color = "#e06666";
+			remove.title = "Удалить воркспейс и его каталог на диске (безвозвратно)";
+			headRight.appendChild(remove);
+			const toggle = el("button", "wsc-btn secondary", "Настроить");
+			headRight.appendChild(toggle);
+			head.appendChild(headRight);
 			card.appendChild(head);
 
 			const body = el("div", null, null);
@@ -230,6 +259,23 @@ window.__ModuleLoader__.load({
 			card.appendChild(body);
 			const statusLine = el("p", "margin:8px 0 0;font-size:12px;color:var(--dsw-alias-label-tertiary,#888);min-height:16px", "");
 			card.appendChild(statusLine);
+
+			remove.addEventListener("click", async () => {
+				const question = "Удалить воркспейс «" + project.name + "»?\n\n"
+					+ "Каталог проекта на диске (" + project.directory + ") будет удалён вместе со всеми файлами — безвозвратно. "
+					+ "История сессий в чате останется.";
+				if (!window.confirm(question)) return;
+				remove.disabled = true;
+				statusLine.textContent = "Удаляем воркспейс и каталог…";
+				try {
+					await deleteProject(api, project);
+					statusLine.textContent = "";
+					if (onDeleted) onDeleted(card);
+				} catch (err) {
+					statusLine.textContent = String(err.message || err);
+					remove.disabled = false;
+				}
+			});
 
 			let loaded = false;
 			toggle.addEventListener("click", async () => {
@@ -329,7 +375,9 @@ window.__ModuleLoader__.load({
 						"Воркспейсов пока нет. Создайте первый кнопкой «+» в списке Workspaces — там же можно сразу выбрать возможности (например, «Презентации по шаблону вуза»)."));
 					return;
 				}
-				for (const project of projects) list.appendChild(projectCard(api, project));
+				for (const project of projects) {
+					list.appendChild(projectCard(api, project, (card) => card.remove()));
+				}
 			} catch (err) {
 				list.replaceChildren(el("p", "font-size:13px;color:#e06666", "Не удалось получить список воркспейсов: " + (err.message || err)));
 			}
@@ -435,6 +483,9 @@ window.__ModuleLoader__.load({
 
 		function apply(ctx) {
 			ensureStyles();
+			// Штатный сервис воркспейсов dsh — для снятия записи реестра при
+			// удалении (каталог удаляет agctl, см. deleteProject).
+			try { dshWorkspaces = ctx.get && ctx.get("workspaces"); } catch (e) { dshWorkspaces = null; }
 			ctx.slots.inject("sidebar.footer.action", () => ctx.slots.register({
 				name: "sidebar.footer.action",
 				id: "agctl-workspace-console-chip",
