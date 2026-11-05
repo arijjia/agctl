@@ -171,17 +171,22 @@ test('попап и профиль содержат выход: клик гас�
 test('нет панели «Кабинет», управления рантаймом и списка воркспейсов', () => {
   assert.doesNotMatch(source, /sidebar\.panellist|renderSlot\(|slots\.inject\("sidebar\.settings"\)/, 'панель Кабинета и settings-затенение отсутствуют');
   assert.match(source, /slots\.inject\("sidebar\.footer\.action"/, 'чип живёт в штатном footer.action слоте');
-  assert.doesNotMatch(source, /\/api\/me\/runtime\/(start|stop|logs)/, 'кнопки управления рантаймом удалены');
+  assert.doesNotMatch(source, /api\/me\/runtime/, 'статус рантайма убран из профиля (решение владельца 2026-11-05)');
+  assert.doesNotMatch(source, /api\/me\/runtime\/(start|stop|logs)/, 'кнопки управления рантаймом удалены');
   assert.doesNotMatch(source, /Добавить воркспейс|Имя воркспейса/, 'создание воркспейсов переехало в родную кнопку сайдбара');
-  assert.match(source, /api\/me\/runtime/, 'только read-only статус в профиле');
+  assert.doesNotMatch(source, /Заявка на роль|Мои заявки|role-requests/, 'заявки убраны: выдача роли переедет в механизм с ADFS');
+  assert.doesNotMatch(source, /roleDescription/, 'описания прав убраны (решение владельца 2026-11-05)');
+  assert.match(source, /"Роль"/, 'карточка роли показывает уровень');
   assert.match(source, /projectionValues[\s\S]*tokenUsage/, 'статистика берёт provider-reported DSH token projections');
   for (const key of ['uncachedInputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'outputTokens']) {
     assert.match(source, new RegExp(key), `профиль показывает ${key}`);
   }
   assert.match(source, /Активность сессий за год/);
   assert.match(source, /не токены\/день/, 'heatmap не выдаётся за токены по дням');
-  assert.match(source, /Права доступа/);
-  assert.match(source, /roleDescription/, 'роль сопровождается описанием прав');
+  assert.match(source, /Сессий за 7 дней/, 'четвёртая карточка — свежая активность');
+  assert.match(source, /SSH-доступ/, 'SSH — отдельная вкладка попапа');
+  assert.match(source, /Как сделать ключ/, 'микро-гайд по ключу в SSH-вкладке');
+  assert.match(source, /api\/me\/ssh/, 'SSH-ключ сохраняется через /api/me/ssh');
   assert.match(source, /Администратор/);
   assert.match(source, /Разработчик/);
   assert.match(source, /Пользователь/);
