@@ -1,7 +1,7 @@
 // agctl cabinet v3.2 — профиль пользователя: чип в нативном слоте
 // sidebar.footer.action, popup (Профиль / Справка); родная Settings-кнопка
-// остаётся отдельным рядом под ним. Профиль показывает роль, статистику,
-// заявки и SSH. Runtime'ом управляет только agctl serve — кнопок запуска/останова нет.
+// остаётся отдельным рядом под ним. Профиль показывает роль, статистику
+// и SSH. Runtime'ом управляет только agctl serve — кнопок запуска/останова нет.
 window.__ModuleLoader__.load({
 	id: "@arijjia/agctl-cabinet",
 	factory: (require) => {
@@ -46,9 +46,9 @@ window.__ModuleLoader__.load({
 
 		function roleDescription(role) {
 			switch (role) {
-				case "admin": return "Полный доступ: пользователи, заявки на роль, аудит, SSH и все developer-возможности.";
+				case "admin": return "Полный доступ: пользователи, аудит, SSH и все developer-возможности.";
 				case "developer": return "Всё пользователя плюс SSH-канал к своему рантайму, клонирование проектов из GitHub и developer-настройки.";
-				default: return "Личный чат и воркспейсы-проекты. SSH и developer-настройки — после заявки на роль developer.";
+				default: return "Личный чат и воркспейсы-проекты. SSH и developer-настройки открываются с ролью developer.";
 			}
 		}
 
@@ -252,7 +252,7 @@ window.__ModuleLoader__.load({
 					} catch (err) { status.textContent = String(err.message || err); }
 					finally { save.disabled = false; }
 				});
-				sshCard.append(label, save, portLine, note);
+				sshCard.append(label, save, status, portLine, note);
 				sheet.appendChild(sshCard);
 				api("/api/me/ssh").then((ssh) => {
 					area.value = ssh.pubKey || "";
@@ -262,77 +262,11 @@ window.__ModuleLoader__.load({
 				}).catch((err) => { status.textContent = "SSH: " + err.message; });
 			}
 
-			// заявки на роль
-			const requestsCard = el("div", null, null);
-			const requestsTitle = el("h2", "margin:0 0 10px;font-size:14px;font-weight:600", me.role === "admin" ? "Заявки на роль developer" : "Мои заявки");
-			requestsCard.appendChild(requestsTitle);
-			sheet.append(requestsCard, status);
-
 			api("/api/me/runtime").then((runtime) => {
 				runtimeLine.textContent = runtime.status === "running"
 					? "Личный рантайм работает; заснёт сам после часа простоя."
 					: "Личный рантайм спит; проснётся сам при открытии чата.";
 			}).catch(() => { runtimeLine.textContent = ""; });
-
-			if (me.role === "user") {
-				const form = el("div", "agctl-card");
-				form.appendChild(el("h2", "margin:0 0 10px;font-size:14px;font-weight:600", "Заявка на роль developer"));
-				const label = el("label", "display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600", "Мотивация");
-				const area = el("textarea", "min-height:90px", null);
-				label.appendChild(area);
-				const send = el("button", "agctl-btn", "Отправить заявку");
-				send.addEventListener("click", async () => {
-					send.disabled = true;
-					try {
-						if (!area.value.trim()) throw new Error("Укажи мотивацию.");
-						await api("/api/role-requests", "POST", { motivation: area.value.trim() });
-						area.value = "";
-						status.textContent = "Заявка на роль developer отправлена.";
-						renderRequests();
-					} catch (err) { status.textContent = String(err.message || err); }
-					finally { send.disabled = false; }
-				});
-				form.append(label, send);
-				sheet.insertBefore(form, requestsCard);
-			}
-
-			function renderRequests() {
-				api("/api/role-requests").then((data) => {
-					for (const child of [...requestsCard.children]) if (child !== requestsTitle) child.remove();
-					const list = Array.isArray(data && data.requests) ? data.requests : [];
-					if (!list.length) {
-						const empty = el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888)", "Заявок нет.");
-						empty.dataset.agctlEmpty = "1";
-						requestsCard.appendChild(empty);
-						return;
-					}
-					for (const r of list) {
-						const card = el("div", "agctl-card");
-						card.dataset.agctlRequest = "1";
-						card.appendChild(el("strong", null, r.login + " · " + r.status));
-						card.appendChild(el("p", "white-space:pre-wrap;overflow-wrap:anywhere", r.motivation));
-						card.appendChild(el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888)", "Создана: " + r.createdAt + (r.decidedBy ? " · Решение: " + r.decidedBy : "")));
-						if (me.role === "admin" && r.status === "pending") {
-							const actions = el("div", "display:flex;gap:8px");
-							for (const [decision, label] of [["approve", "Одобрить"], ["reject", "Отклонить"]]) {
-								const btn = el("button", "agctl-btn", label);
-								btn.addEventListener("click", async () => {
-									btn.disabled = true;
-									try {
-										await api("/api/role-requests/" + encodeURIComponent(r.id) + "/" + decision, "POST", {});
-										status.textContent = "Решение сохранено.";
-										renderRequests();
-									} catch (err) { status.textContent = String(err.message || err); btn.disabled = false; }
-								});
-								actions.appendChild(btn);
-							}
-							card.appendChild(actions);
-						}
-						requestsCard.appendChild(card);
-					}
-				}).catch((err) => { status.textContent = "Заявки: " + err.message; });
-			}
-			renderRequests();
 		}
 
 		function closeOverlay() {
