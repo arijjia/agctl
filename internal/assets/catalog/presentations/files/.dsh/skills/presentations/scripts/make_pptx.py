@@ -122,9 +122,6 @@ def set_text(shape, text: str, bullet: bool = False) -> None:
             rs[0].append(text_el)
         prefix = BULLET if bullet else ""
         text_el.text = f"{prefix}{line}" if line else ""
-        # пустые строки без ранов ломаются — держим ран всегда (пустой t ок)
-        if not rs:
-            pass
 
 
 def body_text(section) -> str:
@@ -227,7 +224,7 @@ def build(plan: dict, out: Path, template: str | None) -> None:
 
     out.parent.mkdir(parents=True, exist_ok=True)
     prs.save(str(out))
-    print(f"OK: {out} ({len(prs.slides.__iter__.__self__._sldIdLst)} слайдов, шаблон {tpl_path.name})")
+    print(f"OK: {out} ({len(list(prs.slides))} слайдов, шаблон {tpl_path.name})")
 
 
 def inspect(path: Path) -> None:
