@@ -45,8 +45,9 @@ type Config struct {
 
 // Метки контейнеров agctl.
 const (
-	labelWorkspace = "agctl.workspace" // владение: контейнер создан agctl
-	labelVersion   = "agctl.version"   // версия agctl, создавшего контейнер
+	labelWorkspace    = "agctl.workspace"     // владение: контейнер создан agctl
+	labelVersion      = "agctl.version"       // версия agctl, создавшего контейнер
+	labelImageDesired = "agctl.image.desired" // желаемый образ (лаунчер developer'а)
 )
 
 // Runtime — docker-реализация.
@@ -256,6 +257,7 @@ type StartOpts struct {
 	HostPort    int
 	SSHPubKey   string // пусто = sshd не поднимаем
 	SSHHostPort int    // 0 = не публиковать (осмысленно только с SSHPubKey)
+	Image       string // желаемый образ (лаунчер developer'а); пусто = rt.cfg.Image
 }
 
 // Start создаёт и запускает контейнер воркспейса с заданными портами/ключом.
@@ -264,17 +266,29 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 	if err := rt.EnsureImage(ctx); err != nil {
 		return StartResult{}, err
 	}
+	// Лаунчер developer'а: желаемый образ из opts перекрывает дефолт.
+	// Отсутствующий на хосте образ тянем из реестра (например, Nexus).
+	desired := opts.Image
+	if desired == "" {
+		desired = rt.cfg.Image
+	}
+	if desired != rt.cfg.Image {
+		if err := rt.ensureImageRef(ctx, desired); err != nil {
+			return StartResult{}, fmt.Errorf("docker: желаемый образ %s недоступен: %w", desired, err)
+		}
+	}
 	// Дрейф версий: контейнер прошлой сборки (пережил рестарт серва) раздавал
 	// бы старый dsh web, хотя make up пересобрал образ под тем же тегом.
-	// Сравниваем фактический образ контейнера с текущим тегом и бонсим дрейф.
-	imageID := rt.currentImageID(ctx)
+	// Сравниваем фактический образ контейнера с ЖЕЛАЕМЫМ (не глобальным) и
+	// бонсим дрейф: developer сменил образ через лаунчер — пересоздаём.
+	imageID := rt.imageIDByRef(ctx, desired)
 	name := "agctl-" + wsID
 	if imageID != "" {
 		stale, err := rt.removeDriftedByName(ctx, name, imageID)
 		if err != nil {
 			log.Printf("[dockerrt] %s: проверка дрейфа версии: %v", wsID, err)
 		} else if stale {
-			log.Printf("[dockerrt] %s: контейнер собран не текущим образом — пересоздаю (дрейф версии; данные на маунтах не тронуты)", wsID)
+			log.Printf("[dockerrt] %s: контейнер собран не желаемым образом — пересоздаю (дрейф версии; данные на маунтах не тронуты)", wsID)
 		}
 	}
 	// гонки за порт: docker сам отдаст ошибку, если порт занят.
@@ -298,18 +312,23 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 	portBindings := network.PortMap{
 		network.MustParsePort("3080/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: fmt.Sprint(opts.HostPort)}},
 	}
-	if opts.SSHPubKey != "" && opts.SSHHostPort > 0 {
+	// Вариант образа «без SSH» (ENV AGCTL_NO_SSHD=1 в образе, лаунчер
+	// developer'а): ключ не передаём и порт 2222 не публикуем — иначе снаружи
+	// висит порт, внутри которого никто не слушает.
+	noSSHD := desired != rt.cfg.Image && rt.imageNoSSHD(ctx, desired)
+	if opts.SSHPubKey != "" && opts.SSHHostPort > 0 && !noSSHD {
 		env = append(env, "AGCTL_SSH_PUBKEY="+opts.SSHPubKey)
 		portBindings[network.MustParsePort("2222/tcp")] = []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: fmt.Sprint(opts.SSHHostPort)}}
 	}
 	cfg := client.ContainerCreateOptions{
 		Name: name,
 		Config: &container.Config{
-			Image: rt.cfg.Image,
+			Image: desired,
 			Env:   env,
 			Labels: map[string]string{
-				labelWorkspace: wsID,
-				labelVersion:   rt.cfg.Version,
+				labelWorkspace:    wsID,
+				labelVersion:      rt.cfg.Version,
+				labelImageDesired: desired,
 			},
 		},
 		HostConfig: &container.HostConfig{
@@ -344,7 +363,7 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		return StartResult{}, fmt.Errorf("docker: start: %w", err)
 	}
 	sshPort := 0
-	if opts.SSHPubKey != "" && opts.SSHHostPort > 0 {
+	if opts.SSHPubKey != "" && opts.SSHHostPort > 0 && !noSSHD {
 		sshPort = opts.SSHHostPort
 	}
 	return StartResult{ContainerID: res.ID, HostPort: opts.HostPort, SSHPort: sshPort}, nil
@@ -368,6 +387,51 @@ func (rt *Runtime) currentImageID(ctx context.Context) string {
 		return ""
 	}
 	return insp.ID
+}
+
+// imageIDByRef — sha образа по ссылке (тег/дайджест); "" если не найден.
+func (rt *Runtime) imageIDByRef(ctx context.Context, ref string) string {
+	insp, err := rt.cli.ImageInspect(ctx, ref)
+	if err != nil {
+		return ""
+	}
+	return insp.ID
+}
+
+// imageNoSSHD — образ собран с ENV AGCTL_NO_SSHD=1 (вариант «без SSH»
+// лаунчера developer'а): entrypoint не поднимает sshd даже с ключом.
+func (rt *Runtime) imageNoSSHD(ctx context.Context, ref string) bool {
+	insp, err := rt.cli.ImageInspect(ctx, ref)
+	if err != nil {
+		return false
+	}
+	for _, e := range insp.Config.Env {
+		if e == "AGCTL_NO_SSHD=1" {
+			return true
+		}
+	}
+	return false
+}
+
+// ensureImageRef — желаемый образ должен существовать локально: если нет —
+// тянем из реестра (Nexus университета и пр.); недоступный реестр — ошибка
+// старта, а не молчаливый откат на дефолтный образ.
+func (rt *Runtime) ensureImageRef(ctx context.Context, ref string) error {
+	if _, err := rt.cli.ImageInspect(ctx, ref); err == nil {
+		return nil
+	}
+	pr, err := rt.cli.ImagePull(ctx, ref, client.ImagePullOptions{})
+	if err != nil {
+		return fmt.Errorf("pull: %w", err)
+	}
+	defer pr.Close()
+	if err := pr.Wait(ctx); err != nil {
+		return fmt.Errorf("pull: %w", err)
+	}
+	if _, err := rt.cli.ImageInspect(ctx, ref); err != nil {
+		return fmt.Errorf("образ не найден после pull: %w", err)
+	}
+	return nil
 }
 
 // removeDriftedByName удаляет контейнер name, если он работает на образе,
@@ -395,8 +459,8 @@ func (rt *Runtime) removeDriftedByName(ctx context.Context, name, currentImageID
 // лениво (данные — на маунтах, не в контейнере). Возвращает число удалённых;
 // ошибки отдельных удалений пишутся в лог и не прерывают свип.
 func (rt *Runtime) SweepVersionDrift(ctx context.Context, namePrefix string) int {
-	currentImageID := rt.currentImageID(ctx)
-	if currentImageID == "" {
+	defaultImageID := rt.currentImageID(ctx)
+	if defaultImageID == "" {
 		return 0
 	}
 	list, err := rt.cli.ContainerList(ctx, client.ContainerListOptions{All: true})
@@ -404,11 +468,22 @@ func (rt *Runtime) SweepVersionDrift(ctx context.Context, namePrefix string) int
 		log.Printf("[dockerrt] свип дрейфа версий: %v", err)
 		return 0
 	}
+	// Лаунчер developer'а: у контейнера с меткой agctl.image.desired свой
+	// эталон образа — глобальный свип его не сносит (пересоздание по желаемому
+	// образу делает Start при следующем запуске).
+	desiredIDs := map[string]string{}
 	removed := 0
 	for _, c := range list.Items {
 		// В Summary.Image — символическое имя (как в docker ps), sha живёт в
 		// ImageID; в InspectResponse — наоборот, Image это sha. Не перепутать.
-		if !sweepCandidate(c.Names, c.ImageID, c.Labels, namePrefix, currentImageID) {
+		if !sweepCandidate(c.Names, c.ImageID, c.Labels, namePrefix, defaultImageID, func(ref string) string {
+			if id, ok := desiredIDs[ref]; ok {
+				return id
+			}
+			id := rt.imageIDByRef(ctx, ref)
+			desiredIDs[ref] = id
+			return id
+		}) {
 			continue
 		}
 		if _, err := rt.cli.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true}); err != nil {
@@ -416,7 +491,7 @@ func (rt *Runtime) SweepVersionDrift(ctx context.Context, namePrefix string) int
 			continue
 		}
 		removed++
-		log.Printf("[dockerrt] свип дрейфа: контейнер %v собран не текущим образом — удалён (среда пересоздастся лениво)", c.Names)
+		log.Printf("[dockerrt] свип дрейфа: контейнер %v собран не желаемым образом — удалён (среда пересоздастся лениво)", c.Names)
 	}
 	return removed
 }
@@ -433,10 +508,25 @@ func agctlDrifted(containerImage, currentImageID string) bool {
 
 // sweepCandidate — кандидата свипа удалять: контейнер наш (метка
 // agctl.workspace), чей-то чужой контейнер с подходящим именем не трогаем;
-// работает не на текущем образе (containerImageID — sha из Summary.ImageID);
-// имя попадает под префикс дома.
-func sweepCandidate(names []string, containerImageID string, labels map[string]string, namePrefix, currentImageID string) bool {
-	if currentImageID == "" || labels[labelWorkspace] == "" || !agctlDrifted(containerImageID, currentImageID) {
+// работает не на ЖЕЛАЕМОМ образе (containerImageID — sha из Summary.ImageID);
+// имя попадает под префикс дома. Эталон контейнера: метка
+// agctl.image.desired (лаунчер), иначе — глобальный текущий образ
+// (defaultImageID; образы контейнеров без метки пересоздаём как раньше).
+// resolveID вытаскивает sha по ссылке желаемого образа; пусто = образ не
+// найден — такой контейнер не считаем дрейфом (критерия нет, трогать опасно).
+func sweepCandidate(names []string, containerImageID string, labels map[string]string, namePrefix, defaultImageID string, resolveID func(string) string) bool {
+	if defaultImageID == "" || labels[labelWorkspace] == "" {
+		return false
+	}
+	reference := defaultImageID
+	if ref := labels[labelImageDesired]; ref != "" {
+		resolve := resolveID(ref)
+		if resolve == "" {
+			return false
+		}
+		reference = resolve
+	}
+	if !agctlDrifted(containerImageID, reference) {
 		return false
 	}
 	for _, n := range names {

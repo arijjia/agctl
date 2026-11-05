@@ -41,6 +41,7 @@ type Config struct {
 	MemoryBytes             int64
 	NanoCPUs                int64
 	Image                   string
+	DevImages               []string // каталог образов лаунчера developer'а (пусто = только cfg.Image)
 	BinDir                  string
 	Version                 string // версия agctl (метка контейнеров, диагностика дрейфа сборок)
 	SecureCookies           bool   // true when agctl is served behind a trusted HTTPS terminator
@@ -280,6 +281,12 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("PUT /api/me/ssh", s.requireUser(s.handleMeSSHPut))
 	// Developer-настройки личного рантайма: статус/старт/стоп/логи контейнера.
 	mux.HandleFunc("GET /api/me/runtime", s.requireUser(s.handleMyRuntimeGet))
+	// Лаунчер developer'а (карточка developer-launcher-images).
+	mux.HandleFunc("GET /api/launcher/images", s.requireDeveloper(s.handleLauncherImages))
+	mux.HandleFunc("PUT /api/me/image", s.requireDeveloper(s.handleMeImagePut))
+	mux.HandleFunc("POST /api/me/runtime/start", s.requireDeveloper(s.handleMeRuntimeStart))
+	mux.HandleFunc("POST /api/me/runtime/stop", s.requireDeveloper(s.handleMeRuntimeStop))
+	mux.HandleFunc("GET /api/me/containers", s.requireDeveloper(s.handleMeContainers))
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
 	// Админ-панель супер-админа (карточка admin-panel-super-admin).
@@ -357,6 +364,8 @@ func (s *Server) registerTier0Routes(mux *http.ServeMux, webFS fs.FS) {
 	})
 	// Админ-панель: тот же SPA-бандл, роль определяет рендер на клиенте.
 	mux.HandleFunc("GET /admin", s.adminPageHandler(webFS))
+	// Лаунчер developer'а: тот же SPA-бандл (карточка developer-launcher-images).
+	mux.HandleFunc("GET /launcher", s.adminPageHandler(webFS))
 	mux.HandleFunc("GET /chat", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/chat/", http.StatusTemporaryRedirect)
 	})

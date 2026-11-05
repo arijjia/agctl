@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type User } from "./api";
 import AdminPanel from "./AdminPanel";
+import Launcher from "./Launcher";
 
 // Фронт agctl — только страница входа/регистрации. Всё остальное (чат,
 // воркспейсы, профиль) живёт в dsh; после успешного входа корень платформы
@@ -74,12 +75,17 @@ export default function App() {
   const [me, setMe] = useState<User | null>(null);
 
   useEffect(() => {
-    // Роль определяет рендер: admin → админ-панель, остальные → сервер
-    // (rootEntry) разрулит редирект в личный чат.
+    // Роль определяет рендер: admin → админ-панель, developer → лаунчер,
+    // user → сервер (rootEntry) разрулит редирект в личный чат.
     api
       .me()
       .then((r) => {
-        if (r.user.role === "admin") {
+        if (r.user.role === "admin" || r.user.role === "developer") {
+          // developer на /admin — на свой лаунчер
+          if (r.user.role === "developer" && window.location.pathname === "/admin") {
+            window.location.replace("/launcher");
+            return;
+          }
           setMe(r.user);
           setChecking(false);
         } else {
@@ -97,7 +103,7 @@ export default function App() {
     );
   }
   if (me) {
-    return <AdminPanel user={me} />;
+    return me.role === "admin" ? <AdminPanel user={me} /> : <Launcher user={me} />;
   }
   return <Login onDone={() => window.location.replace("/")} />;
 }

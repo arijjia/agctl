@@ -256,3 +256,18 @@ button.small { padding: 1px 8px; font-size: 12px; }
 @media (prefers-color-scheme: dark) {
   .stat-card { background: transparent; }
 }
+
+/* ── лаунчер developer (Launcher.tsx) ─────────────────────────────────────── */
+.launcher-wrap { align-items: stretch; }
+.launcher-card { max-width: 640px; width: 100%; }
+.launcher-card h2 { margin: 16px 0 6px; }
+.image-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 12px; }
+.image-option {
+  display: flex; align-items: center; gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.image-option:hover { background: var(--bg, #f6f8fa); }
+.link { align-self: center; }
