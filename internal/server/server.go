@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/arijjia/agctl/internal/assets"
@@ -81,6 +82,8 @@ type Server struct {
 	chatProvider agctlrt.ChatProvider   // Docker now; K8s adapter can return a Service DNS endpoint
 	localBridge  *bridge.Manager        // experimental outbound local-backend connector, opt-in routes only
 	requestMu    sync.Mutex             // не допускать двойной approve одной заявки
+	startedAt    time.Time              // время старта серва (сводка админки)
+	proxyAuditN  atomic.Int64           // счётчик записей журнала шлюза для периодической обрезки
 
 }
 
@@ -137,6 +140,7 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 		db: db, sec: sec, cfg: cfg, rt: workspaceRuntime, chatProvider: chatProvider, brand: brand,
 		localBridge: bridge.NewManager(),
 		tokens:      map[string]string{}, chats: map[int64]*chatRuntime{}, chatLocks: map[int64]*sync.Mutex{},
+		startedAt: time.Now(),
 	}
 	if s.cfg.AutosaveEvery == 0 {
 		s.cfg.AutosaveEvery = 2 * time.Minute
@@ -278,6 +282,19 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/me/runtime", s.requireUser(s.handleMyRuntimeGet))
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
+	// Админ-панель супер-админа (карточка admin-panel-super-admin).
+	mux.HandleFunc("GET /api/admin/overview", s.requireAdmin(s.handleAdminOverview))
+	mux.HandleFunc("GET /api/admin/users/details", s.requireAdmin(s.handleAdminUsersDetailed))
+	mux.HandleFunc("GET /api/admin/containers", s.requireAdmin(s.handleAdminContainers))
+	mux.HandleFunc("POST /api/admin/containers/{name}/stop", s.requireAdmin(s.handleAdminContainerStop))
+	mux.HandleFunc("POST /api/admin/containers/{name}/start", s.requireAdmin(s.handleAdminContainerStart))
+	mux.HandleFunc("POST /api/admin/containers/{name}/restart", s.requireAdmin(s.handleAdminContainerRestart))
+	mux.HandleFunc("GET /api/admin/requests", s.requireAdmin(s.handleAdminRequests))
+	mux.HandleFunc("GET /api/admin/quotas", s.requireAdmin(s.handleAdminQuotasList))
+	mux.HandleFunc("PUT /api/admin/quotas", s.requireAdmin(s.handleAdminQuotaPut))
+	mux.HandleFunc("DELETE /api/admin/quotas/{id}", s.requireAdmin(s.handleAdminQuotaDelete))
+	mux.HandleFunc("GET /api/admin/users/{id}/sessions", s.requireAdmin(s.handleAdminUserSessions))
+	mux.HandleFunc("GET /api/admin/users/{id}/sessions/{workspace}/{session}", s.requireAdmin(s.handleAdminUserSessionTrace))
 	// /map — карта системы за сессией; росток будущей админ-панели (1.md).
 	mux.HandleFunc("GET /map", s.requireUser(s.handleMapIndex))
 	mux.HandleFunc("GET /map/{name}", s.requireUser(s.handleMapFile))
@@ -338,11 +355,13 @@ func (s *Server) registerTier0Routes(mux *http.ServeMux, webFS fs.FS) {
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		s.rootEntry(w, r, webFS)
 	})
+	// Админ-панель: тот же SPA-бандл, роль определяет рендер на клиенте.
+	mux.HandleFunc("GET /admin", s.adminPageHandler(webFS))
 	mux.HandleFunc("GET /chat", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/chat/", http.StatusTemporaryRedirect)
 	})
-	mux.HandleFunc("GET /chat/", s.requireUser(s.chatProxy))
-	mux.HandleFunc("POST /chat/", s.requireUser(s.chatProxy))
+	mux.HandleFunc("GET /chat/", s.requireUser(s.auditedChat))
+	mux.HandleFunc("POST /chat/", s.requireUser(s.auditedChat))
 }
 
 // corsMiddleware — точный allow-list origins для /api (кабинет-плагин dsh web

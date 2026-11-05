@@ -31,3 +31,23 @@ export const api = {
   logout: () => req<void>("POST", "/api/logout"),
   me: () => req<{ user: User }>("GET", "/api/me"),
 };
+
+// admin — API админ-панели супер-админа (всё под requireAdmin на сервере).
+export const admin = {
+  overview: () => req<any>("GET", "/api/admin/overview"),
+  usersDetailed: (withSizes: boolean) =>
+    req<any>("GET", `/api/admin/users/details${withSizes ? "?withSizes=1" : ""}`),
+  containers: () => req<any>("GET", "/api/admin/containers"),
+  containerOp: (name: string, op: "stop" | "start" | "restart") =>
+    req<any>("POST", `/api/admin/containers/${encodeURIComponent(name)}/${op}`),
+  requests: (userId: number, limit: number) =>
+    req<any>("GET", `/api/admin/requests?user_id=${userId || 0}&limit=${limit || 200}`),
+  sessions: (userId: number) => req<any>("GET", `/api/admin/users/${userId}/sessions`),
+  trace: (userId: number, workspace: string, session: string) =>
+    req<any>("GET", `/api/admin/users/${userId}/sessions/${encodeURIComponent(workspace)}/${encodeURIComponent(session)}`),
+  quotas: () => req<any>("GET", "/api/admin/quotas"),
+  quotaPut: (q: { scope: string; subject: string; dailyTokens: number; monthlyTokens: number; note: string }) =>
+    req<any>("PUT", "/api/admin/quotas", q),
+  quotaDelete: (id: number) => req<any>("DELETE", `/api/admin/quotas/${id}`),
+  audit: (limit: number) => req<any>("GET", `/api/admin/audit?limit=${limit || 200}`),
+};
