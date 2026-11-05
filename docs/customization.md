@@ -27,10 +27,17 @@ brand:
   logo: assets/logo.png       # путь внутри профиля (опционально)
 login:
   subtitle: вход в личное рабочее место   # подзаголовок страницы входа
-llm:                          # дефолты провайдера чата (все поля опциональны)
+llm:                          # провайдеры чата (все поля опциональны)
+  provider_name: my-org-llm   # алиас основного провайдера в выпадашке dsh (пусто = agctl)
   default_base_url: https://llm.my-org.example/v1
   default_model: my-fast
   default_models: my-fast,my-deep
+  extra_providers:            # второй и следующие провайдеры в том же списке
+    - name: corp-litellm
+      base_url: https://litellm.my-org.example/v1
+      model: corp-fast
+      models: corp-fast,corp-deep
+      api_key_env: AGCTL_LLM_CORP_API_KEY   # имя env, значение — только в .env хоста
 help:
   cabinet_title: Справка — Моя организация
 map:
@@ -71,8 +78,9 @@ env-эквиваленты: `AGCTL_PROFILE`, `AGCTL_PROFILE_DIR`. Порядок
   универсальная i18n ядра, не кастомизация) и `cabinet` (заголовок справки);
 - **страница останова воркспейса** и подпись LLM на физической карте `/map`.
 
-Секреты (API-ключи провайдера) в профиль **не входят** — только env
-(`AGCTL_LLM_API_KEY`) или зашифрованный SQLite провайдер, как и раньше.
+Секреты (API-ключи провайдеров) в профиль **не входят** — только env
+(`AGCTL_LLM_API_KEY` для основного, плюс переменные из
+`llm.extra_providers[].api_key_env`) или зашифрованный SQLite провайдер.
 
 ## 4. Как это устроено внутри (для разработчика)
 
@@ -88,19 +96,24 @@ env-эквиваленты: `AGCTL_PROFILE`, `AGCTL_PROFILE_DIR`. Порядок
 профиль организации живёт в своём репозитории (пример: `agctl-profile-utmn`)
 и может быть приватным независимо от ядра.
 
-## 5. Живой пример: профиль ИИ-мастерской ТюмГУ
+## 5. Живой пример: профиль AI Workspaces (ТюмГУ)
 
 Репозиторий `arijjia/agctl-profile-utmn` (приватный, GitHub) — рабочий
 профиль пилота: брендинг ТюмГУ + модельный контур подписки Z.AI GLM
-Coding Plan (`api.z.ai/api/coding/paas/v4`; `glm-5.3`, `glm-5.3-flash`
-дефолт, `glm-4.5-flash`, `glm-4.5v`). Ключ в репо не хранится — он в
-`.env` хоста (`AGCTL_LLM_API_KEY`), при первом старте шифруется в SQLite.
+Coding Plan (`zai-coding-cn`: `glm-5.3`, `glm-5.3-flash` дефолт,
+`glm-4.5-flash`, `glm-4.5v`) и корпоративный LiteLLM (`utmn-litellm`:
+`qwen-3.8-deep`, `qwen-3.8-fast`) — оба в одном выпадающем списке dsh.
+Ключи в репо не хранятся — они в `.env` хоста (`AGCTL_LLM_API_KEY`,
+`AGCTL_LLM_CORP_API_KEY`) и при первом старте шифруются в SQLite.
 
 Полный онбординг «клонировал профиль → вписал ключ → `make up` →
 платформа как у владельца» — в README того репозитория. Кратко:
 
 ```bash
 git clone https://github.com/arijjia/agctl-profile-utmn profiles/utmn   # из checkout agctl
-printf 'AGCTL_LLM_API_KEY=<ключ>\n' > .env
+cat > .env <<'EOF'
+AGCTL_LLM_API_KEY=<ключ основного провайдера>
+AGCTL_LLM_CORP_API_KEY=<ключ дополнительного провайдера, если задан>
+EOF
 make up    # PROFILE=utmn выбирается автоматически, профиль уже на месте
 ```

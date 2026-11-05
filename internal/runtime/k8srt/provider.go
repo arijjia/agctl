@@ -146,7 +146,7 @@ func (p *Provider) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	if err := p.ensurePVC(ctx, pvcName, storageLabels); err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
-	secretName, err := p.ensureLLMSecret(ctx, secretName, storageLabels, spec.Provider.APIKey)
+	secretName, err := p.ensureLLMSecret(ctx, secretName, storageLabels, spec.Provider.CredentialEnv())
 	if err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
@@ -199,10 +199,19 @@ func (p *Provider) ensurePVC(ctx context.Context, name string, labels map[string
 	return nil
 }
 
-// ensureLLMSecret кладёт API-ключ LLM в k8s Secret и возвращает имя секрета;
-// пустой ключ — секрет не создаётся (пустая строка).
-func (p *Provider) ensureLLMSecret(ctx context.Context, name string, labels map[string]string, apiKey string) (string, error) {
-	if apiKey == "" {
+// ensureLLMSecret кладёт ключи всех провайдеров в k8s Secret и возвращает имя
+// секрета; пустой набор — секрет не создаётся (пустая строка).
+func (p *Provider) ensureLLMSecret(ctx context.Context, name string, labels map[string]string, credentials map[string]string) (string, error) {
+	if len(credentials) == 0 {
+		return "", nil
+	}
+	data := make(map[string][]byte, len(credentials))
+	for env, key := range credentials {
+		if key != "" {
+			data[env] = []byte(key)
+		}
+	}
+	if len(data) == 0 {
 		return "", nil
 	}
 	api := p.client.CoreV1().Secrets(p.cfg.Namespace)
@@ -211,7 +220,7 @@ func (p *Provider) ensureLLMSecret(ctx context.Context, name string, labels map[
 		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: p.cfg.Namespace, Labels: labels},
 			Type:       corev1.SecretTypeOpaque,
-			Data:       map[string][]byte{"AGCTL_LLM_API_KEY": []byte(apiKey)},
+			Data:       data,
 		}
 		if _, createErr := api.Create(ctx, secret, metav1.CreateOptions{}); createErr != nil && !apierrors.IsAlreadyExists(createErr) {
 			return "", fmt.Errorf("k8srt: create Secret %s: %w", name, createErr)
@@ -221,10 +230,19 @@ func (p *Provider) ensureLLMSecret(ctx context.Context, name string, labels map[
 	if err != nil {
 		return "", fmt.Errorf("k8srt: get Secret %s: %w", name, err)
 	}
-	if string(existing.Data["AGCTL_LLM_API_KEY"]) == apiKey {
+	same := len(existing.Data) == len(data)
+	if same {
+		for env, value := range data {
+			if string(existing.Data[env]) != string(value) {
+				same = false
+				break
+			}
+		}
+	}
+	if same {
 		return name, nil
 	}
-	existing.Data = map[string][]byte{"AGCTL_LLM_API_KEY": []byte(apiKey)}
+	existing.Data = data
 	if _, err := api.Update(ctx, existing, metav1.UpdateOptions{}); err != nil {
 		return "", fmt.Errorf("k8srt: update Secret %s: %w", name, err)
 	}
@@ -307,6 +325,7 @@ func (p *Provider) ensurePod(ctx context.Context, name, pvcName, secretName stri
 		image = spec.Image
 	}
 	providerEnv := []corev1.EnvVar{
+		{Name: "AGCTL_LLM_PROVIDER", Value: spec.Provider.Alias()},
 		{Name: "AGCTL_LLM_BASE_URL", Value: spec.Provider.BaseURL},
 		{Name: "AGCTL_LLM_MODEL", Value: spec.Provider.Model},
 		{Name: "AGCTL_LLM_MODELS", Value: string(modelsJSON)},
@@ -319,8 +338,37 @@ func (p *Provider) ensurePod(ctx context.Context, name, pvcName, secretName stri
 			}},
 		})
 	}
+	// Дополнительные провайдеры: каждый ключ — из своего ключа Secret; в
+	// init-контейнер передаём только описание (без секретов).
+	type extraSpec struct {
+		Name      string
+		BaseURL   string
+		Model     string
+		Models    []string
+		APIKeyEnv string
+	}
+	extras := make([]extraSpec, 0, len(spec.Provider.Extras))
+	for _, extra := range spec.Provider.Extras {
+		if len(extra.AllModels()) == 0 || strings.TrimSpace(extra.BaseURL) == "" {
+			continue
+		}
+		extras = append(extras, extraSpec{Name: extra.Name, BaseURL: extra.BaseURL, Model: extra.DefaultModel(), Models: extra.AllModels(), APIKeyEnv: extra.KeyEnv()})
+		if extra.APIKey != "" && secretName != "" {
+			providerEnv = append(providerEnv, corev1.EnvVar{
+				Name: extra.KeyEnv(),
+				ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: secretName}, Key: extra.KeyEnv(),
+				}},
+			})
+		}
+	}
+	if len(extras) > 0 {
+		if raw, err := json.Marshal(extras); err == nil {
+			providerEnv = append(providerEnv, corev1.EnvVar{Name: "AGCTL_LLM_EXTRA_PROVIDERS", Value: string(raw)})
+		}
+	}
 	refresh := "0"
-	if spec.Provider.APIKey != "" || spec.Provider.BaseURL != "" || spec.Provider.Model != "" {
+	if spec.Provider.APIKey != "" || spec.Provider.BaseURL != "" || spec.Provider.Model != "" || len(extras) > 0 {
 		refresh = "1"
 	}
 	initEnv := append(append([]corev1.EnvVar(nil), providerEnv...), corev1.EnvVar{Name: "AGCTL_REFRESH_PROVIDER", Value: refresh})

@@ -35,10 +35,24 @@ type brand struct {
 	Logo    string `yaml:"logo"` // путь внутри профиля, опционально
 }
 
+// LLMExtraProvider — дополнительный провайдер в выпадающем списке моделей
+// dsh. Ключ в профиль не пишется: APIKeyEnv — имя env-переменной хоста.
+type LLMExtraProvider struct {
+	Name      string `yaml:"name"`
+	BaseURL   string `yaml:"base_url"`
+	Model     string `yaml:"model"`
+	Models    string `yaml:"models"`
+	APIKeyEnv string `yaml:"api_key_env"`
+}
+
 type llm struct {
+	// ProviderName — алиас основного провайдера в dsh (по умолчанию agctl).
+	ProviderName   string `yaml:"provider_name"`
 	DefaultBaseURL string `yaml:"default_base_url"`
 	DefaultModel   string `yaml:"default_model"`
 	DefaultModels  string `yaml:"default_models"`
+	// ExtraProviders — второй и последующие провайдеры в том же списке.
+	ExtraProviders []LLMExtraProvider `yaml:"extra_providers"`
 }
 
 // Data — разобранный profile.yaml плюс ассеты профиля.
@@ -209,19 +223,21 @@ func (d *Data) finalize(source string) error {
 // View — предвычисленное представление профиля для потребителей: строки для
 // HTML/JS-инъекций готовы (base64-логотип, JSON), ничего не парсится на hot path.
 type View struct {
-	ID               string
-	Name             string
-	Tagline          string
-	Title            string // <title> вкладки
-	Letter           string // буква-знак вместо логотипа
-	Subtitle         string // подзаголовок страницы входа
-	HelpCabinetTitle string // заголовок справки в Кабинете
-	MapLLMLabel      string // подпись LLM на физической карте
-	JiraExampleURL   string // пример в доке jirapoll
-	LogoDataURI      string // data:image/png;base64,… ("" если логотипа нет)
-	LLMBaseURL       string
-	LLMModel         string
-	LLMModels        string
+	ID                string
+	Name              string
+	Tagline           string
+	Title             string // <title> вкладки
+	Letter            string // буква-знак вместо логотипа
+	Subtitle          string // подзаголовок страницы входа
+	HelpCabinetTitle  string // заголовок справки в Кабинете
+	MapLLMLabel       string // подпись LLM на физической карте
+	JiraExampleURL    string // пример в доке jirapoll
+	LogoDataURI       string // data:image/png;base64,… ("" если логотипа нет)
+	LLMProvider       string // алиас основного провайдера (по умолчанию agctl)
+	LLMBaseURL        string
+	LLMModel          string
+	LLMModels         string
+	LLMExtraProviders []LLMExtraProvider // дополнительные провайдеры (без секретов)
 
 	brandJSON string
 }
@@ -239,18 +255,20 @@ func Neutral() View {
 // один раз здесь.
 func (d *Data) View() View {
 	v := View{
-		ID:               d.ID,
-		Name:             d.Brand.Name,
-		Tagline:          d.Brand.Tagline,
-		Title:            d.Brand.Title,
-		Letter:           d.Brand.Letter,
-		Subtitle:         d.Login.Subtitle,
-		HelpCabinetTitle: d.Help.CabinetTitle,
-		MapLLMLabel:      d.Map.LLMLabel,
-		JiraExampleURL:   d.Examples.JiraURL,
-		LLMBaseURL:       d.LLM.DefaultBaseURL,
-		LLMModel:         d.LLM.DefaultModel,
-		LLMModels:        d.LLM.DefaultModels,
+		ID:                d.ID,
+		Name:              d.Brand.Name,
+		Tagline:           d.Brand.Tagline,
+		Title:             d.Brand.Title,
+		Letter:            d.Brand.Letter,
+		Subtitle:          d.Login.Subtitle,
+		HelpCabinetTitle:  d.Help.CabinetTitle,
+		MapLLMLabel:       d.Map.LLMLabel,
+		JiraExampleURL:    d.Examples.JiraURL,
+		LLMProvider:       d.LLM.ProviderName,
+		LLMBaseURL:        d.LLM.DefaultBaseURL,
+		LLMModel:          d.LLM.DefaultModel,
+		LLMModels:         d.LLM.DefaultModels,
+		LLMExtraProviders: append([]LLMExtraProvider(nil), d.LLM.ExtraProviders...),
 	}
 	if len(d.logo) > 0 {
 		v.LogoDataURI = "data:image/png;base64," + base64.StdEncoding.EncodeToString(d.logo)

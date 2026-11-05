@@ -177,7 +177,7 @@ const chatDefaultLLMKey = "chat_default_llm"
 // прошлых запусков. Так рестарт без AGCTL_LLM_* не возвращает dsh-модал
 // «Add an API key». Если провайдера нет вовсе — честно предупреждаем.
 func resolveDefaultLLM(db *store.DB, sec *secrets.Manager, cfg *Config) {
-	if cfg.DefaultLLM.APIKey != "" {
+	if len(cfg.DefaultLLM.CredentialEnv()) > 0 {
 		plain, err := json.Marshal(cfg.DefaultLLM)
 		if err == nil {
 			if enc, encErr := sec.Encrypt(string(plain)); encErr == nil {
@@ -201,7 +201,7 @@ func resolveDefaultLLM(db *store.DB, sec *secrets.Manager, cfg *Config) {
 		return
 	}
 	var restored provision.Provider
-	if err := json.Unmarshal([]byte(plain), &restored); err != nil || restored.APIKey == "" {
+	if err := json.Unmarshal([]byte(plain), &restored); err != nil || len(restored.CredentialEnv()) == 0 {
 		log.Printf("llm: сохранённый провайдер чата повреждён — игнорирую")
 		return
 	}
@@ -791,7 +791,7 @@ func (s *Server) providerOf(w store.Workspace, ownerID int64, req ProviderReq) (
 			models = requested
 		}
 		base := firstModel(baseURLs)
-		return provision.Provider{BaseURL: base, BaseURLs: baseURLs, Model: firstModel(models), Models: models, APIKey: key}, nil
+		return provision.Provider{BaseURL: base, BaseURLs: baseURLs, Model: firstModel(models), Models: models, APIKey: key, Extras: s.cfg.DefaultLLM.Extras}, nil
 	}
 	urls, ms := req.allBaseURLs(), req.allModels()
 	return provision.Provider{BaseURL: firstModel(urls), BaseURLs: urls, Model: firstModel(ms), Models: ms, APIKey: req.APIKey}, nil

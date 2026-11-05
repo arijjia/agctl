@@ -531,7 +531,7 @@ func (s *Server) userProvider(userID int64) provision.Provider {
 			if len(models) == 0 {
 				models = []string{sec.Model}
 			}
-			return provision.Provider{BaseURL: sec.BaseURL, Model: sec.Model, Models: models, APIKey: key}
+			return provision.Provider{BaseURL: sec.BaseURL, Model: sec.Model, Models: models, APIKey: key, Extras: s.cfg.DefaultLLM.Extras}
 		}
 	}
 	return s.cfg.DefaultLLM

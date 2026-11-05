@@ -160,7 +160,7 @@ test('попап и профиль содержат выход: клик гас�
   chip.listeners.click({ stopPropagation() {} });
   const popup = documentStub.body.children.find((c) => c.dataset && c.dataset.agctlCabinetPopup);
   assert.ok(popup, 'плашка открылась');
-  assert.deepEqual(popup.children.map((b) => b.textContent), ['Профиль', 'Справка', 'Выйти']);
+  assert.deepEqual(popup.children.map((b) => b.textContent), ['Профиль', 'SSH-доступ', 'Справка', 'Выйти']);
   const logoutBtn = popup.children.find((b) => b.textContent === 'Выйти');
   logoutBtn.listeners.click();
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -178,13 +178,14 @@ test('нет панели «Кабинет», управления рантай�
   assert.doesNotMatch(source, /roleDescription/, 'описания прав убраны (решение владельца 2026-11-05)');
   assert.match(source, /"Роль"/, 'карточка роли показывает уровень');
   assert.match(source, /projectionValues[\s\S]*tokenUsage/, 'статистика берёт provider-reported DSH token projections');
-  for (const key of ['uncachedInputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'outputTokens']) {
-    assert.match(source, new RegExp(key), `профиль показывает ${key}`);
-  }
+  assert.doesNotMatch(source, /Входные:/, 'входные токены убраны из карточек и подписи');
+  assert.doesNotMatch(source, /выходные:/, 'выходные токены убраны из карточек и подписи');
   assert.match(source, /Активность сессий за год/);
   assert.match(source, /не токены\/день/, 'heatmap не выдаётся за токены по дням');
   assert.match(source, /Сессий за 7 дней/, 'четвёртая карточка — свежая активность');
+  assert.match(source, /grid-template-columns:repeat\(auto-fit/, 'карточки статистики стоят ровной сеткой без разнобоя 3+2');
   assert.match(source, /SSH-доступ/, 'SSH — отдельная вкладка попапа');
+  assert.match(source, /me\.role === "developer" \|\| me\.role === "admin"/, 'SSH-вкладка доступна developer и admin');
   assert.match(source, /Как сделать ключ/, 'микро-гайд по ключу в SSH-вкладке');
   assert.match(source, /api\/me\/ssh/, 'SSH-ключ сохраняется через /api/me/ssh');
   assert.match(source, /Администратор/);

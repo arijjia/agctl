@@ -157,6 +157,46 @@ llm:
 	}
 }
 
+func TestLoadDirProviders(t *testing.T) {
+	dir := t.TempDir()
+	body := `schema: 1
+id: multi
+tax:
+  name: x
+brand:
+  name: Multi Org
+llm:
+  provider_name: zai-coding-cn
+  default_base_url: https://zai.example/v1
+  default_model: glm-fast
+  default_models: glm-fast,glm-deep
+  extra_providers:
+    - name: corp-litellm
+      base_url: https://litellm.example/v1
+      model: qwen-fast
+      models: qwen-fast,qwen-deep
+      api_key_env: AGCTL_LLM_CORP_API_KEY
+`
+	if err := os.WriteFile(filepath.Join(dir, "profile.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d, err := LoadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := d.View()
+	if v.LLMProvider != "zai-coding-cn" {
+		t.Fatalf("provider_name = %q", v.LLMProvider)
+	}
+	if len(v.LLMExtraProviders) != 1 {
+		t.Fatalf("extra providers = %d, want 1", len(v.LLMExtraProviders))
+	}
+	extra := v.LLMExtraProviders[0]
+	if extra.Name != "corp-litellm" || extra.BaseURL != "https://litellm.example/v1" || extra.APIKeyEnv != "AGCTL_LLM_CORP_API_KEY" {
+		t.Fatalf("extra provider = %+v", extra)
+	}
+}
+
 func TestResolveDirOverridesName(t *testing.T) {
 	dir := t.TempDir()
 	body := "schema: 1\nid: diskdir\nbrand:\n  name: Disk Org\n"

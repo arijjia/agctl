@@ -48,7 +48,7 @@ $(RUNTIME_DIR):
 up: web_build go_build img_build | $(RUNTIME_DIR)
 	$(call profile_check,up)
 	@if [ -z "$(AGCTL_LLM_API_KEY)" ]; then \
-	  echo "⚠ AGCTL_LLM_API_KEY пуст: Qwen-модели будут видны, но запросы не пройдут. Впиши raw-токен в .env (без Bearer/кавычек)."; fi
+	  echo "⚠ AGCTL_LLM_API_KEY пуст: модели будут видны, но запросы основного провайдера не пройдут. Впиши raw-токен в .env (без Bearer/кавычек)."; fi
 	@if [ -f "$(RUN_UP_PID)" ] && kill -0 "$$(cat $(RUN_UP_PID))" 2>/dev/null; then \
 	  echo "agctl уже запущен (pid $$(cat $(RUN_UP_PID))) — make stop"; exit 1; fi
 	@# Порт занят вне-pidfile инстансом → упадём на bind только после сборки.
@@ -74,7 +74,7 @@ corp: web_build go_build img_build | $(RUNTIME_DIR)
 	@if [ -f "$(RUN_CORP_PID)" ] && kill -0 "$$(cat $(RUN_CORP_PID))" 2>/dev/null; then \
 	  echo "corp-инстанс уже запущен (pid $$(cat $(RUN_CORP_PID))) — make stop"; exit 1; fi
 	@if [ -z "$$(printenv AGCTL_LLM_API_KEY)" ]; then \
-	  echo "⚠ AGCTL_LLM_API_KEY пуст — скопируй .env.example в .env и впиши ключ."; \
+	  echo "⚠ AGCTL_LLM_API_KEY пуст — скопируй .env.example в .env и впиши ключи провайдеров."; \
 	  echo "  Сервер стартует и без него: у пользователей с личным секретом чат работает."; fi
 	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl serve --addr "$(RUN_ADDR)" --profile "$(PROFILE)" $(CORP_LLM_ARGS) \
 	  >>"$(RUN_CORP_LOG)" 2>&1 & echo $$! > "$(RUN_CORP_PID)"

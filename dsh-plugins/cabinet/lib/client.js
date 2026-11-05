@@ -44,14 +44,6 @@ window.__ModuleLoader__.load({
 			return { admin: "Администратор", developer: "Разработчик", user: "Пользователь" }[role] || role;
 		}
 
-		function roleDescription(role) {
-			switch (role) {
-				case "admin": return "Полный доступ: пользователи, аудит, SSH и все developer-возможности.";
-				case "developer": return "Всё пользователя плюс SSH-канал к своему рантайму, клонирование проектов из GitHub и developer-настройки.";
-				default: return "Личный чат и воркспейсы-проекты. SSH и developer-настройки открываются с ролью developer.";
-			}
-		}
-
 		function el(tag, css, text) {
 			const node = document.createElement(tag);
 			if (css) node.style.cssText = css;
@@ -138,7 +130,7 @@ window.__ModuleLoader__.load({
 				<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.5">
 					<li><b>Воркспейсы</b> — папки проектов в боковой панели. Новая сессия, созданная внутри папки, работает в каталоге этого проекта.</li>
 					<li><b>Создать воркспейс</b> — кнопка в шапке списка Workspaces: пустой или клон публичного GitHub-репозитория.</li>
-					<li><b>SSH</b> (роль developer) — положи публичный ключ в Профиле; порт появится, когда рантайм работает. Доступ только с самого сервера или через туннель.</li>
+					<li><b>SSH</b> (роли developer/admin) — открой отдельную вкладку «SSH-доступ»: там поле для публичного ключа, готовая команда подключения и микро-гайд. Порт появляется, когда рантайм работает; доступ — только с самого сервера или через туннель.</li>
 					<li><b>Рантайм</b> управляется agctl автоматически: просыпается при открытии чата и засыпает после часа бездействия; активная SSH-сессия продлевает работу. Запускать и останавливать вручную не нужно.</li>
 					<li><b>Git</b> — история воркспейса сохраняется автоматически; автопуш во внешний Git не выполняется.</li>
 				</ul>`;
@@ -152,30 +144,32 @@ window.__ModuleLoader__.load({
 			const input = usage ? usage.uncachedInputTokens + usage.cacheReadTokens + usage.cacheWriteTokens : 0;
 			const output = usage ? usage.outputTokens : 0;
 			const tokenTotal = input + output;
-			const row = el("div", "display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 6px");
+			const today = Math.floor(Date.now() / 86400000);
+			let last7 = 0;
+			for (let i = 0; i < 7; i++) last7 += byDay.get(today - i) || 0;
+			// Одна строка из четырёх карточек; на узком экране — ровные 2×2.
+			const row = el("div", "display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:12px 0 6px");
 			const card = (value, label) => {
-				const c = el("div", "flex:1 1 145px;border:1px solid var(--dsw-alias-border-l1,#333);border-radius:12px;padding:12px 14px;text-align:center");
-				c.appendChild(el("div", "font-size:20px;font-weight:700", value));
+				const c = el("div", "border:1px solid var(--dsw-alias-border-l1,#333);border-radius:12px;padding:12px 8px;text-align:center;min-width:0");
+				c.appendChild(el("div", "font-size:18px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap", value));
 				c.appendChild(el("div", "font-size:11px;color:var(--dsw-alias-label-tertiary,#888);margin-top:4px", label));
 				return c;
 			};
 			row.append(
 				card(usageSessions ? fmt(tokenTotal) : "—", "Токенов всего"),
-				card(usageSessions ? fmt(input) : "—", "Входные токены"),
-				card(usageSessions ? fmt(output) : "—", "Выходные токены"),
 				card(fmt(total), "Сессий всего"),
 				card(fmt(byDay.size), "Активных дней"),
+				card(fmt(last7), "Сессий за 7 дней"),
 			);
 			wrap.appendChild(row);
-			const cache = usage && usageSessions ? el("p", "font-size:11px;color:var(--dsw-alias-label-tertiary,#888);margin:8px 0 0",
-				`Кэш: чтение ${fmt(usage.cacheReadTokens)}, запись ${fmt(usage.cacheWriteTokens)}; учтено сессий: ${usageSessions}`)
-				: el("p", "font-size:11px;color:var(--dsw-alias-label-tertiary,#888);margin:8px 0 0", "Token usage пока не пришёл от dsh.");
-			wrap.appendChild(cache);
+			const note = usage && usageSessions
+				? el("p", "font-size:11px;color:var(--dsw-alias-label-tertiary,#888);margin:8px 0 0", `Провайдер сообщил расход по ${usageSessions} сессиям; данные обновляются автоматически.`)
+				: el("p", "font-size:11px;color:var(--dsw-alias-label-tertiary,#888);margin:8px 0 0", "Расход токенов пока не пришёл от dsh.");
+			wrap.appendChild(note);
 			const label = el("div", "font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#999);margin-top:14px", "Активность сессий за год (по последнему обновлению; не токены/день)");
 			wrap.appendChild(label);
 			const heatScroll = el("div", "overflow-x:auto;margin-top:8px");
 			const heat = el("div", "display:grid;grid-template-rows:repeat(7, 10px);grid-auto-flow:column;grid-auto-columns:10px;gap:3px;width:max-content");
-			const today = Math.floor(Date.now() / 86400000);
 			for (let i = 363; i >= 0; i--) {
 				const day = today - i;
 				const count = byDay.get(day) || 0;
@@ -189,10 +183,69 @@ window.__ModuleLoader__.load({
 			return wrap;
 		}
 
-		function openProfileOverlay(me) {
+		// ── SSH-доступ: отдельная вкладка с картой ключа и микро-гайдом ──────────
+		function buildSSHCard(api, status) {
+			const sshCard = el("div", "agctl-card");
+			sshCard.appendChild(el("h2", "margin:0 0 10px;font-size:14px;font-weight:600", "Публичный ключ"));
+			const label = el("label", "display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600", "Публичный SSH-ключ (пусто — отключить SSH)");
+			const area = el("textarea", null, null);
+			area.placeholder = "ssh-ed25519 …";
+			label.appendChild(area);
+			const save = el("button", "agctl-btn", "Сохранить ключ");
+			const portLine = el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888)", "");
+			save.addEventListener("click", async () => {
+				save.disabled = true;
+				try {
+					const data = await api("/api/me/ssh", "PUT", { pubKey: area.value.trim() });
+					area.value = data.pubKey || "";
+					status.textContent = data.note || "SSH-ключ сохранён.";
+				} catch (err) { status.textContent = String(err.message || err); }
+				finally { save.disabled = false; }
+			});
+			sshCard.append(label, save, status, portLine);
+			api("/api/me/ssh").then((ssh) => {
+				area.value = ssh.pubKey || "";
+				portLine.textContent = ssh.sshPort > 0
+					? "Подключение (рантайм работает): ssh root@127.0.0.1 -p " + ssh.sshPort
+					: "Рантайм спит (sshPort = 0): открой чат — sshd поднимется при следующем старте.";
+			}).catch((err) => { status.textContent = "SSH: " + err.message; });
+			return sshCard;
+		}
+
+		function openSSHOverlay() {
 			const sheet = buildOverlay();
 			const api = apiFactory();
 			const status = el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888);white-space:pre-wrap", null);
+			sheet.appendChild(el("h2", "margin:0 0 14px;font-size:18px", "SSH-доступ"));
+			sheet.appendChild(buildSSHCard(api, status));
+			const note = el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888);margin:0", "SSH слушает только loopback 127.0.0.1 сервера. Для удалённого подключения нужен SSH-туннель. Приватный ключ не отправляй.");
+			sheet.appendChild(note);
+			const guide = el("div", "agctl-card");
+			guide.style.marginTop = "14px";
+			guide.appendChild(el("h2", "margin:0 0 10px;font-size:14px;font-weight:600", "Как сделать ключ (у себя локально)"));
+			const step = (num, text) => {
+				const p = el("p", "margin:10px 0 0;font-size:12px;line-height:1.5", null);
+				p.appendChild(el("b", null, num + ". "));
+				p.appendChild(document.createTextNode(text));
+				return p;
+			};
+			const code = (text) => el("pre", "margin:6px 0 0;padding:8px 10px;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.08));font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere", text);
+			guide.append(
+				step("1", "Сгенерируй пару ключей у себя на машине (публичная половина — файл с суффиксом .pub):"),
+				code('ssh-keygen -t ed25519 -C "you@example.com"'),
+				step("2", "Покажи публичную половину и скопируй вывод целиком, одной строкой:"),
+				code("cat ~/.ssh/id_ed25519.pub"),
+				step("3", "Вставь её в поле «Публичный ключ» выше и нажми «Сохранить ключ». Приватная половина (файл без .pub) остаётся только у тебя и никуда не вставляется."),
+				step("4", "Подключайся, когда рантайм работает (порт — под полем выше):"),
+				code("ssh root@127.0.0.1 -p <порт>"),
+				el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888);margin:10px 0 0",
+					"С другой машины — только через туннель/VPN: ssh -L 2222:127.0.0.1:<порт> <ты>@<agctl-хост>, затем ssh root@127.0.0.1 -p 2222."),
+			);
+			sheet.appendChild(guide);
+		}
+
+		function openProfileOverlay(me) {
+			const sheet = buildOverlay();
 
 			// шапка
 			const head = el("div", "display:flex;flex-direction:column;align-items:center;gap:8px;margin:6px 0 22px");
@@ -214,59 +267,19 @@ window.__ModuleLoader__.load({
 
 			// роль
 			const roleCard = el("div", "agctl-card");
-			roleCard.appendChild(el("h2", "margin:0 0 10px;font-size:14px;font-weight:600", "Права доступа"));
+			roleCard.appendChild(el("h2", "margin:0 0 10px;font-size:14px;font-weight:600", "Роль"));
 			const roleRow = el("div", "display:flex;gap:10px;align-items:baseline");
-			roleRow.appendChild(el("span", "font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#999);width:130px;flex:none", "Роль"));
+			roleRow.appendChild(el("span", "font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#999);width:130px;flex:none", "Уровень"));
 			const badge = el("span", "display:inline-block;padding:2px 10px;border-radius:999px;border:1px solid #1459b8;background:rgba(23,105,210,.15);font-size:12px;font-weight:700", roleName(me.role));
 			roleRow.appendChild(badge);
-			roleCard.append(roleRow, el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888);margin:8px 0 0", roleDescription(me.role)));
+			roleCard.append(roleRow);
 			sheet.appendChild(roleCard);
 
 			// использование
 			const usageCard = el("div", "agctl-card");
 			usageCard.appendChild(el("h2", "margin:0 0 4px;font-size:14px;font-weight:600", "Использование"));
 			usageCard.appendChild(statsBlock());
-			const runtimeLine = el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888);margin:10px 0 0", "");
-			usageCard.appendChild(runtimeLine);
 			sheet.appendChild(usageCard);
-
-			const isDev = me.role === "developer" || me.role === "admin";
-
-			// SSH (developer/admin)
-			if (isDev) {
-				const sshCard = el("div", "agctl-card");
-				sshCard.appendChild(el("h2", "margin:0 0 10px;font-size:14px;font-weight:600", "SSH"));
-				const label = el("label", "display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600", "Публичный SSH-ключ (пусто — отключить SSH)");
-				const area = el("textarea", null, null);
-				area.placeholder = "ssh-ed25519 …";
-				label.appendChild(area);
-				const save = el("button", "agctl-btn", "Сохранить ключ");
-				const portLine = el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888)", "");
-				const note = el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888)", "SSH слушает только loopback 127.0.0.1 сервера. Для удалённого подключения нужен SSH-туннель. Приватный ключ не отправляй.");
-				save.addEventListener("click", async () => {
-					save.disabled = true;
-					try {
-						const data = await api("/api/me/ssh", "PUT", { pubKey: area.value.trim() });
-						area.value = data.pubKey || "";
-						status.textContent = data.note || "SSH-ключ сохранён.";
-					} catch (err) { status.textContent = String(err.message || err); }
-					finally { save.disabled = false; }
-				});
-				sshCard.append(label, save, status, portLine, note);
-				sheet.appendChild(sshCard);
-				api("/api/me/ssh").then((ssh) => {
-					area.value = ssh.pubKey || "";
-					portLine.textContent = ssh.sshPort > 0
-						? "ssh root@127.0.0.1 -p " + ssh.sshPort
-						: "Рантайм спит (sshPort = 0): открой чат — sshd поднимется при следующем старте.";
-				}).catch((err) => { status.textContent = "SSH: " + err.message; });
-			}
-
-			api("/api/me/runtime").then((runtime) => {
-				runtimeLine.textContent = runtime.status === "running"
-					? "Личный рантайм работает; заснёт сам после часа простоя."
-					: "Личный рантайм спит; проснётся сам при открытии чата.";
-			}).catch(() => { runtimeLine.textContent = ""; });
 		}
 
 		function closeOverlay() {
@@ -414,8 +427,11 @@ window.__ModuleLoader__.load({
 				btn.addEventListener("click", () => { popup.remove(); act(); });
 				return btn;
 			};
+			popup.append(item("Профиль", () => openProfileOverlay(me)));
+			// SSH-доступ — отдельная вкладка с картой ключа и микро-гайдом.
+			// Доступна ролям, которым backend разрешает /api/me/ssh: developer и admin.
+			if (me.role === "developer" || me.role === "admin") popup.append(item("SSH-доступ", () => openSSHOverlay()));
 			popup.append(
-				item("Профиль", () => openProfileOverlay(me)),
 				item("Справка", () => openHelpOverlay()),
 				item("Выйти", async () => {
 					try { await apiFactory()("/api/logout", "POST", {}); } catch (e) {}

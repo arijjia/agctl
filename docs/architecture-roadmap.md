@@ -47,7 +47,7 @@ compat-proxy пока оставлены; это не пользовательс
 LLM-дефолты и тексты живут в **профиле организации** — данных
 (`profile.yaml` + логотип), подключаемых без пересборки бинаря
 (`--profile` / `--profile-dir`, `make profile-fetch`). Профиль пилота
-(ИИ-мастерская ТюмГУ) выделен в отдельное репо `agctl-profile-utmn`.
+AI Workspaces (ТюмГУ) выделен в отдельное репо `agctl-profile-utmn`.
 Маши́нная гарантия чистоты ядра — guard-тест `TestCoreIsOrganizationFree`
 (`internal/profile/guard_test.go`). Эпик — `profile-decomposition` в
 `backlog/open`; архитектурный план и инвентарь —

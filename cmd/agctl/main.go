@@ -195,10 +195,12 @@ func cmdServe(args []string) {
 	}
 
 	defaultLLM := provision.Provider{
+		Name:    llmProviderName(prof),
 		BaseURL: *llmBaseURL,
 		Model:   *llmModel,
 		Models:  splitCSV(*llmModels),
 		APIKey:  *llmAPIKey,
+		Extras:  profExtraProviders(prof),
 	}
 	if defaultLLM.Model == "" && len(defaultLLM.Models) > 0 {
 		defaultLLM.Model = defaultLLM.Models[0]
@@ -238,7 +240,7 @@ func cmdServe(args []string) {
 		Profile:                 prof,
 	})
 	if defaultLLM.BaseURL != "" {
-		log.Printf("llm: платформенный провайдер чата по умолчанию %s (моделей: %d, ключ %s)", defaultLLM.BaseURL, len(defaultLLM.AllModels()), keyState(defaultLLM.APIKey))
+		log.Printf("llm: платформенный провайдер чата по умолчанию %s (%s, моделей: %d, доп. провайдеров: %d, ключ %s)", defaultLLM.BaseURL, defaultLLM.Alias(), len(defaultLLM.AllModels()), len(defaultLLM.Extras), keyState(defaultLLM.APIKey))
 	} else {
 		log.Printf("llm: провайдер по умолчанию не задан (профиль %s без llm-дефолтов; задайте env AGCTL_LLM_* или профиль организации)", prof.ID)
 	}
@@ -278,6 +280,59 @@ func cmdServe(args []string) {
 	}
 }
 
+// llmProviderName — алиас основного провайдера в dsh: профиль задаёт
+// provider_name (например zai-coding-cn), env AGCTL_LLM_PROVIDER перекрывает.
+func llmProviderName(prof *profile.Data) string {
+	if name := strings.TrimSpace(os.Getenv("AGCTL_LLM_PROVIDER")); name != "" {
+		return name
+	}
+	if prof != nil {
+		return strings.TrimSpace(prof.LLM.ProviderName)
+	}
+	return ""
+}
+
+// profExtraProviders — дополнительные провайдеры из профиля (или из
+// AGCTL_LLM_EXTRA_PROVIDERS для оркестрированных запусков). В профиле
+// хранится только имя env-переменной; значение ключа читаем из окружения и
+// никогда не пишем в settings.yaml/профиль/лог.
+func profExtraProviders(prof *profile.Data) []provision.ExtraProvider {
+	var extras []provision.ExtraProvider
+	if raw := strings.TrimSpace(os.Getenv("AGCTL_LLM_EXTRA_PROVIDERS")); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &extras); err != nil {
+			log.Printf("llm: AGCTL_LLM_EXTRA_PROVIDERS: %v — использую профиль", err)
+			extras = nil
+		}
+	}
+	if extras == nil && prof != nil {
+		for _, e := range prof.LLM.ExtraProviders {
+			name := strings.TrimSpace(e.Name)
+			baseURL := strings.TrimRight(strings.TrimSpace(e.BaseURL), "/")
+			if name == "" || baseURL == "" {
+				continue
+			}
+			models := provision.ParseModels(e.Models, e.Model)
+			model := strings.TrimSpace(e.Model)
+			if model == "" && len(models) > 0 {
+				model = models[0]
+			}
+			extras = append(extras, provision.ExtraProvider{
+				Name: name, BaseURL: baseURL, Model: model, Models: models,
+				APIKeyEnv: strings.TrimSpace(e.APIKeyEnv),
+			})
+		}
+	}
+	for i := range extras {
+		env := strings.TrimSpace(extras[i].APIKeyEnv)
+		if env == "" {
+			env = extras[i].KeyEnv()
+		}
+		extras[i].APIKeyEnv = env
+		extras[i].APIKey = strings.TrimSpace(os.Getenv(env))
+	}
+	return extras
+}
+
 // cmdMigrate — подкоманда migrate: открывает базу и применяет все
 // неприменённые миграции схемы до актуального состояния.
 func cmdMigrate(args []string) {
@@ -312,11 +367,27 @@ func cmdInitChatHome(args []string) {
 			log.Fatalf("init-chat-home: AGCTL_LLM_MODELS: %v", err)
 		}
 	}
+	extras := []provision.ExtraProvider{}
+	if raw := strings.TrimSpace(os.Getenv("AGCTL_LLM_EXTRA_PROVIDERS")); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &extras); err != nil {
+			log.Fatalf("init-chat-home: AGCTL_LLM_EXTRA_PROVIDERS: %v", err)
+		}
+	}
+	for i := range extras {
+		env := strings.TrimSpace(extras[i].APIKeyEnv)
+		if env == "" {
+			env = extras[i].KeyEnv()
+		}
+		extras[i].APIKeyEnv = env
+		extras[i].APIKey = strings.TrimSpace(os.Getenv(env))
+	}
 	provider := provision.Provider{
+		Name:    os.Getenv("AGCTL_LLM_PROVIDER"),
 		BaseURL: os.Getenv("AGCTL_LLM_BASE_URL"),
 		Model:   os.Getenv("AGCTL_LLM_MODEL"),
 		Models:  models,
 		APIKey:  os.Getenv("AGCTL_LLM_API_KEY"),
+		Extras:  extras,
 	}
 	seeded, refreshed, err := initChatHome(*home, provider, *refresh, assets.DshSkel)
 	if err != nil {

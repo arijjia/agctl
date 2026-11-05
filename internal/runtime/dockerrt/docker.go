@@ -295,7 +295,7 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 	// Все Base URL могут иметь разные split-DNS corporate hosts; резолвим
 	// каждый на хосте и добавляем --add-host при создании контейнера.
 	extraHosts := []string{"host.docker.internal:host-gateway"}
-	pins, pinErrors := pinsForBaseURLs(p.AllBaseURLs(), net.LookupIP)
+	pins, pinErrors := pinsForBaseURLs(p.AllProviderURLs(), net.LookupIP)
 	for _, err := range pinErrors {
 		log.Printf("[dockerrt] %s: %v — для этого LLM endpoint нет DNS-пина (проверьте VPN)", wsID, err)
 	}
@@ -308,6 +308,16 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		"HOME=/workspace",
 		"NPM_CONFIG_CACHE=/tmp/npm-cache",
 		"XDG_CACHE_HOME=/tmp/cache",
+	}
+	// Дополнительные провайдеры (например корпоративный LiteLLM) приносят
+	// свой ключ под своим env-именем из .credentials.yaml.
+	seenEnv := map[string]bool{"AGCTL_LLM_API_KEY": true}
+	for _, extra := range p.Extras {
+		if extra.APIKey == "" || seenEnv[extra.KeyEnv()] {
+			continue
+		}
+		seenEnv[extra.KeyEnv()] = true
+		env = append(env, extra.KeyEnv()+"="+extra.APIKey)
 	}
 	portBindings := network.PortMap{
 		network.MustParsePort("3080/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: fmt.Sprint(opts.HostPort)}},

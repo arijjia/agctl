@@ -28,11 +28,30 @@ import (
 
 // Provider — настройки LLM-провайдера воркспейса (из личного кабинета).
 type Provider struct {
+	// Name — алиас провайдера в dsh (llm-pi-ai.providers.<Name>, имя в
+	// выпадающем списке моделей); пусто = agctl.
+	Name     string
 	BaseURL  string   // primary/legacy base URL (первый элемент BaseURLs)
 	BaseURLs []string // несколько provider endpoints с общим списком Models
 	Model    string   // модель по умолчанию (первая из Models)
 	Models   []string // все доступные модели (выпадающий список в dsh)
 	APIKey   string   // токен — только в .credentials.yaml и env контейнера
+	// Extras — дополнительные провайдеры со своими эндпоинтами, моделями и
+	// ключами; попадают в тот же выпадающий список dsh.
+	Extras []ExtraProvider
+}
+
+// ExtraProvider — второй (третий, …) провайдер в выпадающем списке dsh:
+// другой эндпоинт, другой список моделей и СВОЙ ключ. Ключ приходит из env
+// хоста по имени APIKeyEnv (в profile.yaml хранится только имя переменной,
+// не секрет). Пример: корпоративный LiteLLM рядом с подпиской Z.AI.
+type ExtraProvider struct {
+	Name      string   // алиас в dsh (llm-pi-ai.providers.<Name>)
+	BaseURL   string   // OpenAI-совместимый эндпоинт
+	Model     string   // дефолтная модель алиаса (пусто = первая из Models)
+	Models    []string // модели алиаса в выпадашке
+	APIKeyEnv string   // имя env-переменной с ключом (реф в .credentials.yaml)
+	APIKey    string   // значение из env; пусто = алиас без ключа (dsh спросит сам)
 }
 
 // AllBaseURLs — список URL в порядке выбора, старые вызовы BaseURL-only
@@ -75,6 +94,101 @@ func (p Provider) AllModels() []string {
 		return []string{p.Model}
 	}
 	return nil
+}
+
+// Alias — безопасный алиас основного провайдера в dsh (zai-coding-cn, agctl).
+func (p Provider) Alias() string { return providerAlias(p.Name, "agctl") }
+
+// AllProviderURLs — все эндпоинты всех провайдеров: основной (со всеми
+// BaseURLs-алиасами) и дополнительные. Нужен сетевому слою для DNS-пинов.
+func (p Provider) AllProviderURLs() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(raw string) {
+		u := strings.TrimRight(strings.TrimSpace(raw), "/")
+		if u == "" || seen[u] {
+			return
+		}
+		seen[u] = true
+		out = append(out, u)
+	}
+	for _, u := range p.AllBaseURLs() {
+		add(u)
+	}
+	for _, extra := range p.Extras {
+		add(extra.BaseURL)
+	}
+	return out
+}
+
+// CredentialEnv — пары env-переменная → ключ для .credentials.yaml и env
+// контейнера. Пустые ключи не попадают: dsh-credentials-local падает на
+// пустом значении и показывает свой модал ввода.
+func (p Provider) CredentialEnv() map[string]string {
+	out := map[string]string{}
+	if p.APIKey != "" {
+		out["AGCTL_LLM_API_KEY"] = p.APIKey
+	}
+	for _, extra := range p.Extras {
+		if extra.APIKey == "" {
+			continue
+		}
+		out[extra.KeyEnv()] = extra.APIKey
+	}
+	return out
+}
+
+// providerAlias нормализует имя провайдера под ключ YAML/выпадашки dsh.
+func providerAlias(raw, fallback string) string {
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	var b strings.Builder
+	for _, r := range raw {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return fallback
+	}
+	return out
+}
+
+// AllModels — список моделей дополнительного провайдера.
+func (e ExtraProvider) AllModels() []string {
+	if len(e.Models) > 0 {
+		return e.Models
+	}
+	if e.Model != "" {
+		return []string{e.Model}
+	}
+	return nil
+}
+
+// DefaultModel — модель по умолчанию дополнительного провайдера.
+func (e ExtraProvider) DefaultModel() string {
+	if e.Model != "" {
+		return e.Model
+	}
+	if len(e.Models) > 0 {
+		return e.Models[0]
+	}
+	return ""
+}
+
+// Alias — безопасный алиас провайдера в dsh.
+func (e ExtraProvider) Alias() string { return providerAlias(e.Name, "provider") }
+
+// KeyEnv — имя env-переменной с ключом (реф в .credentials.yaml).
+func (e ExtraProvider) KeyEnv() string {
+	if env := strings.TrimSpace(e.APIKeyEnv); env != "" {
+		return env
+	}
+	alias := strings.NewReplacer("-", "_", ".", "_").Replace(e.Alias())
+	return "AGCTL_LLM_API_KEY_" + strings.ToUpper(alias)
 }
 
 // ParseModels — разбор списка моделей из формы (по одной на строку,
@@ -502,8 +616,13 @@ func EnsureChatPlugins(home string, skelFS fs.FS) error {
 	// account launcher so More/Feedback/Sign in and Get started do not replace
 	// the ordinary DSH Settings trigger; the profile's platform API key/models
 	// are supplied by agctl instead.
-	const accountLauncherPatch = "- id: ui-settings-account\n  name: \"@deepseek-ai/dsh-client-ui-settings-account\"\n  disabled: true\n"
-	if !bytes.Contains(patch, []byte(accountLauncherPatch)) {
+	const (
+		accountBundle        = "@deepseek-ai/dsh-client-ui-settings-account"
+		accountLauncherPatch = "- id: ui-settings-account\n  name: \"@deepseek-ai/dsh-client-ui-settings-account\"\n  disabled: true\n"
+	)
+	// Ищем по имени бандла, а не по точному тексту блока: после YAML-нормализации
+	// (syncLLMInPatch) порядок ключей другой, и точное совпадение давало дубль.
+	if !bytes.Contains(patch, []byte(accountBundle)) {
 		if len(patch) > 0 && patch[len(patch)-1] != '\n' {
 			patch = append(patch, '\n')
 		}
@@ -597,42 +716,197 @@ func jsonStr(s string) string {
 	return string(b)
 }
 
+// providerBlock — один провайдер в settings.yaml dsh.
+type providerBlock struct {
+	alias        string
+	keyEnv       string
+	baseURL      string
+	models       []string
+	defaultModel string
+	primary      bool
+}
+
+// providerBlocks собирает основной провайдер (со всеми BaseURL-алиасами) и
+// дополнительные. Алиасы уникальны и безопасны как YAML-ключи.
+func providerBlocks(p Provider) []providerBlock {
+	used := map[string]bool{}
+	unique := func(raw string) string {
+		base := providerAlias(raw, "provider")
+		alias := base
+		for i := 2; used[alias]; i++ {
+			alias = base + "-" + strconv.Itoa(i)
+		}
+		used[alias] = true
+		return alias
+	}
+	var out []providerBlock
+	urls := p.AllBaseURLs()
+	if len(urls) == 0 {
+		urls = []string{""} // прежний пустой-provider/modal flow
+	}
+	for i, baseURL := range urls {
+		rawAlias := p.Alias()
+		if i > 0 {
+			rawAlias += "-" + strconv.Itoa(i+1)
+		}
+		out = append(out, providerBlock{
+			alias: unique(rawAlias), keyEnv: "AGCTL_LLM_API_KEY", baseURL: baseURL,
+			models: p.AllModels(), defaultModel: p.DefaultModel(), primary: i == 0,
+		})
+	}
+	for _, extra := range p.Extras {
+		models := extra.AllModels()
+		baseURL := strings.TrimRight(strings.TrimSpace(extra.BaseURL), "/")
+		if baseURL == "" || len(models) == 0 {
+			continue
+		}
+		out = append(out, providerBlock{
+			alias: unique(extra.Alias()), keyEnv: extra.KeyEnv(), baseURL: baseURL,
+			models: models, defaultModel: extra.DefaultModel(),
+		})
+	}
+	return out
+}
+
+// credentialRefs — упорядоченные пары env → ключ (основной, затем доп.).
+func credentialRefs(p Provider) [][2]string {
+	seen := map[string]bool{}
+	var out [][2]string
+	add := func(env, key string) {
+		if key == "" || env == "" || seen[env] {
+			return
+		}
+		seen[env] = true
+		out = append(out, [2]string{env, key})
+	}
+	add("AGCTL_LLM_API_KEY", p.APIKey)
+	for _, extra := range p.Extras {
+		add(extra.KeyEnv(), extra.APIKey)
+	}
+	return out
+}
+
+// syncLLMInPatch приводит llm-pi-ai/agent-default-model в profiles/web/cordis.patch.yml
+// к актуальному набору провайдеров. DSH импортирует settings.yaml в этот патч
+// слиянием, поэтому старый alias (например, agctl до появления provider_name)
+// иначе остаётся в выпадающем списке моделей рядом с новым.
+func syncLLMInPatch(home string, blocks []providerBlock, defaultAlias, defaultModel string) error {
+	patchPath := filepath.Join(home, "profiles", "web", "cordis.patch.yml")
+	raw, err := os.ReadFile(patchPath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("provision: provider patch read %s: %w", patchPath, err)
+	}
+	var entries []map[string]any
+	if len(bytes.TrimSpace(raw)) > 0 {
+		if err := yaml.Unmarshal(raw, &entries); err != nil {
+			return fmt.Errorf("provision: provider patch parse %s: %w", patchPath, err)
+		}
+	}
+	providers := make(map[string]any, len(blocks))
+	for _, block := range blocks {
+		models := make([]any, 0, len(block.models))
+		for _, m := range block.models {
+			models = append(models, map[string]any{
+				"id": m, "name": m, "contextWindow": 262144, "maxTokens": 65536,
+			})
+		}
+		providers[block.alias] = map[string]any{
+			"apiKeyEnv": block.keyEnv,
+			"api":       "openai-completions",
+			"baseURL":   block.baseURL,
+			"models":    models,
+		}
+	}
+	const (
+		llmPlugin     = "@deepseek-ai/dsh-llm-pi-ai"
+		defaultPlugin = "@deepseek-ai/dsh-agent-default-model"
+	)
+	setConfig := func(entry map[string]any, key string, value any) {
+		cfg, _ := entry["config"].(map[string]any)
+		if cfg == nil {
+			cfg = map[string]any{}
+		}
+		cfg[key] = value
+		entry["config"] = cfg
+	}
+	haveLLM, haveDefault := false, false
+	for _, entry := range entries {
+		switch name, _ := entry["name"].(string); name {
+		case llmPlugin:
+			setConfig(entry, "providers", providers)
+			haveLLM = true
+		case defaultPlugin:
+			setConfig(entry, "provider", defaultAlias)
+			setConfig(entry, "model", defaultModel)
+			haveDefault = true
+		}
+	}
+	if !haveLLM {
+		entries = append(entries, map[string]any{
+			"id": "llm-pi-ai", "name": llmPlugin,
+			"config": map[string]any{"providers": providers},
+		})
+	}
+	if !haveDefault {
+		entries = append(entries, map[string]any{
+			"id": "agent-default-model", "name": defaultPlugin,
+			"config": map[string]any{"provider": defaultAlias, "model": defaultModel},
+		})
+	}
+	out, err := yaml.Marshal(entries)
+	if err != nil {
+		return fmt.Errorf("provision: provider patch marshal: %w", err)
+	}
+	header := []byte("# agctl: провайдеры LLM синхронизируются с профилем при каждом старте.\n")
+	if err := os.WriteFile(patchPath, append(header, out...), 0o644); err != nil {
+		return fmt.Errorf("provision: provider patch write %s: %w", patchPath, err)
+	}
+	return nil
+}
+
 // RefreshProvider — перезапись настроек провайдера в существующем DSH_HOME
 // (ротация ключа, смена Base URL/моделей). Сессии и профили не трогает:
 // dsh импортирует свежий settings.yaml при следующем старте.
 func RefreshProvider(home string, p Provider) error {
-	models := p.AllModels()
-	urls := p.AllBaseURLs()
-	if len(urls) == 0 {
-		urls = []string{""} // сохраняем прежний пустой-provider/modal flow
-	}
+	blocks := providerBlocks(p)
 	var sb strings.Builder
-	sb.WriteString("# Настройки воркспейса agctl: provider aliases share models/credential.\nllm-pi-ai:\n  providers:\n")
-	for i, baseURL := range urls {
-		alias := "agctl"
-		if i > 0 {
-			alias += "-" + strconv.Itoa(i+1)
-		}
-		sb.WriteString("    " + alias + ":\n      apiKeyEnv: AGCTL_LLM_API_KEY\n      api: openai-completions\n")
-		sb.WriteString("      baseURL: " + yamlStr(baseURL) + "\n      models:\n")
-		for _, m := range models {
+	sb.WriteString("# Настройки воркспейса agctl: провайдеры в выпадающем списке dsh.\nllm-pi-ai:\n  providers:\n")
+	for _, block := range blocks {
+		sb.WriteString("    " + block.alias + ":\n      apiKeyEnv: " + block.keyEnv + "\n      api: openai-completions\n")
+		sb.WriteString("      baseURL: " + yamlStr(block.baseURL) + "\n      models:\n")
+		for _, m := range block.models {
 			sb.WriteString("        - id: " + yamlStr(m) + "\n          name: " + yamlStr(m) +
 				"\n          contextWindow: 262144\n          maxTokens: 65536\n")
 		}
 	}
-	sb.WriteString("agent-default-model:\n  provider: agctl\n  model: " + yamlStr(p.DefaultModel()) + "\n")
+	defaultAlias, defaultModel := "agctl", p.DefaultModel()
+	for _, block := range blocks {
+		if block.primary {
+			defaultAlias, defaultModel = block.alias, block.defaultModel
+			break
+		}
+	}
+	sb.WriteString("agent-default-model:\n  provider: " + defaultAlias + "\n  model: " + yamlStr(defaultModel) + "\n")
 	if err := os.WriteFile(filepath.Join(home, "settings.yaml"), []byte(sb.String()), 0o644); err != nil {
 		return fmt.Errorf("provision: settings.yaml: %w", err)
+	}
+	if err := syncLLMInPatch(home, blocks, defaultAlias, defaultModel); err != nil {
+		return err
 	}
 	// Пустой токен — не пишем ключ вовсе: dsh-credentials-local падает на
 	// пустом значении («remove the key instead») и показывает свой модал
 	// ввода API-ключа (паттерн общего чата Tier 0).
 	creds := "version: 1\nrefs: {}\n"
-	if p.APIKey != "" {
-		creds = fmt.Sprintf(`version: 1
-refs:
-  AGCTL_LLM_API_KEY: %s
-`, yamlStr(p.APIKey))
+	if refs := credentialRefs(p); len(refs) > 0 {
+		var cb strings.Builder
+		cb.WriteString("version: 1\nrefs:\n")
+		for _, ref := range refs {
+			cb.WriteString("  " + ref[0] + ": " + yamlStr(ref[1]) + "\n")
+		}
+		creds = cb.String()
 	}
 	if err := os.WriteFile(filepath.Join(home, ".credentials.yaml"), []byte(creds), 0o600); err != nil {
 		return fmt.Errorf("provision: .credentials.yaml: %w", err)

@@ -55,8 +55,8 @@ try {
   if (await page.getByText('Add an API key to get started').isVisible().catch(() => false)) {
     throw new Error('platform default LLM did not suppress the first-run API-key modal');
   }
-  await page.getByText('ИИ-мастерская ТюмГУ', { exact: true }).waitFor({ state: 'visible', timeout: 10000 });
-  await page.getByText('Тюмень на правильном пути', { exact: true }).waitFor({ state: 'visible', timeout: 10000 });
+  await page.getByText('AI Workspaces', { exact: true }).waitFor({ state: 'visible', timeout: 10000 });
+  await page.getByText('ТюмГУ на правильном пути', { exact: true }).waitFor({ state: 'visible', timeout: 10000 });
   await page.getByText('Сессии', { exact: true }).waitFor({ state: 'visible', timeout: 10000 });
   if (await page.locator('svg[viewBox="0 0 23.16 17.04"]').count() !== 0) {
     throw new Error('DeepSeek whale mark remains in Chat mode');
