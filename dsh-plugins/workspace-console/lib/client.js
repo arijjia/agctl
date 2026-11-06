@@ -454,6 +454,59 @@ window.__ModuleLoader__.load({
 			});
 		}
 
+		// agctlDownloadUrl — полный путь /workspace/<ws>/<rel> → URL скачивания
+		// через gateway (GET /api/projects/<ws>/file?path=<rel>). Не-агctl-пути
+		// (не /workspace/, вложенные сегменты) → null.
+		function agctlDownloadUrl(fullPath) {
+			if (typeof fullPath !== "string" || !fullPath.startsWith("/workspace/")) return null;
+			const parts = fullPath.slice("/workspace/".length).split("/").filter(Boolean);
+			if (parts.length < 2) return null;
+			const ws = parts[0];
+			const rel = parts.slice(1).join("/");
+			return "/api/projects/" + encodeURIComponent(ws) + "/file?path=" + encodeURIComponent(rel);
+		}
+
+		// downloadUrlFromCard — путь из title карточки deliverable (кладёт dsh:
+		// абсолютный путь файла) → URL скачивания. Слот рендерится внутри
+		// .nyYjTG_file[data-presented-file], title живёт на cardPreview-кнопке.
+		function downloadUrlFromCard(node) {
+			const card = node.closest && node.closest("[data-presented-file]");
+			if (!card) return null;
+			const src = card.querySelector("button[title^='/workspace/']");
+			if (!src) return null;
+			return agctlDownloadUrl(src.getAttribute("title"));
+		}
+
+		// DownloadAction — кнопка «Скачать» на карточке deliverable в чате:
+		// забрать файл напрямую через gateway, без превью в сайдбаре.
+		function DownloadAction() {
+			const ref = React.useRef(null);
+			React.useEffect(() => {
+				const node = ref.current;
+				if (!node) return undefined;
+				const onClick = (ev) => {
+					const url = downloadUrlFromCard(node);
+					if (!url) { ev.preventDefault(); return; }
+					// attachment-ответ gateway скачивает файл, не покидая чат
+					window.location.href = url;
+				};
+				node.addEventListener("click", onClick);
+				return () => node.removeEventListener("click", onClick);
+			}, []);
+			return React.createElement("button", {
+				ref,
+				type: "button",
+				"data-agctl-download": "1",
+				title: "Скачать файл через agctl",
+				style: {
+					padding: "3px 9px", border: "1px solid var(--dsw-alias-border-l1,#555)",
+					borderRadius: "8px", background: "transparent", color: "inherit",
+					cursor: "pointer", font: "inherit", fontSize: "11px",
+					display: "inline-flex", alignItems: "center", gap: "4px",
+				},
+			}, "Скачать");
+		}
+
 		// Иконка строки панели (renderSlot передаёт {size, active}).
 		function PanelIcon(props) {
 			const size = (props && props.size) || 18;
@@ -486,6 +539,13 @@ window.__ModuleLoader__.load({
 				key: PANEL_ID,
 				inject: () => ({}),
 			}, WorkspacePanel));
+			// «Скачать» на каждой карточке deliverable в чате (файл — через
+			// gateway, без превью в сайдбаре).
+			ctx.slots.inject("deliverables.file.actions", () => ctx.slots.register({
+				name: "deliverables.file.actions",
+				id: "agctl-workspace-console-download",
+				order: 5,
+			}, DownloadAction));
 		}
 
 		exports.inject = ["slots"];
@@ -494,6 +554,7 @@ window.__ModuleLoader__.load({
 		exports.groupComponents = groupComponents;
 		exports.buildDisabledIDs = buildDisabledIDs;
 		exports.deleteProject = deleteProject;
+		exports.agctlDownloadUrl = agctlDownloadUrl;
 		exports.PANEL_ID = PANEL_ID;
 		return exports;
 	},

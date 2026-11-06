@@ -44,17 +44,35 @@ test('консоль — панель в списке панелей и вкла
 		get(name) { return name === 'workspaces' ? { marker: 1 } : null; },
 	};
 	exports.apply(ctx);
-	assert.equal(registrations.length, 2, 'панель + страница');
+	assert.equal(registrations.length, 3, 'панель + страница + кнопка скачивания');
 
 	const row = registrations.find((r) => r.name === 'sidebar.panellist');
 	const main = registrations.find((r) => r.name === 'main');
-	assert.ok(row && main, 'регистрируются оба слота');
+	const download = registrations.find((r) => r.name === 'deliverables.file.actions');
+	assert.ok(row && main && download, 'регистрируются все три слота');
 	assert.equal(row.id, exports.PANEL_ID);
 	assert.equal(row.order, 20, 'после штатных Plugins(0)/Automation tasks(10), перед More');
 	assert.equal(typeof row.label(), 'string');
 	assert.equal(main.key, exports.PANEL_ID, 'ключ страницы = id панели');
 	const injected = main.inject();
 	assert.ok(injected && Object.keys(injected).length === 0, 'страница без внешних пропсов');
+	assert.equal(download.id, 'agctl-workspace-console-download');
+});
+
+test('agctlDownloadUrl — путь карточки в URL скачивания, чужие пути мимо', () => {
+	const { exports } = loadModule();
+	const url = exports.agctlDownloadUrl;
+	assert.equal(
+		url('/workspace/Презенталыч/presentation/Pro_sebya.pptx'),
+		'/api/projects/' + encodeURIComponent('Презенталыч') + '/file?path=' + encodeURIComponent('presentation/Pro_sebya.pptx'),
+	);
+	assert.equal(url('/workspace/1/plan.json'), '/api/projects/1/file?path=plan.json');
+	// вложенный файл воркспейса — валиден (b/c внутри воркспейса a)
+	assert.equal(url('/workspace/a/b/c'), '/api/projects/a/file?path=' + encodeURIComponent('b/c'));
+	// дефолтный /workspace и чужие корни — не agctl-проекты
+	assert.equal(url('/workspace'), null);
+	assert.equal(url('/other/x'), null);
+	assert.equal(url(undefined), null);
 });
 
 test('каталог группируется по секциям', () => {
