@@ -379,3 +379,44 @@ func TestAdminActivity(t *testing.T) {
 		t.Fatalf("statuses пустой: %s", body)
 	}
 }
+
+// TestAdminSessionsAll — «вся траектория»: сессии всех пользователей одним
+// списком с userId; только админ.
+func TestAdminSessionsAll(t *testing.T) {
+	env := newTestEnv(t, 2)
+	env.register(env.admin, "anna", "secret1")
+	user := env.newClient()
+	env.register(user, "boris", "secret2")
+	// u2 (anna? нет: admin=u1, boris=u2) — boris'а сессии:
+	root2 := filepath.Join(env.home, "chats", "u2", "dsh-home", "sessions", "--workspace--", "session-boris")
+	if err := os.MkdirAll(root2, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root2, "session.v4.jsonl.zstd"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// u1 — сессия админа
+	root1 := filepath.Join(env.home, "chats", "u1", "dsh-home", "sessions", "--workspace-1--", "session-anna")
+	if err := os.MkdirAll(root1, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root1, "session.v4.jsonl.zstd"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// не-админ получает 403
+	if code, _ := env.do(user, "GET", "/api/admin/sessions", nil); code != 403 {
+		t.Fatalf("user all-sessions: %d, ждём 403", code)
+	}
+	// админ видит сессии обоих пользователей с userId
+	code, body := env.do(env.admin, "GET", "/api/admin/sessions", nil)
+	if code != 200 {
+		t.Fatalf("all sessions: %d %s", code, body)
+	}
+	if !contains(body, `"userId":1`) || !contains(body, `"userId":2`) {
+		t.Fatalf("userId не вернулся: %s", body)
+	}
+	if !contains(body, "session-anna") || !contains(body, "session-boris") {
+		t.Fatalf("сессии обоих пользователей не найдены: %s", body)
+	}
+}

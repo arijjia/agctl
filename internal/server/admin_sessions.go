@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,12 @@ type SessionInfo struct {
 	SizeBytes int64  `json:"sizeBytes"`
 	Modified  string `json:"modified"`
 	HasTrace  bool   `json:"hasTrace"` // есть session.v4.jsonl.zstd
+}
+
+// SessionRowAll — сессия в общем списке админки: + владелец.
+type SessionRowAll struct {
+	SessionInfo
+	UserID int64 `json:"userId"`
 }
 
 const (
@@ -67,12 +74,17 @@ func (s *Server) handleAdminUserSessions(w http.ResponseWriter, r *http.Request,
 		writeErr(w, http.StatusBadRequest, "неверный id пользователя")
 		return
 	}
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": s.userSessionInfos(userID)})
+}
+
+// userSessionInfos — сессии одного пользователя из его персонального тома.
+// Том пустой/не создан — пустой список.
+func (s *Server) userSessionInfos(userID int64) []SessionInfo {
 	root := userSessionsRoot(s.cfg.Home, userID)
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		// Нет сессий (том пуст или runtime ещё не поднимался) — пустой список.
-		writeJSON(w, http.StatusOK, map[string]any{"sessions": []SessionInfo{}})
-		return
+		return []SessionInfo{}
 	}
 	out := []SessionInfo{}
 	for _, ws := range entries {
@@ -110,6 +122,43 @@ func (s *Server) handleAdminUserSessions(w http.ResponseWriter, r *http.Request,
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].Modified > out[j].Modified
 	})
+	return out
+}
+
+// maxAllSessions — верхняя граница общего списка сессий: админ-запрос не
+// должен стать веерной нагрузкой на диск.
+const maxAllSessions = 1000
+
+// handleAdminSessions — GET /api/admin/sessions: сессии ВСЕХ пользователей
+// одним списком (вкладка «Траектории»: «вся траектория» без ввода id).
+// Отсортировано по свежести, ограничено maxAllSessions.
+func (s *Server) handleAdminSessions(w http.ResponseWriter, r *http.Request, _ identity) {
+	chats := filepath.Join(s.cfg.Home, "chats")
+	users, err := os.ReadDir(chats)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"sessions": []SessionRowAll{}})
+		return
+	}
+	out := []SessionRowAll{}
+	for _, u := range users {
+		if !u.IsDir() || !strings.HasPrefix(u.Name(), "u") {
+			continue
+		}
+		uid, err := strconv.ParseInt(strings.TrimPrefix(u.Name(), "u"), 10, 64)
+		if err != nil || uid <= 0 {
+			continue
+		}
+		for _, info := range s.userSessionInfos(uid) {
+			out = append(out, SessionRowAll{SessionInfo: info, UserID: uid})
+		}
+		if len(out) >= maxAllSessions {
+			break
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Modified > out[j].Modified })
+	if len(out) > maxAllSessions {
+		out = out[:maxAllSessions]
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": out})
 }
 

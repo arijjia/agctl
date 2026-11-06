@@ -319,6 +319,8 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("PUT /api/admin/quotas", s.requireAdmin(s.handleAdminQuotaPut))
 	mux.HandleFunc("DELETE /api/admin/quotas/{id}", s.requireAdmin(s.handleAdminQuotaDelete))
 	mux.HandleFunc("GET /api/admin/users/{id}/sessions", s.requireAdmin(s.handleAdminUserSessions))
+	// «Вся траектория» одним списком (без ввода id пользователя).
+	mux.HandleFunc("GET /api/admin/sessions", s.requireAdmin(s.handleAdminSessions))
 	mux.HandleFunc("GET /api/admin/users/{id}/sessions/{workspace}/{session}", s.requireAdmin(s.handleAdminUserSessionTrace))
 	// /map — карта системы за сессией; росток будущей админ-панели (1.md).
 	mux.HandleFunc("GET /map", s.requireUser(s.handleMapIndex))

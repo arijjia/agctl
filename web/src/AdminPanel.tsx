@@ -54,7 +54,7 @@ type RequestRow = {
   bytesOut: number;
 };
 
-type SessionRow = { workspace: string; id: string; sizeBytes: number; modified: string; hasTrace: boolean };
+type SessionRow = { workspace: string; id: string; sizeBytes: number; modified: string; hasTrace: boolean; userId?: number };
 
 type QuotaRow = {
   id: number;
@@ -246,7 +246,7 @@ function UsersTab() {
   }, [withSizes]);
   useEffect(load, [load]);
   const filtered = rows.filter(
-    (u) => matches(u.login, search) && matches(u.id, search) && (!role || u.role === role),
+    (u) => (matches(u.login, search) || matches(u.id, search) || matches(u.role, search)) && (!role || u.role === role),
   );
   return (
     <div>
@@ -324,7 +324,7 @@ function ContainersTab() {
   };
   const fetchLogs = useCallback(() => admin.containerLogs(logsFor, 300), [logsFor]);
   const filtered = rows.filter(
-    (c) => matches(c.name, search) && matches(c.image, search) && matches(c.userId, search) && (!state || c.state === state),
+    (c) => (matches(c.name, search) || matches(c.image, search) || matches(c.userId, search)) && (!state || c.state === state),
   );
   return (
     <div>
@@ -391,9 +391,7 @@ function RequestsTab() {
   const methods = useMemo(() => [...new Set(rows.map((r) => r.method))].sort(), [rows]);
   const filtered = rows.filter(
     (r0) =>
-      matches(r0.login, search) &&
-      matches(r0.path, search) &&
-      matches(r0.status, search) &&
+      (matches(r0.login, search) || matches(r0.method, search) || matches(r0.path, search) || matches(r0.status, search)) &&
       (!method || r0.method === method) &&
       (!status || String(r0.status)[0] === status || String(r0.status) === status),
   );
@@ -505,7 +503,6 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 function TracesTab() {
-  const [userId, setUserId] = useState("");
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [events, setEvents] = useState<any[] | null>(null);
   const [cur, setCur] = useState("");
@@ -514,23 +511,23 @@ function TracesTab() {
   const [evType, setEvType] = useState("");
   const [evSearch, setEvSearch] = useState("");
   const [copied, setCopied] = useState(false);
-  const loadSessions = () => {
-    const uid = Number(userId);
-    if (!uid) { setErr("укажите id пользователя"); return; }
+  const [curUser, setCurUser] = useState(0); // владелец открытой траектории
+  const loadSessions = useCallback(() => {
     setErr("");
     setEvents(null);
-    admin.sessions(uid).then((r) => setSessions(r.sessions || [])).catch((e) => setErr(e.message));
-  };
+    admin.sessionsAll().then((r) => setSessions(r.sessions || [])).catch((e) => setErr(e.message));
+  }, []);
+  useEffect(loadSessions, [loadSessions]);
   const openTrace = (s: SessionRow) => {
     setErr("");
     setEvType("");
     setEvSearch("");
-    admin.trace(Number(userId), s.workspace, s.id)
-      .then((r) => { setEvents(r.events || []); setCur(`${s.workspace}/${s.id}`); })
+    admin.trace(Number(s.userId), s.workspace, s.id)
+      .then((r) => { setEvents(r.events || []); setCur(`${s.userId}/${s.workspace}/${s.id}`); setCurUser(Number(s.userId)); })
       .catch((e) => setErr(e.message));
   };
   const filteredSessions = sessions.filter(
-    (s) => matches(s.workspace, sessionSearch) && matches(s.id, sessionSearch),
+    (s) => matches(s.workspace, sessionSearch) || matches(s.id, sessionSearch) || matches(s.userId, sessionSearch),
   );
   const evTypes = useMemo(() => [...new Set((events || []).map((e) => e.type || "?"))].sort(), [events]);
   const filteredEvents = useMemo(
@@ -551,16 +548,16 @@ function TracesTab() {
   };
   return (
     <div className="traces-wrap">
-      <TableToolbar search={sessionSearch} onSearch={setSessionSearch} placeholder="workspace, id сессии…" shown={filteredSessions.length} total={sessions.length}>
-        <input placeholder="id пользователя" value={userId} onChange={(e) => setUserId(e.target.value)} style={{ width: 120 }} />
-        <button className="ghost small" onClick={loadSessions}>Сессии</button>
+      <TableToolbar search={sessionSearch} onSearch={setSessionSearch} placeholder="пользователь, workspace, сессия…" shown={filteredSessions.length} total={sessions.length}>
+        <button className="ghost small" onClick={loadSessions}>Обновить</button>
       </TableToolbar>
       <Err msg={err} />
       <table className="admin-table">
-        <thead><tr><th>Проект (workspace)</th><th>Сессия</th><th>Размер</th><th>Изменена</th><th></th></tr></thead>
+        <thead><tr><th>Пользователь</th><th>Проект (workspace)</th><th>Сессия</th><th>Размер</th><th>Изменена</th><th></th></tr></thead>
         <tbody>
           {filteredSessions.map((s) => (
-            <tr key={s.workspace + s.id}>
+            <tr key={s.userId + "/" + s.workspace + s.id}>
+              <td>{s.userId}</td>
               <td className="mono small">{s.workspace}</td>
               <td className="mono small">{s.id}</td>
               <td>{fmtBytes(s.sizeBytes)}</td>
@@ -568,7 +565,7 @@ function TracesTab() {
               <td>{s.hasTrace && <button className="ghost small" onClick={() => openTrace(s)}>Траектория</button>}</td>
             </tr>
           ))}
-          {!filteredSessions.length && <tr><td colSpan={5} className="muted">нет сессий (укажите id и нажмите «Сессии»)</td></tr>}
+          {!filteredSessions.length && <tr><td colSpan={6} className="muted">нет сессий (нажмите «Обновить»)</td></tr>}
         </tbody>
       </table>
       {events && (
@@ -671,7 +668,7 @@ function QuotasTab() {
     }
   };
   const filtered = rows.filter(
-    (q) => matches(q.subject, search) && matches(q.note, search) && (!scopeFilter || q.scope === scopeFilter),
+    (q) => (matches(q.subject, search) || matches(q.note, search)) && (!scopeFilter || q.scope === scopeFilter),
   );
   return (
     <div>
@@ -750,7 +747,7 @@ function AuditTab() {
   useEffect(load, []);
   const actions = useMemo(() => [...new Set(rows.map((e) => e.action))].filter(Boolean).sort(), [rows]);
   const filtered = rows.filter(
-    (e) => matches(e.actor, search) && matches(e.target, search) && matches(e.details, search) && (!action || e.action === action),
+    (e) => (matches(e.actor, search) || matches(e.action, search) || matches(e.target, search) || matches(e.details, search)) && (!action || e.action === action),
   );
   return (
     <div>
