@@ -260,6 +260,10 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("DELETE /api/projects/{name}/catalog/{id}", s.requireUser(s.handleProjectCatalogDelete))
 	mux.HandleFunc("GET /api/projects/{name}/prompt", s.requireUser(s.handleProjectPromptGet))
 	mux.HandleFunc("PUT /api/projects/{name}/prompt", s.requireUser(s.handleProjectPromptPut))
+	// Файлы воркспейса: список и скачивание (артефакты агента — презентации
+	// и прочее — пользователь забирает напрямую через gateway).
+	mux.HandleFunc("GET /api/projects/{name}/files", s.requireUser(s.handleProjectFilesList))
+	mux.HandleFunc("GET /api/projects/{name}/file", s.requireUser(s.handleProjectFileDownload))
 	mux.HandleFunc("GET /api/projects/{name}/components", s.requireUser(s.handleProjectComponentsGet))
 	mux.HandleFunc("PUT /api/projects/{name}/components", s.requireUser(s.handleProjectComponentsPut))
 	mux.HandleFunc("GET /api/chat/folders", s.requireUser(s.handleChatFoldersGet))

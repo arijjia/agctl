@@ -367,6 +367,50 @@ window.__ModuleLoader__.load({
 					promptCard.append(ta, promptSave);
 					right.appendChild(promptCard);
 
+					// ── Файлы (скачивание артефактов) ──────────────────────────────
+					right.appendChild(el("h3", "margin:14px 0 2px;font-size:12px;font-weight:700", "Файлы"));
+					right.appendChild(el("p", "margin:0 0 6px;font-size:11px;color:var(--dsw-alias-label-tertiary,#888)",
+						"Артефакты агента (презентации, документы): скачать можно напрямую, без превью."));
+					const filesCard = el("div", "wsc-card", null);
+					const filesStatus = el("p", "margin:2px 0;font-size:11px;color:var(--dsw-alias-label-tertiary,#888);min-height:14px", "Читаем файлы…");
+					const filesList = el("div", null, null);
+					const filesRefresh = el("button", "wsc-btn secondary;margin-top:8px", "Обновить файлы");
+					const fmtSize = (n) => !n ? "—" : n < 1024 ? n + " Б" : n < 1048576 ? (n / 1024).toFixed(1) + " КБ" : (n / 1048576).toFixed(1) + " МиБ";
+					const renderFiles = (files) => {
+						filesList.replaceChildren();
+						const entries = (files || []).filter((f) => !f.isDir && f.size > 0);
+						if (!entries.length) {
+							filesList.appendChild(el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888);margin:4px 0",
+								"Файлов пока нет. Попросите агента что-нибудь сделать — результаты появятся здесь."));
+							return;
+						}
+						for (const f of entries) {
+							const row = el("div", "wsc-row");
+							const text = el("div", "min-width:0;flex:1");
+							text.appendChild(el("div", "font-size:12.5px;font-weight:600;overflow-wrap:anywhere", f.path));
+							text.appendChild(el("div", "font-size:11px;color:var(--dsw-alias-label-tertiary,#888)", fmtSize(f.size)));
+							const link = el("a", "wsc-btn secondary;flex:none;text-decoration:none", "Скачать");
+							link.href = "/api/projects/" + encodeURIComponent(state.sel) + "/file?path=" + encodeURIComponent(f.path);
+							link.setAttribute("download", f.path.split("/").pop() || "file");
+							row.append(text, link);
+							filesList.appendChild(row);
+						}
+					};
+					const loadFiles = async () => {
+						filesStatus.textContent = "Читаем файлы…";
+						try {
+							const data = await api("/api/projects/" + encodeURIComponent(state.sel) + "/files");
+							renderFiles(Array.isArray(data.files) ? data.files : []);
+							filesStatus.textContent = "";
+						} catch (err) {
+							filesStatus.textContent = String(err.message || err);
+						}
+					};
+					filesRefresh.addEventListener("click", () => guard(loadFiles()));
+					filesCard.append(filesStatus, filesList, filesRefresh);
+					right.appendChild(filesCard);
+					guard(loadFiles());
+
 					// ── Компоненты ─────────────────────────────────────────────────
 					right.appendChild(el("h3", "margin:14px 0 2px;font-size:12px;font-weight:700", "Компоненты"));
 					const components = Array.isArray(compData.components) ? compData.components : [];

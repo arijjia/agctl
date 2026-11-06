@@ -96,7 +96,7 @@ test("composer hint — штатный locale dsh, не DOM-патч", async () 
 	assert.doesNotMatch(src, /Message or run a task/, "английский текст открытой сессии больше не патчится");
 });
 
-test("role gate: user фиксирует Standard, developer/admin оставляют нативный режим", async () => {
+test("role gate: правая панель у всех ролей; user без терминала/workspace-файлов", async () => {
 	async function check(role, initial) {
 		const exports = await loadClientFactory();
 		let enabled = initial;
@@ -121,6 +121,7 @@ test("role gate: user фиксирует Standard, developer/admin оставл�
 			openRightbar: (track, fullscreen) => layoutCalls.push(["open", track, fullscreen]),
 			closeRightbar: () => layoutCalls.push(["close"]),
 		};
+		const created = [];
 		const ctx = {
 			configForms: { developerTools: preference },
 			get: (name) => name === "layout" ? layout : undefined,
@@ -129,15 +130,31 @@ test("role gate: user фиксирует Standard, developer/admin оставл�
 		const oldFetch = globalThis.fetch;
 		globalThis.fetch = async () => ({ ok: true, json: async () => ({ user: { role } }) });
 		// D8: syncRoleControls снимает pre-paint схлопывание правой колонки
-		// флагом на documentElement — стабилизируем DOM-часть.
+		// флагом на documentElement; ролевой CSS прячется через <style id>.
 		const html = { dataset: {} };
+		const styles = [];
 		const oldDocument = globalThis.document;
-		globalThis.document = { documentElement: html };
+		globalThis.document = {
+			documentElement: html,
+			head: { appendChild() {} },
+			getElementById: (id) => styles.find((s) => s.id === id) || null,
+			createElement: () => {
+				const el = { id: "", textContent: "", removed: false, remove() { el.removed = true; } };
+				created.push(el);
+				return el;
+			},
+		};
 		const oldRAF = globalThis.requestAnimationFrame;
 		globalThis.requestAnimationFrame = (fn) => fn();
 		try {
 			await exports.__testSyncRoleControls(ctx);
-			return { enabled, preference, layoutCalls, setEnabledCalls, readyFlag: html.dataset.agctlDeveloperToolsReady === "1" };
+			const gateStyle = created.find((s) => s.id === "agctl-role-surfaces") || null;
+			return {
+				enabled, preference, layoutCalls, setEnabledCalls,
+				readyFlag: html.dataset.agctlDeveloperToolsReady === "1",
+				hidesTerminalAndFiles: !!(gateStyle && gateStyle.textContent.includes('data-sidebar-right-guide-entry="terminal"')
+					&& gateStyle.textContent.includes('data-sidebar-right-guide-entry="files"')),
+			};
 		} finally {
 			if (oldFetch === undefined) delete globalThis.fetch;
 			else globalThis.fetch = oldFetch;
@@ -149,21 +166,28 @@ test("role gate: user фиксирует Standard, developer/admin оставл�
 	}
 
 	const user = await check("user", true);
-	assert.equal(user.enabled, false, "user получает только Standard");
-	assert.deepEqual(user.layoutCalls, [["close"]], "user right pane закрывается");
-	assert.deepEqual(user.setEnabledCalls, [false], "setEnabled зовётся на preference, не на observable");
-	assert.equal(user.readyFlag, false, "user не снимает pre-paint схлопывание (панели у него нет)");
-	await user.preference.setEnabled(true); // попытка включить toggle в Settings
-	assert.equal(user.enabled, false, "toggle user сразу возвращается в off");
+	assert.equal(user.enabled, true, "user: правая панель доступна (превью файлов живёт в ней)");
+	assert.deepEqual(user.setEnabledCalls.filter((v) => v === false), [],
+		"панель user никогда не выключается принудительно");
+	assert.equal(user.readyFlag, true, "user снимает pre-paint схлопывание правой колонки");
+	assert.deepEqual(user.layoutCalls, [], "right pane не закрывается плагином");
+	assert.equal(user.hidesTerminalAndFiles, true, "user: терминал и workspace-файлы скрыты гард-стилем");
+
+	// выключенный в Settings toggle доводится до включённого (превью важнее)
+	const userOff = await check("user", false);
+	assert.deepEqual(userOff.setEnabledCalls, [true], "панель user включается принудительно");
+	assert.equal(userOff.hidesTerminalAndFiles, true);
+
 	const developer = await check("developer", false);
 	assert.equal(developer.enabled, true);
 	assert.equal(developer.readyFlag, true, "developer снимает pre-paint схлопывание флагом готовности");
-	// D8: панель developer не открываем принудительно — видимость решает
-	// нативный DSH rightbar, иначе пустая колонка мигает до готовности.
 	assert.deepEqual(developer.layoutCalls, [], "developer right pane не трогается из плагина");
+	assert.equal(developer.hidesTerminalAndFiles, false, "developer видит все поверхности");
+
 	const admin = await check("admin", false);
 	assert.equal(admin.enabled, true);
 	assert.deepEqual(admin.layoutCalls, [], "admin right pane не трогается из плагина");
+	assert.equal(admin.hidesTerminalAndFiles, false, "admin видит все поверхности");
 });
 
 // ── D6: пунктирный composer «Выберите воркспейс» ────────────────────────────
@@ -252,7 +276,7 @@ test("D7: пути плагина для user идут с явным agentPreset
 	const src = await readFile(clientPath, "utf8");
 	assert.match(src, /let roleKnown = false;/, "роль фиксируется после ответа /api/me");
 	assert.match(src, /roleKnown = !!\(data && data\.user && data\.user\.role\)/, "roleKnown выставляется вместе с ролью");
-	assert.match(src, /roleKnown && !roleCanUseDevTools \? \{ agentPreset: "danger-full-access" \} : undefined/,
+	assert.match(src, /roleKnown && activeRole === "user" \? \{ agentPreset: "danger-full-access" \} : undefined/,
 		"userSessionPreset задаёт danger-full-access только известной user-роли");
 	assert.match(src, /uiWorkspace\.startSession\(workspace\.workspaceId, userSessionPreset\(\)\)/,
 		"автостарт первой сессии передаёт preset");

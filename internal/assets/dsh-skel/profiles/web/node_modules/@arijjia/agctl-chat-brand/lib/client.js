@@ -176,6 +176,7 @@ window.__ModuleLoader__.load({
 		let brandCtx = null;
 		let roleCanUseDevTools = false;
 		let roleKnown = false;
+		let activeRole = null;
 		let devToolsStop = null;
 		let stuckPickTicks = 0;
 
@@ -421,23 +422,24 @@ window.__ModuleLoader__.load({
 			const response = await fetch("/api/me", { credentials: "include", headers: { Accept: "application/json" } });
 			if (!response.ok) return; // fail closed: pre-paint CSS уже схлопнул dev-поверхности
 			const data = await response.json();
-			roleCanUseDevTools = !!(data && data.user && ["developer", "admin"].includes(data.user.role));
+			// Правая панель теперь у всех ролей: в ней живёт превью deliverables
+			// (файлы, которые агент предъявил в чате — кейс презентаций). Кейс
+			// «юзер не может открыть презентацию» ловился именно здесь.
+			roleCanUseDevTools = !!(data && data.user && data.user.role);
 			roleKnown = !!(data && data.user && data.user.role);
-			// Правой панелью управляет штатный DSH Layout API: обычному user закрываем
-			// (pre-paint CSS схлопнул колонку до этого кадра); developer/admin оставляем
-			// нативное поведение — openRightbar самим не зовём, чтобы не сражаться с
-			// штатным состоянием панели (дефект D8: мигание пустой колонки).
+			const role = data && data.user && data.user.role;
+			activeRole = roleKnown ? role : null;
+			// Роли user в правой панели скрываем «двери» терминала и workspace-
+			// файлов (гайд пустой панели), оставляя превью файлов: терминал —
+			// developer-поверхность. Гардиной служит CSS по data-атрибуту
+			// гайд-капсул (dsh ставит data-sidebar-right-guide-entry = kind).
+			ensureRoleSurfaceStyles(role);
 			const layout = (ctx.get && ctx.get("layout")) || ctx.layout;
-			if (!roleCanUseDevTools && layout && typeof layout.closeRightbar === "function") layout.closeRightbar();
-			// Пользователь может увидеть этот нативный toggle в Settings → General.
-			// Держим его выключенным при любых последующих изменениях, чтобы PTC/
-			// Minimal и правые developer-поверхности оставались только developer/admin.
+			if (layout && typeof layout.closeRightbar === "function" && !roleKnown) layout.closeRightbar();
+			// Нативный toggle в Settings → General остаётся штатным: пользователь
+			// управляет видимостью правой колонки сам.
 			if (!devToolsStop && typeof enabledStore.subscribe === "function") {
-				devToolsStop = enabledStore.subscribe(() => {
-					if (!roleCanUseDevTools && enabledStore.getSnapshot()) {
-						void preference.setEnabled(false).catch((e) => console.warn("[agctl] developer tools gate:", e));
-					}
-				});
+				devToolsStop = enabledStore.subscribe(() => { /* toggle свободен */ });
 				ctx.effect(() => () => {
 					devToolsStop?.();
 					devToolsStop = null;
@@ -454,6 +456,28 @@ window.__ModuleLoader__.load({
 				await new Promise((resolve) => typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => resolve()) : setTimeout(resolve, 0));
 				if (typeof document !== "undefined" && document.documentElement) document.documentElement.dataset.agctlDeveloperToolsReady = "1";
 			}
+		}
+
+		// ensureRoleSurfaceStyles — ролевой гард поверхностей правой панели.
+		// user: без терминала и workspace-файлов (их «двери» в гайде пустой
+		// панели скрыты); developer/admin — всё штатное.
+		function ensureRoleSurfaceStyles(role) {
+			if (typeof document === "undefined") return;
+			const id = "agctl-role-surfaces";
+			let style = document.getElementById(id);
+			if (role !== "user") {
+				if (style) style.remove();
+				return;
+			}
+			if (!style) {
+				style = document.createElement("style");
+				style.id = id;
+				document.head.appendChild(style);
+			}
+			style.textContent = `
+				[data-sidebar-right-guide-entry="terminal"],
+				[data-sidebar-right-guide-entry="files"] { display: none !important; }
+			`;
 		}
 
 		// ── первая сессия и застрявший выбор воркспейса (дефект D6) ────────────
@@ -480,7 +504,9 @@ window.__ModuleLoader__.load({
 		// (developer/admin управляют режимом сами). Роль известна после
 		// syncRoleControls; до ответа /api/me считаем пресет не заданным.
 		function userSessionPreset() {
-			return roleKnown && !roleCanUseDevTools ? { agentPreset: "danger-full-access" } : undefined;
+			// D7: user получает danger-full-access явно (reuse пустых blank'ов
+			// сохраняет их исходный пресет). Роль известна после /api/me.
+			return roleKnown && activeRole === "user" ? { agentPreset: "danger-full-access" } : undefined;
 		}
 
 		function heroState() {
