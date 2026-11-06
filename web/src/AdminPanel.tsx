@@ -54,7 +54,7 @@ type RequestRow = {
   bytesOut: number;
 };
 
-type SessionRow = { workspace: string; id: string; sizeBytes: number; modified: string; hasTrace: boolean; userId?: number };
+type SessionRow = { workspace: string; id: string; sizeBytes: number; modified: string; hasTrace: boolean; userId?: number; login?: string };
 
 type QuotaRow = {
   id: number;
@@ -527,7 +527,7 @@ function TracesTab() {
       .catch((e) => setErr(e.message));
   };
   const filteredSessions = sessions.filter(
-    (s) => matches(s.workspace, sessionSearch) || matches(s.id, sessionSearch) || matches(s.userId, sessionSearch),
+    (s) => matches(s.workspace, sessionSearch) || matches(s.id, sessionSearch) || matches(s.userId, sessionSearch) || matches(s.login, sessionSearch),
   );
   const evTypes = useMemo(() => [...new Set((events || []).map((e) => e.type || "?"))].sort(), [events]);
   const filteredEvents = useMemo(
@@ -557,7 +557,7 @@ function TracesTab() {
         <tbody>
           {filteredSessions.map((s) => (
             <tr key={s.userId + "/" + s.workspace + s.id}>
-              <td>{s.userId}</td>
+              <td>{s.login ? `${s.login} (#${s.userId})` : `#${s.userId}`}</td>
               <td className="mono small">{s.workspace}</td>
               <td className="mono small">{s.id}</td>
               <td>{fmtBytes(s.sizeBytes)}</td>

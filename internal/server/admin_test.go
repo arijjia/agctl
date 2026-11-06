@@ -419,4 +419,7 @@ func TestAdminSessionsAll(t *testing.T) {
 	if !contains(body, "session-anna") || !contains(body, "session-boris") {
 		t.Fatalf("сессии обоих пользователей не найдены: %s", body)
 	}
+	if !contains(body, `"login":"anna"`) || !contains(body, `"login":"boris"`) {
+		t.Fatalf("логины не вернулись: %s", body)
+	}
 }

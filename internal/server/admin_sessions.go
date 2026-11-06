@@ -31,10 +31,11 @@ type SessionInfo struct {
 	HasTrace  bool   `json:"hasTrace"` // есть session.v4.jsonl.zstd
 }
 
-// SessionRowAll — сессия в общем списке админки: + владелец.
+// SessionRowAll — сессия в общем списке админки: + владелец и его логин.
 type SessionRowAll struct {
 	SessionInfo
-	UserID int64 `json:"userId"`
+	UserID int64  `json:"userId"`
+	Login  string `json:"login,omitempty"`
 }
 
 const (
@@ -139,6 +140,12 @@ func (s *Server) handleAdminSessions(w http.ResponseWriter, r *http.Request, _ i
 		writeJSON(w, http.StatusOK, map[string]any{"sessions": []SessionRowAll{}})
 		return
 	}
+	logins := map[int64]string{}
+	if userList, err := s.db.UsersList(); err == nil {
+		for _, u := range userList {
+			logins[u.ID] = u.Login
+		}
+	}
 	out := []SessionRowAll{}
 	for _, u := range users {
 		if !u.IsDir() || !strings.HasPrefix(u.Name(), "u") {
@@ -149,7 +156,7 @@ func (s *Server) handleAdminSessions(w http.ResponseWriter, r *http.Request, _ i
 			continue
 		}
 		for _, info := range s.userSessionInfos(uid) {
-			out = append(out, SessionRowAll{SessionInfo: info, UserID: uid})
+			out = append(out, SessionRowAll{SessionInfo: info, UserID: uid, Login: logins[uid]})
 		}
 		if len(out) >= maxAllSessions {
 			break
