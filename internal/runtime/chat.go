@@ -26,6 +26,10 @@ type ChatSpec struct {
 	// DefaultFullAccess — роль user: пресет разрешений danger-full-access
 	// назначается дефолтом свежих сессий (пресет-селектор user не показывается).
 	DefaultFullAccess bool
+	// DevEnv — переменные окружения контейнера (KEY=VALUE) для ролей
+	// developer/admin: креды доменных скриптов (GitLab/Jira) и оверрайды LLM
+	// из хостового .env. Роль user их не получает.
+	DevEnv []string
 }
 
 // ChatHandle describes one running runtime generation. Endpoint is private to

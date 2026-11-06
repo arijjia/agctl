@@ -165,6 +165,7 @@ func cmdServe(args []string) {
 	addr := fsSet.String("addr", envOr("AGCTL_ADDR", firstNonEmpty(cfg.Serve.Addr, "127.0.0.1:8929")), "адрес UI/API")
 	image := fsSet.String("image", firstNonEmpty(cfg.Serve.Image, "agctl-dsh:0.2.2"), "тег образа agctl-dsh")
 	devImages := fsSet.String("dev-images", envOr("AGCTL_DEV_IMAGES", cfg.Serve.DevImages), "каталог образов лаунчера developer'а через запятую (реестр Nexus и пр.); пусто = только --image")
+	devEnv := fsSet.String("dev-env", envOr("AGCTL_DEV_ENV", cfg.Serve.DevEnv), "имена переменных окружения хоста, пробрасываемые в контейнер developer'а через запятую (значения из .env); пусто = не пробрасывать")
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
 	experimentalLocalBridge := fsSet.Bool("experimental-local-bridge", false, "experimental local connector pairing API (requires trusted TLS ingress and --secure-cookies)")
@@ -229,6 +230,7 @@ func cmdServe(args []string) {
 		NanoCPUs:                int64(*cpus * 1e9),
 		Image:                   *image,
 		DevImages:               splitCSV(*devImages),
+		DevEnv:                  splitCSV(*devEnv),
 		BinDir:                  firstNonEmpty(*binDir, "dist"),
 		Version:                 version,
 		SecureCookies:           *secureCookies,

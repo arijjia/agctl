@@ -255,9 +255,10 @@ type StartResult struct {
 // SSH-канал (ключ передаётся env в контейнер, порт 2222 публикуется на loopback).
 type StartOpts struct {
 	HostPort    int
-	SSHPubKey   string // пусто = sshd не поднимаем
-	SSHHostPort int    // 0 = не публиковать (осмысленно только с SSHPubKey)
-	Image       string // желаемый образ (лаунчер developer'а); пусто = rt.cfg.Image
+	SSHPubKey   string   // пусто = sshd не поднимаем
+	SSHHostPort int      // 0 = не публиковать (осмысленно только с SSHPubKey)
+	Image       string   // желаемый образ (лаунчер developer'а); пусто = rt.cfg.Image
+	DevEnv      []string // доменные переменные контейнера developer'а (KEY=VALUE); пусто = не добавлять
 }
 
 // Start создаёт и запускает контейнер воркспейса с заданными портами/ключом.
@@ -319,6 +320,8 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		seenEnv[extra.KeyEnv()] = true
 		env = append(env, extra.KeyEnv()+"="+extra.APIKey)
 	}
+	// Доменные переменные developer'а (GitLab/Jira/LLM-оверрайды из .env).
+	env = append(env, opts.DevEnv...)
 	portBindings := network.PortMap{
 		network.MustParsePort("3080/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: fmt.Sprint(opts.HostPort)}},
 	}

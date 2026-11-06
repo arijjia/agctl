@@ -613,6 +613,9 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 		// Роль user: агент всегда в Full Access по умолчанию (пресет-селектор
 		// пользователю не показывается). Ошибка чтения роли -> дефолт не меняем.
 		DefaultFullAccess: s.userRole(userID) == "user",
+		// DevEnv: доменные креды и LLM-оверрайды из хостового .env — только
+		// роли developer/admin (разработка доменных скриптов).
+		DevEnv: s.developerEnv(userID),
 	}
 	handle, err := s.chatProvider.EnsureChat(ctx, spec)
 	if err != nil {
@@ -636,6 +639,27 @@ func (s *Server) userRole(userID int64) string {
 		return ""
 	}
 	return u.Role
+}
+
+// developerEnv — доменные переменные (Config.DevEnv: имена) с их значениями
+// из окружения процесса serve (в него .env экспортирует make). Незаданные
+// имена пропускаются; значения никуда не логируются. Роли developer/admin —
+// доменные скрипты и оверрайды LLM; user доменное окружение не получает.
+func (s *Server) developerEnv(userID int64) []string {
+	role := s.userRole(userID)
+	if role != "developer" && role != "admin" {
+		return nil
+	}
+	out := make([]string, 0, len(s.cfg.DevEnv))
+	for _, name := range s.cfg.DevEnv {
+		if value, ok := os.LookupEnv(strings.TrimSpace(name)); ok && strings.TrimSpace(value) != "" {
+			out = append(out, strings.TrimSpace(name)+"="+value)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // developerSSHPubKey — публичный SSH-ключ разработчика (роли developer/admin),

@@ -22,6 +22,7 @@ type userConfig struct {
 		Addr        string  `yaml:"addr"`
 		Image       string  `yaml:"image"`
 		DevImages   string  `yaml:"dev_images"`
+		DevEnv      string  `yaml:"dev_env"`
 		ChatTTLMin  int     `yaml:"chat_ttl_min"`
 		MemGB       float64 `yaml:"mem_gb"`
 		CPUs        float64 `yaml:"cpus"`
