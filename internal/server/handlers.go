@@ -132,8 +132,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "неверный JSON")
 		return
 	}
-	if !s.authN.AllowLogin(req.Login) {
-		writeErr(w, http.StatusTooManyRequests, "слишком много попыток — подождите 5 минут")
+	if lock := s.authN.LockedFor(req.Login); lock > 0 {
+		// Дефект D1: при блокировке клиент должен понимать, когда она снимется.
+		secs := int((lock + time.Second - 1) / time.Second)
+		w.Header().Set("Retry-After", strconv.Itoa(secs))
+		writeErr(w, http.StatusTooManyRequests, fmt.Sprintf(
+			"слишком много попыток — вход заблокирован, осталось %d мин %d с", secs/60, secs%60))
 		return
 	}
 	u, err := s.db.UserByLogin(strings.TrimSpace(req.Login))

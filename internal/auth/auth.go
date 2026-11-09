@@ -144,16 +144,27 @@ const lockDuration = 5 * time.Minute
 
 // AllowLogin — true, если логину можно пытаться войти.
 func (s *Service) AllowLogin(login string) bool {
+	return s.LockedFor(login) == 0
+}
+
+// LockedFor — остаток блокировки логина (0 — не заблокирован). Дефект D1:
+// клиенту нужен остаток времени, поэтому таймер теперь читается напрямую,
+// а не только булевым AllowLogin.
+func (s *Service) LockedFor(login string) time.Duration {
 	v, ok := s.failed.Load(login)
 	if !ok {
-		return true
+		return 0
 	}
 	a := v.(attempt)
-	if time.Now().After(a.until) {
-		s.failed.Delete(login)
-		return true
+	if a.n < maxFails {
+		return 0 // счётчик не исчерпан — блокировки нет, «до» лишь окно счёта
 	}
-	return a.n < maxFails
+	d := time.Until(a.until)
+	if d <= 0 {
+		s.failed.Delete(login)
+		return 0
+	}
+	return d
 }
 
 // FailLogin фиксирует неудачную попытку.
