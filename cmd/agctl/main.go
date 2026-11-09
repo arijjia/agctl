@@ -133,6 +133,15 @@ func requireHome(dir string) (string, error) {
 	return filepath.Abs(dir)
 }
 
+// regLimitValue — флаг 0 = явное отключение защиты; в Config это
+// отрицательное значение (ноль в Config — платформенный дефолт 30/мин).
+func regLimitValue(v int) int {
+	if v == 0 {
+		return -1
+	}
+	return v
+}
+
 // cmdServe — подкоманда serve: разрешает профиль организации, собирает
 // конфигурацию из флагов/среды/профиля, открывает дом (мастер-ключ + SQLite),
 // инициализирует LLM-провайдера по умолчанию, строит server.Server и слушает
@@ -170,6 +179,7 @@ func cmdServe(args []string) {
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
 	experimentalLocalBridge := fsSet.Bool("experimental-local-bridge", false, "experimental local connector pairing API (requires trusted TLS ingress and --secure-cookies)")
 	chatTTLMin := fsSet.Int("chat-ttl-min", nonZeroOr(cfg.Serve.ChatTTLMin, 60), "минуты простоя персонального контейнера до сна (том пользователя сохраняется)")
+	registerPerMin := fsSet.Int("register-per-min", nonZeroOr(cfg.Serve.RegisterPerMin, 30), "лимит регистраций с одного IP в минуту; 0 — отключить защиту (нагрузочные прогоны)")
 	corsOrigins := fsSet.String("cors-origin", envOr("AGCTL_CORS_ORIGINS", cfg.Serve.CORSOrigins), "точные origins через запятую, которым разрешён кросс-доменный /api (кабинет-плагин dsh web); пусто = CORS выключен")
 	tier0 := fsSet.Bool("tier0", true, "поднимать общий чат (Tier 0) и отдавать корень платформы в него")
 	memGB := fsSet.Float64("mem-gb", nonZeroOr(cfg.Serve.MemGB, 2), "лимит памяти контейнера, ГБ")
@@ -238,6 +248,7 @@ func cmdServe(args []string) {
 		CORSOrigins:             splitCSV(*corsOrigins),
 		Tier0:                   *tier0,
 		ChatTTL:                 time.Duration(*chatTTLMin) * time.Minute,
+		RegisterPerMinute:       regLimitValue(*registerPerMin),
 		DefaultLLM:              defaultLLM,
 		Profile:                 prof,
 	})

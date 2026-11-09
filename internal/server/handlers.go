@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -58,10 +59,34 @@ func (c credsReq) validate() error {
 	return nil
 }
 
+// requestIP — адрес клиента для лимита регистраций: за доверенным
+// ingress берём первый hop X-Forwarded-For, иначе RemoteAddr без порта.
+func requestIP(r *http.Request) string {
+	if ff := r.Header.Get("X-Forwarded-For"); ff != "" {
+		if first := strings.TrimSpace(strings.Split(ff, ",")[0]); first != "" {
+			return first
+		}
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
+
 // handleRegister — POST /api/register: создание учётки; первый пользователь
 // платформы становится admin, остальные user. Пароль хешируется argon2id,
 // факт регистрации и роль пишутся в audit, сессия ставится сразу.
+// Частота регистраций с одного адреса ограничена (дефект D3).
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if s.regLimit != nil {
+		if ok, retryAfter := s.regLimit.Allow(requestIP(r)); !ok {
+			secs := int((retryAfter + time.Second - 1) / time.Second)
+			w.Header().Set("Retry-After", strconv.Itoa(secs))
+			writeErr(w, http.StatusTooManyRequests,
+				"слишком много регистраций с этого адреса — повторите через "+strconv.Itoa(secs)+" с")
+			return
+		}
+	}
 	var req credsReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "неверный JSON")

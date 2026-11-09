@@ -34,6 +34,10 @@ import (
 )
 
 // Config — параметры сервера.
+// defaultRegisterPerMinute — безопасный дефолт лимита регистраций с одного
+// адреса (дефект D3): ручной burst-тест создал 25 учётных записей за 0,5 с.
+const defaultRegisterPerMinute = 30
+
 type Config struct {
 	Home                    string // $AGCTL_HOME
 	Addr                    string // слушающий адрес основного UI/API
@@ -49,6 +53,7 @@ type Config struct {
 	CORSOrigins             []string           // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
 	Tier0                   bool               // корень платформы ведёт в персональный чат (/chat/)
 	ChatTTL                 time.Duration      // idle TTL персонального runtime (по умолчанию 60 мин)
+	RegisterPerMinute       int                // лимит регистраций с одного IP за минуту: 0 — дефолт платформы (30), <0 — отключить (нагрузочные прогоны)
 	RequireApproval         bool               // legacy workspace flag; create endpoint is tombstoned in v3
 	ExperimentalLocalBridge bool               // opt-in pairing/status/revoke API for local connector
 	DefaultLLM              provision.Provider // платформенный провайдер чата по умолчанию (из профиля/env); личный секрет пользователя его перекрывает
@@ -67,12 +72,13 @@ type RuntimeIface interface {
 
 // Server — агрегат всех зависимостей.
 type Server struct {
-	db    *store.DB
-	sec   *secrets.Manager
-	authN *auth.Service
-	rt    RuntimeIface
-	cfg   Config
-	brand profile.View // профиль организации: брендинг шеллов, логин-страницы, LLM-дефолты
+	db       *store.DB
+	sec      *secrets.Manager
+	authN    *auth.Service
+	regLimit *auth.RegisterLimiter // D3: лимит регистраций с одного IP (nil = отключён)
+	rt       RuntimeIface
+	cfg      Config
+	brand    profile.View // профиль организации: брендинг шеллов, логин-страницы, LLM-дефолты
 
 	provMu sync.Mutex // один provision за раз упрощает порты/гонки
 	tokMu  sync.Mutex // кэш boot-токенов dsh web по воркспейсам
@@ -152,6 +158,15 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 	}
 	if s.cfg.MaxPerUser <= 0 {
 		s.cfg.MaxPerUser = 3
+	}
+	// D3 (дефект «25 аккаунтов за 0,5 с»): лимит регистраций безопасен по
+	// умолчанию — 30 с одного IP в минуту. Отрицательное значение отключает
+	// защиту (нагрузочные прогоны), положительное задаёт собственный лимит.
+	switch {
+	case s.cfg.RegisterPerMinute > 0:
+		s.regLimit = auth.NewRegisterLimiter(s.cfg.RegisterPerMinute, time.Minute)
+	case s.cfg.RegisterPerMinute == 0:
+		s.regLimit = auth.NewRegisterLimiter(defaultRegisterPerMinute, time.Minute)
 	}
 	s.authN = &auth.Service{
 		SetSession: func(token string, userID int64, exp time.Time) error {
