@@ -121,7 +121,7 @@ func (s *Server) handleProjectFileDownload(w http.ResponseWriter, r *http.Reques
 		writeErr(w, http.StatusBadRequest, "путь вне воркспейса")
 		return
 	}
-	info, err := os.Stat(target) // Stat: скачивание через симлинк не разрешаем
+	info, err := os.Lstat(target) // Lstat: симлинк не разыменовывается — скачать через ссылку файл вне тома нельзя (дефект D9)
 	if err != nil {
 		if os.IsNotExist(err) {
 			writeErr(w, http.StatusNotFound, "файл не найден")
@@ -131,7 +131,7 @@ func (s *Server) handleProjectFileDownload(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if !info.Mode().IsRegular() {
-		writeErr(w, http.StatusBadRequest, "это не регулярный файл")
+		writeErr(w, http.StatusBadRequest, "это не регулярный файл (симлинки и спецфайлы не скачиваются)")
 		return
 	}
 	if info.Size() > maxFileDownload {
