@@ -84,14 +84,16 @@ type Server struct {
 	tokMu  sync.Mutex // кэш boot-токенов dsh web по воркспейсам
 	tokens map[string]string
 
-	chatMu       sync.Mutex             // персональные per-user runtime: ленивое создание и TTL
-	chats        map[int64]*chatRuntime // userID → живой runtime handle
-	chatLocks    map[int64]*sync.Mutex  // сериализация первого старта per-user
-	chatProvider agctlrt.ChatProvider   // Docker now; K8s adapter can return a Service DNS endpoint
-	localBridge  *bridge.Manager        // experimental outbound local-backend connector, opt-in routes only
-	requestMu    sync.Mutex             // не допускать двойной approve одной заявки
-	startedAt    time.Time              // время старта серва (сводка админки)
-	proxyAuditN  atomic.Int64           // счётчик записей журнала шлюза для периодической обрезки
+	chatMu        sync.Mutex                   // персональные per-user runtime: ленивое создание и TTL
+	chats         map[int64]*chatRuntime       // userID → живой runtime handle
+	chatLocks     map[int64]*sync.Mutex        // сериализация первого старта per-user
+	chatProvider  agctlrt.ChatProvider         // Docker now; K8s adapter can return a Service DNS endpoint
+	localBridge   *bridge.Manager              // experimental outbound local-backend connector, opt-in routes only
+	requestMu     sync.Mutex                   // не допускать двойной approve одной заявки
+	autosaveMu    sync.Mutex                   // серия неудач autosave: backoff + repair-pass
+	autosaveFails map[string]autosaveFailState // "userID/project" → счётчик/пауза
+	startedAt     time.Time                    // время старта серва (сводка админки)
+	proxyAuditN   atomic.Int64                 // счётчик записей журнала шлюза для периодической обрезки
 
 }
 
