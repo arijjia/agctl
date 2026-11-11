@@ -27,3 +27,17 @@ profile-fetch:
 	else \
 	  echo "✗ профиль не найден: $(PROFILE_REPO) (укажи PROFILE_REPO=… — путь или git-URL)"; exit 1; fi
 	@test -f "$(PROFILES_DIR)/$(PROFILE_NAME)/profile.yaml" && echo "  профиль: $(PROFILES_DIR)/$(PROFILE_NAME)/profile.yaml (make up PROFILE=$(PROFILE_NAME))"
+
+## profiles: какие профили организаций доступны для запуска (make up PROFILE=<id>)
+.PHONY: profiles
+profiles:
+	@echo "Профили (make up PROFILE=<id>; выбор по умолчанию сейчас: $(PROFILE)):"
+	@echo "  agctl  — нейтральный, встроен в бинарь (без организации и LLM-дефолтов)"
+	@for f in $(PROFILES_DIR)/*/profile.yaml; do \
+	  [ -f "$$f" ] || continue; \
+	  id=$$(basename $$(dirname "$$f")); \
+	  name=$$(sed -n 's/^  name: *//p' "$$f" | head -1); \
+	  tag=$$(sed -n 's/^  tagline: *//p' "$$f" | head -1); \
+	  echo "  $$id  — $$name · $$tag"; \
+	done
+	@[ -n "$(PROFILE_DIRS)" ] || echo "  (профилей организаций нет — make profile-fetch PROFILE_REPO=<git-url или путь>)"

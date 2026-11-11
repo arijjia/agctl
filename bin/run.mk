@@ -34,6 +34,7 @@ CORP_LLM_ARGS = $(if $(CORP_LLM_BASE_URL),--llm-base-url "$(CORP_LLM_BASE_URL)")
 
 # profile_check: подсказка, если выбранный профиль не найден (встроен только agctl)
 define profile_check
+@echo "профиль: $(PROFILE) (доступны: agctl $(PROFILE_DIRS) — make $1 PROFILE=<id>, список: make profiles)"
 @if [ "$(PROFILE)" != "agctl" ] && [ ! -f "profiles/$(PROFILE)/profile.yaml" ]; then \
   echo "⚠ профиль $(PROFILE) не найден в profiles/ (встроен только agctl)."; \
   echo "  Сделай make profile-fetch (PROFILE_REPO=…) или запусти make $1 PROFILE=agctl."; fi
