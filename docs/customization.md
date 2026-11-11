@@ -10,9 +10,18 @@ agctl — универсальная платформа: ядро не соде�
 
 ```
 my-org/
-  profile.yaml      # тексты и дефолты
+  profile.yaml      # тексты, дефолты, сценарии, образы
   assets/logo.png   # логотип (опционально)
+  catalog/<id>/     # пакеты возможностей воркспейса (опционально)
+    manifest.json   #   {"id","title","description"}
+    files/**        #   файлы 1:1 в воркспейс (скиллы — в .dsh/skills/<name>/)
+  image/Dockerfile  # надстройка образа рабочего места (опционально)
 ```
+
+Всё содержимое организации живёт только в её профиле: брендинг, модели,
+готовые сценарии, пакеты каталога и пакеты образа. Ядро своих сценариев и
+пакетов не несёт: профиль без `workspace.scenarios` и `catalog/` показывает
+пустые списки, и чужие сценарии в него не попадают.
 
 `profile.yaml` (все поля):
 
@@ -44,7 +53,33 @@ map:
   llm_label: LLM корп.        # подпись LLM на физической карте (/map)
 examples:
   jira_url: https://jira.my-org.example
+workspace:                    # содержимое рабочих мест организации
+  scenarios:                  # кнопки «готовый сценарий» в диалоге создания воркспейса
+    - id: my-scenario
+      title: Мой сценарий
+      description: клонировать репо-донор со скиллами и тулзами
+      clone_url: https://github.com/my-org/my-scenario
+images:
+  dockerfile: image/Dockerfile   # надстройка FROM ${BASE} над agctl-dsh (опционально)
+  dev:                           # каталог образов лаунчера developer'а
+    - agctl-dsh-my-org:0.2.2
+    - agctl-dsh-nossh-my-org:0.2.2
 ```
+
+**Надстройка образа.** Пакеты организации (python-библиотеки, CLI) ставятся
+не в базовый agctl-dsh, а в `image/Dockerfile` профиля:
+
+```dockerfile
+ARG BASE=agctl-dsh:0.2.2
+FROM ${BASE}
+RUN pip3 install --no-cache-dir --break-system-packages python-pptx
+```
+
+С надстройкой рабочий образ профиля называется `agctl-dsh-<id>:<тег>`.
+`agctl serve` сам соберёт его поверх базового, если образа нет.
+`make img_build PROFILE=<id>` собирает оба варианта: `agctl-dsh-<id>` и
+`agctl-dsh-nossh-<id>`. Явный `--image` перекрывает профиль. Для k8s и AX
+образ профиля пушится в реестр (`make img_push PROFILE=<id>`).
 
 ## 2. Подключение
 
@@ -94,6 +129,8 @@ env-эквиваленты: `AGCTL_PROFILE`, `AGCTL_PROFILE_DIR`. Порядок
 | `cmd/agctl serve` | разрешает профиль до регистрации флагов — LLM-дефолты флагов приходят из профиля (env перекрывает) |
 | `internal/server` | `Server.brand` — `profile.View`; инъекции `window.__AGCTL_BRAND__` + `<title>` на wire (`chatshell.go`, `htmlscan.go`) |
 | `dsh-plugins/*` | потребители `window.__AGCTL_BRAND__` с нейтральным фолбэком (прямой заход в dsh мимо шлюза) |
+| `internal/provision/catalog.go` | каталог пакетов читается из `catalog/` профиля (`View.FS`); нет каталога — пустой список |
+| `internal/runtime/dockerrt` | `EnsureImage` собирает надстройку профиля поверх базового образа (`BaseImage` + `Overlay`) |
 | `internal/profile/guard_test.go` | падает, если литералы организации протекли в код ядра |
 
 Данные профиля агctl-репо не коммитятся (`profiles/` в `.gitignore`) —

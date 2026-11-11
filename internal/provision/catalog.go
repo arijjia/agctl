@@ -2,7 +2,8 @@ package provision
 
 // catalog.go — платформенный каталог пакетов («возможности воркспейса»):
 // скиллы/шаблоны/инструменты, которые пользователь включает в воркспейсе
-// одним кликом. Пакет — каталог в assets/catalog/<id>: manifest.json +
+// одним кликом. Каталог — содержимое организации и живёт в её профиле:
+// пакет — каталог catalog/<id> профиля: manifest.json +
 // files/**. Файлы ставятся 1:1 в рабочее дерево воркспейса; скиллы — в
 // .dsh/skills/<name>/, чтобы dsh подхватывал их автоматически (проектные
 // корни скиллов: .dsh/skills и .agents/skills). Один и тот же каталог
@@ -11,6 +12,7 @@ package provision
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -31,12 +33,19 @@ type CatalogPackage struct {
 const catalogManifest = "manifest.json"
 const catalogFilesDir = "files"
 
-// catalogPrefix — префикс каталога внутри assets.Catalog (embed "all:catalog").
+// catalogPrefix — каталог пакетов относительно корня FS профиля.
 const catalogPrefix = "catalog"
 
-// CatalogPackages — все пакеты встроенного каталога (детерминированный порядок).
+// CatalogPackages — все пакеты каталога профиля (детерминированный порядок);
+// nil FS или профиль без catalog/ — пустой каталог.
 func CatalogPackages(catalogFS fs.FS) ([]CatalogPackage, error) {
+	if catalogFS == nil {
+		return []CatalogPackage{}, nil
+	}
 	entries, err := fs.ReadDir(catalogFS, catalogPrefix)
+	if errors.Is(err, fs.ErrNotExist) {
+		return []CatalogPackage{}, nil // у профиля нет своего каталога
+	}
 	if err != nil {
 		return nil, fmt.Errorf("catalog read: %w", err)
 	}
@@ -59,6 +68,9 @@ func CatalogPackages(catalogFS fs.FS) ([]CatalogPackage, error) {
 func FindCatalogPackage(catalogFS fs.FS, id string) (CatalogPackage, error) {
 	if !validCatalogID(id) {
 		return CatalogPackage{}, fmt.Errorf("некорректный id пакета %q", id)
+	}
+	if catalogFS == nil {
+		return CatalogPackage{}, fmt.Errorf("пакет %q: %w", id, fs.ErrNotExist)
 	}
 	return readCatalogPackage(catalogFS, id)
 }
