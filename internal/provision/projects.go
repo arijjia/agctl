@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	git "github.com/go-git/go-git/v5"
@@ -30,6 +31,56 @@ type Project struct {
 }
 
 const projectIgnore = "# agctl: local-only project history; never save credentials\n.env\n.env.*\n.credentials\n.credentials*\n.ssh\n"
+
+// defaultAutosaveHeavyExcludes — дефолт-исключения autosave: тяжёлые
+// каталоги окружений/сборок, из-за которых go-git add тянет гигабайты
+// и autosave падает каждые 2 минуты (кейс u2: .venv на живом стенде,
+// карточка autosave-ignore-heavy-dirs). Пользовательский .gitignore
+// не обязан это покрывать — платформа деградирует грациозно.
+const defaultAutosaveHeavyExcludes = ".venv/\nvenv/\nnode_modules/\n__pycache__/\ndist/\n"
+
+// AutosaveHeavyExcludes — паттерны дефолт-исключений autosave.
+// Отключаются переменной окружения AGCTL_AUTOSAVE_HEAVY_EXCLUDES=off,
+// переопределяются списком паттернов через запятую.
+func AutosaveHeavyExcludes() []string {
+	if v := os.Getenv("AGCTL_AUTOSAVE_HEAVY_EXCLUDES"); v != "" {
+		if v == "off" {
+			return nil
+		}
+		var out []string
+		for _, p := range strings.Split(v, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	var out []string
+	for _, p := range strings.Split(defaultAutosaveHeavyExcludes, "\n") {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// AutosaveRepairPass — разовый ремонт застрявшего autosave: убирает
+// протухший .git/index.lock (старше stale). Живой lock не трогает.
+func AutosaveRepairPass(home string, userID int64, name string, stale time.Duration) bool {
+	path, err := ProjectDirectory(home, userID, name)
+	if err != nil {
+		return false
+	}
+	lock := filepath.Join(path, ".git", "index.lock")
+	info, err := os.Stat(lock)
+	if err != nil || info.IsDir() {
+		return false
+	}
+	if time.Since(info.ModTime()) < stale {
+		return false
+	}
+	return os.Remove(lock) == nil
+}
 
 // ValidProjectName accepts a single visible path component (including Unicode).
 func ValidProjectName(name string) bool {
@@ -416,6 +467,12 @@ func AutosaveLocalProject(home string, userID int64, name string) (bool, error) 
 		if pattern != "" && !strings.HasPrefix(pattern, "#") {
 			wt.Excludes = append(wt.Excludes, gitignore.ParsePattern(pattern, nil))
 		}
+	}
+	// Дефолт-исключения тяжёлых каталогов (.venv, node_modules, …) —
+	// поверх секретных паттернов projectIgnore, независимо от
+	// пользовательского .gitignore.
+	for _, pattern := range AutosaveHeavyExcludes() {
+		wt.Excludes = append(wt.Excludes, gitignore.ParsePattern(pattern, nil))
 	}
 	// Серверный stash выключенных компонентов (консоль воркспейсов) не
 	// коммитится никогда: go-git прячет .git из worktree-FS, поэтому

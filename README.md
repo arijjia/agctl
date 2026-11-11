@@ -228,7 +228,14 @@ Ctrl+C так же корректно.
   Снятие галочки переносит компонент в серверный stash
   `/workspace/<имя>/.agctl/stash/` — агент его больше не видит, включение
   возвращает; stash не коммитится autosave'ом (go-git `wt.Excludes` +
-  `.git/info/exclude`), репка-донор не правится. API:
+  `.git/info/exclude`), репка-донор не правится. Autosave также всегда
+  пропускает тяжёлые каталоги (`.venv/`, `venv/`, `node_modules/`,
+  `__pycache__/`, `dist/`) поверх пользовательского `.gitignore`; список
+  переопределяется переменной `AGCTL_AUTOSAVE_HEAVY_EXCLUDES`
+  (запятая-список паттернов, `off` — отключить). Сбойный проект после
+  трёх неудач подряд уходит в экспоненциальный backoff (до часа) с разовым
+  repair-pass (снятие протухшего `.git/index.lock` старше 10 минут) —
+  причина сбоя пишется в up.log одной строкой без путей. API:
   `GET/PUT /api/projects/{name}/components`,
   `GET/POST/DELETE /api/projects/{name}/catalog[/{id}]`,
   `GET/PUT /api/projects/{name}/prompt`; последний выбор хранится в
