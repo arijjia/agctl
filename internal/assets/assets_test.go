@@ -8,8 +8,8 @@ import (
 )
 
 // Скелетная копия плагина кабинета обязана совпадать с исходником
-// dsh-plugins/cabinet байт-в-байт (конвенция анти-дрейфа, как
-// check-1c-vibe-sync). Правь исходник, затем перекопируй:
+// dsh-plugins/cabinet байт-в-байт (конвенция анти-дрейфа). Правь
+// исходник, затем перекопируй:
 //
 //	rm -rf internal/assets/dsh-skel/profiles/web/node_modules/@arijjia/agctl-cabinet
 //	cp -R dsh-plugins/cabinet internal/assets/dsh-skel/profiles/web/node_modules/@arijjia/

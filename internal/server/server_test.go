@@ -424,7 +424,8 @@ func TestKitsCatalogRemainsButLegacyProvisionIsRetired(t *testing.T) {
 		t.Fatalf("anonymous /api/kits: %d", code)
 	}
 	code, body := e.do(e.admin, "GET", "/api/kits", nil)
-	if code != http.StatusOK || !strings.Contains(body, `"version":"1.0.0"`) || !strings.Contains(body, "1c-tooling") {
+	if code != http.StatusOK || !strings.Contains(body, `"version":"1.0.0"`) || !strings.Contains(body, "core-workspace") ||
+		strings.Contains(body, `"1c-vibe"`) {
 		t.Fatalf("kits: %d %s", code, body)
 	}
 	if code, body = e.do(e.admin, "POST", "/api/workspaces", validCreate("components")); code != http.StatusGone {
@@ -435,12 +436,13 @@ func TestKitsCatalogRemainsButLegacyProvisionIsRetired(t *testing.T) {
 	}
 }
 
-// TestTemplatesEndpoint — legacy-каталог остаётся доступен старым клиентам.
+// TestTemplatesEndpoint — legacy-каталог остаётся доступен старым клиентам;
+// в ядре только универсальный base (1С — сценарий профиля организации).
 func TestTemplatesEndpoint(t *testing.T) {
 	e := newTestEnv(t, 3)
 	e.register(e.admin, "anna", "secret1")
 	code, body := e.do(e.admin, "GET", "/api/templates", nil)
-	if code != 200 || !strings.Contains(body, "base") || !strings.Contains(body, "1c-vibe") {
+	if code != 200 || !strings.Contains(body, `"base"`) || strings.Contains(body, `"1c-vibe"`) {
 		t.Fatalf("templates: %d %s", code, body)
 	}
 }
