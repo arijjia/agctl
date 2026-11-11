@@ -369,6 +369,7 @@ agctl version
 | `--chat-ttl-min N` | idle TTL персонального контейнера, минуты (по умолчанию 60); per-user — `PUT /api/admin/users/{id}/limits` |
 | `--chat-prewarm-n N` | prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл; он же — потолок одновременно тёплых рантаймов). Подогрев при логине и каждые `--chat-prewarm-every` (15 мин) |
 | `--volume-quota-gb N` | квота тома пользователя в ГБ (0 = выкл): новый воркспейс не создаётся при исчерпании; per-user — там же в limits |
+| `--litellm-quotas` | enforcement квот токенов из админки: минтить персональные виртуальные ключи LiteLLM (`POST /key/generate`) и подставлять вместо платформенного ключа при старте рантайма. Требует `--litellm-admin-url`/`AGCTL_LITELLM_ADMIN_URL` и env `AGCTL_LITELLM_ADMIN_KEY` (ключ — только env, не в гите/образе/логах). Смена/снятие квоты ротирует ключ; личный секрет пользователя не трогается |
 | `--tier0=false` | отключить корневой маршрут в личный чат (для админ-only стенда) |
 | `--secure-cookies` | флаг Secure у cookies (за HTTPS-ingress) |
 | `--experimental-local-bridge` | experimental API-коннектора (по решению владельца локальный backend UX отложен; флаг по умолчанию выключен) |

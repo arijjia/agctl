@@ -195,6 +195,10 @@ func cmdServe(args []string) {
 	llmModel := fsSet.String("llm-model", envOr("AGCTL_LLM_MODEL", prof.LLM.DefaultModel), "модель чата по умолчанию (из списка llm-models)")
 	llmModels := fsSet.String("llm-models", envOr("AGCTL_LLM_MODELS", prof.LLM.DefaultModels), "список моделей чата через запятую")
 	llmAPIKey := fsSet.String("llm-api-key", strings.TrimSpace(envOr("AGCTL_LLM_API_KEY", "")), "ключ провайдера чата (предпочтительно через env AGCTL_LLM_API_KEY)")
+	// Enforcement квот токенов LiteLLM: URL — флаг/env, admin-ключ — ТОЛЬКО
+	// env (не флаг: не светить в ps/логах; не в гите и образе).
+	litellmQuotas := fsSet.Bool("litellm-quotas", false, "enforcement квот токенов: минтить персональные виртуальные ключи LiteLLM по бюджетам из админки (требует AGCTL_LITELLM_ADMIN_URL и AGCTL_LITELLM_ADMIN_KEY)")
+	litellmAdminURL := fsSet.String("litellm-admin-url", strings.TrimSpace(envOr("AGCTL_LITELLM_ADMIN_URL", "")), "admin-API LiteLLM для mint/rotate виртуальных ключей (POST /key/generate)")
 	_ = profileFlag
 	_ = profileDirFlag
 	_ = fsSet.Parse(args)
@@ -254,6 +258,9 @@ func cmdServe(args []string) {
 		ChatPrewarmN:            *chatPrewarmN,
 		ChatPrewarmEvery:        *chatPrewarmEvery,
 		VolumeQuotaGB:           *volumeQuotaGB,
+		LiteLLMQuotas:           *litellmQuotas,
+		LiteLLMAdminURL:         strings.TrimSpace(*litellmAdminURL),
+		LiteLLMAdminKey:         strings.TrimSpace(os.Getenv("AGCTL_LITELLM_ADMIN_KEY")),
 		RegisterPerMinute:       regLimitValue(*registerPerMin),
 		DefaultLLM:              defaultLLM,
 		Profile:                 prof,

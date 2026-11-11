@@ -438,6 +438,8 @@ func (s *Server) handleAdminQuotaPut(w http.ResponseWriter, r *http.Request, id 
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Enforcement: сменившаяся квота ротирует виртуальные ключи LiteLLM.
+	s.invalidateQuotaKeys(req.Scope, req.Subject)
 	_ = s.db.Audit(id.Login, "admin.quota.set", req.Scope+":"+req.Subject,
 		"daily="+strconv.FormatInt(req.DailyTokens, 10)+"; monthly="+strconv.FormatInt(req.MonthlyTokens, 10))
 	quotas, _ := s.db.QuotaList()
@@ -451,13 +453,28 @@ func (s *Server) handleAdminQuotaDelete(w http.ResponseWriter, r *http.Request, 
 		writeErr(w, http.StatusBadRequest, "неверный id квоты")
 		return
 	}
+	// Enforcement: запоминаем scope/subject до удаления — для отзыва ключей.
+	deleted := store.Quota{}
+	for _, q := range mustQuotaList(s) {
+		if q.ID == qid {
+			deleted = q
+		}
+	}
 	if err := s.db.QuotaDelete(qid); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if deleted.ID != 0 {
+		s.invalidateQuotaKeys(deleted.Scope, deleted.Subject)
+	}
 	_ = s.db.Audit(id.Login, "admin.quota.delete", strconv.FormatInt(qid, 10), "")
 	quotas, _ := s.db.QuotaList()
 	writeJSON(w, http.StatusOK, map[string]any{"quotas": quotas})
+}
+
+func mustQuotaList(s *Server) []store.Quota {
+	quotas, _ := s.db.QuotaList()
+	return quotas
 }
 
 // ── шлюз /chat/: гейт роли + журнал запросов ────────────────────────────────
