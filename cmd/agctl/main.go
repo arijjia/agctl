@@ -174,7 +174,7 @@ func cmdServe(args []string) {
 	home := fsSet.String("home", defaultHome(), "каталог данных agctl")
 	addr := fsSet.String("addr", envOr("AGCTL_ADDR", firstNonEmpty(cfg.Serve.Addr, "127.0.0.1:8929")), "адрес UI/API")
 	image := fsSet.String("image", firstNonEmpty(cfg.Serve.Image, "agctl-dsh:0.2.2"), "тег образа agctl-dsh")
-	devImages := fsSet.String("dev-images", envOr("AGCTL_DEV_IMAGES", cfg.Serve.DevImages), "каталог образов лаунчера developer'а через запятую (реестр Nexus и пр.); пусто = только --image")
+	devImages := fsSet.String("dev-images", envOr("AGCTL_DEV_IMAGES", firstNonEmpty(cfg.Serve.DevImages, strings.Join(prof.Images.Dev, ","))), "каталог образов лаунчера developer'а через запятую (реестр Nexus и пр.; по умолчанию — images.dev профиля); пусто = только --image")
 	devEnv := fsSet.String("dev-env", envOr("AGCTL_DEV_ENV", cfg.Serve.DevEnv), "имена переменных окружения хоста, пробрасываемые в контейнер developer'а через запятую (значения из .env); пусто = не пробрасывать")
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
@@ -197,6 +197,10 @@ func cmdServe(args []string) {
 	_ = profileFlag
 	_ = profileDirFlag
 	_ = fsSet.Parse(args)
+	baseImage, workImage := profileImages(fsSet, prof, *image)
+	if workImage != baseImage {
+		log.Printf("образ: %s (надстройка профиля %s поверх %s)", workImage, prof.ID, baseImage)
+	}
 	*llmAPIKey = strings.TrimSpace(*llmAPIKey)
 	for _, r := range *llmAPIKey {
 		if r < 0x20 || r == 0x7f {
@@ -240,7 +244,8 @@ func cmdServe(args []string) {
 		Addr:                    *addr,
 		MemoryBytes:             int64(*memGB * 1024 * 1024 * 1024),
 		NanoCPUs:                int64(*cpus * 1e9),
-		Image:                   *image,
+		Image:                   workImage,
+		BaseImage:               baseImage,
 		DevImages:               splitCSV(*devImages),
 		DevEnv:                  splitCSV(*devEnv),
 		BinDir:                  firstNonEmpty(*binDir, "dist"),
@@ -495,4 +500,20 @@ func isLoopbackAddr(addr string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// profileImages — образ рабочего места с учётом надстройки профиля
+// (images.dockerfile): без явного --image рабочий образ —
+// agctl-dsh-<профиль>:<тег> поверх базового. Явный --image — как есть.
+func profileImages(fsSet *flag.FlagSet, prof *profile.Data, image string) (base, work string) {
+	explicit := false
+	fsSet.Visit(func(f *flag.Flag) {
+		if f.Name == "image" {
+			explicit = true
+		}
+	})
+	if explicit || prof == nil || prof.Images.Dockerfile == "" {
+		return image, image
+	}
+	return image, profile.OverlayImage(image, prof.ID)
 }

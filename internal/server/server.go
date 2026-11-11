@@ -39,13 +39,16 @@ import (
 const defaultRegisterPerMinute = 30
 
 type Config struct {
-	Home                    string // $AGCTL_HOME
-	Addr                    string // слушающий адрес основного UI/API
-	MaxPerUser              int    // legacy seat limit; no effect in v3
-	MemoryBytes             int64
-	NanoCPUs                int64
-	Image                   string
-	DevImages               []string // каталог образов лаунчера developer'а (пусто = только cfg.Image)
+	Home        string // $AGCTL_HOME
+	Addr        string // слушающий адрес основного UI/API
+	MaxPerUser  int    // legacy seat limit; no effect in v3
+	MemoryBytes int64
+	NanoCPUs    int64
+	Image       string
+	DevImages   []string // каталог образов лаунчера developer'а (пусто = только cfg.Image)
+	// BaseImage — базовый agctl-dsh под надстройкой профиля (images.dockerfile);
+	// пусто или равен Image = надстройки нет.
+	BaseImage               string
 	BinDir                  string
 	Version                 string // версия agctl (метка контейнеров, диагностика дрейфа сборок)
 	SecureCookies           bool   // true when agctl is served behind a trusted HTTPS terminator
@@ -104,14 +107,22 @@ var (
 // New builds the development default (Docker for the unified per-user runtime).
 // Kubernetes deployments should inject their runtime providers.
 func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
+	var overlay fs.FS
+	var overlayDockerfile string
+	if cfg.Profile != nil && cfg.BaseImage != "" && cfg.BaseImage != cfg.Image {
+		overlay, overlayDockerfile, _ = cfg.Profile.View().ImageContext()
+	}
 	rt, err := dockerrt.New(dockerrt.Config{
-		Image:       cfg.Image,
-		MemoryBytes: cfg.MemoryBytes,
-		NanoCPUs:    cfg.NanoCPUs,
-		BinDir:      cfg.BinDir,
-		Home:        cfg.Home,
-		DshSkel:     assetsSkel,
-		Version:     cfg.Version,
+		BaseImage:         cfg.BaseImage,
+		Overlay:           overlay,
+		OverlayDockerfile: overlayDockerfile,
+		Image:             cfg.Image,
+		MemoryBytes:       cfg.MemoryBytes,
+		NanoCPUs:          cfg.NanoCPUs,
+		BinDir:            cfg.BinDir,
+		Home:              cfg.Home,
+		DshSkel:           assetsSkel,
+		Version:           cfg.Version,
 	}, assets.Image)
 	if err != nil {
 		return nil, err
@@ -268,7 +279,7 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("DELETE /api/projects/{name}", s.requireUser(s.handleProjectDelete))
 	// Консоль воркспейсов («Возможности»): каталог компонентов скиллов,
 	// инструментов и промптов проекта + включение/выключение на сервере, и
-	// платформенный каталог пакетов (например, презентации по шаблону вуза).
+	// каталог пакетов профиля организации (catalog/<id> в профиле).
 	// Доступен всем ролям: пользователь настраивает свои воркспейсы сам.
 	mux.HandleFunc("GET /api/catalog", s.requireUser(s.handleCatalogList))
 	mux.HandleFunc("GET /api/projects/{name}/catalog", s.requireUser(s.handleProjectCatalogGet))

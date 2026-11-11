@@ -75,7 +75,7 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request, id 
 		return
 	}
 	for _, pkgID := range req.Packages {
-		if _, err := provision.FindCatalogPackage(assetsCatalog, pkgID); err != nil {
+		if _, err := provision.FindCatalogPackage(s.brand.FS, pkgID); err != nil {
 			writeErr(w, http.StatusBadRequest, "неизвестный пакет: "+err.Error())
 			return
 		}
@@ -121,9 +121,9 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request, id 
 		failed = append(failed, req.Packages...)
 	} else {
 		for _, pkgID := range req.Packages {
-			pkg, err := provision.FindCatalogPackage(assetsCatalog, pkgID)
+			pkg, err := provision.FindCatalogPackage(s.brand.FS, pkgID)
 			if err == nil {
-				err = provision.InstallCatalogPackage(hostDir, assetsCatalog, pkg)
+				err = provision.InstallCatalogPackage(hostDir, s.brand.FS, pkg)
 			}
 			if err != nil {
 				log.Printf("[projects] u%d %s: пакет %s не установлен", id.ID, project.Name, pkgID)

@@ -148,14 +148,14 @@ func TestProjectComponentsAPI(t *testing.T) {
 	}
 }
 
-// Пресеты сценариев отдаются через /api/config (диалог создания воркспейса).
+// Пресеты сценариев профиля отдаются через /api/config (диалог создания воркспейса).
 func TestConfigExposesScenarioPresets(t *testing.T) {
-	e := newTestEnv(t, 3)
+	e := newOrgTestEnv(t)
 	code, body := e.do(e.newClient(), "GET", "/api/config", nil)
 	if code != 200 {
 		t.Fatalf("config %d %s", code, body)
 	}
-	if !strings.Contains(body, `"1c-vibe"`) || !strings.Contains(body, "github.com/arijjia/1c-vibe") {
+	if !strings.Contains(body, `"demo-scenario"`) || !strings.Contains(body, `"cloneUrl":"https://example.com/demo-scenario.git"`) {
 		t.Fatalf("presets missing: %s", body)
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/arijjia/agctl/internal/auth"
+	"github.com/arijjia/agctl/internal/profile"
 	"github.com/arijjia/agctl/internal/provision"
 	"github.com/arijjia/agctl/internal/runtime/dockerrt"
 	"github.com/arijjia/agctl/internal/store"
@@ -568,9 +569,10 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"requireApproval": s.cfg.RequireApproval,
 		"tier0":           s.cfg.Tier0,
-		// Готовые сценарии рабочего места («1c-vibe» и будущие): клиент
-		// показывает их кнопками в диалоге создания воркспейса.
-		"presets": provision.ScenarioPresets,
+		// Готовые сценарии рабочего места — из профиля организации
+		// (workspace.scenarios): клиент показывает их кнопками в диалоге
+		// создания воркспейса. Нейтральный профиль сценариев не несёт.
+		"presets": scenarioPresets(s.brand.Scenarios),
 	})
 }
 
@@ -594,4 +596,12 @@ func (s *Server) handleWorkspaceRequestDecision(approve bool) func(http.Response
 	return func(w http.ResponseWriter, r *http.Request, id identity) {
 		writeErr(w, http.StatusGone, "Рабочие места удалены в v3: используйте персональный контейнер и проекты; SSH настраивается через /api/me/ssh.")
 	}
+}
+
+// scenarioPresets — сценарии профиля для JSON (пустой список, не null).
+func scenarioPresets(in []profile.Scenario) []profile.Scenario {
+	if in == nil {
+		return []profile.Scenario{}
+	}
+	return in
 }

@@ -20,8 +20,9 @@ RUN_CORP_PID := $(RUNTIME_DIR)/corp.pid
 PROFILE_DIRS := $(notdir $(patsubst %/,%,$(dir $(wildcard profiles/*/profile.yaml))))
 PROFILE ?= $(if $(filter 1,$(words $(PROFILE_DIRS))),$(PROFILE_DIRS),agctl)
 # Каталог образов лаунчера developer'а (карточка developer-launcher-images):
-# дефолт — пара «с SSH» / «без SSH» (второй собирается img_build).
-DEV_IMAGES ?= agctl-dsh:0.2.2,agctl-dsh-nossh:0.2.2
+# по умолчанию — images.dev профиля (пара «с SSH» / «без SSH», её собирает
+# img_build); DEV_IMAGES=… перекрывает профиль.
+DEV_IMAGES ?=
 CORP_LLM_BASE_URL ?=
 CORP_LLM_MODELS ?=
 CORP_LLM_MODEL ?=
@@ -61,7 +62,7 @@ up: web_build go_build img_build | $(RUNTIME_DIR)
 	@port=$$(printf '%s' "$(RUN_ADDR)" | awk -F: '{print $$NF}'); \
 	if lsof -nP -ti "tcp:$$port" -sTCP:LISTEN >/dev/null 2>&1; then \
 	  echo "✗ порт $(RUN_ADDR) уже занят (инстанс вне make?) — сделай make stop и повтори up"; exit 1; fi
-	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl serve --addr "$(RUN_ADDR)" --profile "$(PROFILE)" --dev-images "$(DEV_IMAGES)" >>"$(RUN_UP_LOG)" 2>&1 & echo $$! > "$(RUN_UP_PID)"
+	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl serve --addr "$(RUN_ADDR)" --profile "$(PROFILE)" $(if $(DEV_IMAGES),--dev-images "$(DEV_IMAGES)") >>"$(RUN_UP_LOG)" 2>&1 & echo $$! > "$(RUN_UP_PID)"
 	@sleep 1
 	@if kill -0 "$$(cat $(RUN_UP_PID))" 2>/dev/null; then \
 	  echo "✓ agctl: http://$(RUN_ADDR) (дом: $(RUN_HOME))"; \
