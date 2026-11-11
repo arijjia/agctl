@@ -26,15 +26,17 @@ svg[viewBox="0 0 23.16 17.04"]{visibility:hidden}
 [class*="previewBadge"]{display:none!important}
 </style>`
 
-// chatShellUserStyle применяется только к обычной роли: правая dev-панель и
-// её триггеры скрываются до первого кадра, без JS-collapse после рендера.
+// chatShellUserStyle применяется только к обычной роли и скрывает лишь
+// dev-поверхности (терминал, access mode, workspace-файлы). Правая панель
+// сама по себе больше НЕ прячется: в ней живёт превью deliverables, которое
+// нужно роли user (карточка dsh-right-panel-for-user-role: клик «Preview
+// in sidebar» должен открывать панель). Pre-paint схлопывание колонки до
+// подтверждения роли делает общий chatShellDeveloperStyle: плагин chat-brand
+// ставит data-agctl-developer-tools-ready для любой известной роли, а гайд
+// терминала/файлов для user прячет плагин (ensureRoleSurfaceStyles).
 const chatShellUserStyle = `<style data-agctl="chat-shell-user">
-button[aria-label="Open right sidebar"],button[aria-label="Collapse right sidebar"],
 button[aria-label^="Access mode"],button[aria-label^="New terminal"],
 button[aria-label^="Workspace files"]{display:none!important}
-[class*="_tabLayout_"]:has(button[aria-label="Collapse right sidebar"]){display:none!important}
-/* У пользователя нет правого dev-панеля — освобождаем центральную колонку до paint. */
-div[style*="grid-template-columns"][class*="_frame"]{grid-template-columns:auto minmax(0px,1fr) minmax(0px,0px)!important}
 </style>`
 
 // chatShellDeveloperStyle — developer/admin: правая колонка схлопнута до
@@ -148,17 +150,17 @@ func chatShellScript(v profile.View) string {
 	).Replace(chatShellScriptTpl)
 }
 
-// chatShellHeadForRole — ранняя инъекция. Обычная роль скрывает right dev pane
-// до первого кадра; developer/admin держат колонку схлопнутой до подтверждения
-// роли клиентским плагином (без мигания пустой панелью), затем видят полный
-// нативный dsh UI.
+// chatShellHeadForRole — ранняя инъекция. Правая колонка у всех ролей
+// держится схлопнутой до подтверждения роли клиентским плагином (флаг
+// data-agctl-developer-tools-ready, без мигания пустой панелью); затем
+// видят полный нативный dsh UI. Роль user дополнительно получает
+// chatShellUserStyle — скрытие dev-поверхностей (правую панель превью
+// не трогает).
 // BrandBootScript (window.__AGCTL_BRAND__) идёт первым: его читают плагины
 // (chat-brand, cabinet) в том же документе.
 func chatShellHeadForRole(role string, v profile.View) string {
-	style := chatShellStyle
-	if role == "developer" || role == "admin" {
-		style += chatShellDeveloperStyle
-	} else {
+	style := chatShellStyle + chatShellDeveloperStyle
+	if role != "developer" && role != "admin" {
 		style += chatShellUserStyle
 	}
 	return v.BrandBootScript() + style + chatShellScript(v)
