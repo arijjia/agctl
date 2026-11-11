@@ -56,10 +56,14 @@ agctl serve --profile-dir /path/to/my-org
 mkdir -p profiles && cp -R my-org profiles/my-org
 agctl serve --profile my-org
 
-# вариант В: отдельный git-репозиторий профиля (как agctl-profile-utmn)
-make profile-fetch PROFILE_REPO=<git-url-или-локальный-путь>   # кладёт в ./profiles/utmn
-make up            # PROFILE выбирается автоматически: utmn, если профиль получен
+# вариант В: отдельный git-репозиторий профиля (agctl-profile-<id>)
+make profile-fetch PROFILE_REPO=<git-url-или-локальный-путь>   # кладёт в ./profiles/<id>
+                   # (<id> — имя репо без префикса agctl-profile-; иначе PROFILE_NAME=<id>)
+make up            # PROFILE выбирается автоматически, если в ./profiles ровно один профиль
+make up PROFILE=rshb    # явно — обязательно, когда профилей несколько
 make up PROFILE=agctl   # нейтральный запуск без организации
+
+# Kubernetes: профиль — ConfigMap (make k8s_profile PROFILE=<id>), см. docs/kubernetes.md
 ```
 
 env-эквиваленты: `AGCTL_PROFILE`, `AGCTL_PROFILE_DIR`. Порядок разрешения:
@@ -117,3 +121,21 @@ AGCTL_LLM_CORP_API_KEY=<ключ дополнительного провайде
 EOF
 make up    # PROFILE=utmn выбирается автоматически, профиль уже на месте
 ```
+
+## 6. Второй живой профиль: AI Workspaces (РСХБ)
+
+Репозиторий `arijjia/agctl-profile-rshb` (приватный) — профиль для
+Россельхозбанка: то же имя платформы **AI Workspaces**, слоган «РСХБ на
+правильном пути», логотип РСХБ, модельный контур Z.AI GLM Coding Plan;
+корпоративный OpenAI-совместимый шлюз банка заготовлен в `extra_providers`
+(закомментирован до появления эндпоинта). Подключение — как у `utmn`:
+
+```bash
+git clone https://github.com/arijjia/agctl-profile-rshb profiles/rshb
+make up PROFILE=rshb      # или make k8s_profile PROFILE=rshb в кластере
+```
+
+Два профиля рядом (`profiles/utmn`, `profiles/rshb`) — обычная ситуация
+для разработчика платформы: `make up` без `PROFILE=` тогда поднимает
+нейтральный agctl и подсказывает выбрать профиль явно. Guard-тест ядра
+знает маркеры обеих организаций (`ТюмГУ`, `РСХБ`, `Россельхозбанк`).
