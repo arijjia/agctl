@@ -1,17 +1,19 @@
 ---
-schema: 1.0.0
+schema: 1.1.0
 id: chat-prewarm-pool
 title: "Prewarm-пул личных чатов: тёплая среда к входу (хвост R1.3)"
-status: open
+status: done
 priority: P2
 size: M
 area: runtime
 repo: arijjia/agctl
 created: 2026-10-25
-updated: 2026-10-25
+updated: 2026-11-12
 tags: []
 depends: []
 epic: two-mode-mvp
+sessions:
+  - session-e0c9c152-46a8-4490-914f-8ff8e5364e38:work
 ---
 ## Описание
 
@@ -46,3 +48,6 @@ epic: two-mode-mvp
 - 2026-10-25: создано (`gitctl backlog new`). Идея — отзыв владельца про UX
   сна чата («платформа должна работать исправно всё время») и хвост R1.3
   «quotas/retention/prewarm remain».
+- 2026-11-12: выполнено в worktree wt/chat-prewarm-pool: (1) per-user TTL/retention — settings KV chat-ttl-min-u<ID> (админ API PUT /api/admin/users/{id}/limits), reaper использует персональный TTL; (2) prewarm-пул — флаги --chat-prewarm-n (N последних активных из журнала шлюза, 0=выкл) и --chat-prewarm-every (15 мин), подогрев при логине (асинхронно) и по расписанию, потолок одновременно тёплых = N; (3) квота тома --volume-quota-gb + per-user override (limits API, -1=выкл), новый воркспейс не создаётся при исчерпании (403 + аудит); (4) метрики — hit-rate пула/среднее время холодного старта в GET /api/admin/overview (chatPrewarm-блок). Тесты: 7 новых (пул+лимит, login-подогрев, per-user TTL reaper, метрики, квота, admin API); go vet + go test ./... (11 пакетов) зелёные, SPA собирается. e2e prewarm-цикл (login→тёплый чат→TTL-сон→повторный вход) на живом docker — в merge-сообщении «Проверить перед пушем».
+- 2026-11-12: refl: контекста карточки хватило: ссылки на chat.go/architecture/capacity точные, сессию-источник не читал. Перенос в карточку: критерий «тёплый вход» сведён к метрике hit-rate + login-подогреву; квота тома реализована как гарда создания воркспейсов (du-обход), не как блочное устройство — зафиксировано в capacity.md.
+- 2026-11-12: done — prewarm-пул чатов (login+расписание, потолок N), per-user TTL, volume-квота на создание воркспейсов, метрики hit-rate в админке
