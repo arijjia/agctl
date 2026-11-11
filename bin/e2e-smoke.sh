@@ -75,7 +75,15 @@ start_fake_llm() {
     sleep 0.3
   done
   PROVIDER_URL="http://host.docker.internal:$FAKE_PORT/v1"
-  pass "fake-llm: стаб поднят на $FAKE_BIND:$FAKE_PORT (модели: stub-model)"
+  # host.docker.internal есть на Docker Desktop, но не в colima/Linux-CI:
+  # проверяем изнутри образа и падаем на шлюз docker-bridge.
+  if ! docker run --rm --entrypoint sh "$TEST_IMAGE" -c 'getent hosts host.docker.internal >/dev/null 2>&1'; then
+    gw=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null)
+    [ -n "$gw" ] && PROVIDER_URL="http://$gw:$FAKE_PORT/v1"
+    pass "fake-llm: стаб поднят на $FAKE_BIND:$FAKE_PORT (доступ из контейнеров: ${gw:-?})"
+  else
+    pass "fake-llm: стаб поднят на $FAKE_BIND:$FAKE_PORT (host.docker.internal)"
+  fi
 }
 
 api() { # api <cookies|-> <method> <path> [json]
@@ -102,15 +110,16 @@ wait_chat_ui() { # <cookies> <timeout_s>
   return 1
 }
 
-# chat_container: имя живого контейнера личного чата админа (u1) через
-# админ-API — без угадывания хэша home в имени agctl-chat-<hash>-u1.
+# chat_container: имя живого контейнера личного чата пользователя (u2 —
+# qa-user; админу личный чат не выдаётся) через админ-API — без угадывания
+# хэша home в имени agctl-chat-<hash>-u2.
 chat_container() {
   api "$COOKIES_ADMIN" GET /api/admin/containers >/dev/null
   python3 - "$LAST" <<'EOF'
 import json, sys
 rows = json.load(open(sys.argv[1])).get("containers", [])
 for c in rows:
-    if c.get("userId") == 1 and c.get("state") == "running":
+    if c.get("userId") == 2 and c.get("state") == "running":
         print(c["name"]); break
 EOF
 }
@@ -118,6 +127,14 @@ EOF
 cleanup() {
   [ -n "$SERVE_PID" ] && kill "$SERVE_PID" 2>/dev/null
   [ -n "$FAKE_PID" ] && kill "$FAKE_PID" 2>/dev/null
+  # Чат-контейнеры прогона (тома смонтированы из TEST_HOME) — убрать за собой:
+  # reaper умирает вместе с serve и их не усыпит.
+  for cid in $(docker ps -aq --filter name=agctl-chat- 2>/dev/null); do
+    mounts=$(docker inspect --format '{{range .Mounts}}{{.Source}};{{end}}' "$cid" 2>/dev/null || true)
+    case "$mounts" in
+      "$TEST_HOME"/chats/*) docker rm -f "$cid" >/dev/null 2>&1 || true ;;
+    esac
+  done
 }
 trap cleanup EXIT INT TERM
 
@@ -184,8 +201,14 @@ else
   fail "нет $PROJ_DIR/.git"
 fi
 
-say "Личный чат: вход через шлюз, подъём персонального контейнера"
-if wait_chat_ui "$COOKIES_ADMIN" 240; then
+say "Личный чат (qa-user): вход через шлюз, подъём персонального контейнера"
+# Админу личный чат не выдаётся: text/html → редирект в /admin.
+code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_ADMIN" -H 'Accept: text/html' "$BASE_URL/chat/")
+[ "$code" = 307 ] && pass "admin /chat/ → 307 в /admin (личный чат админу не выдаётся)" || fail "admin /chat/: $code"
+code=$(api "$COOKIES_USER" POST /api/projects '{"name":"e2e-chat"}')
+[ "$code" = 201 ] && pass "проект qa-user для чат-проверок: 201" || fail "create e2e-chat: $code"
+CHAT_PROJ_DIR="$TEST_HOME/chats/u2/work/e2e-chat"
+if wait_chat_ui "$COOKIES_USER" 240; then
   size=$(wc -c < "$CHAT_HTML" | tr -d ' ')
   pass "DSH UI через /chat/: 200 (${size}b), не страница прогрева"
   asset=$(python3 -c 'import re,sys; s=open(sys.argv[1]).read(); m=re.search(r"src=\"\./(assets/[^\"]+\.js)\"", s); print(m.group(1) if m else "")' "$CHAT_HTML")
@@ -218,7 +241,7 @@ if [ -n "${CONTAINER:-}" ]; then
   mounts=$(docker inspect --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}; {{end}}' "$CONTAINER" 2>/dev/null)
   echo "$mounts" | grep -q '/workspace' && echo "$mounts" | grep -q '/home/dsh' \
     && pass "монтирования /workspace и /home/dsh" || fail "mounts: $mounts"
-  srcok=$(printf '%s' "$mounts" | grep -c "$TEST_HOME/chats/u1")
+  srcok=$(printf '%s' "$mounts" | grep -c "$TEST_HOME/chats/u2")
   [ "$srcok" -ge 1 ] && pass "тома живут в TEST_HOME (изоляция прогона)" || fail "чужие источники монтирований"
 else
   skip "инспекты Docker: контейнера нет"
@@ -227,20 +250,24 @@ fi
 say "Сон и пробуждение контейнера (том переживает)"
 PERSIST_OK=0
 if [ -n "${CONTAINER:-}" ]; then
-  printf 'e2e persistence proof; не пользовательские данные\n' > "$PROJ_DIR/e2e-proof.md"
+  printf 'e2e persistence proof; не пользовательские данные\n' > "$CHAT_PROJ_DIR/e2e-proof.md"
   code=$(api "$COOKIES_ADMIN" POST "/api/admin/containers/$CONTAINER/stop")
   [ "$code" = 200 ] && pass "admin stop → 200" || fail "stop: $code"
-  slept=0
-  while [ "$slept" -lt 30 ]; do
-    state=$(docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null || echo gone)
-    [ "$state" = gone ] && break
+  # Удаление compute-контейнера может идти асинхронно: ждём исчезновения
+  # из docker ps -a, иначе пересоздание упрётся в конфликт имени.
+  state="timeout"; slept=0
+  while [ "$slept" -lt 60 ]; do
+    if [ -z "$(docker ps -aq --filter name="^/${CONTAINER}$" -q)" ]; then state="gone"; break; fi
     sleep 1; slept=$((slept + 1))
   done
-  [ "$state" = gone ] && pass "контейнер удалён (compute), том сохранён" || fail "контейнер не удалён: $state"
-  if wait_chat_ui "$COOKIES_ADMIN" 240; then
+  case "$state" in
+    gone) pass "контейнер удалён (compute), том сохранён" ;;
+    *) fail "контейнер не удалён за 60с (state=$state)"; docker ps -a --filter "name=$CONTAINER" --format '{{.Names}} {{.Status}}' | sed 's/^/  | /' ;;
+  esac
+  if wait_chat_ui "$COOKIES_USER" 240; then
     NEW="$(chat_container)"
     [ -n "$NEW" ] && pass "повторный вход пересоздал контейнер: $NEW" || fail "контейнер не пересоздан"
-    docker exec "$NEW" test -f /workspace/e2e-proj/e2e-proof.md 2>/dev/null \
+    docker exec "$NEW" test -f /workspace/e2e-chat/e2e-proof.md 2>/dev/null \
       && { pass "файл проекта пережил сон/пробуждение (виден в контейнере)"; PERSIST_OK=1; } \
       || fail "proof-файл не виден в контейнере"
     CONTAINER="$NEW"
@@ -256,12 +283,12 @@ if [ "${PERSIST_OK}" = 1 ]; then
   # Тикер autosave — каждые 2 минуты; ждём появления локального коммита.
   asok=0; waited=0
   while [ "$waited" -lt 180 ]; do
-    if git -C "$PROJ_DIR" log --oneline 2>/dev/null | grep -q 'autosave'; then asok=1; break; fi
+    if git -C "$CHAT_PROJ_DIR" log --oneline 2>/dev/null | grep -q 'autosave'; then asok=1; break; fi
     sleep 5; waited=$((waited + 5))
   done
   if [ "$asok" = 1 ]; then
     pass "autosave закоммитил изменения локально"
-    git -C "$PROJ_DIR" remote get-url origin >/dev/null 2>&1 \
+    git -C "$CHAT_PROJ_DIR" remote get-url origin >/dev/null 2>&1 \
       && fail "у проекта появился remote (не должно быть)" \
       || pass "проект без remote: push невозможен"
   else
@@ -272,9 +299,9 @@ else
 fi
 
 say "dsh-home и права"
-CRED="$TEST_HOME/chats/u1/dsh-home/.credentials.yaml"
+CRED="$TEST_HOME/chats/u2/dsh-home/.credentials.yaml"
 if [ -f "$CRED" ]; then
-  grep -q 'api_key' "$CRED" \
+  grep -q 'AGCTL_LLM_API_KEY' "$CRED" \
     && pass "креды провайдера импортированы в dsh-home" \
     || fail "credentials без ключа провайдера"
 else
@@ -299,7 +326,9 @@ else
   skip "FAKE_LLM=0 — живой провод не проверялся"
 fi
 
-say "Удаление проекта"
+say "Удаление проектов"
+code=$(api "$COOKIES_USER" DELETE /api/projects/e2e-chat)
+[ "$code" = 200 ] && pass "DELETE проекта qa-user: 200" || fail "delete e2e-chat: $code"
 code=$(api "$COOKIES_ADMIN" DELETE /api/projects/e2e-proj)
 [ "$code" = 200 ] && pass "DELETE проекта: 200" || fail "delete project: $code"
 api "$COOKIES_ADMIN" GET /api/projects >/dev/null
