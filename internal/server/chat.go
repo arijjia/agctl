@@ -609,7 +609,7 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 	defer cancel()
 	spec := agctlrt.ChatSpec{
 		RuntimeID: s.chatRuntimeID(userID), StorageID: chatStorageID(userID),
-		UserID: userID, Provider: s.userProvider(userID),
+		UserID: userID, Provider: s.quotaAwareProvider(userID),
 		SSHPubKey: s.developerSSHPubKey(userID),
 		// Лаунчер developer'а: желаемый образ из настроек ("" = дефолт сервера).
 		Image: s.developerChatImage(userID),

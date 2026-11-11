@@ -56,6 +56,9 @@ type Config struct {
 	ChatPrewarmN            int                // prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл); он же — потолок пула
 	ChatPrewarmEvery        time.Duration      // период цикла подогрева (по умолчанию 15 мин)
 	VolumeQuotaGB           float64            // квота тома пользователя в ГБ (0 = выкл); per-user — settings KV
+	LiteLLMQuotas           bool               // enforcement квот токенов виртуальными ключами LiteLLM
+	LiteLLMAdminURL         string             // admin-API LiteLLM (env AGCTL_LITELLM_ADMIN_URL / --litellm-admin-url)
+	LiteLLMAdminKey         string             // admin-ключ LiteLLM (только env AGCTL_LITELLM_ADMIN_KEY; не логируется)
 	RegisterPerMinute       int                // лимит регистраций с одного IP за минуту: 0 — дефолт платформы (30), <0 — отключить (нагрузочные прогоны)
 	RequireApproval         bool               // legacy workspace flag; create endpoint is tombstoned in v3
 	ExperimentalLocalBridge bool               // opt-in pairing/status/revoke API for local connector
@@ -97,8 +100,10 @@ type Server struct {
 	autosaveFails map[string]autosaveFailState // "userID/project" → счётчик/пауза
 	prewarmMu     sync.Mutex                   // не перекрывать циклы prewarm-пула
 	prewarmActive bool
-	warmHits      atomic.Int64 // ensureChat из тёплого кэша (hit-rate пула)
-	coldStarts    atomic.Int64 // холодные старты ensureChat: счётчик и суммарное время
+	llmMu         sync.Mutex             // виртуальные ключи LiteLLM по квотам
+	llmKeys       map[int64]*llmKeyState // userID → заминченный ключ (ротация при смене квоты)
+	warmHits      atomic.Int64           // ensureChat из тёплого кэша (hit-rate пула)
+	coldStarts    atomic.Int64           // холодные старты ensureChat: счётчик и суммарное время
 	coldTotalMS   atomic.Int64
 	startedAt     time.Time    // время старта серва (сводка админки)
 	proxyAuditN   atomic.Int64 // счётчик записей журнала шлюза для периодической обрезки
