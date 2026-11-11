@@ -1,9 +1,15 @@
 #!/bin/bash
-# e2e-smoke: изолированный дымовой прогон agctl по мотивам
-# agctl-hq/docs/agctl-mvp-e2e-test-guide.md. Всё в своём TEST_HOME,
-# свой тег образа, свой порт; секреты/токены не печатаются.
+# e2e-smoke (v3): изолированный дымовой прогон agctl под модель v3 —
+# персональный контейнер + проекты. Всё в своём TEST_HOME, свой тег образа,
+# свой порт; секреты/токены не печатаются.
 #
 #   TEST_IMAGE=agctl-dsh:0.2.0-rc2-e2e-n1 bin/e2e-smoke.sh
+#
+# Сценарий v3 (v2-воркспейсы удалены, POST /api/workspaces → 410):
+#   регистрация/роли → tombstone v2 → проект (создание/листинг/git-репо) →
+#   личный чат /chat/ (подъём контейнера, шлюз, asset) → docker-инспекты →
+#   сон/пробуждение контейнера с сохранением тома → autosave проекта →
+#   dsh-home/креды → живой провод до стаба LLM.
 #
 # Переменные:
 #   TEST_IMAGE  (обяз.) тег уже собранного образа
@@ -30,10 +36,13 @@ RUN_ID="$(date +%Y%m%d-%H%M%S)"
 TEST_HOME="$HOME/.agctl-e2e-$RUN_ID"
 COOKIES_ADMIN="$TEST_HOME/qa-admin.cookies"
 COOKIES_USER="$TEST_HOME/qa-user.cookies"
+JAR="$TEST_HOME/qa-admin-dsh.cookies"
 FAKE_PORT="${FAKE_PORT:-18765}"
 FAKE_PID=""; SERVE_PID=""
-PROVIDER_URL="http://provider.invalid/v1"   # недоступный — чат будет NOT RUN
+PROVIDER_URL="http://provider.invalid/v1"   # недоступный — провод будет NOT RUN
+LLM_KEY="sk-e2e-fake-not-a-secret"
 LAST="/tmp/agctl-e2e-$RUN_ID-last.json"
+CHAT_HTML="$TEST_HOME/chat.html"
 
 umask 077
 mkdir -p "$TEST_HOME"
@@ -43,6 +52,7 @@ preflight() {
   command -v go >/dev/null || { echo "нет go" >&2; exit 2; }
   command -v docker >/dev/null || { echo "нет docker" >&2; exit 2; }
   docker version --format '{{.Server.Version}}' >/dev/null || { echo "docker мёртв" >&2; exit 2; }
+  docker image inspect "$TEST_IMAGE" >/dev/null 2>&1 || { echo "образ $TEST_IMAGE не собран" >&2; exit 2; }
   if nc -z 127.0.0.1 "$TEST_PORT" 2>/dev/null; then
     echo "порт $TEST_PORT занят — выбери другой TEST_ADDR" >&2; exit 2
   fi
@@ -51,7 +61,7 @@ preflight() {
     make web_build >/dev/null 2>&1 || { echo "web_build упал" >&2; exit 2; }
     go build -trimpath -o "$AGCTL_BIN" ./cmd/agctl || { echo "go build упал" >&2; exit 2; }
   fi
-  pass "preflight: инструменты на месте, порт $TEST_PORT свободен"
+  pass "preflight: инструменты на месте, порт $TEST_PORT свободен, образ есть"
 }
 
 start_fake_llm() {
@@ -78,14 +88,31 @@ api() { # api <cookies|-> <method> <path> [json]
 
 jsonget() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))'"$1"')' "$LAST" 2>/dev/null; }
 
-wait_status() { # <id> <status> <timeout_s>
-  local id="$1" want="$2" t="$3" waited=0
+# wait_chat_ui: /chat/ отвечает DSH UI (не страницей прогрева) — признак:
+# бандл src="./assets/*.js". Контейнер поднимается до ~минуты.
+wait_chat_ui() { # <cookies> <timeout_s>
+  local c="$1" t="$2" waited=0
   while [ "$waited" -lt "$t" ]; do
-    api "$COOKIES_ADMIN" GET "/api/workspaces/$id" >/dev/null
-    [ "$(jsonget "['workspace']['status']")" = "$want" ] && return 0
+    code=$(curl -sS -c "$JAR" -b "$c" -L -o "$CHAT_HTML" -w '%{http_code}' "$BASE_URL/chat/")
+    if [ "$code" = 200 ] && grep -q 'src="./assets/' "$CHAT_HTML" 2>/dev/null; then
+      return 0
+    fi
     sleep 3; waited=$((waited + 3))
   done
   return 1
+}
+
+# chat_container: имя живого контейнера личного чата админа (u1) через
+# админ-API — без угадывания хэша home в имени agctl-chat-<hash>-u1.
+chat_container() {
+  api "$COOKIES_ADMIN" GET /api/admin/containers >/dev/null
+  python3 - "$LAST" <<'EOF'
+import json, sys
+rows = json.load(open(sys.argv[1])).get("containers", [])
+for c in rows:
+    if c.get("userId") == 1 and c.get("state") == "running":
+        print(c["name"]); break
+EOF
 }
 
 cleanup() {
@@ -98,8 +125,9 @@ preflight
 start_fake_llm
 
 say "Сервис agctl"
-"$AGCTL_BIN" serve --home "$TEST_HOME" --addr "$TEST_ADDR" \
+AGCTL_LLM_API_KEY="$LLM_KEY" "$AGCTL_BIN" serve --home "$TEST_HOME" --addr "$TEST_ADDR" \
   --image "$TEST_IMAGE" --mem-gb 2 --cpus 2 \
+  --llm-base-url "$PROVIDER_URL" --llm-models stub-model \
   >"/tmp/agctl-serve-$RUN_ID.log" 2>&1 &
 SERVE_PID=$!
 BASE_URL="http://$TEST_ADDR"
@@ -109,8 +137,8 @@ for _ in $(seq 1 40); do
   sleep 0.5
 done
 if [ "$up" != 1 ]; then
-  # Без работающего UI остальное бессмысленно: вместо 5 минут красных FAIL —
-  # сразу причина (хвост журнала serve; чаще всего CLI-флаг, которого нет).
+  # Без работающего UI остальное бессмысленно: вместо пяти минут красных
+  # FAIL — сразу причина (хвост журнала serve; чаще всего CLI-флаг, которого нет).
   fail "UI не поднялся — хвост журнала serve:"
   tail -n 30 "/tmp/agctl-serve-$RUN_ID.log" | sed 's/^/  | /'
   exit 1
@@ -125,162 +153,139 @@ code=$(curl -sS -c "$COOKIES_USER" -o "$LAST" -w '%{http_code}' -H 'Content-Type
   -d '{"login":"qa-user","password":"TempTest-456"}' "$BASE_URL/api/register")
 [ "$code" = 200 ] && pass "регистрация qa-user: $code" || fail "register user: $code"
 role=$(curl -sS -b "$COOKIES_ADMIN" "$BASE_URL/api/me" | python3 -c 'import json,sys; print(json.load(sys.stdin)["user"]["role"])' 2>/dev/null)
-[ "$role" = "admin" ] && pass "первый пользователь — admin" || fail "роль: $role"
-code=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE_URL/api/workspaces")
-[ "$code" = 401 ] && pass "без входа /api/workspaces → 401" || fail "аноним: $code"
+[ "$role" = admin ] && pass "первый пользователь — admin" || fail "роль: $role"
+code=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE_URL/api/projects")
+[ "$code" = 401 ] && pass "без входа /api/projects → 401" || fail "аноним: $code"
 code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_USER" "$BASE_URL/api/admin/users")
 [ "$code" = 403 ] && pass "не-admin /api/admin/users → 403" || fail "users: $code"
 code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_USER" "$BASE_URL/api/admin/audit")
 [ "$code" = 403 ] && pass "не-admin /api/admin/audit → 403" || fail "audit: $code"
 
-say "Создание рабочего места (base, выбрана только память/бэклог; провайдер=$PROVIDER_URL)"
-code=$(api "$COOKIES_ADMIN" POST /api/workspaces \
-  "{\"name\":\"e2e-base\",\"kit\":\"base\",\"components\":[\"core-workspace\"],\"baseURL\":\"$PROVIDER_URL\",\"models\":[\"stub-model\"],\"apiKey\":\"sk-e2e-fake-not-a-secret\"}")
-if [ "$code" != 202 ]; then
-  # Дальше без воркспейса проверять нечего: одна ясная причина вместо
-  # полутора десятков гарантированных FAIL (воркспейсы удалены в v3 —
-  # сценарий требует переписывания под персональный контейнер/проекты).
-  fail "create: $code"
-  cat "$LAST" 2>/dev/null
-  tail -n 15 "/tmp/agctl-serve-$RUN_ID.log" | sed 's/^/  | /'
-  exit 1
-fi
-pass "create → 202 Accepted"
-WS_ID=$(jsonget "['workspace']['id']")
-[ -n "${WS_ID:-}" ] && pass "ws id: получен" || fail "нет id воркспейса"
+say "Tombstone v2: воркспейсы удалены в v3"
+code=$(api "$COOKIES_ADMIN" POST /api/workspaces '{"name":"legacy"}')
+[ "$code" = 410 ] && pass "POST /api/workspaces → 410 (v2 удалены)" || fail "workspaces: $code"
 
-say "Ожидание running"
-if [ -n "${WS_ID:-}" ] && wait_status "$WS_ID" running 180; then
-  pass "статус running"
+say "Проекты: создание, листинг, git-репозиторий"
+code=$(api "$COOKIES_ADMIN" POST /api/projects '{"name":"e2e-proj"}')
+[ "$code" = 201 ] && pass "создание проекта: 201" || { fail "create project: $code"; cat "$LAST" 2>/dev/null; }
+api "$COOKIES_ADMIN" GET /api/projects >/dev/null
+names=$(jsonget "['projects']" 2>/dev/null | grep -c "'name': 'e2e-proj'")
+[ "$names" -ge 1 ] && pass "проект в списке" || fail "проекта нет в списке"
+code=$(api "$COOKIES_USER" GET /api/projects/e2e-proj/files)
+case "$code" in 403|404) pass "чужой проект по files API → $code" ;; *) fail "изоляция проектов: $code" ;; esac
+PROJ_DIR="$TEST_HOME/chats/u1/work/e2e-proj"
+if [ -d "$PROJ_DIR/.git" ]; then
+  pass "каталог проекта с git-репо: chats/u1/work/e2e-proj"
+  git -C "$PROJ_DIR" log --oneline 2>/dev/null | grep -q . \
+    && pass "git-история проекта непуста" || fail "git пуст"
+  grep -q '.env' "$PROJ_DIR/.gitignore" 2>/dev/null \
+    && pass ".gitexclude секретов на месте" || fail ".gitignore без секретных паттернов"
 else
-  fail "не перешёл в running за 180с"
-  api "$COOKIES_ADMIN" GET "/api/workspaces/${WS_ID:-x}" >/dev/null
-  printf '  error=%s\n' "$(jsonget "['workspace']['error']")"
-  if [ -n "${WS_ID:-}" ]; then
-    docker logs --tail 30 "agctl-$WS_ID" 2>&1 | sed 's/^/  | /'
-  fi
-  WS_ID="${WS_ID:-}"
-fi
-WS_URL=""
-if [ -n "${WS_ID:-}" ]; then
-  api "$COOKIES_ADMIN" GET "/api/workspaces/$WS_ID" >/dev/null
-  WS_URL=$(jsonget "['workspace']['url']")
-  selected=$(jsonget "['workspace']['components']")
-  [ "$selected" = "['core-workspace']" ] \
-    && pass "SQLite/API сохранили выбранный состав: $selected" \
-    || fail "неожиданный состав компонентов: $selected"
-  case "$WS_URL" in
-    "/w/$WS_ID/") pass "url — same-origin gateway path, без токена" ;;
-    "") fail "url пустой" ;;
-    *) fail "неожиданный url рабочего места: $WS_URL" ;;
-  esac
+  fail "нет $PROJ_DIR/.git"
 fi
 
-say "Открытие UI воркспейса через шлюз (cookie-mint dsh: 303+Set-Cookie → 200)"
-if [ -n "$WS_URL" ]; then
-  JAR="/tmp/agctl-e2e-$RUN_ID-dsh.cookies"
-  cp "$COOKIES_ADMIN" "$JAR"
-  code=$(curl -sS -c "$JAR" -b "$JAR" -L -o "/tmp/agctl-e2e-$RUN_ID-dsh.html" -w '%{http_code}' "$BASE_URL$WS_URL")
-  size=$(wc -c < "/tmp/agctl-e2e-$RUN_ID-dsh.html" | tr -d ' ')
-  if [ "$code" = 200 ] && [ "$size" -gt 500 ]; then
-    grep -q 'dsh-auth-' "$JAR" \
-      && pass "DSH UI через /w/{id}/: 200 (${size}b), cookie dsh-auth-* выдана" \
-      || pass "DSH UI через /w/{id}/: 200 (${size}b)"
-    if awk -v p="/w/$WS_ID/" '$6 ~ /^dsh-auth-/ && $3 == p {found=1} END {exit !found}' "$JAR"; then
-      pass "DSH cookie path ограничен конкретным workspace"
-    else
-      fail "DSH cookie path не ограничен workspace"
-    fi
-    asset=$(python3 -c 'import re,sys; s=open(sys.argv[1]).read(); m=re.search(r"src=\"\./(assets/[^\"]+\.js)\"", s); print(m.group(1) if m else "")' "/tmp/agctl-e2e-$RUN_ID-dsh.html")
-    if [ -n "$asset" ]; then
-      code=$(curl -sS -b "$JAR" -o "/tmp/agctl-e2e-$RUN_ID-asset.js" -w '%{http_code}' "$BASE_URL$WS_URL$asset")
-      asize=$(wc -c < "/tmp/agctl-e2e-$RUN_ID-asset.js" | tr -d ' ')
-      [ "$code" = 200 ] && [ "$asize" -gt 10000 ] \
-        && pass "DSH JS asset через same-origin gateway: $code (${asize}b)" \
-        || fail "DSH asset: http=$code size=$asize"
-    else
-      fail "не удалось извлечь asset URL из DSH HTML"
-    fi
+say "Личный чат: вход через шлюз, подъём персонального контейнера"
+if wait_chat_ui "$COOKIES_ADMIN" 240; then
+  size=$(wc -c < "$CHAT_HTML" | tr -d ' ')
+  pass "DSH UI через /chat/: 200 (${size}b), не страница прогрева"
+  asset=$(python3 -c 'import re,sys; s=open(sys.argv[1]).read(); m=re.search(r"src=\"\./(assets/[^\"]+\.js)\"", s); print(m.group(1) if m else "")' "$CHAT_HTML")
+  if [ -n "$asset" ]; then
+    code=$(curl -sS -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE_URL/chat/$asset")
+    [ "$code" = 200 ] && pass "DSH JS asset через шлюз: $code" || fail "asset: $code"
   else
-    fail "DSH gateway UI: http=$code size=$size"
+    fail "не удалось извлечь asset URL из DSH HTML"
   fi
+else
+  fail "/chat/ не отдал DSH UI за 240с"
+  tail -n 15 "/tmp/agctl-serve-$RUN_ID.log" | sed 's/^/  | /'
 fi
+code=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE_URL/chat/")
+[ "$code" = 401 ] && pass "аноним /chat/ → 401" || fail "аноним /chat/: $code"
 
-say "Изоляция: чужое место, redirect-slash, владелец"
-if [ -n "${WS_ID:-}" ]; then
-  code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_USER" "$BASE_URL/w/$WS_ID/")
-  [ "$code" = 403 ] && pass "чужой /w/{id}/ → 403" || fail "чужой /w: $code"
-  code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_USER" "$BASE_URL/api/workspaces/$WS_ID")
-  case "$code" in 403|404) pass "чужой workspace API → $code" ;; *) fail "чужой API: $code" ;; esac
-  code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_ADMIN" "$BASE_URL/w/$WS_ID")
-  [ "$code" = 308 ] && pass "без слэша → 308 на канонический /w/{id}/" || fail "redirect slash: $code"
-  code=$(curl -sS -b "$JAR" -c "$JAR" -L -o /dev/null -w '%{http_code}' "$BASE_URL$WS_URL")
-  [ "$code" = 200 ] && pass "владелец → gateway → DSH 200" || fail "владелец через gateway: $code"
+CONTAINER="$(chat_container)"
+if [ -n "$CONTAINER" ]; then
+  pass "персональный контейнер поднят: $CONTAINER"
+else
+  fail "контейнер чата не найден через /api/admin/containers"
 fi
 
 say "Docker: порты, лимиты, монтирования"
-CONTAINER="agctl-$WS_ID"
-docker inspect --format '{{range $p, $b := .NetworkSettings.Ports}}{{$p}} -> {{range $b}}{{.HostIP}}:{{.HostPort}} {{end}}{{end}}' "$CONTAINER" 2>/dev/null | grep -q '127.0.0.1:' \
-  && pass "порт контейнера опубликован на 127.0.0.1" || fail "порт не на loopback"
-mem=$(docker inspect --format '{{.HostConfig.Memory}}' "$CONTAINER" 2>/dev/null)
-[ "$mem" = "2147483648" ] && pass "лимит памяти 2GiB" || fail "memory=$mem"
-mounts=$(docker inspect --format '{{range .Mounts}}{{.Destination}} {{end}}' "$CONTAINER" 2>/dev/null)
-echo "$mounts" | grep -q '/workspace' && echo "$mounts" | grep -q '/home/dsh' \
-  && pass "монтирования /workspace и /home/dsh" || fail "mounts: $mounts"
-
-say "Git: шаблон, autosave, persist"
-WORK_PATH="$TEST_HOME/work/$WS_ID/repo"
-BARE_PATH="$TEST_HOME/repos/qa-admin/e2e-base.git"
-git --git-dir="$BARE_PATH" log --oneline --all 2>/dev/null | grep -q 'init:' \
-  && pass "bare: стартовый коммит шаблона" || fail "bare пуст/нет init"
-git -C "$WORK_PATH" remote get-url origin >/dev/null 2>&1 \
-  && pass "рабочий клон имеет origin" || fail "нет origin"
-test -f "$WORK_PATH/backlog/open/2026-09-28-onboarding.md" \
-  && pass "выбранный core-workspace компонент установил backlog" || fail "core-workspace files missing"
-test ! -f "$WORK_PATH/AGENTS.md" \
-  && pass "снятый core-instructions компонент отсутствует" || fail "deselected instructions were copied"
-printf 'Временная E2E-проверка; не пользовательские данные.\n' > "$WORK_PATH/e2e-proof.md"
-git -C "$WORK_PATH" add e2e-proof.md
-git -C "$WORK_PATH" commit -q -m 'test: e2e persistence check'
-api "$COOKIES_ADMIN" POST "/api/workspaces/$WS_ID/stop" >/dev/null
-if wait_status "$WS_ID" stopped 60; then
-  pass "stop → stopped"
-  git --git-dir="$BARE_PATH" log --oneline --all 2>/dev/null | grep -q 'persistence check' \
-    && pass "autosave при stop доставил proof-коммит в bare" || fail "proof нет в bare"
+if [ -n "${CONTAINER:-}" ]; then
+  docker inspect --format '{{range $p, $b := .NetworkSettings.Ports}}{{$p}} -> {{range $b}}{{.HostIP}}:{{.HostPort}} {{end}}{{end}}' "$CONTAINER" 2>/dev/null | grep -q '127.0.0.1:' \
+    && pass "порт контейнера опубликован на 127.0.0.1" || fail "порт не на loopback"
+  mem=$(docker inspect --format '{{.HostConfig.Memory}}' "$CONTAINER" 2>/dev/null)
+  [ "$mem" = 2147483648 ] && pass "лимит памяти 2GiB" || fail "memory=$mem"
+  mounts=$(docker inspect --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}; {{end}}' "$CONTAINER" 2>/dev/null)
+  echo "$mounts" | grep -q '/workspace' && echo "$mounts" | grep -q '/home/dsh' \
+    && pass "монтирования /workspace и /home/dsh" || fail "mounts: $mounts"
+  srcok=$(printf '%s' "$mounts" | grep -c "$TEST_HOME/chats/u1")
+  [ "$srcok" -ge 1 ] && pass "тома живут в TEST_HOME (изоляция прогона)" || fail "чужие источники монтирований"
 else
-  fail "stop не дошёл до stopped"
+  skip "инспекты Docker: контейнера нет"
 fi
-api "$COOKIES_ADMIN" POST "/api/workspaces/$WS_ID/start" >/dev/null
-if wait_status "$WS_ID" running 120; then
-  pass "start → running"
-  docker exec "$CONTAINER" test -f /workspace/e2e-proof.md 2>/dev/null \
-    && pass "proof-файл пережил рестарт (виден в контейнере)" || fail "proof пропал"
+
+say "Сон и пробуждение контейнера (том переживает)"
+PERSIST_OK=0
+if [ -n "${CONTAINER:-}" ]; then
+  printf 'e2e persistence proof; не пользовательские данные\n' > "$PROJ_DIR/e2e-proof.md"
+  code=$(api "$COOKIES_ADMIN" POST "/api/admin/containers/$CONTAINER/stop")
+  [ "$code" = 200 ] && pass "admin stop → 200" || fail "stop: $code"
+  slept=0
+  while [ "$slept" -lt 30 ]; do
+    state=$(docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null || echo gone)
+    [ "$state" = gone ] && break
+    sleep 1; slept=$((slept + 1))
+  done
+  [ "$state" = gone ] && pass "контейнер удалён (compute), том сохранён" || fail "контейнер не удалён: $state"
+  if wait_chat_ui "$COOKIES_ADMIN" 240; then
+    NEW="$(chat_container)"
+    [ -n "$NEW" ] && pass "повторный вход пересоздал контейнер: $NEW" || fail "контейнер не пересоздан"
+    docker exec "$NEW" test -f /workspace/e2e-proj/e2e-proof.md 2>/dev/null \
+      && { pass "файл проекта пережил сон/пробуждение (виден в контейнере)"; PERSIST_OK=1; } \
+      || fail "proof-файл не виден в контейнере"
+    CONTAINER="$NEW"
+  else
+    fail "после сна /chat/ не поднялся за 240с"
+  fi
 else
-  fail "restart не дошёл до running"
+  skip "сон/пробуждение: контейнера нет"
+fi
+
+say "Autosave проекта (локальный commit без push)"
+if [ "${PERSIST_OK}" = 1 ]; then
+  # Тикер autosave — каждые 2 минуты; ждём появления локального коммита.
+  asok=0; waited=0
+  while [ "$waited" -lt 180 ]; do
+    if git -C "$PROJ_DIR" log --oneline 2>/dev/null | grep -q 'autosave'; then asok=1; break; fi
+    sleep 5; waited=$((waited + 5))
+  done
+  if [ "$asok" = 1 ]; then
+    pass "autosave закоммитил изменения локально"
+    git -C "$PROJ_DIR" remote get-url origin >/dev/null 2>&1 \
+      && fail "у проекта появился remote (не должно быть)" \
+      || pass "проект без remote: push невозможен"
+  else
+    fail "autosave не закоммитил за 180с"
+  fi
+else
+  skip "autosave: нет живого контейнера после пробуждения"
 fi
 
 say "dsh-home и права"
-# dsh 0.2.0 импортирует settings.yaml при буте и переименовывает в
-# settings.yaml.imported — считаем валидным любой из вариантов.
-settings="$TEST_HOME/work/$WS_ID/dsh-home/settings.yaml"
-[ -f "$settings" ] || settings="$TEST_HOME/work/$WS_ID/dsh-home/settings.yaml.imported"
-if [ -f "$settings" ]; then
-  grep -q 'agctl' "$settings" \
-    && pass "настройки провайдера импортированы ($settings)" \
-    || fail "settings есть, но без блока agctl"
+CRED="$TEST_HOME/chats/u1/dsh-home/.credentials.yaml"
+if [ -f "$CRED" ]; then
+  grep -q 'api_key' "$CRED" \
+    && pass "креды провайдера импортированы в dsh-home" \
+    || fail "credentials без ключа провайдера"
 else
-  fail "нет settings.yaml(.imported)"
+  fail "нет .credentials.yaml в dsh-home"
 fi
-perms=$(stat -c '%a' "$TEST_HOME/work/$WS_ID/dsh-home/.credentials.yaml" 2>/dev/null || stat -f '%Lp' "$TEST_HOME/work/$WS_ID/dsh-home/.credentials.yaml" 2>/dev/null)
-[ "$perms" = "600" ] && pass ".credentials.yaml права 600" || fail "creds perms=$perms"
-
-say "CLI бэклога в контейнере"
-docker exec "$CONTAINER" sh -lc 'cd /workspace && agctl backlog check' >/dev/null 2>&1 \
-  && pass "agctl backlog check внутри контейнера" || fail "backlog check упал"
+perms=$(stat -c '%a' "$CRED" 2>/dev/null || stat -f '%Lp' "$CRED" 2>/dev/null)
+[ "$perms" = 600 ] && pass ".credentials.yaml права 600" || fail "creds perms=$perms"
 
 say "Живой провод до модели (через env-токен контейнера)"
 CHAT="NOT RUN"
-if [ "${FAKE_LLM:-0}" = "1" ]; then
+if [ "${FAKE_LLM:-0}" = "1" ] && [ -n "${CONTAINER:-}" ]; then
   probe=$(docker exec "$CONTAINER" sh -c \
     'printf "{\"model\":\"stub-model\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}" | curl -sS -m 15 --data-binary @- -H "Content-Type: application/json" -H "Authorization: Bearer $AGCTL_LLM_API_KEY" "'"$PROVIDER_URL"'/chat/completions"' 2>&1)
   if printf '%s' "$probe" | grep -q 'FAKE-LLM-REPLY'; then
@@ -294,15 +299,12 @@ else
   skip "FAKE_LLM=0 — живой провод не проверялся"
 fi
 
-say "Удаление воркспейса"
-if [ -n "${WS_ID:-}" ]; then
-  api "$COOKIES_ADMIN" DELETE "/api/workspaces/$WS_ID" >/dev/null
-  sleep 2
-  docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER" \
-    && fail "контейнер не удалён" || pass "контейнер удалён"
-  test -d "$TEST_HOME/work/$WS_ID/repo" \
-    && pass "каталоги TEST_HOME остались (ожидаемо по гайду)" || skip "каталогов нет"
-fi
+say "Удаление проекта"
+code=$(api "$COOKIES_ADMIN" DELETE /api/projects/e2e-proj)
+[ "$code" = 200 ] && pass "DELETE проекта: 200" || fail "delete project: $code"
+api "$COOKIES_ADMIN" GET /api/projects >/dev/null
+names=$(jsonget "['projects']" 2>/dev/null | grep -c "'name': 'e2e-proj'")
+[ "$names" = 0 ] && pass "проект исчез из списка" || fail "проект остался в списке"
 
 say "ИТОГО: PASS=$PASS FAIL=$FAIL CHAT=$CHAT run=$RUN_ID"
 if [ "$FAILED" = 0 ] && [ "${CLEANUP:-0}" = "1" ]; then
