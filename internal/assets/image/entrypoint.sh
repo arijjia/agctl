@@ -48,6 +48,27 @@ SSHCONF
   echo "[agctl-entrypoint] SSH enabled on container port 2222 (key auth only)"
 fi
 
+# Landlock-детект (карточка sandbox-deny-after-clone): песочница dsh выдаёт
+# гранты на $HOME, но на bind-маунтах Docker Desktop (virtiofs/fakeowner)
+# Landlock их не применяет — любой confined-доступ под /workspace получает
+# EPERM, а bash-инструмент классифицирует его как policy-denial («do not
+# retry»), сессия воркспейса неработоспособна. Probe лаунчера этого не видит
+# (проверяет локальную ФС), поэтому функциональная проверка против $HOME:
+# probe прошёл, а ls под грантом нет → confinement на этом хосте сломан,
+# честно уходим в danger-full-access (границей остаётся контейнер: лимиты,
+# loopback-порт, изолированная ФС). На Linux-хостах с обычными bind-маунтами
+# проверка проходит — режим не меняется. Явный DSH_PERMISSION_MODE оператора
+# не перекрываем.
+LAUNCHER="$(find /usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules -type f -name landlock-run 2>/dev/null | head -n1)"
+if [ -n "$LAUNCHER" ] && [ -d "$HOME" ] && [ -z "${DSH_PERMISSION_MODE:-}" ]; then
+  if "$LAUNCHER" --probe >/dev/null 2>&1 \
+     && ! "$LAUNCHER" --ro / --rw "$HOME" -- /bin/ls "$HOME" >/dev/null 2>&1; then
+    FS_TYPE="$(awk -v d="$HOME" '$2==d {print $3; exit}' /proc/self/mounts)"
+    echo "[agctl-entrypoint] ВНИМАНИЕ: landlock не конфайнит \$HOME ($HOME, fs=${FS_TYPE:-?}) — песочница dsh на этом хосте неработоспособна; включаю DSH_PERMISSION_MODE=danger-full-access (граница — контейнер)"
+    export DSH_PERMISSION_MODE=danger-full-access
+  fi
+fi
+
 BIND_IP="$(node /usr/local/bin/agctl-dsh-net print)"
 echo "[agctl-entrypoint] dsh web на ${BIND_IP}:${DSH_PORT:-3080}"
 exec dsh web --host "$BIND_IP" --port "${DSH_PORT:-3080}" --no-open "$@"
