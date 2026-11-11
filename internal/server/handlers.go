@@ -153,6 +153,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	s.authN.ResetLogin(req.Login)
 	_ = s.db.Audit(u.Login, "login", u.Login, "")
+	// Prewarm-пул: тёплая среда к следующему заходу в /chat/ (карточка
+	// chat-prewarm-pool). Асинхронно — логин не ждёт docker.
+	if s.prewarmEnabled() {
+		go s.prewarmOnce([]int64{u.ID})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"user": map[string]string{"login": u.Login, "role": u.Role}})
 }
 

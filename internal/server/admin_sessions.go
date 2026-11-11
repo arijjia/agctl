@@ -245,3 +245,82 @@ func userVolumeUsage(home string, userID int64) int64 {
 	})
 	return total
 }
+
+// userVolumeQuotaGB — квота тома пользователя (ГБ, 0 = выкл):
+// персональная settings KV `volume-quota-gb-u<ID>` поверх серверного
+// дефолта --volume-quota-gb (карточка chat-prewarm-pool, план 3).
+func (s *Server) userVolumeQuotaGB(userID int64) float64 {
+	if raw, err := s.db.SettingGet(fmt.Sprintf("volume-quota-gb-u%d", userID)); err == nil {
+		if v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64); err == nil && v > 0 {
+			return v
+		}
+		// явный персональный ноль — квота выключена для пользователя
+		if strings.TrimSpace(raw) == "0" {
+			return 0
+		}
+	}
+	return s.cfg.VolumeQuotaGB
+}
+
+// handleAdminUserLimitsPut — PUT /api/admin/users/{id}/limits: персональные
+// лимиты пользователя — TTL простоя чата (минуты, 0 = серверный дефолт)
+// и квота тома в ГБ (0 = серверный дефолт, -1 = выключить квоту).
+func (s *Server) handleAdminUserLimitsPut(w http.ResponseWriter, r *http.Request, _ identity) {
+	uid, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || uid <= 0 {
+		writeErr(w, http.StatusBadRequest, "некорректный id пользователя")
+		return
+	}
+	var req struct {
+		ChatTTLMin    *int     `json:"chatTTLMin"`
+		VolumeQuotaGB *float64 `json:"volumeQuotaGB"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "неверный JSON")
+		return
+	}
+	if req.ChatTTLMin == nil && req.VolumeQuotaGB == nil {
+		writeErr(w, http.StatusBadRequest, "пустой запрос: укажите chatTTLMin и/или volumeQuotaGB")
+		return
+	}
+	if req.ChatTTLMin != nil {
+		if *req.ChatTTLMin < 0 || *req.ChatTTLMin > 30*24*60 {
+			writeErr(w, http.StatusBadRequest, "chatTTLMin: 0..43200 минут (0 = серверный дефолт)")
+			return
+		}
+		val := ""
+		if *req.ChatTTLMin > 0 {
+			val = strconv.Itoa(*req.ChatTTLMin)
+		}
+		if err := s.db.SettingSet(fmt.Sprintf("chat-ttl-min-u%d", uid), val); err != nil {
+			writeErr(w, http.StatusInternalServerError, "не удалось сохранить TTL")
+			return
+		}
+	}
+	if req.VolumeQuotaGB != nil {
+		if *req.VolumeQuotaGB < -1 || *req.VolumeQuotaGB > 1e6 {
+			writeErr(w, http.StatusBadRequest, "volumeQuotaGB: 0..1000000 ГБ (-1 = выключить)")
+			return
+		}
+		val := ""
+		switch {
+		case *req.VolumeQuotaGB > 0:
+			val = strconv.FormatFloat(*req.VolumeQuotaGB, 'f', -1, 64)
+		case *req.VolumeQuotaGB == -1:
+			val = "0" // явный персональный ноль — квота выключена
+		}
+		if err := s.db.SettingSet(fmt.Sprintf("volume-quota-gb-u%d", uid), val); err != nil {
+			writeErr(w, http.StatusInternalServerError, "не удалось сохранить квоту")
+			return
+		}
+	}
+	login := ""
+	if u, err := s.db.UserByID(uid); err == nil {
+		login = u.Login
+	}
+	_ = s.db.Audit(login, "admin.user.limits", strconv.FormatInt(uid, 10), "")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"chatTTLMin":    s.userChatTTL(uid) / time.Minute,
+		"volumeQuotaGB": s.userVolumeQuotaGB(uid),
+	})
+}

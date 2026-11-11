@@ -53,6 +53,9 @@ type Config struct {
 	CORSOrigins             []string           // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
 	Tier0                   bool               // корень платформы ведёт в персональный чат (/chat/)
 	ChatTTL                 time.Duration      // idle TTL персонального runtime (по умолчанию 60 мин)
+	ChatPrewarmN            int                // prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл); он же — потолок пула
+	ChatPrewarmEvery        time.Duration      // период цикла подогрева (по умолчанию 15 мин)
+	VolumeQuotaGB           float64            // квота тома пользователя в ГБ (0 = выкл); per-user — settings KV
 	RegisterPerMinute       int                // лимит регистраций с одного IP за минуту: 0 — дефолт платформы (30), <0 — отключить (нагрузочные прогоны)
 	RequireApproval         bool               // legacy workspace flag; create endpoint is tombstoned in v3
 	ExperimentalLocalBridge bool               // opt-in pairing/status/revoke API for local connector
@@ -92,8 +95,13 @@ type Server struct {
 	requestMu     sync.Mutex                   // не допускать двойной approve одной заявки
 	autosaveMu    sync.Mutex                   // серия неудач autosave: backoff + repair-pass
 	autosaveFails map[string]autosaveFailState // "userID/project" → счётчик/пауза
-	startedAt     time.Time                    // время старта серва (сводка админки)
-	proxyAuditN   atomic.Int64                 // счётчик записей журнала шлюза для периодической обрезки
+	prewarmMu     sync.Mutex                   // не перекрывать циклы prewarm-пула
+	prewarmActive bool
+	warmHits      atomic.Int64 // ensureChat из тёплого кэша (hit-rate пула)
+	coldStarts    atomic.Int64 // холодные старты ensureChat: счётчик и суммарное время
+	coldTotalMS   atomic.Int64
+	startedAt     time.Time    // время старта серва (сводка админки)
+	proxyAuditN   atomic.Int64 // счётчик записей журнала шлюза для периодической обрезки
 
 }
 
@@ -157,6 +165,9 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 	}
 	if s.cfg.ChatTTL <= 0 {
 		s.cfg.ChatTTL = 60 * time.Minute
+	}
+	if s.cfg.ChatPrewarmEvery <= 0 {
+		s.cfg.ChatPrewarmEvery = 15 * time.Minute
 	}
 	if s.cfg.MaxPerUser <= 0 {
 		s.cfg.MaxPerUser = 3
@@ -326,6 +337,7 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	// Админ-панель супер-админа (карточка admin-panel-super-admin).
 	mux.HandleFunc("GET /api/admin/overview", s.requireAdmin(s.handleAdminOverview))
 	mux.HandleFunc("GET /api/admin/users/details", s.requireAdmin(s.handleAdminUsersDetailed))
+	mux.HandleFunc("PUT /api/admin/users/{id}/limits", s.requireAdmin(s.handleAdminUserLimitsPut))
 	mux.HandleFunc("GET /api/admin/containers", s.requireAdmin(s.handleAdminContainers))
 	mux.HandleFunc("POST /api/admin/containers/{name}/stop", s.requireAdmin(s.handleAdminContainerStop))
 	mux.HandleFunc("POST /api/admin/containers/{name}/start", s.requireAdmin(s.handleAdminContainerStart))
@@ -467,6 +479,21 @@ func (s *Server) StartBackground(ctx context.Context) {
 			case <-t.C:
 				s.autosaveAll()
 				s.autosaveLocalProjects()
+			}
+		}
+	}()
+	go func() { // prewarm-пул: тёплая среда к входу (login-хук — отдельно)
+		if !s.prewarmEnabled() {
+			return
+		}
+		t := time.NewTicker(s.cfg.ChatPrewarmEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s.prewarmOnce(nil)
 			}
 		}
 	}()

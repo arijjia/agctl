@@ -366,7 +366,9 @@ agctl version
 | `--image T` | тег образа персонального runtime (по умолчанию `agctl-dsh:0.2.0`) |
 | `--bin-dir D` | каталог linux-сборок agctl для образа (по умолчанию `./dist`) |
 | `--mem-gb N` / `--cpus N` | лимиты персонального контейнера (по умолчанию 2 ГБ / 2 CPU) |
-| `--chat-ttl-min N` | idle TTL персонального контейнера, минуты (по умолчанию 60) |
+| `--chat-ttl-min N` | idle TTL персонального контейнера, минуты (по умолчанию 60); per-user — `PUT /api/admin/users/{id}/limits` |
+| `--chat-prewarm-n N` | prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл; он же — потолок одновременно тёплых рантаймов). Подогрев при логине и каждые `--chat-prewarm-every` (15 мин) |
+| `--volume-quota-gb N` | квота тома пользователя в ГБ (0 = выкл): новый воркспейс не создаётся при исчерпании; per-user — там же в limits |
 | `--tier0=false` | отключить корневой маршрут в личный чат (для админ-only стенда) |
 | `--secure-cookies` | флаг Secure у cookies (за HTTPS-ingress) |
 | `--experimental-local-bridge` | experimental API-коннектора (по решению владельца локальный backend UX отложен; флаг по умолчанию выключен) |

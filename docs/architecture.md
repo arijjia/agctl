@@ -118,8 +118,15 @@ target layout, not a completed migration; the pilot starts on a clean volume.
 3. Пока dsh web стартует, agctl отдаёт собственную HTML-страницу прогрева
    `writeWarmChatPage`; после готовности `/chat/*` проксируется в контейнер.
 4. Reaper проверяет runtime раз в минуту. При `active==0` и idle ≥ TTL
-   (по умолчанию 60 мин; `--chat-ttl-min`) удаляется контейнер compute;
+   (по умолчанию 60 мин; `--chat-ttl-min`, per-user —
+   `PUT /api/admin/users/{id}/limits`) удаляется контейнер compute;
    DSH_HOME/work volume не удаляются (`chat.go`, `reapIdleChats`).
+4a. Prewarm-пул (хвост R1.3, `chat_prewarm.go`): при `--chat-prewarm-n N`
+   agctl держит тёплыми N самых недавних активных пользователей (журнал
+   шлюза) — подогрев при логине и по расписанию каждые
+   `--chat-prewarm-every`; N же — потолок одновременно тёплых рантаймов.
+   Метрики пула (hit-rate тёплых сред, среднее время холодного старта) —
+   в `GET /api/admin/overview`.
 5. Docker HEALTHCHECK проверяет HTTP на eth0-адресе контейнера
    (`agctl-dsh-net health`). Reconcile раз в
    30 секунд видит статус `unhealthy`: legacy workspace помечает stopped,

@@ -164,3 +164,28 @@ func (d *DB) UsersRegisteredDaily(days int) ([]DayCount, error) {
 	}
 	return out, rows.Err()
 }
+
+// RecentChatUsers — userID самых недавних активных пользователей по журналу
+// шлюза (MAX(ts) на пользователя): топливо prewarm-пула чатов. Только
+// существующие учётки; пустой журнал — пустой список.
+func (d *DB) RecentChatUsers(limit int) ([]int64, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	rows, err := d.Query(`SELECT p.user_id
+		FROM proxy_requests p JOIN users u ON u.id = p.user_id
+		GROUP BY p.user_id ORDER BY MAX(p.ts) DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, wrap("recent chat users", err)
+	}
+	defer rows.Close()
+	out := []int64{}
+	for rows.Next() {
+		var uid int64
+		if err := rows.Scan(&uid); err != nil {
+			return nil, wrap("recent chat user scan", err)
+		}
+		out = append(out, uid)
+	}
+	return out, rows.Err()
+}
