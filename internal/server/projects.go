@@ -84,6 +84,17 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request, id 
 		}
 	}
 	clone := strings.TrimSpace(req.CloneUrl) != ""
+	// Квота тома (карточка chat-prewarm-pool, план 3): новый проект не
+	// создаётся, если том пользователя уже упёрся в лимит. Обход файлов —
+	// редкая операция создания, не на горячем пути.
+	if q := s.userVolumeQuotaGB(id.ID); q > 0 {
+		if used := userVolumeUsage(s.cfg.Home, id.ID); used >= int64(q*1e9) {
+			_ = s.db.Audit(id.Login, "project.create.quota", req.Name, "")
+			writeErr(w, http.StatusForbidden, fmt.Sprintf(
+				"квота тома исчерпана (%.1f ГБ); освободите место или попросите администратора поднять лимит", q))
+			return
+		}
+	}
 	// Клонирование по URL — developer-настройка: это сетевой запрос с сервера,
 	// обычному режиму user он не нужен (карточка dev-workspace-clone-url).
 	var (

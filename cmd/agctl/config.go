@@ -24,6 +24,8 @@ type userConfig struct {
 		DevImages      string  `yaml:"dev_images"`
 		DevEnv         string  `yaml:"dev_env"`
 		ChatTTLMin     int     `yaml:"chat_ttl_min"`
+		ChatPrewarmN   int     `yaml:"chat_prewarm_n"`
+		VolumeQuotaGB  float64 `yaml:"volume_quota_gb"`
 		RegisterPerMin int     `yaml:"register_per_min"`
 		MemGB          float64 `yaml:"mem_gb"`
 		CPUs           float64 `yaml:"cpus"`
@@ -89,6 +91,8 @@ func cmdConfig(args []string) {
 	fmt.Printf("    addr:          %q\n", cfg.Serve.Addr)
 	fmt.Printf("    image:         %q\n", cfg.Serve.Image)
 	fmt.Printf("    chat_ttl_min:  %d\n", cfg.Serve.ChatTTLMin)
+	fmt.Printf("    chat_prewarm_n: %d\n", cfg.Serve.ChatPrewarmN)
+	fmt.Printf("    volume_quota_gb: %g\n", cfg.Serve.VolumeQuotaGB)
 	fmt.Printf("    register_per_min: %d\n", cfg.Serve.RegisterPerMin)
 	fmt.Printf("    mem_gb:        %g\n", cfg.Serve.MemGB)
 	fmt.Printf("    cpus:          %g\n", cfg.Serve.CPUs)

@@ -555,6 +555,7 @@ func (s *Server) cachedChatForEnsure(userID int64) *chatRuntime {
 		s.chatMu.Lock()
 		rt.lastSeen = time.Now()
 		s.chatMu.Unlock()
+		s.warmHits.Add(1)
 		return rt
 	}
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -568,6 +569,7 @@ func (s *Server) cachedChatForEnsure(userID int64) *chatRuntime {
 }
 
 func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
+	started := time.Now()
 	if rt := s.cachedChatForEnsure(userID); rt != nil {
 		return rt, nil
 	}
@@ -595,6 +597,7 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 	if rt, ok := s.chats[userID]; ok {
 		rt.lastSeen = time.Now()
 		s.chatMu.Unlock()
+		s.warmHits.Add(1)
 		return rt, nil
 	}
 	s.chatMu.Unlock()
@@ -628,8 +631,25 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 	s.chatMu.Lock()
 	s.chats[userID] = rt
 	s.chatMu.Unlock()
+	s.coldStarts.Add(1)
+	s.coldTotalMS.Add(time.Since(started).Milliseconds())
 	log.Printf("[chat] пользователь %d: личный runtime поднят (%s)", userID, handle.Endpoint)
 	return rt, nil
+}
+
+// userChatTTL — TTL простоя рантайма пользователя: персональная настройка
+// settings KV `chat-ttl-min-u<ID>` (минуты; <=0/мусор = серверный дефолт
+// --chat-ttl-min). Базис retention per-user карточки chat-prewarm-pool.
+func (s *Server) userChatTTL(userID int64) time.Duration {
+	raw, err := s.db.SettingGet(fmt.Sprintf("chat-ttl-min-u%d", userID))
+	if err != nil || raw == "" {
+		return s.cfg.ChatTTL
+	}
+	min, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || min <= 0 {
+		return s.cfg.ChatTTL
+	}
+	return time.Duration(min) * time.Minute
 }
 
 // userRole — роль учётной записи; пустая строка при ошибке чтения.
@@ -692,18 +712,19 @@ func (s *Server) reapIdleChats() {
 	var probes []candidate
 	var expired []expiredChat
 	now := time.Now()
-	probeAfter := s.cfg.ChatTTL - chatSSHActivityProbeWindow
 
 	s.chatMu.Lock()
 	for uid, rt := range s.chats {
 		if rt.active != 0 {
 			continue
 		}
+		ttl := s.userChatTTL(uid) // per-user retention (карточка chat-prewarm-pool)
+		probeAfter := ttl - chatSSHActivityProbeWindow
 		if rt.handle.SSHPort > 0 && now.Sub(rt.lastSeen) >= probeAfter {
 			probes = append(probes, candidate{userID: uid, rt: rt})
 			continue
 		}
-		if shouldSleepChat(rt.lastSeen, now, s.cfg.ChatTTL) {
+		if shouldSleepChat(rt.lastSeen, now, ttl) {
 			expired = append(expired, expiredChat{userID: uid, handle: rt.handle})
 			delete(s.chats, uid)
 		}
@@ -734,7 +755,7 @@ func (s *Server) reapIdleChats() {
 			s.chatMu.Unlock()
 			continue
 		}
-		if shouldSleepChat(current.lastSeen, now, s.cfg.ChatTTL) {
+		if shouldSleepChat(current.lastSeen, now, s.userChatTTL(item.userID)) {
 			expired = append(expired, expiredChat{userID: item.userID, handle: current.handle})
 			delete(s.chats, item.userID)
 		}

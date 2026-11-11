@@ -179,6 +179,9 @@ func cmdServe(args []string) {
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
 	experimentalLocalBridge := fsSet.Bool("experimental-local-bridge", false, "experimental local connector pairing API (requires trusted TLS ingress and --secure-cookies)")
 	chatTTLMin := fsSet.Int("chat-ttl-min", nonZeroOr(cfg.Serve.ChatTTLMin, 60), "минуты простоя персонального контейнера до сна (том пользователя сохраняется)")
+	chatPrewarmN := fsSet.Int("chat-prewarm-n", nonZeroOr(cfg.Serve.ChatPrewarmN, 0), "prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл; он же — потолок одновременно тёплых рантаймов)")
+	chatPrewarmEvery := fsSet.Duration("chat-prewarm-every", 15*time.Minute, "период цикла подогрева prewarm-пула")
+	volumeQuotaGB := fsSet.Float64("volume-quota-gb", nonZeroOr(cfg.Serve.VolumeQuotaGB, 0), "квота тома пользователя в ГБ (0 = выкл): новый воркспейс не создаётся при исчерпании; per-user — PUT /api/admin/users/{id}/limits")
 	registerPerMin := fsSet.Int("register-per-min", nonZeroOr(cfg.Serve.RegisterPerMin, 30), "лимит регистраций с одного IP в минуту; 0 — отключить защиту (нагрузочные прогоны)")
 	corsOrigins := fsSet.String("cors-origin", envOr("AGCTL_CORS_ORIGINS", cfg.Serve.CORSOrigins), "точные origins через запятую, которым разрешён кросс-доменный /api (кабинет-плагин dsh web); пусто = CORS выключен")
 	tier0 := fsSet.Bool("tier0", true, "поднимать общий чат (Tier 0) и отдавать корень платформы в него")
@@ -248,6 +251,9 @@ func cmdServe(args []string) {
 		CORSOrigins:             splitCSV(*corsOrigins),
 		Tier0:                   *tier0,
 		ChatTTL:                 time.Duration(*chatTTLMin) * time.Minute,
+		ChatPrewarmN:            *chatPrewarmN,
+		ChatPrewarmEvery:        *chatPrewarmEvery,
+		VolumeQuotaGB:           *volumeQuotaGB,
 		RegisterPerMinute:       regLimitValue(*registerPerMin),
 		DefaultLLM:              defaultLLM,
 		Profile:                 prof,
