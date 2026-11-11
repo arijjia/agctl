@@ -69,17 +69,38 @@ make up              # соберёт UI, бинарь и поднимет пл�
 не код (`internal/profile`: `profile.yaml` + логотип). Запуск:
 
 ```bash
-make up                       # профиль по умолчанию из bin/run.mk (PROFILE ?= utmn)
+make profiles                 # какие профили доступны (id, название, слоган)
+make up PROFILE=rshb          # запуск с готовым профилем из profiles/<id>
 make up PROFILE=agctl         # нейтральный запуск без организации
 agctl serve --profile-dir /path/to/profile   # свой профиль без пересборки
 ```
+
+Готовый профиль организации живёт в своём приватном репо и подключается в
+`profiles/<id>` одной командой. Имя `<id>` берётся из имени репо без префикса
+`agctl-profile-`. Полный путь от клона до запуска с профилем:
+
+```bash
+# 1. подтянуть профиль (git-URL или путь к локальному клону)
+make profile-fetch PROFILE_REPO=git@github.com:arijjia/agctl-profile-rshb.git
+make profile-fetch PROFILE_REPO=git@github.com:arijjia/agctl-profile-utmn.git
+# 2. проверить, что он виден
+make profiles
+# 3. ключ провайдера профиля
+cp .env.example .env          # впиши AGCTL_LLM_API_KEY=…
+# 4. поднять платформу с этим профилем
+make up PROFILE=rshb          # или make corp PROFILE=rshb
+```
+
+Если в `profiles/` лежит ровно один профиль, `make up` берёт его сам. При
+нескольких профилях без `PROFILE=` запустится нейтральный agctl, а `make up`
+первой строкой подскажет, какие профили есть.
 
 Ключ провайдера складывается в `.env` (в git не попадает — pre-commit и
 .gitignore страховуют) и подхватывается автоматически:
 
 ```bash
 cp .env.example .env          # и впиши AGCTL_LLM_API_KEY=sk-…
-make corp                     # фоновый запуск с провайдером профиля на :8929
+make corp PROFILE=rshb        # фоновый запуск с провайдером профиля на :8929
 make logs                     # хвост лога; остановка — make stop
 ```
 
@@ -167,6 +188,7 @@ serve:
 
 ```bash
 make up        # собрать и поднять платформу в фоне (:8929, лог .runtime/up.log)
+make up PROFILE=rshb   # то же с готовым профилем организации (список: make profiles)
 make status    # что запущено: make-инстансы + контейнеры
 make logs      # хвост лога (другой инстанс: make logs LOG=.runtime/corp.log)
 make stop      # аккуратный останов (SIGTERM; чат-контейнеры сервер закроет сам)
@@ -244,7 +266,8 @@ Ctrl+C так же корректно.
   пользовательский сценарий отложен.
 
 Модели чата по умолчанию приходят из профиля запуска (`--profile`; в make
-по умолчанию `PROFILE=utmn`, нейтральный запуск — `PROFILE=agctl`).
+профиль задаётся `PROFILE=<id>`, список — `make profiles`, нейтральный
+запуск — `PROFILE=agctl`).
 Для запросов нужен сырой ключ провайдера в `.env`:
 `cp .env.example .env`, затем впиши `AGCTL_LLM_API_KEY` одной строкой (без
 `Bearer` и кавычек) и перезапусти `make stop && make up`. Без ключа список
