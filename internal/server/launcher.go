@@ -112,7 +112,7 @@ func (s *Server) handleMeRuntimeStart(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "running", "endpoint": rt.handle.Endpoint, "sshPort": rt.handle.SSHPort,
+		"status": "running", "endpoint": rt.handle.Endpoint, "sshPort": rt.handle.SSHPort, "sshHost": rt.handle.SSHHost,
 	})
 }
 

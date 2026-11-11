@@ -222,7 +222,7 @@ window.__ModuleLoader__.load({
 			api("/api/me/ssh").then((ssh) => {
 				area.value = ssh.pubKey || "";
 				portLine.textContent = ssh.sshPort > 0
-					? "Подключение (рантайм работает): ssh root@127.0.0.1 -p " + ssh.sshPort
+					? "Подключение (рантайм работает): ssh root@" + (ssh.sshHost || "127.0.0.1") + " -p " + ssh.sshPort
 					: "Рантайм спит (sshPort = 0): открой чат — sshd поднимется при следующем старте.";
 			}).catch((err) => { status.textContent = "SSH: " + err.message; });
 			return sshCard;

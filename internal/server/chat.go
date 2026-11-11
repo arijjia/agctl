@@ -886,6 +886,11 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
 			stripAgctlCookies(pr.Out)
+			// Заголовки адаптера рантайма (Substrate/AX: ate-target-actor —
+			// один Endpoint маршрутизатора, актор выбирается заголовком).
+			for k, v := range rt.handle.Headers {
+				pr.Out.Header.Set(k, v)
+			}
 			// Не просим сжатие: чат-шелл встраивается в HTML до отдачи браузеру,
 			// а gzip/br тело нельзя безопасно менять без потери прокси-потока.
 			// DSH runtime локальный; экономия нескольких KB не стоит разных

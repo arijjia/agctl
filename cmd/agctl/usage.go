@@ -33,6 +33,7 @@ var usageSections = []usageSection{
 			{name: "serve", desc: []string{
 				"поднять платформу: UI + API + личные runtime пользователей",
 				"--home DIR · --addr H:P · --image T · --bin-dir D · --profile NAME · --llm-*",
+				"--runtime docker|k8s|ax · --k8s-* · --ax-* (docs/kubernetes.md)",
 			}},
 			{name: "migrate", desc: []string{"накатить миграции SQLite вручную"}},
 			{name: "seed-demo-users", desc: []string{"локальные тестовые роли user/developer/admin (после первого admin)"}},
@@ -58,6 +59,8 @@ var usageSections = []usageSection{
 		rows: []usageRow{
 			{name: "backlog", desc: []string{"карточки задач: new|list|top|check|start|done|cancel|note|migrate"}},
 			{name: "local connect", desc: []string{"experimental: коннектор локального backend к серверу"}},
+			{name: "init-chat-home", desc: []string{"init-контейнер K8s: подготовить DSH_HOME на томе (--home, --refresh-provider)"}},
+			{name: "ax-runner", desc: []string{"PID 1 песочницы Google AX / Agent Substrate (образ agctl-dsh)"}},
 			{name: "version", desc: []string{"версия и сборка"}},
 			{name: "help", desc: []string{"эта справка"}},
 		},
@@ -70,6 +73,7 @@ var usageEnv = []usageRow{
 	{name: "AGCTL_ADDR", desc: []string{"адрес UI/API (по умолчанию 127.0.0.1:8929)"}},
 	{name: "AGCTL_PROFILE", desc: []string{"профиль платформы (по умолчанию из config.yaml, иначе agctl)"}},
 	{name: "AGCTL_CONFIG", desc: []string{"путь к config.yaml (по умолчанию ~/.config/agctl/config.yaml)"}},
+	{name: "AGCTL_RUNTIME", desc: []string{"бэкенд рантаймов: docker (по умолчанию) | k8s | ax; детали — AGCTL_K8S_*, AGCTL_AX_*"}},
 }
 
 // usage печатает справку в stderr: цвета — только если поток терминальный.

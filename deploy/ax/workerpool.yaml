@@ -1,0 +1,28 @@
+# WorkerPool Agent Substrate для задач agctl: тёплые gVisor-воркеры, на
+# которые ax-server кладёт акторов (песочницы dsh пользователей). Без пула
+# первый resume падает с ResourceExhausted. Образ воркера — ko:// из checkout
+# Substrate (см. docs/kubernetes.md):
+#   KO_DOCKER_REPO=<реестр> ko apply -f deploy/ax/workerpool.yaml
+# Ёмкость воркера (limits) — общий бюджет его песочниц: один dsh ≈ 2 CPU /
+# 2 Gi лимита задачи (--cpus/--mem-gb шлюза), т.е. воркер 8 CPU / 16 Gi
+# вмещает ~8 активных пользователей; спящие (suspended) места не занимают.
+apiVersion: ate.dev/v1
+kind: WorkerPool
+metadata:
+  name: agctl-pool
+  namespace: agctl
+  labels:
+    workload: agctl-dsh
+spec:
+  replicas: 2
+  workerImage: ko://go.ate.dev/substrate/cmd/ateworker-gvisor
+  sandboxClasses:
+    - name: gvisor
+  template:
+    resources:
+      requests:
+        cpu: "2"
+        memory: 8Gi
+      limits:
+        cpu: "8"
+        memory: 16Gi

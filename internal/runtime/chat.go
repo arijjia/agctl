@@ -4,6 +4,7 @@ package runtime
 
 import (
 	"context"
+	"strings"
 
 	"github.com/arijjia/agctl/internal/provision"
 )
@@ -41,6 +42,14 @@ type ChatHandle struct {
 	Endpoint   string
 	// SSHPort — хост-порт SSH канала (роль developer); 0 = sshd не поднимался.
 	SSHPort int
+	// SSHHost — адрес SSH-канала для пользователя: пусто = loopback хоста agctl
+	// (Docker); Kubernetes-адаптер отдаёт внешний адрес узла/балансировщика
+	// (NodePort).
+	SSHHost string
+	// Headers — заголовки, которые шлюз добавляет к каждому запросу в Endpoint
+	// (например, ate-target-actor маршрутизатора Agent Substrate: один общий
+	// Endpoint, актор выбирается заголовком). nil = ничего не добавлять.
+	Headers map[string]string
 }
 
 // ChatProvider manages scale-to-zero Chat compute while keeping StorageID's
@@ -54,4 +63,22 @@ type ChatProvider interface {
 	// HasActiveSSH reports a live authenticated/connecting sshd child process.
 	// Implementations without SSH can always return false.
 	HasActiveSSH(ctx context.Context, handle ChatHandle) (bool, error)
+}
+
+// ActiveSSHSession — есть ли среди процессов рантайма живой sshd-сеанс
+// (не listener). Вход — вывод `ps -eo pid,args` (или аналогичный список
+// строк: PID и полная команда); используется Docker- и Kubernetes-адаптерами
+// для продления lease developer'а перед TTL-усыплением.
+func ActiveSSHSession(ps string) bool {
+	for _, line := range strings.Split(ps, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		cmd := strings.ToLower(strings.Join(fields[1:], " "))
+		if strings.HasPrefix(cmd, "sshd:") && !strings.Contains(cmd, "[listener]") {
+			return true
+		}
+	}
+	return false
 }

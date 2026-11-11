@@ -1,0 +1,17 @@
+# agctl в Kubernetes: шлюз (Deployment) + RBAC на поды пользователей.
+# Профиль организации и ключи LLM — отдельно (make k8s_profile / k8s_secret):
+# они не часть базы, см. docs/kubernetes.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: agctl
+resources:
+  - namespace.yaml
+  - rbac.yaml
+  - storage.yaml
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml
+images:
+  - name: agctl-serve
+    newName: registry.example.com/agctl/agctl-serve
+    newTag: 0.1.0

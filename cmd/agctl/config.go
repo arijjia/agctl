@@ -19,15 +19,18 @@ type userConfig struct {
 	Profile    string `yaml:"profile"`
 	ProfileDir string `yaml:"profile_dir"`
 	Serve      struct {
-		Addr           string  `yaml:"addr"`
-		Image          string  `yaml:"image"`
-		DevImages      string  `yaml:"dev_images"`
-		DevEnv         string  `yaml:"dev_env"`
-		ChatTTLMin     int     `yaml:"chat_ttl_min"`
-		RegisterPerMin int     `yaml:"register_per_min"`
-		MemGB          float64 `yaml:"mem_gb"`
-		CPUs           float64 `yaml:"cpus"`
-		CORSOrigins    string  `yaml:"cors_origins"`
+		Runtime        string    `yaml:"runtime"` // docker | k8s | ax
+		Addr           string    `yaml:"addr"`
+		Image          string    `yaml:"image"`
+		DevImages      string    `yaml:"dev_images"`
+		DevEnv         string    `yaml:"dev_env"`
+		ChatTTLMin     int       `yaml:"chat_ttl_min"`
+		RegisterPerMin int       `yaml:"register_per_min"`
+		MemGB          float64   `yaml:"mem_gb"`
+		CPUs           float64   `yaml:"cpus"`
+		CORSOrigins    string    `yaml:"cors_origins"`
+		K8s            k8sConfig `yaml:"k8s"`
+		AX             axConfig  `yaml:"ax"`
 	} `yaml:"serve"`
 }
 
@@ -86,6 +89,7 @@ func cmdConfig(args []string) {
 	fmt.Printf("  profile:     %q\n", cfg.Profile)
 	fmt.Printf("  profile_dir: %q\n", cfg.ProfileDir)
 	fmt.Printf("  serve:\n")
+	fmt.Printf("    runtime:       %q\n", cfg.Serve.Runtime)
 	fmt.Printf("    addr:          %q\n", cfg.Serve.Addr)
 	fmt.Printf("    image:         %q\n", cfg.Serve.Image)
 	fmt.Printf("    chat_ttl_min:  %d\n", cfg.Serve.ChatTTLMin)
@@ -93,4 +97,33 @@ func cmdConfig(args []string) {
 	fmt.Printf("    mem_gb:        %g\n", cfg.Serve.MemGB)
 	fmt.Printf("    cpus:          %g\n", cfg.Serve.CPUs)
 	fmt.Printf("    cors_origins:  %q\n", cfg.Serve.CORSOrigins)
+}
+
+// k8sConfig — дефолты бэкенда k8s (serve.k8s.*; env AGCTL_K8S_* и флаги
+// --k8s-* перекрывают).
+type k8sConfig struct {
+	Namespace       string `yaml:"namespace"`
+	Kubeconfig      string `yaml:"kubeconfig"`
+	Image           string `yaml:"image"`
+	StorageClass    string `yaml:"storage_class"`
+	StorageSize     string `yaml:"storage_size"`
+	RuntimeClass    string `yaml:"runtime_class"`
+	SharedClaim     string `yaml:"shared_claim"`
+	SSHHost         string `yaml:"ssh_host"`
+	ReadyTimeoutSec int    `yaml:"ready_timeout_sec"`
+	GatewaySelector string `yaml:"gateway_selector"`
+	PullPolicy      string `yaml:"pull_policy"`
+}
+
+// axConfig — дефолты бэкенда ax (serve.ax.*; env AGCTL_AX_* и флаги --ax-*
+// перекрывают).
+type axConfig struct {
+	Server          string `yaml:"server"`
+	Atespace        string `yaml:"atespace"`
+	Image           string `yaml:"image"`
+	RouterURL       string `yaml:"router_url"`
+	RouterCA        string `yaml:"router_ca"`
+	RouterCert      string `yaml:"router_cert"`
+	RouterKey       string `yaml:"router_key"`
+	ReadyTimeoutSec int    `yaml:"ready_timeout_sec"`
 }
