@@ -45,6 +45,8 @@ type fakeRuntime struct {
 	// chatEndpointOverride — endpoint для следующего handle от EnsureChat;
 	// по умолчанию фейковый мёртвый порт 40000+userID.
 	chatEndpointOverride string
+	// chatHeaders — заголовки handle (адаптеры с общим Endpoint: Substrate).
+	chatHeaders map[string]string
 }
 
 func newFakeRuntime() *fakeRuntime {
@@ -129,7 +131,7 @@ func (f *fakeRuntime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (ag
 	}
 	return agctlrt.ChatHandle{
 		RuntimeID: spec.RuntimeID, InstanceID: instanceID,
-		Endpoint: endpoint, SSHPort: sshPort,
+		Endpoint: endpoint, SSHPort: sshPort, Headers: f.chatHeaders,
 	}, nil
 }
 

@@ -1,0 +1,20 @@
+# Пример политики egress Substrate для актора agctl (режим
+# AGCTL_AX_INJECT_LLM_KEY=0): песочница dsh шлёт запросы к LLM с заголовком
+# Authorization: Bearer placeholder, а egress-шлюз (atenet-egress) подменяет
+# его реальным ключом из Secret — ключ никогда не попадает в песочницу,
+# снимок актора и `ax get task`. Создаётся через API Substrate
+# (CreateActorEgressPolicy) для каждого актора — автоматизация этого шага
+# в agctl запланирована (backlog: k8s-substrate-ax-backend).
+#
+#   kubectl -n agctl create secret generic llm-zai --from-literal=token=<ключ>
+#   kubectl ate create egress-policy --actor agctl/agctl-chat-… -f этот-файл
+rules:
+  - https:
+      hostnames: ["api.z.ai"]
+      effects:
+        replaceHeaders:
+          - header: Authorization
+            prefix: "Bearer "
+            credentialUri: ate-secret://k8s.io/agctl/agctl/llm-zai/token
+  # dsh внутри песочницы ходит к шлюзу agctl только через маршрутизатор
+  # (входящий трафик); исходящих запросов к шлюзу у dsh нет.

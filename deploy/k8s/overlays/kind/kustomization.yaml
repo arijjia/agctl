@@ -1,0 +1,23 @@
+# Локальный смоук в kind (bin/e2e-k8s-kind.sh): образы загружены в узел
+# (kind load), pull-политика Never, NodePort наружу, RWX не нужен (standard
+# StorageClass kind даёт RWO; PVC на пользователя).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+images:
+  - name: agctl-serve
+    newName: agctl-serve
+    newTag: dev
+patches:
+  - path: patch-deployment.yaml
+  - path: patch-service.yaml
+  - target:
+      kind: PersistentVolumeClaim
+      name: agctl-data
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: agctl-data

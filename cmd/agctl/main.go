@@ -26,7 +26,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/arijjia/agctl/internal/assets"
 	"github.com/arijjia/agctl/internal/backlog"
 	"github.com/arijjia/agctl/internal/profile"
 	"github.com/arijjia/agctl/internal/provision"
@@ -80,6 +79,8 @@ func main() {
 		cmdMigrate(os.Args[2:])
 	case "init-chat-home": // внутренний initContainer helper для K8s Chat PVC
 		cmdInitChatHome(os.Args[2:])
+	case "ax-runner": // PID 1 песочницы Google AX / Agent Substrate (образ agctl-dsh)
+		cmdAXRunner(os.Args[2:])
 	case "seed-demo-users":
 		cmdSeedDemoUsers(os.Args[2:])
 	case "backlog":
@@ -192,6 +193,7 @@ func cmdServe(args []string) {
 	llmModel := fsSet.String("llm-model", envOr("AGCTL_LLM_MODEL", prof.LLM.DefaultModel), "модель чата по умолчанию (из списка llm-models)")
 	llmModels := fsSet.String("llm-models", envOr("AGCTL_LLM_MODELS", prof.LLM.DefaultModels), "список моделей чата через запятую")
 	llmAPIKey := fsSet.String("llm-api-key", strings.TrimSpace(envOr("AGCTL_LLM_API_KEY", "")), "ключ провайдера чата (предпочтительно через env AGCTL_LLM_API_KEY)")
+	rf := registerRuntimeFlags(fsSet, cfg)
 	_ = profileFlag
 	_ = profileDirFlag
 	_ = fsSet.Parse(args)
@@ -233,7 +235,7 @@ func cmdServe(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	srv, err := server.New(db, sec, server.Config{
+	srvCfg := server.Config{
 		Home:                    absHome,
 		Addr:                    *addr,
 		MemoryBytes:             int64(*memGB * 1024 * 1024 * 1024),
@@ -251,7 +253,8 @@ func cmdServe(args []string) {
 		RegisterPerMinute:       regLimitValue(*registerPerMin),
 		DefaultLLM:              defaultLLM,
 		Profile:                 prof,
-	})
+	}
+	srv, err := buildServer(rf, db, sec, srvCfg)
 	if defaultLLM.BaseURL != "" {
 		log.Printf("llm: платформенный провайдер чата по умолчанию %s (%s, моделей: %d, доп. провайдеров: %d, ключ %s)", defaultLLM.BaseURL, defaultLLM.Alias(), len(defaultLLM.AllModels()), len(defaultLLM.Extras), keyState(defaultLLM.APIKey))
 	} else {
@@ -284,7 +287,8 @@ func cmdServe(args []string) {
 		close(shutdownDone)
 	}()
 	log.Printf("agctl serve: home=%s addr=http://%s (UI и API)", absHome, *addr)
-	log.Printf("docker: %s", dockerStatus())
+	runtimeKind, _ := parseRuntimeKind(*rf.kind)
+	log.Printf("%s", runtimeStatusLine(runtimeKind))
 	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
@@ -374,48 +378,10 @@ func cmdInitChatHome(args []string) {
 	if *home == "" {
 		log.Fatal("init-chat-home: требуется --home или DSH_HOME")
 	}
-	models := []string{}
-	if raw := os.Getenv("AGCTL_LLM_MODELS"); raw != "" {
-		if err := json.Unmarshal([]byte(raw), &models); err != nil {
-			log.Fatalf("init-chat-home: AGCTL_LLM_MODELS: %v", err)
-		}
-	}
-	extras := []provision.ExtraProvider{}
-	if raw := strings.TrimSpace(os.Getenv("AGCTL_LLM_EXTRA_PROVIDERS")); raw != "" {
-		if err := json.Unmarshal([]byte(raw), &extras); err != nil {
-			log.Fatalf("init-chat-home: AGCTL_LLM_EXTRA_PROVIDERS: %v", err)
-		}
-	}
-	for i := range extras {
-		env := strings.TrimSpace(extras[i].APIKeyEnv)
-		if env == "" {
-			env = extras[i].KeyEnv()
-		}
-		extras[i].APIKeyEnv = env
-		extras[i].APIKey = strings.TrimSpace(os.Getenv(env))
-	}
-	provider := provision.Provider{
-		Name:    os.Getenv("AGCTL_LLM_PROVIDER"),
-		BaseURL: os.Getenv("AGCTL_LLM_BASE_URL"),
-		Model:   os.Getenv("AGCTL_LLM_MODEL"),
-		Models:  models,
-		APIKey:  os.Getenv("AGCTL_LLM_API_KEY"),
-		Extras:  extras,
-	}
-	seeded, refreshed, err := initChatHome(*home, provider, *refresh, assets.DshSkel)
-	if err != nil {
+	// Пресет разрешений роли user (danger-full-access) — как у Docker-адаптера.
+	fullAccess := os.Getenv("AGCTL_DEFAULT_FULL_ACCESS") == "1"
+	if err := prepareChatHome(*home, providerFromEnv(), *refresh, fullAccess); err != nil {
 		log.Fatal(err)
-	}
-	if err := provision.EnsureChatPlugins(*home, assets.DshSkel); err != nil {
-		log.Fatal(err)
-	}
-	switch {
-	case seeded:
-		fmt.Println("init-chat-home: seeded")
-	case refreshed:
-		fmt.Println("init-chat-home: provider refreshed")
-	default:
-		fmt.Println("init-chat-home: existing home preserved")
 	}
 }
 

@@ -224,10 +224,15 @@ host port; это не «слушать всю LAN». Почему релея н
   создаются с базовым README, комплекты `base`/`1c-vibe` ещё не подключены.
 - Local backend — experimental code behind flag; пользовательский flow
   отложен владельцем.
-- Kubernetes `ChatProvider` создаёт Pod/Service/PVC в prototype
-  (`internal/runtime/k8srt`), но `cmd serve` выбирает Docker; readiness/live
-  cluster smoke, selector, egress policy, PVC backup/encryption и HA ещё не
-  реализованы. Production K8s пока не заявляется.
+- Kubernetes: `agctl serve --runtime k8s` — под на пользователя
+  (`internal/runtime/k8srt`: readiness, замена подов другой версии, SSH через
+  NodePort, общий RWX-том со шлюзом, NetworkPolicy на поды шлюза, health,
+  pods/exec для SSH-lease), `--runtime ax` — задача Google AX / актор Agent
+  Substrate (`internal/runtime/axrt`, раннер `agctl ax-runner`); манифесты
+  `deploy/k8s`, смоук в kind `bin/e2e-k8s-kind.sh`, подробности
+  `docs/kubernetes.md`. Не реализованы: HA control-plane, egress-политики
+  подов, автоматическое создание EgressPolicy Substrate; live-прогон на
+  кластере с Substrate/AX в репо не автоматизирован.
 - MFA/SSO и egress allowlist не реализованы; текущие остаточные риски —
   `docs/secure-gateway.md`.
 

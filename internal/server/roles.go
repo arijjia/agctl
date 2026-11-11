@@ -171,6 +171,7 @@ func (s *Server) handleMeSSHGet(w http.ResponseWriter, r *http.Request, id ident
 	writeJSON(w, http.StatusOK, map[string]any{
 		"pubKey":  key,
 		"sshPort": s.chatSSHPort(id.ID),
+		"sshHost": s.chatSSHHost(id.ID),
 	})
 }
 
@@ -182,4 +183,15 @@ func (s *Server) chatSSHPort(userID int64) int {
 		return rt.handle.SSHPort
 	}
 	return 0
+}
+
+// chatSSHHost — адрес SSH-канала живого рантайма: пусто = loopback хоста
+// (Docker), иначе внешний адрес, который отдал адаптер (Kubernetes NodePort).
+func (s *Server) chatSSHHost(userID int64) string {
+	s.chatMu.Lock()
+	defer s.chatMu.Unlock()
+	if rt, ok := s.chats[userID]; ok {
+		return rt.handle.SSHHost
+	}
+	return ""
 }

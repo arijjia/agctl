@@ -53,6 +53,11 @@ COPY skel/ /opt/dsh-skel/
 COPY entrypoint.sh /usr/local/bin/agctl-entrypoint
 COPY dsh-net.mjs /usr/local/bin/agctl-dsh-net
 RUN chmod +x /usr/local/bin/agctl /usr/local/bin/agctl-entrypoint /usr/local/bin/agctl-dsh-net && mkdir -p /home/dsh /workspace
+# Google AX / Agent Substrate: PID 1 песочницы — /usr/local/bin/ax-task-runner
+# (контракт раннера AX); здесь это обёртка над `agctl ax-runner`: probes на
+# :80, прокси на dsh web :3080, хвост лога запуска для шлюза. В Docker/K8s не
+# используется (ENTRYPOINT ниже).
+RUN printf '#!/bin/sh\nexec /usr/local/bin/agctl ax-runner "$@"\n' > /usr/local/bin/ax-task-runner && chmod +x /usr/local/bin/ax-task-runner
 WORKDIR /workspace
 EXPOSE 3080 2222
 # Живость dsh: любой HTTP-ответ (в т.ч. 401/303 без cookie) = процесс жив и

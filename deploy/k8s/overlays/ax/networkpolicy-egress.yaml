@@ -1,0 +1,40 @@
+# Egress шлюза в режиме ax: ax-server (ax-system), atenet-router (ate-system),
+# DNS и API-сервер кластера; внешние адреса (Git, Jira) — по необходимости.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agctl-gateway-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: agctl
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ax-system
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ate-system
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 443 # API-сервер, внешние HTTPS (Git/Jira)

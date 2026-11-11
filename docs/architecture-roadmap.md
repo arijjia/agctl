@@ -69,12 +69,16 @@ AI Workspaces (ТюмГУ) выделен в отдельное репо `agctl-
 
 ## 4. Kubernetes и отложенные интеграции
 
-- `internal/runtime/k8srt` — prototype одного Chat Pod/Service/PVC на user.
-  Общий контракт `StorageID` сохраняет пользовательский том при смене Pod;
-  `cmd serve` пока выбирает Docker, live cluster/readiness/NetworkPolicy
-  не прошли production validation.
-- K8s-путь v3: один Pod на пользователя (dsh web + sshd для роли
-  developer в общей pod-сети) и один PVC; не Pod на проект.
+- `internal/runtime/k8srt` — бэкенд `--runtime k8s`: один Pod на
+  пользователя (dsh web + sshd для developer через NodePort), данные — общий
+  RWX-том со шлюзом (проектные API работают) или PVC на пользователя;
+  readiness, замена подов по версии/образу, health, свип дрейфа. Манифесты
+  `deploy/k8s`, смоук `make k8s_e2e_kind`, дока `docs/kubernetes.md`.
+- `internal/runtime/axrt` — бэкенд `--runtime ax`: пользователь = AX Task =
+  актор Agent Substrate (gVisor/microVM), сон = suspend-снимок, трафик через
+  atenet-router (`ChatHandle.Headers`), раннер `agctl ax-runner` в образе.
+  Открыто: автосоздание EgressPolicy для инъекции ключей LLM, неизменяемость
+  задачи при смене провайдера, SSH в песочнице, live-валидация на кластере.
 - **Local backend** (DSH на ноутбуке) владелец решила осмыслить позже:
   серверный experimental code за выключенным флагом остаётся в репо, но
   UX/rollout не планировать без отдельного решения.

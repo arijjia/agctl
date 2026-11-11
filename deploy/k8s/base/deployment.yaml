@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agctl
+  labels:
+    app.kubernetes.io/name: agctl
+spec:
+  replicas: 1 # один serve + SQLite; HA — отдельная волна (docs/architecture-roadmap.md)
+  strategy:
+    type: Recreate # RWO-дом не делится между двумя подами
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agctl
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agctl # NetworkPolicy подов dsh пускает только эти поды
+    spec:
+      serviceAccountName: agctl
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: agctl
+          image: agctl-serve
+          args: ["serve", "--addr", "0.0.0.0:8929"]
+          env:
+            - name: AGCTL_HOME
+              value: /var/lib/agctl
+            - name: AGCTL_RUNTIME
+              value: k8s
+            - name: AGCTL_K8S_IMAGE
+              value: registry.example.com/agctl/agctl-dsh:0.2.2
+            - name: AGCTL_K8S_SHARED_CLAIM
+              value: agctl-data
+            - name: AGCTL_K8S_STORAGE_CLASS
+              value: ""
+            - name: AGCTL_K8S_RUNTIME_CLASS
+              value: "" # gvisor — рекомендуется для подов пользователей
+            - name: AGCTL_K8S_SSH_HOST
+              value: "" # внешний адрес узлов для SSH developer'а (NodePort); пусто = SSH выключен
+            - name: AGCTL_PROFILE_DIR
+              value: /etc/agctl/profile
+            - name: AGCTL_DEV_IMAGES
+              value: ""
+          envFrom:
+            - secretRef:
+                name: agctl-llm # AGCTL_LLM_API_KEY (+ ключи extra_providers) — make k8s_secret
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8929
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: home
+              mountPath: /var/lib/agctl
+            - name: data
+              mountPath: /var/lib/agctl/chats
+            - name: profile
+              mountPath: /etc/agctl/profile
+              readOnly: true
+            - name: profile-assets
+              mountPath: /etc/agctl/profile/assets
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: home
+          persistentVolumeClaim:
+            claimName: agctl-home
+        - name: data
+          persistentVolumeClaim:
+            claimName: agctl-data
+        - name: profile
+          configMap:
+            name: agctl-profile # profile.yaml — make k8s_profile PROFILE=<id>
+            optional: true
+        - name: profile-assets
+          configMap:
+            name: agctl-profile-assets # logo.png
+            optional: true
+        - name: tmp
+          emptyDir: {}
