@@ -2,17 +2,18 @@
 schema: 1.1.0
 id: litellm-quota-enforcement
 title: "Квоты токенов: инжект виртуальных ключей LiteLLM по бюджетам из админки"
-status: open
+status: done
 priority: P2
 size: M
 area: server
 repo: arijjia/agctl
 created: 2026-11-04
-updated: 2026-11-04
+updated: 2026-11-12
 tags: ["quotas", "litellm", "enforcement"]
 depends: []
 sessions:
   - session-4e3c026b-5dcd-4cb7-96f8-7b7c83085443:work
+  - session-e0c9c152-46a8-4490-914f-8ff8e5364e38:work
 ---
 ## Описание
 
@@ -39,3 +40,5 @@ LiteLLM (env/профиль, флаг включения). Без конфигу
 ## Журнал
 
 - 2026-11-04: создано (`gitctl backlog new`).
+- 2026-11-12: refl: контекста хватило; сессию-источник не читал — API квот/LiteLLM понятны из кода store/admin.go. Перенос в карточку: (а) 'удаление пользователя' в критерии неисполнимо буквально — API удаления учёток в v3 нет, отзыв реализован через снятие квоты и invalidateQuotaKeys (механизм revokeUserKey готов для будущего user-delete); (б) единицы max_budget трактует LiteLLM (валюта прокси), квотные числа передаются как есть — зафиксировано комментарием в litellm.go.
+- 2026-11-12: done — квоты токенов применяются: виртуальные ключи LiteLLM минтятся по бюджетам из админки и инжектятся в рантаймы; ротация при смене квоты, отзыв при снятии; тесты на fake LiteLLM
