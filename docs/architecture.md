@@ -231,10 +231,13 @@ host port; это не «слушать всю LAN». Почему релея н
   создаются с базовым README, комплекты `base`/`1c-vibe` ещё не подключены.
 - Local backend — experimental code behind flag; пользовательский flow
   отложен владельцем.
-- Kubernetes `ChatProvider` создаёт Pod/Service/PVC в prototype
-  (`internal/runtime/k8srt`), но `cmd serve` выбирает Docker; readiness/live
-  cluster smoke, selector, egress policy, PVC backup/encryption и HA ещё не
-  реализованы. Production K8s пока не заявляется.
+- Kubernetes `ChatProvider` (`internal/runtime/k8srt`) включается флагом
+  `agctl serve --runtime k8s` (Docker остаётся default): per-user Pod +
+  ClusterIP Service + PVC по StorageID, EnsureChat дожидается Pod Ready
+  (бюджет 120s, `K8sReadinessWait`). Это prototype: live cluster smoke, RBAC
+  least-privilege манифесты, egress policy validation и PVC backup ещё не
+  прогнаны — см. `docs/kubernetes-runtime.md`. Production K8s пока не
+  заявляется; dev-воркспейсы и control-plane остаются на Docker.
 - MFA/SSO и egress allowlist не реализованы; текущие остаточные риски —
   `docs/secure-gateway.md`.
 

@@ -1,17 +1,19 @@
 ---
-schema: 1.0.0
+schema: 1.1.0
 id: k8s-chat-runtime-adapter
 title: "Kubernetes ChatProvider: per-user Pod + Service + PVC and scale-to-zero"
-status: open
+status: in-progress
 priority: P3
 size: L
 area: runtime
 repo: arijjia/agctl
 created: 2026-10-19
-updated: 2026-10-20
+updated: 2026-11-13
 tags: []
 depends: []
 epic: two-mode-mvp
+sessions:
+  - session-365c2d55-6a2b-4739-99bd-914641f176f3:work
 ---
 ## Описание
 

@@ -29,6 +29,7 @@ import (
 	"github.com/arijjia/agctl/internal/provision"
 	agctlrt "github.com/arijjia/agctl/internal/runtime"
 	"github.com/arijjia/agctl/internal/runtime/dockerrt"
+	"github.com/arijjia/agctl/internal/runtime/k8srt"
 	"github.com/arijjia/agctl/internal/secrets"
 	"github.com/arijjia/agctl/internal/store"
 )
@@ -63,6 +64,10 @@ type Config struct {
 	RegisterPerMinute       int                // лимит регистраций с одного IP за минуту: 0 — дефолт платформы (30), <0 — отключить (нагрузочные прогоны)
 	RequireApproval         bool               // legacy workspace flag; create endpoint is tombstoned in v3
 	ExperimentalLocalBridge bool               // opt-in pairing/status/revoke API for local connector
+	Runtime                 string             // chat runtime: ""/docker (default) | k8s (prototype; карточка k8s-chat-runtime-adapter)
+	K8sNamespace            string             // namespace чат-рантайма k8s (storage scope установки)
+	K8sKubeconfig           string             // путь kubeconfig; пусто — in-cluster credentials
+	K8sReadinessWait        time.Duration      // бюджет ожидания Pod Ready при EnsureChat (0 — не ждать)
 	DefaultLLM              provision.Provider // платформенный провайдер чата по умолчанию (из профиля/env); личный секрет пользователя его перекрывает
 	DevEnv                  []string           // имена переменных хоста, пробрасываемые в контейнер developer/admin (значения — из окружения serve: .env экспортируется make)
 	Profile                 *profile.Data      // профиль организации (брендинг/дефолты); nil = нейтральный agctl
@@ -120,6 +125,17 @@ var (
 // New builds the development default (Docker for the unified per-user runtime).
 // Kubernetes deployments should inject their runtime providers.
 func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
+	// Chat runtime selector (карточка k8s-chat-runtime-adapter): явный opt-in,
+	// Docker остаётся default. RuntimeIface (dev-воркспейсы/лаунчер/control-plane)
+	// всегда dockerrt: host-path контракт workspace'ов в k8srt не перенесён.
+	// Валидация имени — до любого конструктора: fast-fail без Docker-демона.
+	runtime := strings.ToLower(strings.TrimSpace(cfg.Runtime))
+	switch runtime {
+	case "", "docker", "k8s":
+	default:
+		return nil, fmt.Errorf("server: неизвестный chat runtime %q (допустимо: docker, k8s)", cfg.Runtime)
+	}
+	var chatProvider agctlrt.ChatProvider
 	rt, err := dockerrt.New(dockerrt.Config{
 		Image:       cfg.Image,
 		MemoryBytes: cfg.MemoryBytes,
@@ -132,7 +148,25 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s, err := NewWithRuntimeProviders(db, sec, cfg, rt, rt)
+	chatProvider = rt
+	sweepDockerChats := true
+	if runtime == "k8s" {
+		chat, chatErr := k8srt.New(k8srt.Config{
+			Namespace:     cfg.K8sNamespace,
+			Kubeconfig:    cfg.K8sKubeconfig,
+			Image:         cfg.Image,
+			ReadinessWait: cfg.K8sReadinessWait,
+		})
+		if chatErr != nil {
+			return nil, fmt.Errorf("k8s chat runtime: %w", chatErr)
+		}
+		chatProvider = chat
+		// Docker-свип дрейфа сносит контейнеры прошлой agctl-dsh сборки; при
+		// k8s-чате agctl их не создаёт — свип не нужен.
+		sweepDockerChats = false
+		log.Printf("chat runtime: kubernetes prototype (namespace %q); dev-воркспейсы и control-plane остаются на Docker", cfg.K8sNamespace)
+	}
+	s, err := NewWithRuntimeProviders(db, sec, cfg, rt, chatProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -140,10 +174,12 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 	// (новый серв про них не знает, TTL-рипер их не усыплёт) и продолжают
 	// раздавать старый dsh web. Сносим заранее; /chat/ пересоздаёт среды
 	// лениво — данные пользователей живут на маунтах, не в контейнере.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if n := rt.SweepVersionDrift(ctx, chatContainerNamePrefix(cfg.Home)); n > 0 {
-		log.Printf("[chat] свип дрейфа: удалены контейнеры прошлой сборки: %d", n)
+	if sweepDockerChats {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if n := rt.SweepVersionDrift(ctx, chatContainerNamePrefix(cfg.Home)); n > 0 {
+			log.Printf("[chat] свип дрейфа: удалены контейнеры прошлой сборки: %d", n)
+		}
 	}
 	return s, nil
 }

@@ -21,6 +21,7 @@ type userConfig struct {
 	Serve      struct {
 		Addr            string  `yaml:"addr"`
 		Image           string  `yaml:"image"`
+		Runtime         string  `yaml:"runtime"` // chat runtime: docker (default) | k8s (prototype)
 		DevImages       string  `yaml:"dev_images"`
 		DevEnv          string  `yaml:"dev_env"`
 		ChatTTLMin      int     `yaml:"chat_ttl_min"`
