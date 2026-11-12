@@ -10,8 +10,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	agctlrt "github.com/arijjia/agctl/internal/runtime"
 	corev1 "k8s.io/api/core/v1"
@@ -45,6 +47,11 @@ type Config struct {
 	CPULimit         string
 	MemoryRequest    string
 	MemoryLimit      string
+	// ReadinessWait — сколько EnsureChat ждёт Pod Ready перед возвратом
+	// Endpoint (критерий карточки k8s-chat-runtime-adapter: gateway не должен
+	// отдавать адрес неготового чата). 0 — не ждать (тесты и неблокирующий
+	// ensure): возврат остаётся корректным, agctl отдаст страницу прогрева.
+	ReadinessWait time.Duration
 }
 
 // Provider is a Kubernetes-backed implementation of runtime.ChatProvider.
@@ -160,6 +167,12 @@ func (p *Provider) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	if err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
+	if p.cfg.ReadinessWait > 0 {
+		if err := p.waitPodReady(ctx, name, p.cfg.ReadinessWait); err != nil {
+			return agctlrt.ChatHandle{}, err
+		}
+		log.Printf("k8srt: pod %s Ready (chat готов принимать трафик)", name)
+	}
 	instanceID := string(pod.UID)
 	if instanceID == "" {
 		instanceID = pod.Name
@@ -169,6 +182,41 @@ func (p *Provider) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	}
 	endpoint := fmt.Sprintf("http://%s.%s.svc.%s:80", serviceName, p.cfg.Namespace, p.cfg.ClusterDomain)
 	return agctlrt.ChatHandle{RuntimeID: spec.RuntimeID, InstanceID: instanceID, Endpoint: endpoint}, nil
+}
+
+// waitPodReady опрашивает Pod до условия Ready или истечения бюджета.
+// Readiness решает kubelet по pod-контейнерам образа (dsh web на :3080) —
+// agctl-сторона не invent'ит собственные пробы.
+func (p *Provider) waitPodReady(ctx context.Context, name string, wait time.Duration) error {
+	deadline := time.Now().Add(wait)
+	api := p.client.CoreV1().Pods(p.cfg.Namespace)
+	for {
+		pod, err := api.Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("k8srt: get pod %s: %w", name, err)
+		}
+		if podReady(pod) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("k8srt: pod %s не стал Ready за %s (pull/init-container/пробы — см. pod events)", name, wait)
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("k8srt: ожидание pod %s прервано: %w", name, ctx.Err())
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+}
+
+// podReady — PodReady condition в True.
+func podReady(pod *corev1.Pod) bool {
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }
 
 // ensurePVC создаёт PersistentVolumeClaim тома пользователя, если его нет

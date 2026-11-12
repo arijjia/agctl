@@ -142,6 +142,15 @@ func regLimitValue(v int) int {
 	return v
 }
 
+// readinessWaitFor — бюджет ожидания Pod Ready для k8s-чата (карточка
+// k8s-chat-runtime-adapter: EnsureChat ждёт readiness перед отдачей Endpoint).
+func readinessWaitFor(runtime string) time.Duration {
+	if runtime == "k8s" {
+		return 120 * time.Second
+	}
+	return 0
+}
+
 // cmdServe — подкоманда serve: разрешает профиль организации, собирает
 // конфигурацию из флагов/среды/профиля, открывает дом (мастер-ключ + SQLite),
 // инициализирует LLM-провайдера по умолчанию, строит server.Server и слушает
@@ -173,6 +182,9 @@ func cmdServe(args []string) {
 	home := fsSet.String("home", defaultHome(), "каталог данных agctl")
 	addr := fsSet.String("addr", envOr("AGCTL_ADDR", firstNonEmpty(cfg.Serve.Addr, "127.0.0.1:8929")), "адрес UI/API")
 	image := fsSet.String("image", firstNonEmpty(cfg.Serve.Image, "agctl-dsh:0.2.2"), "тег образа agctl-dsh")
+	chatRuntime := fsSet.String("runtime", envOr("AGCTL_RUNTIME", cfg.Serve.Runtime), "chat runtime: docker (default) | k8s (prototype: per-user Pod+Service+PVC; dev-воркспейсы и control-plane остаются на Docker; карточка k8s-chat-runtime-adapter)")
+	k8sNamespace := fsSet.String("k8s-namespace", envOr("AGCTL_K8S_NAMESPACE", "agctl"), "namespace чат-рантайма k8s (storage scope установки agctl)")
+	k8sKubeconfig := fsSet.String("k8s-kubeconfig", envOr("AGCTL_K8S_KUBECONFIG", ""), "kubeconfig для k8s-рантайма; пусто — in-cluster credentials")
 	devImages := fsSet.String("dev-images", envOr("AGCTL_DEV_IMAGES", cfg.Serve.DevImages), "каталог образов лаунчера developer'а через запятую (реестр Nexus и пр.); пусто = только --image")
 	devEnv := fsSet.String("dev-env", envOr("AGCTL_DEV_ENV", cfg.Serve.DevEnv), "имена переменных окружения хоста, пробрасываемые в контейнер developer'а через запятую (значения из .env); пусто = не пробрасывать")
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
@@ -244,6 +256,10 @@ func cmdServe(args []string) {
 	srv, err := server.New(db, sec, server.Config{
 		Home:                    absHome,
 		Addr:                    *addr,
+		Runtime:                 *chatRuntime,
+		K8sNamespace:            *k8sNamespace,
+		K8sKubeconfig:           *k8sKubeconfig,
+		K8sReadinessWait:        readinessWaitFor(strings.ToLower(strings.TrimSpace(*chatRuntime))),
 		MemoryBytes:             int64(*memGB * 1024 * 1024 * 1024),
 		NanoCPUs:                int64(*cpus * 1e9),
 		Image:                   *image,

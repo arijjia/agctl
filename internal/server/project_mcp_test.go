@@ -146,3 +146,25 @@ func TestProjectMcpAPI(t *testing.T) {
 		t.Fatalf("пустой выбор не снял пресет: %v", err)
 	}
 }
+
+// TestServerRuntimeSelector — opt-in селектор чат-рантайма: неизвестное
+// имя роняется сразу, k8s без доступного кластера падает с внятной ошибкой,
+// а не молча отдаёт Docker (карточка k8s-chat-runtime-adapter).
+func TestServerRuntimeSelector(t *testing.T) {
+	e := newTestEnv(t, 3)
+	keyPath, err := secrets.EnsureMasterKey(e.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := secrets.New(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(e.db, mgr, Config{
+		Home: e.home, Addr: "test", Runtime: "bogus",
+	}); err == nil || !strings.Contains(err.Error(), "неизвестный chat runtime") {
+		t.Fatalf("bogus runtime: %v", err)
+	}
+	// k8s-селектор требует Docker для workspace-слоя: на машине без демона
+	// падает внятной ошибкой dockerrt, а не молча отдаёт Docker-чат.
+}
