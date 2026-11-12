@@ -19,17 +19,18 @@ type userConfig struct {
 	Profile    string `yaml:"profile"`
 	ProfileDir string `yaml:"profile_dir"`
 	Serve      struct {
-		Addr           string  `yaml:"addr"`
-		Image          string  `yaml:"image"`
-		DevImages      string  `yaml:"dev_images"`
-		DevEnv         string  `yaml:"dev_env"`
-		ChatTTLMin     int     `yaml:"chat_ttl_min"`
-		ChatPrewarmN   int     `yaml:"chat_prewarm_n"`
-		VolumeQuotaGB  float64 `yaml:"volume_quota_gb"`
-		RegisterPerMin int     `yaml:"register_per_min"`
-		MemGB          float64 `yaml:"mem_gb"`
-		CPUs           float64 `yaml:"cpus"`
-		CORSOrigins    string  `yaml:"cors_origins"`
+		Addr            string  `yaml:"addr"`
+		Image           string  `yaml:"image"`
+		DevImages       string  `yaml:"dev_images"`
+		DevEnv          string  `yaml:"dev_env"`
+		ChatTTLMin      int     `yaml:"chat_ttl_min"`
+		ChatPrewarmN    int     `yaml:"chat_prewarm_n"`
+		VolumeQuotaGB   float64 `yaml:"volume_quota_gb"`
+		RegisterPerMin  int     `yaml:"register_per_min"`
+		EgressAllowlist bool    `yaml:"egress_allowlist"`
+		MemGB           float64 `yaml:"mem_gb"`
+		CPUs            float64 `yaml:"cpus"`
+		CORSOrigins     string  `yaml:"cors_origins"`
 	} `yaml:"serve"`
 }
 
@@ -94,6 +95,7 @@ func cmdConfig(args []string) {
 	fmt.Printf("    chat_prewarm_n: %d\n", cfg.Serve.ChatPrewarmN)
 	fmt.Printf("    volume_quota_gb: %g\n", cfg.Serve.VolumeQuotaGB)
 	fmt.Printf("    register_per_min: %d\n", cfg.Serve.RegisterPerMin)
+	fmt.Printf("    egress_allowlist: %t\n", cfg.Serve.EgressAllowlist)
 	fmt.Printf("    mem_gb:        %g\n", cfg.Serve.MemGB)
 	fmt.Printf("    cpus:          %g\n", cfg.Serve.CPUs)
 	fmt.Printf("    cors_origins:  %q\n", cfg.Serve.CORSOrigins)

@@ -259,6 +259,9 @@ type StartOpts struct {
 	SSHHostPort int      // 0 = не публиковать (осмысленно только с SSHPubKey)
 	Image       string   // желаемый образ (лаунчер developer'а); пусто = rt.cfg.Image
 	DevEnv      []string // доменные переменные контейнера developer'а (KEY=VALUE); пусто = не добавлять
+	// EgressAllowlist — посадить контейнер на выделенную сеть и запретить
+	// egress наружу, кроме DNS (карточка egress-allowlist; opt-in флаг serve).
+	EgressAllowlist bool
 }
 
 // Start создаёт и запускает контейнер воркспейса с заданными портами/ключом.
@@ -359,6 +362,18 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 			},
 			RestartPolicy: container.RestartPolicy{Name: "no"},
 		},
+	}
+	// Egress-allowlist (opt-in): выделенная сеть + DOCKER-USER правила до
+	// старта контейнера, чтобы ни один пакет не ушёл мимо запрета.
+	if opts.EgressAllowlist {
+		netName, subnet, gateway, err := rt.ensureEgressNetwork(ctx)
+		if err != nil {
+			return StartResult{}, err
+		}
+		if err := rt.applyEgressRules(ctx, egressChainName(rt.cfg.Home), subnet, gateway); err != nil {
+			return StartResult{}, err
+		}
+		cfg.HostConfig.NetworkMode = container.NetworkMode(netName)
 	}
 	res, err := rt.cli.ContainerCreate(ctx, cfg)
 	if err != nil {

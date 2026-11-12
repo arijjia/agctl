@@ -5,11 +5,12 @@
 # Linux-сборка agctl кладётся в контекст сборки файлом ./agctl (make image).
 FROM node:22-bookworm-slim AS base
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3 python3-pytest python3-pip make g++ ca-certificates curl git openssh-server \
+  && apt-get install -y --no-install-recommends python3 python3-pytest python3-pip make g++ ca-certificates curl git openssh-server iptables \
   && rm -rf /var/lib/apt/lists/* \
   && pip3 install --no-cache-dir --break-system-packages python-pptx \
   && npm install -g npm@12 --no-audit --no-fund \
   && npm --version
+# iptables — egress-allowlist: хелпер применения DOCKER-USER правил (egress.go);
 # git нужен агенту в воркспейсе; npm>=11 ради allow-scripts (нативные депы dsh);
 # python3+pytest — тулзы доменных шаблонов (например 1c-vibe);
 # python-pptx — навык презентаций по шаблону вуза (каталог возможностей).
