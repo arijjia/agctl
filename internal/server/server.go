@@ -301,6 +301,8 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/projects/{name}/file", s.requireUser(s.handleProjectFileDownload))
 	mux.HandleFunc("GET /api/projects/{name}/components", s.requireUser(s.handleProjectComponentsGet))
 	mux.HandleFunc("PUT /api/projects/{name}/components", s.requireUser(s.handleProjectComponentsPut))
+	mux.HandleFunc("GET /api/projects/{name}/mcp", s.requireUser(s.handleProjectMcpGet))
+	mux.HandleFunc("PUT /api/projects/{name}/mcp", s.requireUser(s.handleProjectMcpPut))
 	mux.HandleFunc("GET /api/chat/folders", s.requireUser(s.handleChatFoldersGet))
 	mux.HandleFunc("PUT /api/chat/folders", s.requireUser(s.handleChatFoldersPut))
 	mux.HandleFunc("GET /api/templates", s.requireUser(s.handleTemplates)) // legacy

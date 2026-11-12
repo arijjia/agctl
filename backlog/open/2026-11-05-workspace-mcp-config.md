@@ -1,17 +1,19 @@
 ---
-schema: 1.0.0
+schema: 1.1.0
 id: workspace-mcp-config
 title: "Консоль воркспейсов: конфиг MCP-серверов per-workspace (третий раздел)"
-status: open
+status: in-progress
 priority: P3
 size: M
 area: server
 repo: arijjia/agctl
 created: 2026-11-05
-updated: 2026-11-05
+updated: 2026-11-13
 tags: [console, mcp]
 depends: []
 epic: ""
+sessions:
+  - session-365c2d55-6a2b-4739-99bd-914641f176f3:work
 ---
 ## Описание
 
