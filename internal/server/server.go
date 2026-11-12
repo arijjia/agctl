@@ -52,6 +52,7 @@ type Config struct {
 	AutosaveEvery           time.Duration
 	CORSOrigins             []string           // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
 	Tier0                   bool               // корень платформы ведёт в персональный чат (/chat/)
+	EgressAllowlist         bool               // чат-контейнеры на выделенной сети: egress только DNS и хост-шлюз (карточка egress-allowlist)
 	ChatTTL                 time.Duration      // idle TTL персонального runtime (по умолчанию 60 мин)
 	ChatPrewarmN            int                // prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл); он же — потолок пула
 	ChatPrewarmEvery        time.Duration      // период цикла подогрева (по умолчанию 15 мин)

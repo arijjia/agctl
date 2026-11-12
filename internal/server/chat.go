@@ -616,6 +616,9 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 		// Роль user: агент всегда в Full Access по умолчанию (пресет-селектор
 		// пользователю не показывается). Ошибка чтения роли -> дефолт не меняем.
 		DefaultFullAccess: s.userRole(userID) == "user",
+		// Egress-allowlist (opt-in флаг serve): чат-контейнер на выделенной
+		// сети, наружу только DNS и хост-шлюз.
+		EgressAllowlist: s.cfg.EgressAllowlist,
 		// DevEnv: доменные креды и LLM-оверрайды из хостового .env — только
 		// роли developer/admin (разработка доменных скриптов).
 		DevEnv: s.developerEnv(userID),

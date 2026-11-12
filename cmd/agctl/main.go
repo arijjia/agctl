@@ -197,6 +197,7 @@ func cmdServe(args []string) {
 	llmAPIKey := fsSet.String("llm-api-key", strings.TrimSpace(envOr("AGCTL_LLM_API_KEY", "")), "ключ провайдера чата (предпочтительно через env AGCTL_LLM_API_KEY)")
 	// Enforcement квот токенов LiteLLM: URL — флаг/env, admin-ключ — ТОЛЬКО
 	// env (не флаг: не светить в ps/логах; не в гите и образе).
+	egressAllowlist := fsSet.Bool("egress-allowlist", cfg.Serve.EgressAllowlist, "контейнеры агентов — на выделенной сети: egress наружу только DNS; хост-шлюз (LLM на хосте) доступен. Внешние LLM-endpoint'ы напрямую недостижимы — маршрутизируйте через хост (LiteLLM)")
 	litellmQuotas := fsSet.Bool("litellm-quotas", false, "enforcement квот токенов: минтить персональные виртуальные ключи LiteLLM по бюджетам из админки (требует AGCTL_LITELLM_ADMIN_URL и AGCTL_LITELLM_ADMIN_KEY)")
 	litellmAdminURL := fsSet.String("litellm-admin-url", strings.TrimSpace(envOr("AGCTL_LITELLM_ADMIN_URL", "")), "admin-API LiteLLM для mint/rotate виртуальных ключей (POST /key/generate)")
 	_ = profileFlag
@@ -258,6 +259,7 @@ func cmdServe(args []string) {
 		ChatPrewarmN:            *chatPrewarmN,
 		ChatPrewarmEvery:        *chatPrewarmEvery,
 		VolumeQuotaGB:           *volumeQuotaGB,
+		EgressAllowlist:         *egressAllowlist,
 		LiteLLMQuotas:           *litellmQuotas,
 		LiteLLMAdminURL:         strings.TrimSpace(*litellmAdminURL),
 		LiteLLMAdminKey:         strings.TrimSpace(os.Getenv("AGCTL_LITELLM_ADMIN_KEY")),
