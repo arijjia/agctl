@@ -20,8 +20,17 @@ func TestEmbeddedNeutralIsOrgFree(t *testing.T) {
 	if v.LogoDataURI != "" {
 		t.Fatal("нейтральный профиль не должен нести логотип организации")
 	}
-	if v.LLMBaseURL != "" || v.LLMModel != "" || v.LLMModels != "" {
-		t.Fatalf("нейтральный профиль не должен навязывать LLM: %+v", v)
+	// Публичный провайдер по умолчанию обязателен: без него рабочее место
+	// открывается голым онбордингом dsh («Add an API key… DeepSeek»).
+	// Корпоративные шлюзы (extra_providers) — только в профилях организаций.
+	if v.LLMBaseURL == "" || v.LLMModel == "" || v.LLMModels == "" {
+		t.Fatalf("нейтральный профиль без LLM-дефолтов: %+v", v)
+	}
+	if !strings.Contains(","+v.LLMModels+",", ","+v.LLMModel+",") {
+		t.Fatalf("модель по умолчанию %q вне списка %q", v.LLMModel, v.LLMModels)
+	}
+	if len(d.LLM.ExtraProviders) != 0 {
+		t.Fatalf("нейтральный профиль не несёт корпоративных провайдеров: %+v", d.LLM.ExtraProviders)
 	}
 	for _, org := range []string{"utmn", "ТюмГУ", "Тюмень"} {
 		if strings.Contains(v.BrandJSON(), org) {
