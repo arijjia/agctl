@@ -1,0 +1,29 @@
+#!/bin/sh
+# office2pdf — конвертация Office-документа в PDF системным LibreOffice.
+#
+# Зачем: кит @deepseek-ai/libreoffice-kit (Office-превью dsh) не поставляет
+# Linux-движки, поэтому в контейнере agctl-dsh штатное превью недоступно.
+# Этот хелпер — свой конвертер из плана карточки office-preview-in-container:
+# одна команда рядом с документом, PDF забирается штатной кнопкой «Файлы».
+#
+# usage: office2pdf <file.pptx> [file2.pptx ...]
+#   → рядом с каждым файлом появляется <file>.pdf
+# Поддержка определяется установленным пакетом LibreOffice: в agctl-dsh это
+# libreoffice-impress (pptx/ppt/odp). Форматы Writer/Calc (docx/xlsx) падают
+# с внятной ошибкой «формат не поддерживается» — их конвертация отдельным
+# решением по бюджету образа.
+set -eu
+
+[ $# -ge 1 ] || { echo "usage: office2pdf <file> [file...]" >&2; exit 2; }
+command -v soffice >/dev/null 2>&1 || {
+  echo "office2pdf: soffice не найден — libreoffice-impress не установлен в этом образе" >&2
+  exit 3
+}
+
+rc=0
+for f in "$@"; do
+  [ -f "$f" ] || { echo "office2pdf: нет файла: $f" >&2; rc=1; continue; }
+  # Последовательно: параллельные вызовы soffice делят один профиль и гадят друг другу.
+  soffice --headless --norestore --convert-to pdf --outdir "$(dirname "$f")" "$f" || rc=1
+done
+exit "$rc"

@@ -41,6 +41,14 @@ RUN mkdir -p "$NPM_MCP_CACHE" \
 
 FROM dsh AS runtime
 COPY --from=mcp-warm /opt/npm-mcp /opt/npm-mcp
+# Office-превью в контейнере: кит @deepseek-ai/libreoffice-kit (движок превью
+# dsh) не поставляет Linux-сборки (карточка office-preview-in-container), поэтому
+# конвертацию в PDF делает системный LibreOffice — только impress (pptx-кейс,
+# бюджет образа ~300-400 МиБ; writer/calc для docx/xlsx — отдельное решение).
+# Слой в runtime, а не в base: apt-изменение не инвалидирует npm-слои dsh/mcp.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libreoffice-impress \
+  && rm -rf /var/lib/apt/lists/*
 ENV NPM_MCP_CACHE=/opt/npm-mcp
 ENV DSH_HOME=/home/dsh
 # Вариант образа «без SSH» (лаунчер developer'а): собирается с
@@ -53,7 +61,8 @@ COPY agctl /usr/local/bin/agctl
 COPY skel/ /opt/dsh-skel/
 COPY entrypoint.sh /usr/local/bin/agctl-entrypoint
 COPY dsh-net.mjs /usr/local/bin/agctl-dsh-net
-RUN chmod +x /usr/local/bin/agctl /usr/local/bin/agctl-entrypoint /usr/local/bin/agctl-dsh-net && mkdir -p /home/dsh /workspace
+COPY office2pdf /usr/local/bin/office2pdf
+RUN chmod +x /usr/local/bin/agctl /usr/local/bin/agctl-entrypoint /usr/local/bin/agctl-dsh-net /usr/local/bin/office2pdf && mkdir -p /home/dsh /workspace
 WORKDIR /workspace
 EXPOSE 3080 2222
 # Живость dsh: любой HTTP-ответ (в т.ч. 401/303 без cookie) = процесс жив и
