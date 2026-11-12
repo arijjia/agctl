@@ -1,17 +1,19 @@
 ---
-schema: 1.0.0
+schema: 1.1.0
 id: map-decompose-serve
 title: "Физическая карта: декомпозировать agctl serve на внутренние блоки"
-status: open
+status: in-progress
 priority: P3
 size: S
 area: meta
 repo: arijjia/agctl
 created: 2026-10-25
-updated: 2026-10-25
+updated: 2026-11-12
 tags: ["map", "docs"]
 depends: []
 epic: two-mode-mvp
+sessions:
+  - session-365c2d55-6a2b-4739-99bd-914641f176f3:work
 ---
 ## Описание
 
