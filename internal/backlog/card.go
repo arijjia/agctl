@@ -94,17 +94,21 @@ func (f File) Render() (string, error) {
 	return "---\n" + string(head) + "---" + f.Body, nil
 }
 
-// Validate — форматные проверки карточки (для `check`).
+// Validate — форматные проверки карточки (для `check`). Семантика parity с
+// gitctl (карточка backlog-checker-parity): schema сравнивается по MAJOR
+// (MINOR-поля старый тулинг терпит — политика semver формата), а id может
+// быть легаси-«датированным»: night-sweep-2026-10-12 в файле
+// 2026-10-12-night-sweep.md валиден, если хвост равен created.
 func (f File) Validate() []string {
 	var errs []string
 	c := f.Card
 	base := filepath.Base(f.Path)
-	want := datePrefix(base) + c.ID + ".md"
-	if want != base {
+	stem := strings.TrimPrefix(strings.TrimSuffix(base, ".md"), datePrefix(base))
+	if stem != c.ID && stem != strings.TrimSuffix(c.ID, "-"+c.Created) {
 		errs = append(errs, fmt.Sprintf("%s: имя файла не <дата>-%s.md", base, c.ID))
 	}
-	if c.Schema != Schema {
-		errs = append(errs, fmt.Sprintf("%s: schema=%q, ждали %q", base, c.Schema, Schema))
+	if err := schemaMajorOK(c.Schema); err != nil {
+		errs = append(errs, fmt.Sprintf("%s: schema=%q: %v", base, c.Schema, err))
 	}
 	if !contains(Statuses, c.Status) {
 		errs = append(errs, fmt.Sprintf("%s: status=%q недопустим", base, c.Status))
@@ -131,6 +135,25 @@ func datePrefix(name string) string {
 		return name[:11] // YYYY-MM-DD-
 	}
 	return ""
+}
+
+// schemaMajorOK — schema должна быть семвером с тем же MAJOR, что текущая
+// схема формата (MINOR-надстройки gitctl — sessions:, not-before: и т.п. —
+// обратно совместимы и валидны). Отсутствие/мусор/чужой MAJOR — ошибка.
+func schemaMajorOK(schema string) error {
+	parts := strings.SplitN(schema, ".", 3)
+	if len(parts) != 3 {
+		return fmt.Errorf("не semver, ждали %s", Schema)
+	}
+	for i, p := range parts {
+		if p == "" || strings.Trim(p, "0123456789") != "" {
+			return fmt.Errorf("не semver: компонент %d (%q) не число", i+1, p)
+		}
+	}
+	if parts[0] != strings.SplitN(Schema, ".", 2)[0] {
+		return fmt.Errorf("чужой MAJOR, ждали %s.x", strings.SplitN(Schema, ".", 2)[0])
+	}
+	return nil
 }
 
 func contains(list []string, s string) bool {
