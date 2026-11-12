@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.architecture.json",
+    "sha256": "4dd2814deb51bf6a001db696982c6e1514505b1f120786e54a49651321c5047c",
+    "bytes": 31794
+  },
+  "artifact": {
+    "path": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.html",
+    "sha256": "64097f237260a59fa3b4614f64454d6ab56aa474f8259765f38fdce0e2f8863d",
+    "bytes": 888232
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/review-1/agctl-processes.finalize.json",
+    "summaryReceipt": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/review-1/agctl-processes.finalize-summary.json",
+    "browserCheckReceipt": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/review-1/agctl-processes.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-11-12T13:06:45.139Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 2605,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  },
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "routesOverSuggestedBends": 5,
+      "routesOverSuggestedStretch": 2
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [],
+      "detours": [
+        {
+          "relationship": {
+            "id": "c2",
+            "from": "runmgr",
+            "to": "dockerd",
+            "label": "REST over Unix socket",
+            "collectionIndex": 1,
+            "artifactIndex": 2
+          },
+          "bends": 2,
+          "stretch": 1.615
+        },
+        {
+          "relationship": {
+            "id": "c4",
+            "from": "chatgw",
+            "to": "dshchat",
+            "label": "шлюзы → DNAT :3080",
+            "collectionIndex": 3,
+            "artifactIndex": 4
+          },
+          "bends": 3,
+          "stretch": 1.139
+        },
+        {
+          "relationship": {
+            "id": "c6",
+            "from": "dshchat",
+            "to": "llm",
+            "label": "HTTPS :443",
+            "collectionIndex": 4,
+            "artifactIndex": 5
+          },
+          "bends": 3,
+          "stretch": 1.4
+        },
+        {
+          "relationship": {
+            "id": "c11",
+            "from": "conn",
+            "to": "api",
+            "label": "WSS :443 · yamux",
+            "collectionIndex": 6,
+            "artifactIndex": 7
+          },
+          "bends": 3,
+          "stretch": 1
+        },
+        {
+          "relationship": {
+            "id": "c14",
+            "from": "dshchat",
+            "to": "dshhome",
+            "label": "bind mount RW · DSH_HOME",
+            "collectionIndex": 9,
+            "artifactIndex": 10
+          },
+          "bends": 3,
+          "stretch": 1
+        },
+        {
+          "relationship": {
+            "id": "c15",
+            "from": "bg",
+            "to": "gitstore",
+            "label": "go-git autosave · push",
+            "collectionIndex": 10,
+            "artifactIndex": 11
+          },
+          "bends": 4,
+          "stretch": 1.215
+        }
+      ],
+      "truncated": false
+    },
+    "hints": [
+      "runmgr → dockerd needs 2 bends: move node runmgr or dockerd so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "chatgw → dshchat needs 3 bends: move node chatgw or dshchat so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "dshchat → llm needs 3 bends: move node dshchat or llm so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "conn → api needs 3 bends: move node conn or api so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "dshchat → dshhome needs 3 bends: move node dshchat or dshhome so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "bg → gitstore needs 4 bends: move node bg or gitstore so they share a row or column with matching centers, or sit diagonally with a clear corner."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
+}

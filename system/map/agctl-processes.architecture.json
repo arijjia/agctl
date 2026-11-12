@@ -78,7 +78,8 @@
         ],
         "note": "Кастомизация — данные профиля (узел-файлы); шлюзы инжектят брендинг; ядро agctl без литералов организаций (guard)"
       }
-    ]
+    ],
+    "subtitle": "Физика процессов · agctl serve — один Go-процесс: блоки внутри его рамки — не отдельные процессы"
   },
   "components": [
     {
@@ -86,8 +87,14 @@
       "type": "frontend",
       "label": "Вкладка браузера",
       "sublabel": "вход · /admin · /launcher · /chat dsh",
-      "pos": [24, 320],
-      "size": [214, 92],
+      "pos": [
+        20,
+        320
+      ],
+      "size": [
+        190,
+        88
+      ],
       "sources": [
         {
           "path": "internal/server/server.go",
@@ -114,8 +121,14 @@
       "type": "cloud",
       "label": "dockerd — 1 процесс",
       "sublabel": "Unix socket /var/run/docker.sock · REST",
-      "pos": [620, 60],
-      "size": [270, 70],
+      "pos": [
+        550,
+        40
+      ],
+      "size": [
+        230,
+        60
+      ],
       "sources": [
         {
           "path": "internal/runtime/dockerrt/docker.go",
@@ -140,25 +153,26 @@
       "id": "api",
       "type": "backend",
       "label": "REST API + auth",
-      "sublabel": "маршруты /api · argon2id · сессии · заявки/апрув · admin-API",
-      "pos": [350, 170],
-      "size": [230, 76],
+      "sublabel": "маршруты /api · argon2id · сессии · апрув",
+      "pos": [
+        310,
+        110
+      ],
+      "size": [
+        200,
+        76
+      ],
       "sources": [
         {
           "path": "internal/server/server.go",
           "line": 279,
           "end_line": 351,
-          "label": "mux: register/login/me, projects, workspaces, admin-API"
+          "label": "mux: API, workspaces, admin-API, лаунчер"
         },
         {
           "path": "internal/server/handlers.go",
           "line": 77,
           "label": "первый пользователь — admin; пароли argon2id"
-        },
-        {
-          "path": "internal/server/server.go",
-          "line": 192,
-          "label": "db.CreateSession(token, userID, exp)"
         },
         {
           "path": "internal/server/handlers.go",
@@ -173,13 +187,19 @@
       "type": "database",
       "label": "Хранилище + секреты",
       "sublabel": "SQLite WAL · AES-256-GCM (мастер-ключ)",
-      "pos": [350, 286],
-      "size": [230, 76],
+      "pos": [
+        550,
+        286
+      ],
+      "size": [
+        200,
+        76
+      ],
       "sources": [
         {
           "path": "internal/store/store.go",
           "line": 26,
-          "label": "DSN journal_mode(WAL), busy_timeout, foreign_keys"
+          "label": "DSN journal_mode(WAL), busy_timeout"
         },
         {
           "path": "cmd/agctl/main.go",
@@ -198,21 +218,27 @@
       "id": "bg",
       "type": "backend",
       "label": "Фоновые горутины",
-      "sublabel": "autosave · reconcile · чистка сессий · TTL-reaper · prewarm",
-      "pos": [350, 402],
-      "size": [230, 76],
+      "sublabel": "autosave · reconcile · чистка сессий · TTL-reaper",
+      "pos": [
+        310,
+        286
+      ],
+      "size": [
+        200,
+        76
+      ],
       "sources": [
         {
           "path": "internal/server/server.go",
           "line": 461,
           "end_line": 518,
-          "label": "StartBackground: рипер, autosave, prewarm, reconcile"
+          "label": "StartBackground: рипер, autosave, reconcile"
         },
         {
           "path": "internal/server/server.go",
           "line": 532,
           "end_line": 543,
-          "label": "autosaveAll: страховочный commit по running-воркспейсам"
+          "label": "autosaveAll: commit по running-воркспейсам"
         },
         {
           "path": "internal/server/chat.go",
@@ -226,9 +252,15 @@
       "id": "runmgr",
       "type": "backend",
       "label": "Менеджер чат-рантаймов",
-      "sublabel": "карта userID→runtime · ленивый ensureChat · смена образа",
-      "pos": [620, 170],
-      "size": [230, 76],
+      "sublabel": "карта userID→runtime · ensureChat · смена образа",
+      "pos": [
+        550,
+        110
+      ],
+      "size": [
+        200,
+        76
+      ],
       "sources": [
         {
           "path": "internal/server/chat.go",
@@ -246,7 +278,7 @@
           "path": "internal/runtime/dockerrt/chat.go",
           "line": 17,
           "end_line": 78,
-          "label": "EnsureChat: seed + Start (+SSH developer, +образ)"
+          "label": "EnsureChat: seed + Start (+SSH, +образ)"
         }
       ]
     },
@@ -255,14 +287,20 @@
       "type": "backend",
       "label": "Шлюз чата /chat/",
       "sublabel": "proxy + mint ?token= + чат-шелл + прогрев",
-      "pos": [620, 286],
-      "size": [230, 76],
+      "pos": [
+        550,
+        198
+      ],
+      "size": [
+        200,
+        76
+      ],
       "sources": [
         {
           "path": "internal/server/chat.go",
           "line": 909,
           "end_line": 981,
-          "label": "ReverseProxy + mintTransport, dsh-auth cookie на /chat/"
+          "label": "ReverseProxy + mintTransport, dsh-auth cookie"
         },
         {
           "path": "internal/server/chat.go",
@@ -282,8 +320,14 @@
       "type": "backend",
       "label": "Шлюз dev-мест /w/{id}/",
       "sublabel": "owner-check + брендинг + страница «остановлено»",
-      "pos": [620, 402],
-      "size": [230, 76],
+      "pos": [
+        310,
+        198
+      ],
+      "size": [
+        200,
+        76
+      ],
       "sources": [
         {
           "path": "internal/server/gateway.go",
@@ -310,8 +354,14 @@
       "type": "database",
       "label": "agctl.db — SQLite WAL",
       "sublabel": "users · sessions · audit · квоты · журнал",
-      "pos": [880, 430],
-      "size": [220, 88],
+      "pos": [
+        790,
+        336
+      ],
+      "size": [
+        170,
+        88
+      ],
       "sources": [
         {
           "path": "cmd/agctl/main.go",
@@ -332,8 +382,14 @@
       "type": "database",
       "label": "secrets.key — вне Git",
       "sublabel": "мастер-ключ AES-256-GCM · 0600",
-      "pos": [1170, 430],
-      "size": [250, 88],
+      "pos": [
+        1010,
+        336
+      ],
+      "size": [
+        180,
+        88
+      ],
       "sources": [
         {
           "path": "cmd/agctl/main.go",
@@ -348,8 +404,14 @@
       "type": "database",
       "label": "u<id>/dsh-home — вне Git",
       "sublabel": "сессии · настройки · credentials",
-      "pos": [880, 552],
-      "size": [220, 88],
+      "pos": [
+        790,
+        452
+      ],
+      "size": [
+        170,
+        88
+      ],
       "sources": [
         {
           "path": "internal/runtime/dockerrt/chat.go",
@@ -376,8 +438,14 @@
       "type": "database",
       "label": "u<id>/workspace/<project>",
       "sublabel": "файлы проектов · .git · под Git",
-      "pos": [1170, 552],
-      "size": [250, 88],
+      "pos": [
+        1010,
+        452
+      ],
+      "size": [
+        180,
+        88
+      ],
       "sources": [
         {
           "path": "internal/runtime/dockerrt/chat.go",
@@ -398,8 +466,14 @@
       "type": "database",
       "label": "Git history store (bare)",
       "sublabel": "под $AGCTL_HOME · путь target уточнит MVP",
-      "pos": [1170, 676],
-      "size": [250, 88],
+      "pos": [
+        1010,
+        552
+      ],
+      "size": [
+        180,
+        88
+      ],
       "sources": [
         {
           "path": "internal/provision/provision.go",
@@ -420,8 +494,14 @@
       "type": "backend",
       "label": "dsh web — node",
       "sublabel": "bind eth0 · :3080 · движок+API · SPA",
-      "pos": [1145, 130],
-      "size": [240, 104],
+      "pos": [
+        1010,
+        90
+      ],
+      "size": [
+        168,
+        104
+      ],
       "sources": [
         {
           "path": "internal/assets/image/entrypoint.sh",
@@ -440,10 +520,16 @@
     {
       "id": "sshd",
       "type": "security",
-      "label": "sshd — только роль developer",
+      "label": "sshd — роль developer",
       "sublabel": ":2222 · key-only · порт на loopback",
-      "pos": [1145, 270],
-      "size": [240, 64],
+      "pos": [
+        1010,
+        226
+      ],
+      "size": [
+        170,
+        64
+      ],
       "sources": [
         {
           "path": "internal/assets/image/entrypoint.sh",
@@ -462,10 +548,16 @@
     {
       "id": "llm",
       "type": "external",
-      "label": "LLM gateway — из профиля",
-      "sublabel": "api.z.ai · :443 · GLM",
-      "pos": [1555, 140],
-      "size": [180, 72],
+      "label": "LLM gateway",
+      "sublabel": "api.z.ai · GLM",
+      "pos": [
+        1208,
+        100
+      ],
+      "size": [
+        120,
+        72
+      ],
       "sources": [
         {
           "path": "internal/runtime/dockerrt/docker.go",
@@ -486,8 +578,14 @@
       "type": "external",
       "label": "ssh · Mutagen · VS Code",
       "sublabel": "удалённо — только через туннель/VPN",
-      "pos": [24, 996],
-      "size": [214, 72],
+      "pos": [
+        20,
+        738
+      ],
+      "size": [
+        190,
+        72
+      ],
       "sources": [
         {
           "path": "cmd/agctl/connect.go",
@@ -508,8 +606,14 @@
       "type": "backend",
       "label": "agctl local connect — Go",
       "sublabel": "исходящий WSS :443 · credential 0600",
-      "pos": [24, 880],
-      "size": [222, 84],
+      "pos": [
+        20,
+        640
+      ],
+      "size": [
+        200,
+        76
+      ],
       "sources": [
         {
           "path": "cmd/agctl/local.go",
@@ -524,8 +628,14 @@
       "type": "backend",
       "label": "dsh web — node (локально)",
       "sublabel": "127.0.0.1:3080 · HTTP+WS",
-      "pos": [420, 880],
-      "size": [232, 84],
+      "pos": [
+        450,
+        640
+      ],
+      "size": [
+        210,
+        76
+      ],
       "sources": [
         {
           "path": "cmd/agctl/local.go",
@@ -546,8 +656,14 @@
       "type": "database",
       "label": "Профиль организации",
       "sublabel": "profile.yaml + logo · репо на GitHub",
-      "pos": [400, 620],
-      "size": [240, 96],
+      "pos": [
+        560,
+        420
+      ],
+      "size": [
+        160,
+        96
+      ],
       "sources": [
         {
           "path": "internal/profile/profile.go",
@@ -568,37 +684,61 @@
     {
       "kind": "region",
       "label": "Рабочая машина пользователя",
-      "wraps": ["browser"],
+      "wraps": [
+        "browser"
+      ],
       "pad": 12
     },
     {
       "kind": "region",
       "label": "Ноутбук (experimental local backend)",
-      "wraps": ["conn", "dshlocal"],
+      "wraps": [
+        "conn",
+        "dshlocal"
+      ],
       "pad": 12
     },
     {
       "kind": "region",
       "label": "Контейнер пользователя u<id> — ×N, ленивый, TTL 1 ч",
-      "wraps": ["dshchat", "sshd"],
-      "pad": 32
+      "wraps": [
+        "dshchat",
+        "sshd"
+      ],
+      "pad": 20
     },
     {
       "kind": "region",
-      "label": "agctl serve — один Go-процесс :8929 (блоки одного процесса, не отдельные процессы)",
-      "wraps": ["api", "store", "bg", "runmgr", "chatgw", "wgw"],
-      "pad": 14
+      "label": "agctl serve",
+      "wraps": [
+        "api",
+        "store",
+        "bg",
+        "runmgr",
+        "chatgw",
+        "wgw"
+      ],
+      "pad": 10
     },
     {
       "kind": "region",
       "label": "$AGCTL_HOME — файлы, не процесс",
-      "wraps": ["agdb", "seckey", "dshhome", "wkspace", "gitstore"],
+      "wraps": [
+        "agdb",
+        "seckey",
+        "dshhome",
+        "wkspace",
+        "gitstore"
+      ],
       "pad": 36
     },
     {
       "kind": "security-group",
       "label": "Git — версионированные данные",
-      "wraps": ["wkspace", "gitstore"],
+      "wraps": [
+        "wkspace",
+        "gitstore"
+      ],
       "pad": 12
     },
     {
@@ -621,13 +761,15 @@
         "sshd",
         "profile"
       ],
-      "pad": 52
+      "pad": 36
     },
     {
       "kind": "region",
       "label": "Профиль — данные, не код (отдельное репо)",
-      "wraps": ["profile"],
-      "pad": 12
+      "wraps": [
+        "profile"
+      ],
+      "pad": 4
     }
   ],
   "connections": [
@@ -636,15 +778,29 @@
       "from": "browser",
       "to": "api",
       "label": "HTTP + WS/SSE · :8929",
-      "variant": "emphasis"
+      "variant": "emphasis",
+      "via": [
+        [
+          115,
+          90
+        ],
+        [
+          410,
+          90
+        ]
+      ],
+      "toSide": "top",
+      "fromSide": "top"
     },
     {
       "id": "c2",
       "from": "runmgr",
       "to": "dockerd",
       "label": "REST over Unix socket",
-      "fromSide": "top",
-      "toSide": "bottom"
+      "labelAt": [
+        820,
+        124
+      ]
     },
     {
       "id": "c3",
@@ -652,28 +808,45 @@
       "to": "agdb",
       "label": "SQLite WAL",
       "variant": "dashed",
-      "fromSide": "right",
+      "fromSide": "bottom",
       "toSide": "left",
-      "via": [[600, 324], [600, 490], [860, 490]]
+      "via": [
+        [
+          650,
+          380
+        ],
+        [
+          778,
+          380
+        ]
+      ]
     },
     {
       "id": "c4",
       "from": "chatgw",
       "to": "dshchat",
-      "label": "HTTP · /chat/ → DNAT :3080",
+      "label": "шлюзы → DNAT :3080",
       "variant": "emphasis",
       "fromSide": "right",
-      "toSide": "left",
-      "via": [[1060, 324], [1060, 180]]
-    },
-    {
-      "id": "c4b",
-      "from": "wgw",
-      "to": "dshchat",
-      "label": "/w/{id}/ → DNAT :3080",
-      "fromSide": "right",
-      "toSide": "left",
-      "via": [[870, 440], [870, 545], [1132, 545], [1132, 210]]
+      "toSide": "top",
+      "via": [
+        [
+          900,
+          236
+        ],
+        [
+          900,
+          56
+        ],
+        [
+          1094,
+          56
+        ]
+      ],
+      "labelAt": [
+        820,
+        124
+      ]
     },
     {
       "id": "c6",
@@ -689,7 +862,16 @@
       "label": "SSH-2 → 127.0.0.1:<dyn>",
       "fromSide": "right",
       "toSide": "right",
-      "via": [[1450, 1032], [1450, 302]]
+      "via": [
+        [
+          1258,
+          774
+        ],
+        [
+          1258,
+          258
+        ]
+      ]
     },
     {
       "id": "c11",
@@ -697,8 +879,26 @@
       "to": "api",
       "label": "WSS :443 · yamux",
       "variant": "emphasis",
-      "fromSide": "right",
-      "toSide": "left"
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          120,
+          604
+        ],
+        [
+          240,
+          604
+        ],
+        [
+          240,
+          148
+        ]
+      ],
+      "labelAt": [
+        240,
+        560
+      ]
     },
     {
       "id": "c12",
@@ -716,7 +916,16 @@
       "variant": "emphasis",
       "fromSide": "left",
       "toSide": "left",
-      "via": [[1120, 182], [1120, 596]]
+      "via": [
+        [
+          992,
+          142
+        ],
+        [
+          992,
+          496
+        ]
+      ]
     },
     {
       "id": "c14",
@@ -725,7 +934,20 @@
       "label": "bind mount RW · DSH_HOME",
       "fromSide": "left",
       "toSide": "top",
-      "via": [[1106, 182], [1106, 535], [990, 535]]
+      "via": [
+        [
+          978,
+          142
+        ],
+        [
+          978,
+          438
+        ],
+        [
+          875,
+          438
+        ]
+      ]
     },
     {
       "id": "c15",
@@ -734,17 +956,52 @@
       "label": "go-git autosave · push",
       "variant": "dashed",
       "fromSide": "bottom",
-      "toSide": "left",
-      "via": [[465, 600], [1135, 600], [1135, 720]]
+      "toSide": "bottom",
+      "via": [
+        [
+          410,
+          398
+        ],
+        [
+          735,
+          398
+        ],
+        [
+          735,
+          744
+        ],
+        [
+          1100,
+          744
+        ]
+      ],
+      "labelAt": [
+        735,
+        660
+      ]
     },
     {
       "id": "c16",
       "from": "wgw",
       "to": "profile",
-      "label": "file read · --profile (брендинг шлюзов)",
+      "label": "file read · брендинг шлюзов",
       "variant": "dashed",
-      "fromSide": "bottom",
-      "toSide": "top"
+      "fromSide": "left",
+      "toSide": "left",
+      "via": [
+        [
+          290,
+          236
+        ],
+        [
+          290,
+          468
+        ]
+      ],
+      "labelAt": [
+        345,
+        440
+      ]
     }
   ],
   "cards": [
