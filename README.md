@@ -95,6 +95,11 @@ make up PROFILE=rshb          # или make corp PROFILE=rshb
 нескольких профилях без `PROFILE=` запустится нейтральный agctl, а `make up`
 первой строкой подскажет, какие профили есть.
 
+Нейтральный `make up PROFILE=agctl` тоже рабочий: встроенный профиль задаёт
+публичный провайдер Z.AI GLM (`zai-coding-cn`) с тем же `AGCTL_LLM_API_KEY`
+из `.env`. Другой провайдер — через `AGCTL_LLM_BASE_URL`, `AGCTL_LLM_MODELS`
+и `AGCTL_LLM_MODEL`.
+
 Ключ провайдера складывается в `.env` (в git не попадает — pre-commit и
 .gitignore страховуют) и подхватывается автоматически:
 
