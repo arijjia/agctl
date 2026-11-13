@@ -101,6 +101,11 @@ type Config struct {
 	// GatewayURL — базовый URL шлюза agctl для fetch-at-boot раннера
 	// (требуется при ProviderAtBoot).
 	GatewayURL string
+	// DebugSSH — spec.debug задачи: guest-сервисы Substrate (process/filesystem
+	// gRPC на :80 раннера), которыми пользуется `ax ssh` апстрима. Доступ =
+	// произвольный exec/файлы в песочнице — opt-in на установку (владелец):
+	// --ax-debug-ssh / AGCTL_AX_DEBUG_SSH=1. По умолчанию выключено.
+	DebugSSH bool
 	// CPU/Memory — лимиты песочницы (quantity: "2", "4Gi").
 	CPU    string
 	Memory string
@@ -408,7 +413,7 @@ func (p *Provider) buildTask(name string, spec agctlrt.ChatSpec) *v1alpha1.Task 
 			Resources: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{
 				Cpu: p.cfg.CPU, Memory: p.cfg.Memory,
 			}},
-			Debug:  false,
+			Debug:  p.cfg.DebugSSH,
 			Config: config,
 		},
 	}
