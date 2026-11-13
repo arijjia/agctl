@@ -71,9 +71,24 @@ images:
 
 ```dockerfile
 ARG BASE=agctl-dsh:0.2.2
+# Скачивание — в стадии, не зависящей от BASE: её слой кэшируется.
+FROM python:3.11-slim-bookworm AS wheels
+ARG PIP_INDEX_URL=https://pypi.org/simple
+RUN pip download --no-cache-dir --index-url "$PIP_INDEX_URL" \
+      --only-binary=:all: --dest /wheels python-pptx
+
 FROM ${BASE}
-RUN pip3 install --no-cache-dir --break-system-packages python-pptx
+COPY --from=wheels /wheels /tmp/wheels
+RUN pip3 install --no-cache-dir --break-system-packages --no-index \
+      --find-links /tmp/wheels python-pptx && rm -rf /tmp/wheels
 ```
+
+Не ставь пакеты из сети прямо в `RUN` после `FROM ${BASE}`. Базовый
+agctl-dsh пересобирается на каждом коммите agctl (в нём бинарь `agctl`), и
+такой слой будет заново качать пакеты при каждом `make up`. При медленном
+CDN PyPI это десятки минут. В стадии `wheels` пакеты скачиваются один раз
+(Python 3.11, как в agctl-dsh), а установка поверх нового BASE идёт офлайн
+за секунды. Зеркало (Nexus организации) задаётся через `PIP_INDEX_URL`.
 
 С надстройкой рабочий образ профиля называется `agctl-dsh-<id>:<тег>`.
 `agctl serve` сам соберёт его поверх базового, если образа нет.
