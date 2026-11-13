@@ -41,6 +41,13 @@ type Config struct {
 	Home        string // local Docker adapter storage root; K8s adapters use PVCs instead
 	DshSkel     fs.FS  // embedded DSH home seed for lazy Chat runtimes
 	Version     string // версия agctl (метка контейнера для диагностики дрейфа)
+
+	// Надстройка организации (профиль images.dockerfile): Image собирается
+	// из Overlay (Dockerfile = OverlayDockerfile) с build-arg BASE=BaseImage,
+	// а BaseImage — из встроенного контекста. Пусто = Image и есть базовый.
+	BaseImage         string
+	Overlay           fs.FS
+	OverlayDockerfile string
 }
 
 // Метки контейнеров agctl.
@@ -94,6 +101,38 @@ func (rt *Runtime) EnsureImage(ctx context.Context) error {
 	if _, err := rt.cli.ImageInspect(ctx, rt.cfg.Image); err == nil {
 		return nil
 	}
+	if rt.cfg.Overlay == nil || rt.cfg.BaseImage == "" || rt.cfg.BaseImage == rt.cfg.Image {
+		return rt.buildBase(ctx, rt.cfg.Image)
+	}
+	if _, err := rt.cli.ImageInspect(ctx, rt.cfg.BaseImage); err != nil {
+		if err := rt.buildBase(ctx, rt.cfg.BaseImage); err != nil {
+			return err
+		}
+	}
+	return rt.buildOverlay(ctx)
+}
+
+// buildOverlay собирает образ организации из контекста профиля поверх
+// базового (ARG BASE в Dockerfile надстройки).
+func (rt *Runtime) buildOverlay(ctx context.Context) error {
+	ctxDir, err := os.MkdirTemp("", "agctl-overlay-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(ctxDir)
+	if err := extractFS(rt.cfg.Overlay, ".", ctxDir); err != nil {
+		return fmt.Errorf("docker: контекст надстройки профиля: %w", err)
+	}
+	dockerfile := rt.cfg.OverlayDockerfile
+	if dockerfile == "" {
+		dockerfile = "Dockerfile"
+	}
+	base := rt.cfg.BaseImage
+	return rt.buildContext(ctx, ctxDir, rt.cfg.Image, dockerfile, map[string]*string{"BASE": &base})
+}
+
+// buildBase собирает базовый agctl-dsh из встроенного контекста под тегом tag.
+func (rt *Runtime) buildBase(ctx context.Context, tag string) error {
 	bin, err := findLinuxBinary(rt.cfg.BinDir)
 	if err != nil {
 		return err
@@ -113,6 +152,11 @@ func (rt *Runtime) EnsureImage(ctx context.Context) error {
 	if err := os.Chmod(dst, 0o755); err != nil {
 		return err
 	}
+	return rt.buildContext(ctx, ctxDir, tag, "Dockerfile", nil)
+}
+
+// buildContext — docker build каталога ctxDir под тегом tag.
+func (rt *Runtime) buildContext(ctx context.Context, ctxDir, tag, dockerfile string, args map[string]*string) error {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	if err := tarDir(ctxDir, tw); err != nil {
@@ -122,8 +166,9 @@ func (rt *Runtime) EnsureImage(ctx context.Context) error {
 		return err
 	}
 	res, err := rt.cli.ImageBuild(ctx, &buf, client.ImageBuildOptions{
-		Tags:        []string{rt.cfg.Image},
-		Dockerfile:  "Dockerfile",
+		Tags:        []string{tag},
+		Dockerfile:  dockerfile,
+		BuildArgs:   args,
 		Remove:      true,
 		ForceRemove: true,
 	})
@@ -135,8 +180,8 @@ func (rt *Runtime) EnsureImage(ctx context.Context) error {
 	if res.Body.Close() != nil {
 		_ = out
 	}
-	if _, err := rt.cli.ImageInspect(ctx, rt.cfg.Image); err != nil {
-		return fmt.Errorf("docker: образ не собрался; вывод:\n%s", tail(string(out), 4000))
+	if _, err := rt.cli.ImageInspect(ctx, tag); err != nil {
+		return fmt.Errorf("docker: образ %s не собрался; вывод:\n%s", tag, tail(string(out), 4000))
 	}
 	return nil
 }
@@ -442,7 +487,7 @@ func (rt *Runtime) imageNoSSHD(ctx context.Context, ref string) bool {
 }
 
 // ensureImageRef — желаемый образ должен существовать локально: если нет —
-// тянем из реестра (Nexus университета и пр.); недоступный реестр — ошибка
+// тянем из реестра (Nexus организации и пр.); недоступный реестр — ошибка
 // старта, а не молчаливый откат на дефолтный образ.
 func (rt *Runtime) ensureImageRef(ctx context.Context, ref string) error {
 	if _, err := rt.cli.ImageInspect(ctx, ref); err == nil {

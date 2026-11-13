@@ -7,13 +7,12 @@ FROM node:22-bookworm-slim AS base
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 python3-pytest python3-pip make g++ ca-certificates curl git openssh-server iptables \
   && rm -rf /var/lib/apt/lists/* \
-  && pip3 install --no-cache-dir --break-system-packages python-pptx \
   && npm install -g npm@12 --no-audit --no-fund \
   && npm --version
 # iptables — egress-allowlist: хелпер применения DOCKER-USER правил (egress.go);
 # git нужен агенту в воркспейсе; npm>=11 ради allow-scripts (нативные депы dsh);
-# python3+pytest — тулзы доменных шаблонов (например 1c-vibe);
-# python-pptx — навык презентаций по шаблону вуза (каталог возможностей).
+# python3+pytest+pip — тулзы доменных шаблонов (например 1c-vibe) и надстроек
+# профилей: пакеты организации ставятся в её image/Dockerfile (FROM agctl-dsh).
 
 FROM base AS dsh
 # идентичность git для агента (в любом репо контейнера)
@@ -63,6 +62,11 @@ COPY entrypoint.sh /usr/local/bin/agctl-entrypoint
 COPY dsh-net.mjs /usr/local/bin/agctl-dsh-net
 COPY office2pdf /usr/local/bin/office2pdf
 RUN chmod +x /usr/local/bin/agctl /usr/local/bin/agctl-entrypoint /usr/local/bin/agctl-dsh-net /usr/local/bin/office2pdf && mkdir -p /home/dsh /workspace
+# Google AX / Agent Substrate: PID 1 песочницы — /usr/local/bin/ax-task-runner
+# (контракт раннера AX); здесь это обёртка над `agctl ax-runner`: probes на
+# :80, прокси на dsh web :3080, хвост лога запуска для шлюза. В Docker/K8s не
+# используется (ENTRYPOINT ниже).
+RUN printf '#!/bin/sh\nexec /usr/local/bin/agctl ax-runner "$@"\n' > /usr/local/bin/ax-task-runner && chmod +x /usr/local/bin/ax-task-runner
 WORKDIR /workspace
 EXPOSE 3080 2222
 # Живость dsh: любой HTTP-ответ (в т.ч. 401/303 без cookie) = процесс жив и

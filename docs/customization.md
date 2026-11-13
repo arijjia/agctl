@@ -10,9 +10,18 @@ agctl — универсальная платформа: ядро не соде�
 
 ```
 my-org/
-  profile.yaml      # тексты и дефолты
+  profile.yaml      # тексты, дефолты, сценарии, образы
   assets/logo.png   # логотип (опционально)
+  catalog/<id>/     # пакеты возможностей воркспейса (опционально)
+    manifest.json   #   {"id","title","description"}
+    files/**        #   файлы 1:1 в воркспейс (скиллы — в .dsh/skills/<name>/)
+  image/Dockerfile  # надстройка образа рабочего места (опционально)
 ```
+
+Всё содержимое организации живёт только в её профиле: брендинг, модели,
+готовые сценарии, пакеты каталога и пакеты образа. Ядро своих сценариев и
+пакетов не несёт: профиль без `workspace.scenarios` и `catalog/` показывает
+пустые списки, и чужие сценарии в него не попадают.
 
 `profile.yaml` (все поля):
 
@@ -44,7 +53,33 @@ map:
   llm_label: LLM корп.        # подпись LLM на физической карте (/map)
 examples:
   jira_url: https://jira.my-org.example
+workspace:                    # содержимое рабочих мест организации
+  scenarios:                  # кнопки «готовый сценарий» в диалоге создания воркспейса
+    - id: my-scenario
+      title: Мой сценарий
+      description: клонировать репо-донор со скиллами и тулзами
+      clone_url: https://github.com/my-org/my-scenario
+images:
+  dockerfile: image/Dockerfile   # надстройка FROM ${BASE} над agctl-dsh (опционально)
+  dev:                           # каталог образов лаунчера developer'а
+    - agctl-dsh-my-org:0.2.2
+    - agctl-dsh-nossh-my-org:0.2.2
 ```
+
+**Надстройка образа.** Пакеты организации (python-библиотеки, CLI) ставятся
+не в базовый agctl-dsh, а в `image/Dockerfile` профиля:
+
+```dockerfile
+ARG BASE=agctl-dsh:0.2.2
+FROM ${BASE}
+RUN pip3 install --no-cache-dir --break-system-packages python-pptx
+```
+
+С надстройкой рабочий образ профиля называется `agctl-dsh-<id>:<тег>`.
+`agctl serve` сам соберёт его поверх базового, если образа нет.
+`make img_build PROFILE=<id>` собирает оба варианта: `agctl-dsh-<id>` и
+`agctl-dsh-nossh-<id>`. Явный `--image` перекрывает профиль. Для k8s и AX
+образ профиля пушится в реестр (`make img_push PROFILE=<id>`).
 
 ## 2. Подключение
 
@@ -56,10 +91,14 @@ agctl serve --profile-dir /path/to/my-org
 mkdir -p profiles && cp -R my-org profiles/my-org
 agctl serve --profile my-org
 
-# вариант В: отдельный git-репозиторий профиля (как agctl-profile-utmn)
-make profile-fetch PROFILE_REPO=<git-url-или-локальный-путь>   # кладёт в ./profiles/utmn
-make up            # PROFILE выбирается автоматически: utmn, если профиль получен
+# вариант В: отдельный git-репозиторий профиля (agctl-profile-<id>)
+make profile-fetch PROFILE_REPO=<git-url-или-локальный-путь>   # кладёт в ./profiles/<id>
+                   # (<id> — имя репо без префикса agctl-profile-; иначе PROFILE_NAME=<id>)
+make up            # PROFILE выбирается автоматически, если в ./profiles ровно один профиль
+make up PROFILE=rshb    # явно — обязательно, когда профилей несколько
 make up PROFILE=agctl   # нейтральный запуск без организации
+
+# Kubernetes: профиль — ConfigMap (make k8s_profile PROFILE=<id>), см. docs/kubernetes.md
 ```
 
 env-эквиваленты: `AGCTL_PROFILE`, `AGCTL_PROFILE_DIR`. Порядок разрешения:
@@ -90,6 +129,8 @@ env-эквиваленты: `AGCTL_PROFILE`, `AGCTL_PROFILE_DIR`. Порядок
 | `cmd/agctl serve` | разрешает профиль до регистрации флагов — LLM-дефолты флагов приходят из профиля (env перекрывает) |
 | `internal/server` | `Server.brand` — `profile.View`; инъекции `window.__AGCTL_BRAND__` + `<title>` на wire (`chatshell.go`, `htmlscan.go`) |
 | `dsh-plugins/*` | потребители `window.__AGCTL_BRAND__` с нейтральным фолбэком (прямой заход в dsh мимо шлюза) |
+| `internal/provision/catalog.go` | каталог пакетов читается из `catalog/` профиля (`View.FS`); нет каталога — пустой список |
+| `internal/runtime/dockerrt` | `EnsureImage` собирает надстройку профиля поверх базового образа (`BaseImage` + `Overlay`) |
 | `internal/profile/guard_test.go` | падает, если литералы организации протекли в код ядра |
 
 Данные профиля агctl-репо не коммитятся (`profiles/` в `.gitignore`) —
@@ -117,3 +158,21 @@ AGCTL_LLM_CORP_API_KEY=<ключ дополнительного провайде
 EOF
 make up    # PROFILE=utmn выбирается автоматически, профиль уже на месте
 ```
+
+## 6. Второй живой профиль: AI Workspaces (РСХБ)
+
+Репозиторий `arijjia/agctl-profile-rshb` (приватный) — профиль для
+Россельхозбанка: то же имя платформы **AI Workspaces**, слоган «РСХБ на
+правильном пути», логотип РСХБ, модельный контур Z.AI GLM Coding Plan;
+корпоративный OpenAI-совместимый шлюз банка заготовлен в `extra_providers`
+(закомментирован до появления эндпоинта). Подключение — как у `utmn`:
+
+```bash
+git clone https://github.com/arijjia/agctl-profile-rshb profiles/rshb
+make up PROFILE=rshb      # или make k8s_profile PROFILE=rshb в кластере
+```
+
+Два профиля рядом (`profiles/utmn`, `profiles/rshb`) — обычная ситуация
+для разработчика платформы: `make up` без `PROFILE=` тогда поднимает
+нейтральный agctl и подсказывает выбрать профиль явно. Guard-тест ядра
+знает маркеры обеих организаций (`ТюмГУ`, `РСХБ`, `Россельхозбанк`).

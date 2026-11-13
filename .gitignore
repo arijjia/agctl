@@ -20,8 +20,9 @@ tests/e2e-ui/node_modules/
 .DS_Store
 
 # профили организаций подключаются данными (make profile-fetch / --profile-dir),
-# не коммитятся в ядро
-profiles/
+# не коммитятся в ядро (только корневой каталог: dsh-skel/profiles и
+# internal/profile/profiles — часть ядра)
+/profiles/
 
 # локальная сборка бинаря (go build ./cmd/... кладёт его в корень)
 /agctl

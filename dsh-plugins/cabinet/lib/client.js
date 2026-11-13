@@ -129,7 +129,7 @@ window.__ModuleLoader__.load({
 				<h2 style="margin:0 0 14px;font-size:18px">${helpTitle}</h2>
 				<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.5">
 					<li><b>Воркспейсы</b> — папки проектов в боковой панели. Новая сессия, созданная внутри папки, работает в каталоге этого проекта.</li>
-					<li><b>Создать воркспейс</b> — кнопка в шапке списка Workspaces: пустой или клон публичного GitHub-репозитория. При создании можно сразу отметить «возможности» (например, презентации по шаблону вуза); менять их потом — в «Воркспейсы: возможности».</li>
+					<li><b>Создать воркспейс</b> — кнопка в шапке списка Workspaces: пустой или клон публичного GitHub-репозитория. При создании можно сразу отметить «возможности» из каталога организации (если он есть в профиле); менять их потом — в «Воркспейсы: возможности».</li>
 					<li><b>SSH</b> (роли developer/admin) — открой отдельную вкладку «SSH-доступ»: там поле для публичного ключа, готовая команда подключения и микро-гайд. Порт появляется, когда рантайм работает; доступ — только с самого сервера или через туннель.</li>
 					<li><b>Рантайм</b> управляется agctl автоматически: просыпается при открытии чата и засыпает после часа бездействия; активная SSH-сессия продлевает работу. Логи своего контейнера разработчик смотрит в лаунчере.</li>
 					<li><b>Git</b> — история воркспейса сохраняется автоматически; автопуш во внешний Git не выполняется.</li>
@@ -222,7 +222,7 @@ window.__ModuleLoader__.load({
 			api("/api/me/ssh").then((ssh) => {
 				area.value = ssh.pubKey || "";
 				portLine.textContent = ssh.sshPort > 0
-					? "Подключение (рантайм работает): ssh root@127.0.0.1 -p " + ssh.sshPort
+					? "Подключение (рантайм работает): ssh root@" + (ssh.sshHost || "127.0.0.1") + " -p " + ssh.sshPort
 					: "Рантайм спит (sshPort = 0): открой чат — sshd поднимется при следующем старте.";
 			}).catch((err) => { status.textContent = "SSH: " + err.message; });
 			return sshCard;
@@ -435,7 +435,7 @@ window.__ModuleLoader__.load({
 		function toggleCabinetPopup(anchor, me) {
 			const existing = document.querySelector("[data-agctl-cabinet-popup]");
 			if (existing) { existing.remove(); return; }
-			const popup = el("div", "position:fixed;z-index:10000;min-width:230px;padding:6px;border-radius:12px;border:1px solid var(--dsw-alias-border-l1,#333);background:var(--dsw-specific-menu,#1c1c1c);color:var(--dsw-alias-label-primary,inherit);box-shadow:0 12px 40px rgba(0,0,0,.4);display:flex;flex-direction:column;gap:2px");
+			const popup = el("div", "position:fixed;z-index:10000;min-width:230px;padding:6px;border-radius:12px;border:1px solid var(--dsw-alias-border-l1,#333);background:var(--dsw-alias-bg-layer-1,#1c1c1c);color:var(--dsw-alias-label-primary,inherit);box-shadow:0 12px 40px rgba(0,0,0,.4);display:flex;flex-direction:column;gap:2px");
 			popup.dataset.agctlCabinetPopup = "1";
 			const item = (label, act) => {
 				const btn = el("button", "display:flex;align-items:center;gap:10px;border:none;background:transparent;color:inherit;font:inherit;font-size:13px;padding:9px 10px;border-radius:8px;cursor:pointer;text-align:left", label);

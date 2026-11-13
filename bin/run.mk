@@ -11,15 +11,18 @@ RUN_UP_PID := $(RUNTIME_DIR)/up.pid
 RUN_CORP_LOG := $(RUNTIME_DIR)/corp.log
 RUN_CORP_PID := $(RUNTIME_DIR)/corp.pid
 
-# Профиль платформы (--profile): utmn, если профиль организации получен
-# (make profile-fetch кладёт его в ./profiles/utmn), иначе нейтральный agctl.
-# Встроенного профиля организации в бинаре нет — ядро универсально.
+# Профиль платформы (--profile): единственный профиль организации из
+# ./profiles/<id> (make profile-fetch), если он там один; при нескольких
+# (например rshb и utmn) профиль задаётся явно — make up PROFILE=<id>, иначе
+# нейтральный agctl. Встроенного профиля организации в бинаре нет.
 # Ключ провайдера — в .env (AGCTL_LLM_API_KEY); сами дефолты LLM из профиля,
 # точечные переопределения — CORP_LLM_* (пусто = брать из профиля).
-PROFILE ?= $(if $(wildcard profiles/utmn/profile.yaml),utmn,agctl)
+PROFILE_DIRS := $(notdir $(patsubst %/,%,$(dir $(wildcard profiles/*/profile.yaml))))
+PROFILE ?= $(if $(filter 1,$(words $(PROFILE_DIRS))),$(PROFILE_DIRS),agctl)
 # Каталог образов лаунчера developer'а (карточка developer-launcher-images):
-# дефолт — пара «с SSH» / «без SSH» (второй собирается img_build).
-DEV_IMAGES ?= agctl-dsh:0.2.2,agctl-dsh-nossh:0.2.2
+# по умолчанию — images.dev профиля (пара «с SSH» / «без SSH», её собирает
+# img_build); DEV_IMAGES=… перекрывает профиль.
+DEV_IMAGES ?=
 CORP_LLM_BASE_URL ?=
 CORP_LLM_MODELS ?=
 CORP_LLM_MODEL ?=
@@ -32,9 +35,12 @@ CORP_LLM_ARGS = $(if $(CORP_LLM_BASE_URL),--llm-base-url "$(CORP_LLM_BASE_URL)")
 
 # profile_check: подсказка, если выбранный профиль не найден (встроен только agctl)
 define profile_check
+@echo "профиль: $(PROFILE) (доступны: agctl $(PROFILE_DIRS) — make $1 PROFILE=<id>, список: make profiles)"
 @if [ "$(PROFILE)" != "agctl" ] && [ ! -f "profiles/$(PROFILE)/profile.yaml" ]; then \
   echo "⚠ профиль $(PROFILE) не найден в profiles/ (встроен только agctl)."; \
   echo "  Сделай make profile-fetch (PROFILE_REPO=…) или запусти make $1 PROFILE=agctl."; fi
+@if [ "$(PROFILE)" = "agctl" ] && [ $(words $(PROFILE_DIRS)) -gt 1 ]; then \
+  echo "ℹ в profiles/ несколько профилей ($(PROFILE_DIRS)) — запущен нейтральный agctl; выбери явно: make $1 PROFILE=<id>"; fi
 endef
 
 .PHONY: up corp stop down restart logs status demo-users
@@ -56,7 +62,7 @@ up: web_build go_build img_build | $(RUNTIME_DIR)
 	@port=$$(printf '%s' "$(RUN_ADDR)" | awk -F: '{print $$NF}'); \
 	if lsof -nP -ti "tcp:$$port" -sTCP:LISTEN >/dev/null 2>&1; then \
 	  echo "✗ порт $(RUN_ADDR) уже занят (инстанс вне make?) — сделай make stop и повтори up"; exit 1; fi
-	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl serve --addr "$(RUN_ADDR)" --profile "$(PROFILE)" --dev-images "$(DEV_IMAGES)" >>"$(RUN_UP_LOG)" 2>&1 & echo $$! > "$(RUN_UP_PID)"
+	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl serve --addr "$(RUN_ADDR)" --profile "$(PROFILE)" $(if $(DEV_IMAGES),--dev-images "$(DEV_IMAGES)") >>"$(RUN_UP_LOG)" 2>&1 & echo $$! > "$(RUN_UP_PID)"
 	@sleep 1
 	@if kill -0 "$$(cat $(RUN_UP_PID))" 2>/dev/null; then \
 	  echo "✓ agctl: http://$(RUN_ADDR) (дом: $(RUN_HOME))"; \

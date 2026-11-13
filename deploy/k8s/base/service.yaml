@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: agctl
+  labels:
+    app.kubernetes.io/name: agctl
+spec:
+  type: ClusterIP # наружу — через Ingress с TLS (+ --secure-cookies), см. docs/kubernetes.md
+  selector:
+    app.kubernetes.io/name: agctl
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

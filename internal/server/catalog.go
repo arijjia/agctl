@@ -15,18 +15,14 @@ import (
 	"os"
 	"strings"
 
-	"github.com/arijjia/agctl/internal/assets"
 	"github.com/arijjia/agctl/internal/provision"
 )
-
-// assetsCatalog — встроенный каталог пакетов (assets.Catalog).
-var assetsCatalog = assets.Catalog
 
 // maxPromptBytes — верхняя граница AGENTS.md воркспейса при записи.
 const maxPromptBytes = 256 << 10
 
 func (s *Server) catalogPackages() []provision.CatalogPackage {
-	pkgs, err := provision.CatalogPackages(assetsCatalog)
+	pkgs, err := provision.CatalogPackages(s.brand.FS)
 	if err != nil {
 		return []provision.CatalogPackage{}
 	}
@@ -62,7 +58,7 @@ func (s *Server) handleProjectCatalogGet(w http.ResponseWriter, r *http.Request,
 	}
 	out := []entry{}
 	for _, p := range s.catalogPackages() {
-		out = append(out, entry{CatalogPackage: p, Installed: provision.IsCatalogPackageInstalled(dir, assetsCatalog, p)})
+		out = append(out, entry{CatalogPackage: p, Installed: provision.IsCatalogPackageInstalled(dir, s.brand.FS, p)})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"packages": out})
 }
@@ -75,12 +71,12 @@ func (s *Server) handleProjectCatalogInstall(w http.ResponseWriter, r *http.Requ
 		writeErr(w, code, msg)
 		return
 	}
-	pkg, err := provision.FindCatalogPackage(assetsCatalog, r.PathValue("id"))
+	pkg, err := provision.FindCatalogPackage(s.brand.FS, r.PathValue("id"))
 	if err != nil {
 		writeErr(w, http.StatusNotFound, err.Error())
 		return
 	}
-	if err := provision.InstallCatalogPackage(dir, assetsCatalog, pkg); err != nil {
+	if err := provision.InstallCatalogPackage(dir, s.brand.FS, pkg); err != nil {
 		writeErr(w, http.StatusInternalServerError, "установка пакета: "+err.Error())
 		return
 	}
@@ -96,12 +92,12 @@ func (s *Server) handleProjectCatalogDelete(w http.ResponseWriter, r *http.Reque
 		writeErr(w, code, msg)
 		return
 	}
-	pkg, err := provision.FindCatalogPackage(assetsCatalog, r.PathValue("id"))
+	pkg, err := provision.FindCatalogPackage(s.brand.FS, r.PathValue("id"))
 	if err != nil {
 		writeErr(w, http.StatusNotFound, err.Error())
 		return
 	}
-	if err := provision.RemoveCatalogPackage(dir, assetsCatalog, pkg); err != nil {
+	if err := provision.RemoveCatalogPackage(dir, s.brand.FS, pkg); err != nil {
 		writeErr(w, http.StatusConflict, err.Error())
 		return
 	}

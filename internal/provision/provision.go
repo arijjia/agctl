@@ -215,28 +215,6 @@ func ParseModels(text, fallback string) []string {
 	return out
 }
 
-// ScenarioPreset — готовый сценарий рабочего места, который клиент показывает
-// одной кнопкой в диалоге создания воркспейса: репка-донор клонируется всем
-// одинаковая, сценарий настраивается уже на сервере (компоненты, скиллы).
-type ScenarioPreset struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	CloneURL    string `json:"cloneUrl"`
-}
-
-// ScenarioPresets — каталог сценариев платформы. 1c-vibe: полный цикл
-// 1С-разработки (Jira → ветка → правка выгрузки → самопроверка → MR) из
-// преднастроенной репки arijjia/1c-vibe.
-var ScenarioPresets = []ScenarioPreset{
-	{
-		ID:          "1c-vibe",
-		Title:       "1С-vibe (готовый сценарий)",
-		Description: "Клонировать репку 1c-vibe: скилл 1C Vibe, инструменты Jira/GitLab/BSL и демо-проект. Компоненты настраиваются потом в консоли воркспейсов.",
-		CloneURL:    "https://github.com/arijjia/1c-vibe",
-	},
-}
-
 // Template — зарегистрированный шаблон репки.
 type Template struct {
 	ID          string `json:"id"`

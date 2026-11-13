@@ -1,0 +1,25 @@
+# Дом шлюза: SQLite (пользователи, сессии, настройки), мастер-ключ секретов.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: agctl-home
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+# Общий том данных пользователей (RWX: NFS / CephFS / EFS / Filestore).
+# Шлюз монтирует его как $AGCTL_HOME/chats, поды dsh — подкаталог u<ID>/
+# (--k8s-shared-claim). Без RWX-класса удалите этот PVC и переменную
+# AGCTL_K8S_SHARED_CLAIM — тогда у каждого пользователя свой RWO PVC, а
+# проектные API шлюза (файлы, autosave) работать не будут.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: agctl-data
+spec:
+  accessModes: ["ReadWriteMany"]
+  resources:
+    requests:
+      storage: 100Gi

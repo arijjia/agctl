@@ -2,7 +2,7 @@ package server
 
 // launcher.go — лаунчер роли developer (карточка developer-launcher-images):
 // после авторизации developer не получает контейнер автоматически; он выбирает
-// образ из каталога (Nexus университета и пр.), управляет своими контейнерами
+// образ из каталога (Nexus организации и пр.), управляет своими контейнерами
 // (старт/стоп/рестарт). Роль user ведёт себя как раньше: ленивый дефолтный
 // чат. Админу личный контейнер не выдаётся вовсе (см. auditedChat/rootEntry).
 
@@ -112,7 +112,7 @@ func (s *Server) handleMeRuntimeStart(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "running", "endpoint": rt.handle.Endpoint, "sshPort": rt.handle.SSHPort,
+		"status": "running", "endpoint": rt.handle.Endpoint, "sshPort": rt.handle.SSHPort, "sshHost": rt.handle.SSHHost,
 	})
 }
 

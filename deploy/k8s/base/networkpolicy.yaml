@@ -1,0 +1,20 @@
+# Шлюз: ingress только с ingress-контроллера (подправьте селектор namespace)
+# и из своего namespace; egress — API-сервер, DNS, поды dsh, внешние LLM/Git.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agctl-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: agctl
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8929

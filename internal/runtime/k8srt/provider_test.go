@@ -252,7 +252,7 @@ func TestPersistentResourcesFollowStorageIDAcrossRuntimeReplacement(t *testing.T
 	}
 }
 
-// TestEnsureChatWaitsForPodReady — EnsureChat с ReadinessWait дожидается
+// TestEnsureChatWaitsForPodReady — EnsureChat с WaitReady/ReadyTimeout дожидается
 // PodReady: gateway не получает Endpoint неготового чата (карточка
 // k8s-chat-runtime-adapter).
 func TestEnsureChatWaitsForPodReady(t *testing.T) {
@@ -260,7 +260,8 @@ func TestEnsureChatWaitsForPodReady(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	provider, err := NewWithClient(Config{
 		Namespace: "agctl", Image: "registry.example.invalid/agctl-dsh:0.2.0",
-		ReadinessWait: 5 * time.Second,
+		WaitReady:    true,
+		ReadyTimeout: 5 * time.Second,
 	}, client)
 	if err != nil {
 		t.Fatal(err)
@@ -310,7 +311,8 @@ func TestEnsureChatReadinessTimeout(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	provider, err := NewWithClient(Config{
 		Namespace: "agctl", Image: "registry.example.invalid/agctl-dsh:0.2.0",
-		ReadinessWait: 120 * time.Millisecond,
+		WaitReady:    true,
+		ReadyTimeout: 120 * time.Millisecond,
 	}, client)
 	if err != nil {
 		t.Fatal(err)
@@ -324,7 +326,7 @@ func TestEnsureChatReadinessTimeout(t *testing.T) {
 	if err == nil {
 		t.Fatal("ожидали ошибку readiness-таймаута, получили nil")
 	}
-	if !strings.Contains(err.Error(), "не стал Ready") {
+	if !strings.Contains(err.Error(), "not ready within") {
 		t.Fatalf("неожиданная ошибка: %v", err)
 	}
 	if elapsed := time.Since(start); elapsed < 100*time.Millisecond {

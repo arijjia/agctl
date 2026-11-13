@@ -1,0 +1,12 @@
+# Тестовый профиль организации: свои сценарии и каталог пакетов
+# (catalog/<id>) — ядро их не несёт, они приходят только из профиля.
+schema: 1
+id: testorg
+brand:
+  name: Test Org
+workspace:
+  scenarios:
+    - id: demo-scenario
+      title: Демо-сценарий
+      description: клонировать репо-донор
+      clone_url: https://example.com/demo-scenario.git
