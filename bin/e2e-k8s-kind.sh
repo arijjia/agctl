@@ -69,7 +69,7 @@ for _ in $(seq 1 150); do
   sleep 2
 done
 [ "$ok" = "1" ] || { echo "✗ чат не поднялся (код $code)"; kubectl -n "$NS" get pod -o wide; kubectl -n "$NS" logs deployment/agctl --tail=50; exit 1; }
-POD=$(kubectl -n "$NS" get pod -l app.kubernetes.io/name=agctl-dsh-chat -o jsonpath='{.items[0].metadata.name}')
+POD=$(kubectl -n "$NS" get pod -l app.kubernetes.io/name=agctl-dsh-chat --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}') # новейший: под только что поднят этим прогоном
 echo "  ✓ под пользователя: $POD"
 kubectl -n "$NS" get pvc -l app.kubernetes.io/name=agctl-dsh-chat | grep -q data- && echo "  ✓ PVC пользователя создан"
 
