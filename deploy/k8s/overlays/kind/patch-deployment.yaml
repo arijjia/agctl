@@ -20,8 +20,25 @@ spec:
             - name: AGCTL_K8S_LIVENESS
               value: "0"
           volumeMounts:
+            - name: home
+              mountPath: /var/lib/agctl
+            - name: tmp
+              mountPath: /tmp
             - name: data
               $patch: delete
       volumes:
+        - name: home
+          persistentVolumeClaim:
+            claimName: agctl-home
+        - name: profile
+          configMap:
+            name: agctl-profile
+            optional: true
+        - name: profile-assets
+          configMap:
+            name: agctl-profile-assets
+            optional: true
+        - name: tmp
+          emptyDir: {}
         - name: data
           $patch: delete
