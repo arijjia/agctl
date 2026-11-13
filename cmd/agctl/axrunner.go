@@ -106,16 +106,22 @@ func cmdAXRunner(args []string) {
 		}
 	}
 	// Провайдер dsh: fetch-at-boot у шлюза (env задачи содержит только
-	// AGCTL_GATEWAY_URL), иначе AGCTL_LLM_* окружения задачи.
+	// AGCTL_GATEWAY_URL), иначе AGCTL_LLM_* окружения задачи. В режиме
+	// fetch-at-boot недоступный шлюз — громкий fatal: тихий старт без
+	// провайдера оставил бы dsh с пустым конфигом.
 	taskName := task.Metadata.Name
 	if taskName == "" {
 		taskName = "unknown"
 	}
-	provider := providerAtBoot(taskName, os.Getenv("AGCTL_GATEWAY_URL"), os.Getenv("AGCTL_RUNNER_TOKEN"))
+	gwURL, gwToken := os.Getenv("AGCTL_GATEWAY_URL"), os.Getenv("AGCTL_RUNNER_TOKEN")
+	provider := providerAtBoot(taskName, gwURL, gwToken)
 	source := "env задачи"
-	if provider != nil {
+	switch {
+	case provider != nil:
 		source = provider.source
-	} else {
+	case gwURL != "":
+		log.Fatalf("ax-runner: конфиг провайдера у шлюза %s недоступен (fetch-at-boot) — проверьте шлюз и токен раннера", gwURL)
+	default:
 		provider = &runnerProvider{Provider: providerFromEnv()}
 	}
 	log.Printf("ax-runner: провайдер %s (%s)", provider.Provider.Alias(), source)
