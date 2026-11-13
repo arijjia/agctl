@@ -34,6 +34,10 @@ type ChatSpec struct {
 	// developer/admin: креды доменных скриптов (GitLab/Jira) и оверрайды LLM
 	// из хостового .env. Роль user их не получает.
 	DevEnv []string
+	// WorkDir — абсолютный путь папки на хосте, монтируемой как /workspace
+	// (локальный режим agctl dev: родная папка проектов разработчика).
+	// Пусто = личный work-каталог в доме платформы. Только Docker-бэкенд.
+	WorkDir string
 }
 
 // ChatHandle describes one running runtime generation. Endpoint is private to

@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/arijjia/agctl/internal/provision"
 )
@@ -60,6 +61,9 @@ func (s *Server) handleProjectMcpGet(w http.ResponseWriter, r *http.Request, id 
 	}
 	servers := make([]map[string]any, 0, len(provision.PlatformMcpServers))
 	for _, spec := range provision.PlatformMcpServers {
+		if spec.LocalOnly && !s.isLocal() {
+			continue
+		}
 		servers = append(servers, map[string]any{
 			"id":          spec.ID,
 			"title":       spec.Title,
@@ -101,6 +105,9 @@ func (s *Server) handleProjectMcpPut(w http.ResponseWriter, r *http.Request, id 
 	needSecret := false
 	for _, sid := range selected {
 		spec, ok := provision.PlatformMcpServer(sid)
+		if ok && spec.LocalOnly && !s.isLocal() {
+			ok = false
+		}
 		if !ok {
 			writeErr(w, http.StatusBadRequest, "неизвестный MCP-сервер: "+sid)
 			return
@@ -132,6 +139,13 @@ func (s *Server) handleProjectMcpPut(w http.ResponseWriter, r *http.Request, id 
 			}
 		}
 	}
+	// Доступы рабочего места (GitLab/Jira/мост) — из того же env, что
+	// получает контейнер пользователя: серверам каталога с PassEnv.
+	for k, v := range s.containerEnvMap(id.ID) {
+		if _, taken := secretEnv[k]; !taken {
+			secretEnv[k] = v
+		}
+	}
 	if err := provision.EnsureWorkspaceMcpPreset(dshHome, name, specs, secretEnv); err != nil {
 		log.Printf("[mcp] u%d %s: пресет не записан: %v", id.ID, name, err)
 		writeErr(w, http.StatusInternalServerError, "не удалось записать MCP-пресет воркспейса")
@@ -155,6 +169,22 @@ func joinIDs(ids []string) string {
 			out += ","
 		}
 		out += id
+	}
+	return out
+}
+
+// containerEnvMap — env рабочего места пользователя (доменные доступы
+// developer'а и, в локальном режиме, секреты из хранилища ОС + мост).
+func (s *Server) containerEnvMap(userID int64) map[string]string {
+	out := map[string]string{}
+	pairs := append([]string(nil), s.developerEnv(userID)...)
+	if _, env := s.localChatExtras(userID); len(env) > 0 {
+		pairs = append(pairs, env...)
+	}
+	for _, kv := range pairs {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			out[k] = v
+		}
 	}
 	return out
 }

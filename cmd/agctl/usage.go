@@ -40,6 +40,17 @@ var usageSections = []usageSection{
 		},
 	},
 	{
+		title: "Локальный режим (платформа на своей машине)",
+		rows: []usageRow{
+			{name: "dev init", desc: []string{"настроить: профиль, образ, папка проектов, доступы Jira/GitLab/LLM"}},
+			{name: "dev up [DIR]", desc: []string{
+				"поднять платформу и рабочее место (DIR → /workspace), открыть браузер",
+				"dev down · status · open · logs · secrets · bridge · update · rollback · doctor",
+			}},
+			{name: "bridge", desc: []string{"внутри контейнера: мост к хосту — list | call ИНСТР k=v | mcp"}},
+		},
+	},
+	{
 		title: "Работа разработчика",
 		rows: []usageRow{
 			{name: "connect", desc: []string{

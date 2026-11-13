@@ -23,6 +23,16 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	}
 	base := filepath.Join(rt.cfg.Home, "chats", spec.StorageID)
 	dshHome, work := filepath.Join(base, "dsh-home"), filepath.Join(base, "work")
+	if spec.WorkDir != "" {
+		// Локальный режим: /workspace — родная папка проектов разработчика.
+		if !filepath.IsAbs(spec.WorkDir) {
+			return agctlrt.ChatHandle{}, fmt.Errorf("dockerrt: work dir must be absolute: %q", spec.WorkDir)
+		}
+		if info, err := os.Stat(spec.WorkDir); err != nil || !info.IsDir() {
+			return agctlrt.ChatHandle{}, fmt.Errorf("dockerrt: work dir %q is not a directory", spec.WorkDir)
+		}
+		work = spec.WorkDir
+	}
 	for _, dir := range []string{dshHome, work} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return agctlrt.ChatHandle{}, err

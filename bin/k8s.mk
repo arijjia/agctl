@@ -15,11 +15,14 @@ img_serve_build:
 	GOOS=linux GOARCH=$(K8S_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-linux-$(K8S_ARCH) ./cmd/agctl
 	docker build --platform linux/$(K8S_ARCH) --build-arg TARGETARCH=$(K8S_ARCH) -t $(IMG_SERVE) -f deploy/serve.Dockerfile .
 
-## img_push: тегировать и запушить agctl-serve, agctl-dsh, agctl-dsh-nossh (и надстройки профиля PROFILE) в REGISTRY; печатает digest agctl-dsh (для AGCTL_AX_IMAGE)
+## img_push: тегировать и запушить agctl-serve, agctl-dsh, agctl-dsh-nossh, вкусы (web, вкусы профиля) и надстройки профиля PROFILE в REGISTRY (Nexus и пр.); печатает digest agctl-dsh (для AGCTL_AX_IMAGE)
 img_push:
 	@test -n "$(REGISTRY)" || { echo "✗ задай REGISTRY=<реестр>/agctl"; exit 1; }
 	@set -e; for img in $(IMG_SERVE) $(IMG) $(IMG_NOSSH) $(if $(PROFILE_DOCKERFILE),$(call overlay_tag,$(IMG)) $(call overlay_tag,$(IMG_NOSSH))); do \
 	  docker tag "$$img" "$(REGISTRY)/$$img"; docker push "$(REGISTRY)/$$img"; done
+	@# Образы локального режима (вкусы): пушим те, что собраны.
+	@set -e; for img in $(IMG_WEB) $(if $(PROFILE_DOCKERFILE),$(call overlay_tag,$(IMG_WEB))) $(foreach fl,$(PROFILE_FLAVORS),$(call flavor_tag,$(fl))); do \
+	  if docker image inspect "$$img" >/dev/null 2>&1; then docker tag "$$img" "$(REGISTRY)/$$img"; docker push "$(REGISTRY)/$$img"; fi; done
 	@echo "digest agctl-dsh (AGCTL_AX_IMAGE):"; \
 	docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$(REGISTRY)/$(IMG)" | grep "^$(REGISTRY)/$(firstword $(subst :, ,$(IMG)))@" | head -n1
 

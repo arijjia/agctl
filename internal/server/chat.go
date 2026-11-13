@@ -623,6 +623,13 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 		// роли developer/admin (разработка доменных скриптов).
 		DevEnv: s.developerEnv(userID),
 	}
+	if workDir, env := s.localChatExtras(userID); workDir != "" {
+		spec.WorkDir = workDir
+		spec.DevEnv = append(spec.DevEnv, env...)
+	}
+	// Доступы для команд агента — файлами в dsh-home (bash dsh вычищает
+	// *TOKEN*/*KEY* из env), инструменты находят их по путям из env.
+	spec.DevEnv = append(spec.DevEnv, s.writeAgentCredentials(userID, spec.DevEnv)...)
 	handle, err := s.chatProvider.EnsureChat(ctx, spec)
 	if err != nil {
 		return nil, err
@@ -630,6 +637,7 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 	if handle.RuntimeID == "" || handle.Endpoint == "" {
 		return nil, fmt.Errorf("chat runtime provider returned an incomplete handle")
 	}
+	s.writeLocalBridgeSkill(userID)
 	rt := &chatRuntime{handle: handle, lastSeen: time.Now(), image: spec.Image}
 	s.chatMu.Lock()
 	s.chats[userID] = rt

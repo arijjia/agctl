@@ -100,6 +100,10 @@ func main() {
 		}
 	case "sync":
 		cmdSync(os.Args[2:])
+	case "dev": // локальный режим: платформа на машине разработчика
+		cmdDev(os.Args[2:])
+	case "bridge": // клиент моста к хосту (внутри контейнера локального режима)
+		cmdBridge(os.Args[2:])
 	case "version":
 		fmt.Printf("agctl %s (%s/%s %s)\n", version, runtime.GOOS, runtime.GOARCH, runtime.Version())
 	case "help", "-h", "--help":
@@ -147,7 +151,12 @@ func regLimitValue(v int) int {
 // конфигурацию из флагов/среды/профиля, открывает дом (мастер-ключ + SQLite),
 // инициализирует LLM-провайдера по умолчанию, строит server.Server и слушает
 // адрес до сигнала завершения (graceful shutdown с остановкой рантаймов).
-func cmdServe(args []string) {
+func cmdServe(args []string) { cmdServeWith(args, nil, nil) }
+
+// cmdServeWith — serve с опциональным локальным режимом (agctl dev serve):
+// local != nil включает однопользовательский режим, onReady вызывается с
+// готовым обработчиком до ListenAndServe (доп. слушатели, файл состояния).
+func cmdServeWith(args []string, local *server.LocalMode, onReady func(context.Context, http.Handler)) {
 	// Профиль разрешается до регистрации флагов: от него зависят дефолты
 	// (LLM-провайдер и брендинг сервера). Имя ищется во встроенных профилях,
 	// Дефолты: флаги > env > ~/.config/agctl/config.yaml > встроенные.
@@ -260,6 +269,12 @@ func cmdServe(args []string) {
 		RegisterPerMinute:       regLimitValue(*registerPerMin),
 		DefaultLLM:              defaultLLM,
 		Profile:                 prof,
+		Local:                   local,
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if local != nil {
+		local.Shutdown = stop
 	}
 	srv, err := buildServer(rf, db, sec, srvCfg)
 	if defaultLLM.BaseURL != "" {
@@ -276,14 +291,16 @@ func cmdServe(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	srv.StartBackground(ctx)
 
+	handler := srv.Routes(webFS)
 	httpSrv := &http.Server{
 		Addr:              *addr,
-		Handler:           srv.Routes(webFS),
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
+	}
+	if onReady != nil {
+		onReady(ctx, handler)
 	}
 	shutdownDone := make(chan struct{})
 	go func() {
