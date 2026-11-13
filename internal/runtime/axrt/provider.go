@@ -101,10 +101,12 @@ type Config struct {
 	// GatewayURL — базовый URL шлюза agctl для fetch-at-boot раннера
 	// (требуется при ProviderAtBoot).
 	GatewayURL string
-	// DebugSSH — spec.debug задачи: guest-сервисы Substrate (process/filesystem
-	// gRPC на :80 раннера), которыми пользуется `ax ssh` апстрима. Доступ =
-	// произвольный exec/файлы в песочнице — opt-in на установку (владелец):
-	// --ax-debug-ssh / AGCTL_AX_DEBUG_SSH=1. По умолчанию выключено.
+	// DebugSSH — guest-сервисы Substrate (process/filesystem gRPC на :80
+	// раннера, `ax ssh`) для задач пользователей с SSH-ключом роли
+	// developer/admin (spec.SSHPubKey ≠ "" — та же семантика, что «поднять
+	// sshd» в docker/k8s). Доступ = произвольный exec/файлы в песочнице —
+	// opt-in на установку: --ax-debug-ssh / AGCTL_AX_DEBUG_SSH=1. По
+	// умолчанию выключено; роли user guest-сервисов не получают.
 	DebugSSH bool
 	// CPU/Memory — лимиты песочницы (quantity: "2", "4Gi").
 	CPU    string
@@ -392,6 +394,10 @@ func (p *Provider) buildTask(name string, spec agctlrt.ChatSpec) *v1alpha1.Task 
 		image = spec.Image
 	}
 	hasher.Write([]byte(image + "\n"))
+	// debug входит в specHash: загрузка SSH-ключа разработчиком позже —
+	// видимый дрейф (пересоздание по --ax-recreate-on-drift или руками)
+	debug := p.cfg.DebugSSH && spec.SSHPubKey != ""
+	hasher.Write([]byte(fmt.Sprintf("debug=%v\n", debug)))
 	for _, k := range keys {
 		envList = append(envList, &v1alpha1.EnvVar{Name: k, Value: env[k]})
 		hasher.Write([]byte(k + "=" + env[k] + "\n"))
@@ -413,7 +419,9 @@ func (p *Provider) buildTask(name string, spec agctlrt.ChatSpec) *v1alpha1.Task 
 			Resources: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{
 				Cpu: p.cfg.CPU, Memory: p.cfg.Memory,
 			}},
-			Debug:  p.cfg.DebugSSH,
+			// guest-сервисы (ax ssh) — только пользователям с SSH-ключом
+			// роли developer/admin; роли user — никогда
+			Debug:  debug,
 			Config: config,
 		},
 	}
