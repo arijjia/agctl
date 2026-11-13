@@ -74,6 +74,11 @@ echo "  ✓ под пользователя: $POD"
 kubectl -n "$NS" get pvc -l app.kubernetes.io/name=agctl-dsh-chat | grep -q data- && echo "  ✓ PVC пользователя создан"
 
 echo "▶ сон рантайма"
+# /api/me/runtime/* требует роль developer: заявка от user + апрув админом.
+curl -fsS -b "$JAR_USER" -H 'Content-Type: application/json' -d '{"motivation":"e2e"}' "$BASE/api/role-requests" >/dev/null 2>&1 || true # 409 на повторном прогоне — ок
+RID=$(curl -fsS -b "$JAR_ADMIN" "$BASE/api/role-requests" | sed -n 's/.*"id":\([0-9]*\),"userId":[0-9]*,"login":"e2euser","status":"pending".*/\1/p' | head -1)
+[ -n "$RID" ] && curl -fsS -X POST -b "$JAR_ADMIN" "$BASE/api/role-requests/$RID/approve" >/dev/null
+curl -fsS -c "$JAR_USER" -b "$JAR_USER" -H 'Content-Type: application/json' -d '{"login":"e2euser","password":"E2e-user-pass-1!"}' "$BASE/api/login" >/dev/null # сессия с новой ролью
 curl -fsS -X POST -b "$JAR_USER" "$BASE/api/me/runtime/stop" | grep -q sleeping
 for _ in $(seq 1 60); do kubectl -n "$NS" get pod "$POD" >/dev/null 2>&1 || break; sleep 2; done
 kubectl -n "$NS" get pod "$POD" >/dev/null 2>&1 && { echo "✗ под не удалён после stop"; exit 1; }
