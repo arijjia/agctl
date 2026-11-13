@@ -41,7 +41,12 @@ async function assertActive(label) {
   const s = await page.evaluate(() => {
     const composer = document.querySelector('[data-composer-input]');
     const chip = [...document.querySelectorAll('button[aria-haspopup="menu"]')]
-      .find((b) => /workspace|воркспейс/i.test(b.getAttribute('aria-label') || ''));
+      .find((b) => {
+        // чип выбора папки; «Действия рабочей области для …» (меню у папки
+        // в сайдбаре dsh 0.2.2) — не он
+        const label = b.getAttribute('aria-label') || '';
+        return /workspace|воркспейс|рабоч(ее|ую|ая) (пространство|область)/i.test(label) && !/actions|действия/i.test(label);
+      });
     return {
       composerEditable: composer?.getAttribute('contenteditable') === 'true',
       session: document.querySelector('[data-conversation-content]')?.getAttribute('data-conversation-session') || null,
@@ -51,7 +56,7 @@ async function assertActive(label) {
   console.log(`[${label}]`, JSON.stringify(s));
   if (s.err || !s.composerEditable) failures.push(`${label}: композер не активен`);
   if (!s.err && !s.session) failures.push(`${label}: сессия не открыта`);
-  if (!s.err && (!s.chipText || /^choose workspace$|^выберите воркспейс$/i.test(s.chipText))) {
+  if (!s.err && (!s.chipText || /^choose workspace$|^выберите (воркспейс|рабочее пространство|рабочую область)$/i.test(s.chipText))) {
     failures.push(`${label}: чип показывает плейсхолдер вместо папки`);
   }
   return s;

@@ -266,22 +266,25 @@ test("D6: автостарт первой сессии объявлен и зв�
 	assert.match(src, /item\.path === "\/workspace" \|\| item\.title === "Default workspace"/, "первая сессия — Default workspace платформы");
 	assert.match(src, /workspaces\.phase !== "ready" \|\| sessions\.phase !== "ready"/, "автостарт ждёт готовности списков");
 	assert.match(src, /\(sessions\.ids \|\| \[\]\)\.length > 0 \|\| \(workspaces\.archivedSessionIds \|\| \[\]\)\.length > 0/, "автостарт не срабатывает, когда сессии уже есть");
-	assert.match(src, /uiWorkspace\.startSession\(undefined, userSessionPreset\(\)\)/, "лечение идёт тем же штатным переходом, что у «+» у папки");
+	assert.match(src, /uiWorkspace\.startSession\(undefined\)/, "лечение идёт тем же штатным переходом, что у «+» у папки");
 });
 
-test("D7: пути плагина для user идут с явным agentPreset danger-full-access", async () => {
-	const exports = await loadClientFactory();
-	// Роль неизвестна — пресет не задаём (developer/admin решают сами).
-	assert.deepEqual(exports.__testUserSessionPreset(), undefined);
+test("D7: режим разрешений user задаёт сервер, плагин не шлёт agentPreset", async () => {
 	const src = await readFile(clientPath, "utf8");
-	assert.match(src, /let roleKnown = false;/, "роль фиксируется после ответа /api/me");
-	assert.match(src, /roleKnown = !!\(data && data\.user && data\.user\.role\)/, "roleKnown выставляется вместе с ролью");
-	assert.match(src, /roleKnown && activeRole === "user" \? \{ agentPreset: "danger-full-access" \} : undefined/,
-		"userSessionPreset задаёт danger-full-access только известной user-роли");
-	assert.match(src, /uiWorkspace\.startSession\(workspace\.workspaceId, userSessionPreset\(\)\)/,
-		"автостарт первой сессии передаёт preset");
-	assert.match(src, /uiWorkspace\.startSession\(undefined, userSessionPreset\(\)\)/,
-		"лечение застрявшего выбора передаёт preset");
+	// dsh 0.2.2: agentPreset — пресет агента; «danger-full-access» там неизвестен,
+	// и создание первой сессии падало. Разрешения роли — permission.defaultPreset
+	// в dsh-home (provision.EnsurePermissionDefaults).
+	assert.doesNotMatch(src, /agentPreset: "danger-full-access"/, "плагин не передаёт permission-пресет как agentPreset");
+	assert.match(src, /uiWorkspace\.startSession\(workspace\.workspaceId\)/, "автостарт первой сессии — штатный startSession");
+	assert.match(src, /uiWorkspace\.startSession\(undefined\)/, "лечение застрявшего выбора — штатный startSession");
+});
+
+test("locale: штатный ru dsh не ломает плагин, delete.desc остаётся про стирание каталога", async () => {
+	const exports = await loadClientFactory();
+	const src = await readFile(clientPath, "utf8");
+	assert.match(src, /already has locale/, "повторная регистрация ru для conversation не срывает setLocale");
+	assert.match(src, /overrideLocaleEntries\(locale, "workspace", "ru", entries\)/, "при штатном ru ключи удаления подменяются");
+	assert.match(src, /предварительн/, "Preview Notice закрывается и в русской локали dsh");
 });
 
 test("удаление воркспейса = удаление каталога: имя из пути и границы", async () => {

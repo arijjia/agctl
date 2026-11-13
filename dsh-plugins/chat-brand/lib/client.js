@@ -39,7 +39,15 @@ window.__ModuleLoader__.load({
 				try {
 					const known = (locale.getLocale().locales || []).some((item) => String(item.id).toLowerCase() === "ru");
 					if (!known) removeLanguage = locale.addLanguage({ id: "ru", label: "Русский", fallback: "en" });
-					removeDictionary = locale.register("conversation", "ru", COMPOSER_RU);
+					// С dsh 0.2.2 русский словарь conversation штатный — свой
+					// регистрируем только как дополнение к dsh без ru.
+					try { removeDictionary = locale.register("conversation", "ru", COMPOSER_RU); }
+					catch (error) {
+						if (!/already has locale/.test(String(error && error.message))) throw error;
+						// dsh 0.2.2+: штатный ru — подсказки композера платформы
+						// поверх него (про задачу, а не «что построить»).
+						removeDictionary = overrideLocaleEntries(locale, "conversation", "ru", COMPOSER_RU) || (() => {});
+					}
 					// Новому пользователю — русский chat-hint; явный language preference
 					// (например, выбранный English в настройках) не перетираем. Namespace
 					// без русского словаря честно падают в dsh-English fallback.
@@ -55,7 +63,7 @@ window.__ModuleLoader__.load({
 		function closePreviewNotice() {
 			for (const dlg of document.querySelectorAll('[class*=_dialog_]')) {
 				const text = dlg.textContent || '';
-				if (!/Preview Notice|still in preview/i.test(text)) continue;
+				if (!/Preview Notice|still in preview|предварительн[а-я]* (просмотр|верси)/i.test(text)) continue;
 				const buttons = [...dlg.querySelectorAll('button')].filter((b) => !b.disabled);
 				const target = buttons[buttons.length - 1];
 				if (target) target.click();
@@ -118,7 +126,8 @@ window.__ModuleLoader__.load({
 			for (const el of queryAllDeep('span,div,h1,h2,h3,p')) {
 				if (el.children.length) continue;
 				const t = el.textContent || '';
-				if (/Into the Unknown/i.test(t)) el.textContent = t.replace(/Into the Unknown/gi, BRAND_TAGLINE);
+				// dsh 0.2.2 переводит слоган сам («В неизвестность»).
+				if (/Into the Unknown|^В неизвестность$/i.test(t.trim())) el.textContent = BRAND_TAGLINE;
 			}
 		}
 
@@ -490,23 +499,15 @@ window.__ModuleLoader__.load({
 		// неактивным навсегда. Штатный выход — кнопка «New session» у папки;
 		// оба авто-лечебника делают ровно тот же штатный uiWorkspace.startSession.
 		//
-		// D7: роль user получает agentPreset danger-full-access явно — reuse
-		// пустых blank-сессий на хосте сохраняет их исходный пресет, поэтому у
-		// «старых» учёток (blank'ы до включения дефолта) новые сессии без явного
-		// preset остаются в workspace-write.
+		// D7: режим разрешений роли user (danger-full-access) задаёт сервер —
+		// permission.defaultPreset в dsh-home на каждом старте контейнера
+		// (provision.EnsurePermissionDefaults). Явный agentPreset плагин не
+		// передаёт: с dsh 0.2.2 это пресет агента, а не разрешений, и
+		// «danger-full-access» там неизвестен — создание сессии падало.
 
 		function uiWorkspaceSvc(ctx) {
 			try { return (ctx.get && ctx.get("uiWorkspace")) || ctx.uiWorkspace || null; }
 			catch (e) { return null; }
-		}
-
-		// userSessionPreset — пресет для сессий user-роли; undefined для остальных
-		// (developer/admin управляют режимом сами). Роль известна после
-		// syncRoleControls; до ответа /api/me считаем пресет не заданным.
-		function userSessionPreset() {
-			// D7: user получает danger-full-access явно (reuse пустых blank'ов
-			// сохраняет их исходный пресет). Роль известна после /api/me.
-			return roleKnown && activeRole === "user" ? { agentPreset: "danger-full-access" } : undefined;
 		}
 
 		function heroState() {
@@ -546,7 +547,7 @@ window.__ModuleLoader__.load({
 					const workspace = (workspaces.items || []).find((item) => item.path === "/workspace" || item.title === "Default workspace");
 					if (!workspace) return;
 					started = true;
-					uiWorkspace.startSession(workspace.workspaceId, userSessionPreset());
+					uiWorkspace.startSession(workspace.workspaceId);
 				};
 				const stops = [];
 				if (typeof workspaceList.subscribe === "function") stops.push(workspaceList.subscribe(tryStart));
@@ -577,7 +578,7 @@ window.__ModuleLoader__.load({
 			stuckPickTicks = 0;
 			// без workspaceId = недавний воркспейс: тот же путь, что у «+» у папки;
 			// user получает agentPreset явно (D7: reuse чужих blank'ов сохраняет их пресет)
-			uiWorkspace.startSession(undefined, userSessionPreset());
+			uiWorkspace.startSession(undefined);
 		}
 
 		// ── удаление воркспейса удаляет каталог (agctl-семантика) ───────────────
@@ -635,20 +636,46 @@ window.__ModuleLoader__.load({
 		// удаления (namespace "workspace" принадлежит dsh-client-ui-workspace;
 		// dsh регистрирует zh/en, ru свободен). Частичный словарь: недостающие
 		// ключи падают в en-fallback как раньше.
+		// overrideLocaleEntries — подмена ключей уже зарегистрированного словаря
+		// (LocaleRuntime.dicts: ns → locale → entries). Возвращает функцию отката
+		// или null, если внутренняя форма рантайма не та.
+		function overrideLocaleEntries(locale, ns, lang, entries) {
+			const byNs = locale && locale.dicts;
+			const byLang = byNs && typeof byNs.get === "function" ? byNs.get(ns) : null;
+			const dict = byLang && typeof byLang.get === "function" ? byLang.get(lang) : null;
+			if (!dict || typeof dict !== "object" || Object.isFrozen(dict)) return null;
+			const prev = {};
+			for (const key of Object.keys(entries)) { prev[key] = dict[key]; dict[key] = entries[key]; }
+			try { if (typeof locale.publish === "function") locale.publish(locale.snapshot && locale.snapshot.active, false); } catch (e) {}
+			return () => {
+				for (const key of Object.keys(prev)) {
+					if (prev[key] === undefined) delete dict[key]; else dict[key] = prev[key];
+				}
+			};
+		}
+
 		function installWorkspaceDeleteLocale(ctx) {
 			const locale = ctx.locale;
 			if (!locale || typeof locale.register !== "function") return;
+			const entries = {
+				"delete.workspace": "Удалить воркспейс",
+				"delete.desc": "Воркспейс «{name}» будет удалён из списка, а его каталог на диске — стёрт вместе с файлами проекта. История сессий в чате останется.",
+				"delete.pending": "Удаляем воркспейс и каталог…",
+				"cancel": "Отмена",
+			};
 			let removeDictionary = () => {};
 			try {
-				removeDictionary = locale.register("workspace", "ru", {
-					"delete.workspace": "Удалить воркспейс",
-					"delete.desc": "Воркспейс «{name}» будет удалён из списка, а его каталог на диске — стёрт вместе с файлами проекта. История сессий в чате останется.",
-					"delete.pending": "Удаляем воркспейс и каталог…",
-					"cancel": "Отмена",
-				});
+				removeDictionary = locale.register("workspace", "ru", entries);
 			} catch (error) {
-				console.warn("[agctl] workspace delete locale:", error);
-				return;
+				// dsh 0.2.2+ несёт свой ru для workspace, и его delete.desc обещает
+				// «папка сохранится» — у agctl удаление стирает каталог. Второй
+				// словарь register не принимает: точечно подменяем наши ключи в
+				// штатном и возвращаем их при выгрузке плагина.
+				removeDictionary = overrideLocaleEntries(locale, "workspace", "ru", entries);
+				if (!removeDictionary) {
+					console.warn("[agctl] workspace delete locale:", error);
+					return;
+				}
 			}
 			ctx.effect(() => removeDictionary, "agctl-chat-brand.workspace-delete-locale");
 		}
@@ -684,7 +711,6 @@ window.__ModuleLoader__.load({
 		exports.__testHealStuckWorkspacePick = healStuckWorkspacePick;
 		exports.__testEnsureFirstWorkspaceSession = ensureFirstWorkspaceSession;
 		exports.__testHeroState = heroState;
-		exports.__testUserSessionPreset = userSessionPreset;
 		exports.__testProjectNameFromWorkspacePath = projectNameFromWorkspacePath;
 		return module.exports;
 	},
