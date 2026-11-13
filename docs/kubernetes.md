@@ -154,13 +154,23 @@ AX всегда запускает контейнер командой `/usr/loc
    по SIGTERM — TERM группе, через 10 с KILL;
 4. :80 — `/healthz` 200, `/readyz` 200 когда dsh слушает :3080 (иначе 503),
    `/agctl/boot-log?tail=N` — хвост вывода dsh по токену (`AGCTL_RUNNER_TOKEN`;
-   без токена эндпоинт выключен), всё остальное — реверс-прокси на dsh
+   без токена эндпоинт выключен), при `spec.debug` — guest-gRPC Substrate
+   (h2c, см. ниже), всё остальное — реверс-прокси на dsh
    (WebSocket включительно); заголовки `Authorization`/`Ate-Target-Actor` до
    dsh не доходят.
 
-Guest-сервисы Substrate (`spec.debug`, `ax ssh`) раннер не поднимает: SSH-
-канала в режиме ax нет (`HasActiveSSH` = false, Кабинет показывает «спит»).
-Терминал — внутри dsh web.
+SSH в режиме ax — guest-сервисы Substrate (п.5 карточки
+k8s-substrate-ax-backend, опция A выбрана как opt-in). `ax ssh` апстрима —
+это не sshd: раннер поднимает на том же :80 guest-gRPC Substrate
+(`agent-substrate/env/guest`: process + filesystem, h2c рядом с
+пробами/прокси — паттерн раннера апстрима AX), доступ к которому = произвольный
+exec и файлы в песочнице. По умолчанию выключено; включение на всю установку —
+`--ax-debug-ssh` (env `AGCTL_AX_DEBUG_SSH=1`, `serve.ax.debug_ssh`): шлюз
+ставит `spec.debug` задачам, раннер поднимает guest-сервисы (workspace =
+рабочий каталог пользователя), оператор даёт доступ `ax ssh <task>` — с хоста
+с сетевым доступом до воркеров или через `atenet-router` (443 mTLS / 80).
+Кабинет по-прежнему показывает «спит» (`HasActiveSSH` = false: платформенного
+ssh-канала нет) — терминал разработчика либо dsh web, либо `ax ssh` руками.
 
 ### Установка
 

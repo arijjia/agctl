@@ -133,4 +133,6 @@ type axConfig struct {
 	AteAPI string `yaml:"ate_api"`
 	// AteCluster — имя кластера в credentialUri ate-secret://k8s.io/cluster/<cluster>/….
 	AteCluster string `yaml:"ate_cluster"`
+	// DebugSSH — spec.debug задач ax (guest-сервисы ax ssh); строка "1"/"0".
+	DebugSSH string `yaml:"debug_ssh"`
 }

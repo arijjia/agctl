@@ -51,7 +51,11 @@ func TestRunnerHandlerProbesProxyAndBootLog(t *testing.T) {
 	target := strings.TrimPrefix(backend.URL, "http://")
 	sup := newSupervisor([]string{"true"}, t.TempDir(), io.Discard)
 	sup.append([]byte("dsh web listening on http://10.0.0.1:3080/?token=boot-xyz"))
-	srv := httptest.NewServer(runnerHandler(sup, target, "secret-token"))
+	handler, guestCleanup := runnerHandler(sup, target, "secret-token", false, t.TempDir())
+	if guestCleanup != nil {
+		t.Fatal("guest cleanup must be nil with debug off")
+	}
+	srv := httptest.NewServer(handler)
 	defer srv.Close()
 
 	get := func(path, auth string) (int, string) {
@@ -87,7 +91,8 @@ func TestRunnerHandlerProbesProxyAndBootLog(t *testing.T) {
 		t.Fatalf("boot log = %d %q", code, body)
 	}
 	// Без токена раннера эндпоинт выключен полностью.
-	off := httptest.NewServer(runnerHandler(sup, target, ""))
+	offHandler, _ := runnerHandler(sup, target, "", false, t.TempDir())
+	off := httptest.NewServer(offHandler)
 	defer off.Close()
 	resp, err := http.Get(off.URL + "/agctl/boot-log")
 	if err != nil {

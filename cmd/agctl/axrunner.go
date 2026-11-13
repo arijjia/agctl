@@ -30,9 +30,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agent-substrate/env/guest"
 	"github.com/arijjia/agctl/internal/assets"
 	"github.com/arijjia/agctl/internal/provision"
 	"github.com/arijjia/agctl/internal/runtime/axrt"
+	"google.golang.org/grpc"
 	"gopkg.in/yaml.v3"
 )
 
@@ -45,6 +47,7 @@ type runnerTask struct {
 	} `yaml:"metadata"`
 	Spec struct {
 		Command []string `yaml:"command"`
+		Debug   bool     `yaml:"debug"`
 		Env     []struct {
 			Name  string `yaml:"name"`
 			Value string `yaml:"value"`
@@ -140,9 +143,19 @@ func cmdAXRunner(args []string) {
 	sup := newSupervisor(command, *work, io.MultiWriter(os.Stdout))
 	go sup.run(ctx)
 
+	handler, guestCleanup := runnerHandler(sup, target, os.Getenv("AGCTL_RUNNER_TOKEN"), task.Spec.Debug, *work)
+	if guestCleanup != nil {
+		defer guestCleanup()
+	}
+	// HTTP/1.1 (probes/прокси) + h2c (gRPC guest-сервисов) на одном :80 —
+	// паттерн раннера апстрима AX.
+	var protocols http.Protocols
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(*port),
-		Handler:           runnerHandler(sup, target, os.Getenv("AGCTL_RUNNER_TOKEN")),
+		Handler:           handler,
+		Protocols:         &protocols,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {
@@ -348,9 +361,24 @@ func (s *supervisor) tail(n int) string {
 
 // ── HTTP раннера ───────────────────────────────────────────────────────────
 
-// runnerHandler — /healthz, /readyz, /agctl/boot-log (по токену) и прокси
-// остального на dsh web.
-func runnerHandler(sup *supervisor, target, token string) http.Handler {
+// runnerHandler — /healthz, /readyz, /agctl/boot-log (по токену), guest-
+// сервисы Substrate (gRPC, только при spec.debug) и прокси остального на
+// dsh web. Возвращает cleanup guest-сервера (nil, если debug выключен).
+func runnerHandler(sup *supervisor, target, token string, debug bool, workDir string) (http.Handler, func()) {
+	var guestSrv *grpc.Server
+	var guestCleanup func()
+	if debug {
+		cfg := guest.DefaultConfig()
+		cfg.Workspace = workDir
+		cfg.LogDir = "/tmp/agctl-guest-logs"
+		srv, cleanup, err := guest.NewServer(cfg)
+		if err != nil {
+			log.Printf("ax-runner: guest-сервисы недоступны (ax ssh не заработает): %v", err)
+		} else {
+			guestSrv, guestCleanup = srv, cleanup
+			log.Printf("ax-runner: guest-сервисы Substrate включены (spec.debug): process+filesystem в %s", workDir)
+		}
+	}
 	targetURL := &url.URL{Scheme: "http", Host: target}
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
@@ -387,7 +415,19 @@ func runnerHandler(sup *supervisor, target, token string) http.Handler {
 		_, _ = io.WriteString(w, sup.tail(n))
 	})
 	mux.Handle("/", proxy)
-	return mux
+	// gRPC guest-сервисов (h2c) — до прокси: ax ssh ходит через
+	// маршрутизатор тем же :80, что и probes/прокси.
+	var handler http.Handler = mux
+	if guestSrv != nil {
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+				guestSrv.ServeHTTP(w, r)
+				return
+			}
+			mux.ServeHTTP(w, r)
+		})
+	}
+	return handler, guestCleanup
 }
 
 // bearerMatches — постоянное по времени сравнение Bearer-токена.

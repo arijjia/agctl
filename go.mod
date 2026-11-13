@@ -3,6 +3,7 @@ module github.com/arijjia/agctl
 go 1.27.1
 
 require (
+	github.com/agent-substrate/env v0.0.11-0.20260912052224-4468a200b170
 	github.com/coder/websocket v1.8.15
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/google/ax v0.3.2-0.20261109222931-9bf6aef197c2
