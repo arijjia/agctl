@@ -29,9 +29,10 @@ type KitComponent struct {
 
 const kitManifestVersion = "1.0.0"
 
-// Kits — встроенный versioned manifest первой версии каталога.
-// Порядок компонентов задаёт детерминированное наложение файлов: предметные
-// инструкции могут заменить базовые AGENTS.md/README/.gitignore.
+// Kits — встроенный versioned manifest первой версии каталога. В ядре
+// только универсальный комплект base: предметные сценарии организаций
+// (например 1С-разработка) живут в их профилях — готовым сценарием
+// workspace.scenarios, который клонирует репо-донор напрямую.
 var Kits = []Kit{
 	{
 		ID: "base", Title: "Базовый комплект", Version: kitManifestVersion,
@@ -40,19 +41,6 @@ var Kits = []Kit{
 		Components: []KitComponent{
 			{ID: "core-workspace", Title: "Память и бэклог", Description: "Git-основа, правила хранения файлов и стартовая карточка задач."},
 			{ID: "core-instructions", Title: "Базовые инструкции агента", Description: "AGENTS.md и README для универсального рабочего места."},
-		},
-	},
-	{
-		ID: "1c-vibe", Title: "1С-разработка", Version: kitManifestVersion,
-		Description:       "Набор типовых компонентов для цикла Jira → правка → проверка → MR.",
-		DefaultComponents: []string{"core-workspace", "core-instructions", "1c-instructions", "1c-tooling", "1c-demo-project", "1c-skill"},
-		Components: []KitComponent{
-			{ID: "core-workspace", Title: "Память и бэклог", Description: "Git-основа и стартовая карточка задач."},
-			{ID: "core-instructions", Title: "Базовые инструкции", Description: "Универсальный AGENTS.md и README; может быть заменён 1С-инструкциями."},
-			{ID: "1c-instructions", Title: "Правила 1С-контура", Description: "Предметные AGENTS.md, README, backlog и .gitignore."},
-			{ID: "1c-tooling", Title: "Инструменты Jira/GitLab/BSL", Description: "Клиенты, сценарии публикации, тесты и конфигурация."},
-			{ID: "1c-demo-project", Title: "Демо-проект 1С", Description: "Тестовая конфигурация для локальных проверок без корпоративных доступов."},
-			{ID: "1c-skill", Title: "Навык 1C Vibe", Description: "Процедура работы агента с 1С-задачами."},
 		},
 	},
 }
@@ -68,24 +56,6 @@ var componentSources = map[string]componentSource{
 	},
 	"core-instructions": {
 		root: "templates/base", paths: []string{"AGENTS.md", "README.md"},
-	},
-	"1c-instructions": {
-		root: "templates/1c-vibe", paths: []string{"AGENTS.md", "README.md", ".gitignore", "backlog"},
-	},
-	"1c-tooling": {
-		root: "templates/1c-vibe",
-		paths: []string{
-			"scripts/.env.example", "scripts/envconfig.py", "scripts/gitlab_client.py",
-			"scripts/jira_client.py", "scripts/lint.py", "scripts/main.py",
-			"scripts/publish.py", "scripts/pyproject.toml", "scripts/seed_demo.py",
-			"scripts/tests",
-		},
-	},
-	"1c-demo-project": {
-		root: "templates/1c-vibe", paths: []string{"scripts/demo-project"},
-	},
-	"1c-skill": {
-		root: "templates/1c-vibe", paths: []string{"skills/1c-vibe-demo"},
 	},
 }
 

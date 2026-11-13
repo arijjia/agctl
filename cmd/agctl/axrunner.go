@@ -183,6 +183,7 @@ func sandboxBindIP() string {
 const (
 	runnerLogLimit    = 256 << 10 // хвост вывода dsh в памяти
 	runnerStopGrace   = 10 * time.Second
+	runnerIODelay     = 2 * time.Second // ожидание вывода после выхода процесса
 	runnerRestartMax  = 30 * time.Second
 	runnerRestartBase = time.Second
 )
@@ -236,6 +237,9 @@ func (s *supervisor) runOnce(ctx context.Context) error {
 	cmd.Dir = s.dir
 	cmd.Env = os.Environ()
 	setProcessGroup(cmd)
+	// Внук (например sleep под sh) может пережить родителя и держать pipe
+	// вывода: без WaitDelay cmd.Wait ждал бы его до конца.
+	cmd.WaitDelay = runnerIODelay
 	pr, pw := io.Pipe()
 	cmd.Stdout, cmd.Stderr = pw, pw
 	if err := cmd.Start(); err != nil {
@@ -262,8 +266,7 @@ func (s *supervisor) runOnce(ctx context.Context) error {
 	select {
 	case err = <-waitErr:
 	case <-ctx.Done():
-		s.terminate(cmd)
-		err = <-waitErr
+		err = s.terminate(cmd, waitErr)
 	}
 	_ = pw.Close()
 	<-copyDone
@@ -273,23 +276,20 @@ func (s *supervisor) runOnce(ctx context.Context) error {
 	return err
 }
 
-// terminate — TERM группе процессов, через grace — KILL.
-func (s *supervisor) terminate(cmd *exec.Cmd) {
-	if cmd.Process == nil {
-		return
-	}
+// terminate — TERM группе процессов; не вышла за grace — KILL. После выхода
+// лидера группу всё равно добиваем KILL: оставшиеся потомки (MCP, sleep)
+// не должны пережить раннер. Возвращает результат cmd.Wait.
+func (s *supervisor) terminate(cmd *exec.Cmd, waitErr <-chan error) error {
 	signalGroup(cmd, syscall.SIGTERM)
-	deadline := time.Now().Add(runnerStopGrace)
-	for time.Now().Before(deadline) {
-		if cmd.ProcessState != nil {
-			return
-		}
-		if err := cmd.Process.Signal(syscall.Signal(0)); err != nil {
-			return
-		}
-		time.Sleep(200 * time.Millisecond)
+	var err error
+	select {
+	case err = <-waitErr:
+	case <-time.After(runnerStopGrace):
+		signalGroup(cmd, syscall.SIGKILL)
+		err = <-waitErr
 	}
 	signalGroup(cmd, syscall.SIGKILL)
+	return err
 }
 
 // wait — дождаться выхода цикла супервизора.

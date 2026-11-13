@@ -24,21 +24,32 @@ func TestProxyRequestsActivity(t *testing.T) {
 		}
 		return s
 	}
-	curHour := bucket("strftime('%Y-%m-%dT%H:00:00Z', 'now')")
-	curDay := bucket("strftime('%Y-%m-%dT00:00:00Z', 'now')")
-	yestDay := bucket("strftime('%Y-%m-%dT00:00:00Z', 'now', '-1 day')")
-	lastHour := bucket("strftime('%Y-%m-%dT%H:00:00Z', 'now', '-1 hour')")
+	// Все времена — от одного начала текущего часа (hs), вычисленного один
+	// раз: «now − 5 минут» в первые минуты часа уезжал в прошлый час, и тест
+	// падал на CI, попавшем на смену часа. Начало часа всегда ≤ now.
+	hs := bucket("strftime('%Y-%m-%d %H:00:00', 'now')")
+	at := func(mods ...string) string {
+		expr := "datetime('" + hs + "'"
+		for _, m := range mods {
+			expr += ", '" + m + "'"
+		}
+		return expr + ")"
+	}
+	curHour := bucket("strftime('%Y-%m-%dT%H:00:00Z', '" + hs + "')")
+	curDay := bucket("strftime('%Y-%m-%dT00:00:00Z', '" + hs + "')")
+	yestDay := bucket("strftime('%Y-%m-%dT00:00:00Z', '" + hs + "', '-1 day')")
+	lastHour := bucket("strftime('%Y-%m-%dT%H:00:00Z', '" + hs + "', '-1 hour')")
 
 	rows := []row{
 		// текущий час: 2 запроса от anna, один из них — ошибка
-		{"datetime('now', '-5 minutes')", 1, "anna", 200, 100, 500},
-		{"datetime('now', '-2 minutes')", 1, "anna", 500, 200, 10},
+		{at(), 1, "anna", 200, 100, 500},
+		{at(), 1, "anna", 500, 200, 10},
 		// прошлый час — от bob
-		{"datetime('now', '-1 hour')", 2, "bob", 200, 50, 700},
+		{at("-30 minutes"), 2, "bob", 200, 50, 700},
 		// вчера (в 24-часовой срез не попадает, в 7-дневный — да)
-		{"datetime('now', '-1 day', '-3 hours')", 1, "anna", 404, 20, 0},
+		{at("-1 day", "-3 hours"), 1, "anna", 404, 20, 0},
 		// две недели назад — не попадает никуда
-		{"datetime('now', '-20 days')", 1, "anna", 200, 10, 0},
+		{at("-20 days"), 1, "anna", 200, 10, 0},
 	}
 	for _, r := range rows {
 		if _, err := db.Exec(`INSERT INTO proxy_requests(ts, user_id, login, method, path, status, ms, bytes_out)
@@ -48,11 +59,11 @@ func TestProxyRequestsActivity(t *testing.T) {
 		}
 	}
 	if _, err := db.Exec(`INSERT INTO users(login, password_hash, role, created_at)
-		VALUES ('anna', 'h', 'user', datetime('now'))`); err != nil {
+		VALUES ('anna', 'h', 'user', ` + at() + `)`); err != nil {
 		t.Fatalf("user insert: %v", err)
 	}
 	if _, err := db.Exec(`INSERT INTO users(login, password_hash, role, created_at)
-		VALUES ('bob', 'h', 'user', datetime('now', '-1 day', '-3 hours'))`); err != nil {
+		VALUES ('bob', 'h', 'user', ` + at("-1 day", "-3 hours") + `)`); err != nil {
 		t.Fatalf("user insert: %v", err)
 	}
 
