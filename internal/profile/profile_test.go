@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -239,5 +240,98 @@ func TestBrandBootScriptShape(t *testing.T) {
 	}
 	if !strings.HasSuffix(script, ";</script>") {
 		t.Fatalf("boot-скрипт не закрыт: %q", script)
+	}
+}
+
+func TestOverlayImage(t *testing.T) {
+	cases := map[string]string{
+		"agctl-dsh:0.2.2":           "agctl-dsh-utmn:0.2.2",
+		"agctl-dsh-nossh:0.2.2":     "agctl-dsh-nossh-utmn:0.2.2",
+		"reg:5000/team/agctl-dsh:1": "reg:5000/team/agctl-dsh-utmn:1",
+		"reg:5000/agctl-dsh":        "reg:5000/agctl-dsh-utmn",
+		"agctl-dsh":                 "agctl-dsh-utmn",
+	}
+	for in, want := range cases {
+		if got := OverlayImage(in, "utmn"); got != want {
+			t.Errorf("OverlayImage(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if got := OverlayImage("agctl-dsh:1", ""); got != "agctl-dsh:1" {
+		t.Errorf("пустой id: %q", got)
+	}
+}
+
+func TestProfileWorkspaceAndImages(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, body string) {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("profile.yaml", `schema: 1
+id: org
+brand:
+  name: Org
+workspace:
+  scenarios:
+    - id: s1
+      title: Сценарий
+      clone_url: https://example.com/s1.git
+images:
+  dockerfile: image/Dockerfile
+  dev: [agctl-dsh-org:1, agctl-dsh-nossh-org:1]
+`)
+	write("image/Dockerfile", "ARG BASE\nFROM ${BASE}\n")
+	write("catalog/pkg/manifest.json", `{"id":"pkg"}`)
+	d, err := LoadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := d.View()
+	if len(v.Scenarios) != 1 || v.Scenarios[0].CloneURL != "https://example.com/s1.git" {
+		t.Fatalf("scenarios: %+v", v.Scenarios)
+	}
+	if len(v.DevImages) != 2 || v.DevImages[1] != "agctl-dsh-nossh-org:1" {
+		t.Fatalf("dev images: %+v", v.DevImages)
+	}
+	ctx, file, ok := v.ImageContext()
+	if !ok || file != "Dockerfile" {
+		t.Fatalf("image context: ok=%v file=%q", ok, file)
+	}
+	if _, err := fs.Stat(ctx, "Dockerfile"); err != nil {
+		t.Fatalf("Dockerfile в контексте: %v", err)
+	}
+	if _, err := fs.Stat(v.FS, "catalog/pkg/manifest.json"); err != nil {
+		t.Fatalf("catalog в FS профиля: %v", err)
+	}
+
+	// нейтральный профиль: ни сценариев, ни надстройки образа
+	n := Neutral()
+	if len(n.Scenarios) != 0 {
+		t.Fatalf("нейтральный профиль несёт сценарии: %+v", n.Scenarios)
+	}
+	if _, _, ok := n.ImageContext(); ok {
+		t.Fatal("нейтральный профиль с надстройкой образа")
+	}
+}
+
+func TestProfileRejectsBadWorkspace(t *testing.T) {
+	for name, body := range map[string]string{
+		"сценарий без clone_url": "workspace:\n  scenarios:\n    - id: a\n      title: A\n",
+		"повтор id":              "workspace:\n  scenarios:\n    - {id: a, title: A, clone_url: u}\n    - {id: a, title: B, clone_url: u}\n",
+		"dockerfile вне профиля": "images:\n  dockerfile: ../x/Dockerfile\n",
+	} {
+		dir := t.TempDir()
+		raw := "schema: 1\nid: org\nbrand:\n  name: Org\n" + body
+		if err := os.WriteFile(filepath.Join(dir, "profile.yaml"), []byte(raw), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadDir(dir); err == nil {
+			t.Errorf("%s: ждём ошибку", name)
+		}
 	}
 }

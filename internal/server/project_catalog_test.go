@@ -10,7 +10,20 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/arijjia/agctl/internal/profile"
 )
+
+// newOrgTestEnv — сервер с тестовым профилем организации: каталог пакетов
+// и готовые сценарии приходят из профиля (testdata/org-profile).
+func newOrgTestEnv(t *testing.T) *testEnv {
+	t.Helper()
+	prof, err := profile.LoadDir(filepath.Join("testdata", "org-profile"))
+	if err != nil {
+		t.Fatalf("profile: %v", err)
+	}
+	return newTestEnvWith(t, 3, func(c *Config) { c.Profile = prof })
+}
 
 // projectDirOf — host-каталог проекта u<id>/<name> в тестовом доме.
 func projectDirOf(env *testEnv, userID int, name string) string {
@@ -18,7 +31,7 @@ func projectDirOf(env *testEnv, userID int, name string) string {
 }
 
 func TestCatalogListAndInstall(t *testing.T) {
-	env := newTestEnv(t, 3)
+	env := newOrgTestEnv(t)
 	env.register(env.admin, "anna", "secret1")
 	user := env.newClient()
 	env.register(user, "boris", "secret2")
@@ -44,7 +57,7 @@ func TestCatalogListAndInstall(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, ".dsh", "skills", "presentations", "SKILL.md")); err != nil {
 		t.Fatalf("скилл не установлен: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".dsh", "skills", "presentations", "templates", "Shablon_Siniy.pptx")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, ".dsh", "skills", "presentations", "templates", "template.pptx")); err != nil {
 		t.Fatalf("шаблон не установлен: %v", err)
 	}
 
@@ -108,7 +121,7 @@ func TestProjectPromptCRUD(t *testing.T) {
 	if code != 200 || !contains(body, `"prompt":""`) {
 		t.Fatalf("get empty: %d %s", code, body)
 	}
-	prompt := "# Правила воркспейса\nПрезентации собирать по шаблону вуза."
+	prompt := "# Правила воркспейса\nОтчёты оформлять по ГОСТ."
 	if code, body = env.do(env.admin, "PUT", "/api/projects/notes/prompt", map[string]string{"prompt": prompt}); code != 200 {
 		t.Fatalf("put: %d %s", code, body)
 	}
@@ -118,7 +131,7 @@ func TestProjectPromptCRUD(t *testing.T) {
 		t.Fatalf("AGENTS.md: %v %q", err, string(raw))
 	}
 	code, body = env.do(env.admin, "GET", "/api/projects/notes/prompt", nil)
-	if code != 200 || !contains(body, "шаблону вуза") {
+	if code != 200 || !contains(body, "по ГОСТ") {
 		t.Fatalf("get: %d %s", code, body)
 	}
 	// пустой промт = удалить файл (воркспейс без промта)
@@ -152,7 +165,7 @@ func TestProjectCreateUnknownPackage(t *testing.T) {
 // TestCatalogCreateResponse — при создании с пакетами ответ содержит
 // packagesFailed (пустой) и descriptor проекта; JSON-структура стабильна.
 func TestCatalogCreateResponse(t *testing.T) {
-	env := newTestEnv(t, 3)
+	env := newOrgTestEnv(t)
 	env.register(env.admin, "anna", "secret1")
 	code, body := env.do(env.admin, "POST", "/api/projects", map[string]any{
 		"name": "resp", "packages": []string{"presentations"},
@@ -209,5 +222,25 @@ func TestProjectDeleteAPI(t *testing.T) {
 	// в списке проектов его больше нет
 	if code, body := env.do(user, "GET", "/api/projects", nil); code != 200 || contains(body, "gone") {
 		t.Fatalf("list: %d %s", code, body)
+	}
+}
+
+// TestNeutralProfileHasNoOrgContent — нейтральный профиль (и любой профиль
+// без catalog/ и workspace.scenarios) не показывает чужих пакетов и
+// сценариев: содержимое организаций живёт только в их профилях.
+func TestNeutralProfileHasNoOrgContent(t *testing.T) {
+	env := newTestEnv(t, 3)
+	env.register(env.admin, "anna", "secret1")
+	if code, body := env.do(env.admin, "GET", "/api/catalog", nil); code != 200 || !contains(body, `"packages":[]`) {
+		t.Fatalf("catalog: %d %s", code, body)
+	}
+	code, body := env.do(env.admin, "GET", "/api/config", nil)
+	if code != 200 || !contains(body, `"presets":[]`) {
+		t.Fatalf("config: %d %s", code, body)
+	}
+	if code, body := env.do(env.admin, "POST", "/api/projects", map[string]any{
+		"name": "p", "packages": []string{"presentations"},
+	}); code != 400 {
+		t.Fatalf("пакет вне каталога профиля: %d %s, ждём 400", code, body)
 	}
 }

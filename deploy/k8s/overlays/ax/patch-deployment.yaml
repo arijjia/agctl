@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agctl
+spec:
+  template:
+    spec:
+      containers:
+        - name: agctl
+          env:
+            - name: AGCTL_RUNTIME
+              value: ax
+            - name: AGCTL_AX_SERVER
+              value: ax-server.ax-system.svc.cluster.local:8080
+            - name: AGCTL_AX_ATESPACE
+              value: agctl
+            # Образ песочницы — ТОЛЬКО по digest (Substrate отвергает теги):
+            # make img_push REGISTRY=… печатает digest agctl-dsh.
+            - name: AGCTL_AX_IMAGE
+              value: registry.example.com/agctl/agctl-dsh@sha256:0000000000000000000000000000000000000000000000000000000000000000
+            # Маршрутизатор: http :80 (ingress-политика по SPIFFE шлюза) или
+            # https :443 с mTLS — тогда раскомментируйте cert/key/ca ниже.
+            - name: AGCTL_AX_ROUTER_URL
+              value: http://atenet-router.ate-system.svc.cluster.local:80
+            # - name: AGCTL_AX_ROUTER_URL
+            #   value: https://atenet-router.ate-system.svc.cluster.local:443
+            # - name: AGCTL_AX_ROUTER_CERT
+            #   value: /run/podidentity.podcert.ate.dev/credential-bundle.pem
+            # - name: AGCTL_AX_ROUTER_KEY
+            #   value: /run/podidentity.podcert.ate.dev/credential-bundle.pem
+            # - name: AGCTL_AX_ROUTER_CA
+            #   value: /run/servicedns-ca/trust-bundle.pem
+            # 1 = ключи LLM в env задачи; 0 = ключи инжектит egress-шлюз
+            # Substrate (deploy/ax/egress-policy.example.yaml).
+            - name: AGCTL_AX_INJECT_LLM_KEY
+              value: "1"
+            - name: AGCTL_K8S_SHARED_CLAIM
+              $patch: delete
+          volumeMounts:
+            - name: data
+              $patch: delete
+            # - name: podidentity
+            #   mountPath: /run/podidentity.podcert.ate.dev
+            #   readOnly: true
+            # - name: servicedns-ca
+            #   mountPath: /run/servicedns-ca
+            #   readOnly: true
+      volumes:
+        - name: data
+          $patch: delete
+        # - name: podidentity
+        #   projected:
+        #     sources:
+        #       - podCertificate:
+        #           credentialBundlePath: credential-bundle.pem
+        #           keyType: ECDSAP256
+        #           signerName: podidentity.podcert.ate.dev/identity
+        # - name: servicedns-ca
+        #   projected:
+        #     sources:
+        #       - clusterTrustBundle:
+        #           labelSelector:
+        #             matchLabels:
+        #               podcert.ate.dev/canarying: live
+        #           path: trust-bundle.pem
+        #           signerName: servicedns.podcert.ate.dev/identity

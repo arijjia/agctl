@@ -6,7 +6,13 @@ IMG_NOSSH ?= agctl-dsh-nossh:0.2.2
 IMG_ARCH := $(shell docker version --format '{{.Server.Arch}}' 2>/dev/null || echo aarch64)
 IMG_GOARCH := $(subst aarch64,arm64,$(subst x86_64,amd64,$(IMG_ARCH)))
 
-.PHONY: img_build img_build_amd64 img_build_nossh
+# Надстройка образа профиля организации (images.dockerfile в profile.yaml):
+# собирается поверх обоих базовых вариантов как agctl-dsh-<id>:<тег> и
+# agctl-dsh-<id>-nossh:<тег> — те же имена выводит agctl serve.
+PROFILE_DOCKERFILE = $(if $(wildcard profiles/$(PROFILE)/profile.yaml),$(shell sed -n 's/^  dockerfile: *//p' profiles/$(PROFILE)/profile.yaml | head -1))
+overlay_tag = $(shell printf '%s' '$1' | sed -E 's|^(.*/)?([^/:]+)(:[^/]*)?$$|\1\2-$(PROFILE)\3|')
+
+.PHONY: img_build img_build_amd64 img_build_nossh img_profile
 # В контекст кладём настоящий скелет DSH_HOME: COPY skel/ в Dockerfile требует
 # каталог даже пустым, а git пустые каталоги не хранит — на чистом клоне его
 # нет (падало из коробки: "/skel": not found). Скелет нужен entrypoint'у для
@@ -20,6 +26,17 @@ img_build:
 	cp dist/agctl-linux-$(IMG_GOARCH) .build-img/agctl
 	docker build -t $(IMG) .build-img
 	docker build --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
+	@$(MAKE) --no-print-directory img_profile
+
+## img_profile: надстройка образа выбранного профиля (PROFILE=<id>) поверх уже собранных базовых
+img_profile:
+	@if [ -z "$(PROFILE_DOCKERFILE)" ]; then \
+	  echo "образ: профиль $(PROFILE) без надстройки — рабочие места на $(IMG)"; exit 0; fi; \
+	ctx=profiles/$(PROFILE)/$$(dirname "$(PROFILE_DOCKERFILE)"); \
+	f=profiles/$(PROFILE)/$(PROFILE_DOCKERFILE); \
+	docker build --build-arg BASE=$(IMG) -t $(call overlay_tag,$(IMG)) -f "$$f" "$$ctx" && \
+	docker build --build-arg BASE=$(IMG_NOSSH) -t $(call overlay_tag,$(IMG_NOSSH)) -f "$$f" "$$ctx" && \
+	echo "✓ образы профиля $(PROFILE): $(call overlay_tag,$(IMG)), $(call overlay_tag,$(IMG_NOSSH))"
 
 # img_build_nossh: пересобрать только вариант «без SSH» (контекст уже собран
 # img_build; бинарь берём из dist).

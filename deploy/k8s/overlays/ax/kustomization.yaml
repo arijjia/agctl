@@ -1,0 +1,20 @@
+# Бэкенд ax: шлюз agctl → ax-server (gRPC) → Agent Substrate; трафик к
+# песочницам — через atenet-router. Поды пользователей в namespace agctl не
+# создаются (RBAC базы не нужен, но безвреден). Общий RWX-том не используется:
+# данные пользователя живут в долговечном томе актора (/workspace).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - networkpolicy-egress.yaml
+patches:
+  - path: patch-deployment.yaml
+  - target:
+      kind: PersistentVolumeClaim
+      name: agctl-data
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: agctl-data

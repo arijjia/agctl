@@ -26,7 +26,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/arijjia/agctl/internal/assets"
 	"github.com/arijjia/agctl/internal/backlog"
 	"github.com/arijjia/agctl/internal/profile"
 	"github.com/arijjia/agctl/internal/provision"
@@ -80,6 +79,8 @@ func main() {
 		cmdMigrate(os.Args[2:])
 	case "init-chat-home": // внутренний initContainer helper для K8s Chat PVC
 		cmdInitChatHome(os.Args[2:])
+	case "ax-runner": // PID 1 песочницы Google AX / Agent Substrate (образ agctl-dsh)
+		cmdAXRunner(os.Args[2:])
 	case "seed-demo-users":
 		cmdSeedDemoUsers(os.Args[2:])
 	case "backlog":
@@ -142,15 +143,6 @@ func regLimitValue(v int) int {
 	return v
 }
 
-// readinessWaitFor — бюджет ожидания Pod Ready для k8s-чата (карточка
-// k8s-chat-runtime-adapter: EnsureChat ждёт readiness перед отдачей Endpoint).
-func readinessWaitFor(runtime string) time.Duration {
-	if runtime == "k8s" {
-		return 120 * time.Second
-	}
-	return 0
-}
-
 // cmdServe — подкоманда serve: разрешает профиль организации, собирает
 // конфигурацию из флагов/среды/профиля, открывает дом (мастер-ключ + SQLite),
 // инициализирует LLM-провайдера по умолчанию, строит server.Server и слушает
@@ -182,18 +174,12 @@ func cmdServe(args []string) {
 	home := fsSet.String("home", defaultHome(), "каталог данных agctl")
 	addr := fsSet.String("addr", envOr("AGCTL_ADDR", firstNonEmpty(cfg.Serve.Addr, "127.0.0.1:8929")), "адрес UI/API")
 	image := fsSet.String("image", firstNonEmpty(cfg.Serve.Image, "agctl-dsh:0.2.2"), "тег образа agctl-dsh")
-	chatRuntime := fsSet.String("runtime", envOr("AGCTL_RUNTIME", cfg.Serve.Runtime), "chat runtime: docker (default) | k8s (prototype: per-user Pod+Service+PVC; dev-воркспейсы и control-plane остаются на Docker; карточка k8s-chat-runtime-adapter)")
-	k8sNamespace := fsSet.String("k8s-namespace", envOr("AGCTL_K8S_NAMESPACE", "agctl"), "namespace чат-рантайма k8s (storage scope установки agctl)")
-	k8sKubeconfig := fsSet.String("k8s-kubeconfig", envOr("AGCTL_K8S_KUBECONFIG", ""), "kubeconfig для k8s-рантайма; пусто — in-cluster credentials")
-	devImages := fsSet.String("dev-images", envOr("AGCTL_DEV_IMAGES", cfg.Serve.DevImages), "каталог образов лаунчера developer'а через запятую (реестр Nexus и пр.); пусто = только --image")
+	devImages := fsSet.String("dev-images", envOr("AGCTL_DEV_IMAGES", firstNonEmpty(cfg.Serve.DevImages, strings.Join(prof.Images.Dev, ","))), "каталог образов лаунчера developer'а через запятую (реестр Nexus и пр.; по умолчанию — images.dev профиля); пусто = только --image")
 	devEnv := fsSet.String("dev-env", envOr("AGCTL_DEV_ENV", cfg.Serve.DevEnv), "имена переменных окружения хоста, пробрасываемые в контейнер developer'а через запятую (значения из .env); пусто = не пробрасывать")
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
 	experimentalLocalBridge := fsSet.Bool("experimental-local-bridge", false, "experimental local connector pairing API (requires trusted TLS ingress and --secure-cookies)")
 	chatTTLMin := fsSet.Int("chat-ttl-min", nonZeroOr(cfg.Serve.ChatTTLMin, 60), "минуты простоя персонального контейнера до сна (том пользователя сохраняется)")
-	chatPrewarmN := fsSet.Int("chat-prewarm-n", nonZeroOr(cfg.Serve.ChatPrewarmN, 0), "prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл; он же — потолок одновременно тёплых рантаймов)")
-	chatPrewarmEvery := fsSet.Duration("chat-prewarm-every", 15*time.Minute, "период цикла подогрева prewarm-пула")
-	volumeQuotaGB := fsSet.Float64("volume-quota-gb", nonZeroOr(cfg.Serve.VolumeQuotaGB, 0), "квота тома пользователя в ГБ (0 = выкл): новый воркспейс не создаётся при исчерпании; per-user — PUT /api/admin/users/{id}/limits")
 	registerPerMin := fsSet.Int("register-per-min", nonZeroOr(cfg.Serve.RegisterPerMin, 30), "лимит регистраций с одного IP в минуту; 0 — отключить защиту (нагрузочные прогоны)")
 	corsOrigins := fsSet.String("cors-origin", envOr("AGCTL_CORS_ORIGINS", cfg.Serve.CORSOrigins), "точные origins через запятую, которым разрешён кросс-доменный /api (кабинет-плагин dsh web); пусто = CORS выключен")
 	tier0 := fsSet.Bool("tier0", true, "поднимать общий чат (Tier 0) и отдавать корень платформы в него")
@@ -207,14 +193,14 @@ func cmdServe(args []string) {
 	llmModel := fsSet.String("llm-model", envOr("AGCTL_LLM_MODEL", prof.LLM.DefaultModel), "модель чата по умолчанию (из списка llm-models)")
 	llmModels := fsSet.String("llm-models", envOr("AGCTL_LLM_MODELS", prof.LLM.DefaultModels), "список моделей чата через запятую")
 	llmAPIKey := fsSet.String("llm-api-key", strings.TrimSpace(envOr("AGCTL_LLM_API_KEY", "")), "ключ провайдера чата (предпочтительно через env AGCTL_LLM_API_KEY)")
-	// Enforcement квот токенов LiteLLM: URL — флаг/env, admin-ключ — ТОЛЬКО
-	// env (не флаг: не светить в ps/логах; не в гите и образе).
-	egressAllowlist := fsSet.Bool("egress-allowlist", cfg.Serve.EgressAllowlist, "контейнеры агентов — на выделенной сети: egress наружу только DNS; хост-шлюз (LLM на хосте) доступен. Внешние LLM-endpoint'ы напрямую недостижимы — маршрутизируйте через хост (LiteLLM)")
-	litellmQuotas := fsSet.Bool("litellm-quotas", false, "enforcement квот токенов: минтить персональные виртуальные ключи LiteLLM по бюджетам из админки (требует AGCTL_LITELLM_ADMIN_URL и AGCTL_LITELLM_ADMIN_KEY)")
-	litellmAdminURL := fsSet.String("litellm-admin-url", strings.TrimSpace(envOr("AGCTL_LITELLM_ADMIN_URL", "")), "admin-API LiteLLM для mint/rotate виртуальных ключей (POST /key/generate)")
+	rf := registerRuntimeFlags(fsSet, cfg)
 	_ = profileFlag
 	_ = profileDirFlag
 	_ = fsSet.Parse(args)
+	baseImage, workImage := profileImages(fsSet, prof, *image)
+	if workImage != baseImage {
+		log.Printf("образ: %s (надстройка профиля %s поверх %s)", workImage, prof.ID, baseImage)
+	}
 	*llmAPIKey = strings.TrimSpace(*llmAPIKey)
 	for _, r := range *llmAPIKey {
 		if r < 0x20 || r == 0x7f {
@@ -253,16 +239,13 @@ func cmdServe(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	srv, err := server.New(db, sec, server.Config{
+	srvCfg := server.Config{
 		Home:                    absHome,
 		Addr:                    *addr,
-		Runtime:                 *chatRuntime,
-		K8sNamespace:            *k8sNamespace,
-		K8sKubeconfig:           *k8sKubeconfig,
-		K8sReadinessWait:        readinessWaitFor(strings.ToLower(strings.TrimSpace(*chatRuntime))),
 		MemoryBytes:             int64(*memGB * 1024 * 1024 * 1024),
 		NanoCPUs:                int64(*cpus * 1e9),
-		Image:                   *image,
+		Image:                   workImage,
+		BaseImage:               baseImage,
 		DevImages:               splitCSV(*devImages),
 		DevEnv:                  splitCSV(*devEnv),
 		BinDir:                  firstNonEmpty(*binDir, "dist"),
@@ -272,17 +255,11 @@ func cmdServe(args []string) {
 		CORSOrigins:             splitCSV(*corsOrigins),
 		Tier0:                   *tier0,
 		ChatTTL:                 time.Duration(*chatTTLMin) * time.Minute,
-		ChatPrewarmN:            *chatPrewarmN,
-		ChatPrewarmEvery:        *chatPrewarmEvery,
-		VolumeQuotaGB:           *volumeQuotaGB,
-		EgressAllowlist:         *egressAllowlist,
-		LiteLLMQuotas:           *litellmQuotas,
-		LiteLLMAdminURL:         strings.TrimSpace(*litellmAdminURL),
-		LiteLLMAdminKey:         strings.TrimSpace(os.Getenv("AGCTL_LITELLM_ADMIN_KEY")),
 		RegisterPerMinute:       regLimitValue(*registerPerMin),
 		DefaultLLM:              defaultLLM,
 		Profile:                 prof,
-	})
+	}
+	srv, err := buildServer(rf, db, sec, srvCfg)
 	if defaultLLM.BaseURL != "" {
 		log.Printf("llm: платформенный провайдер чата по умолчанию %s (%s, моделей: %d, доп. провайдеров: %d, ключ %s)", defaultLLM.BaseURL, defaultLLM.Alias(), len(defaultLLM.AllModels()), len(defaultLLM.Extras), keyState(defaultLLM.APIKey))
 	} else {
@@ -315,7 +292,8 @@ func cmdServe(args []string) {
 		close(shutdownDone)
 	}()
 	log.Printf("agctl serve: home=%s addr=http://%s (UI и API)", absHome, *addr)
-	log.Printf("docker: %s", dockerStatus())
+	runtimeKind, _ := parseRuntimeKind(*rf.kind)
+	log.Printf("%s", runtimeStatusLine(runtimeKind))
 	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
@@ -405,48 +383,10 @@ func cmdInitChatHome(args []string) {
 	if *home == "" {
 		log.Fatal("init-chat-home: требуется --home или DSH_HOME")
 	}
-	models := []string{}
-	if raw := os.Getenv("AGCTL_LLM_MODELS"); raw != "" {
-		if err := json.Unmarshal([]byte(raw), &models); err != nil {
-			log.Fatalf("init-chat-home: AGCTL_LLM_MODELS: %v", err)
-		}
-	}
-	extras := []provision.ExtraProvider{}
-	if raw := strings.TrimSpace(os.Getenv("AGCTL_LLM_EXTRA_PROVIDERS")); raw != "" {
-		if err := json.Unmarshal([]byte(raw), &extras); err != nil {
-			log.Fatalf("init-chat-home: AGCTL_LLM_EXTRA_PROVIDERS: %v", err)
-		}
-	}
-	for i := range extras {
-		env := strings.TrimSpace(extras[i].APIKeyEnv)
-		if env == "" {
-			env = extras[i].KeyEnv()
-		}
-		extras[i].APIKeyEnv = env
-		extras[i].APIKey = strings.TrimSpace(os.Getenv(env))
-	}
-	provider := provision.Provider{
-		Name:    os.Getenv("AGCTL_LLM_PROVIDER"),
-		BaseURL: os.Getenv("AGCTL_LLM_BASE_URL"),
-		Model:   os.Getenv("AGCTL_LLM_MODEL"),
-		Models:  models,
-		APIKey:  os.Getenv("AGCTL_LLM_API_KEY"),
-		Extras:  extras,
-	}
-	seeded, refreshed, err := initChatHome(*home, provider, *refresh, assets.DshSkel)
-	if err != nil {
+	// Пресет разрешений роли user (danger-full-access) — как у Docker-адаптера.
+	fullAccess := os.Getenv("AGCTL_DEFAULT_FULL_ACCESS") == "1"
+	if err := prepareChatHome(*home, providerFromEnv(), *refresh, fullAccess); err != nil {
 		log.Fatal(err)
-	}
-	if err := provision.EnsureChatPlugins(*home, assets.DshSkel); err != nil {
-		log.Fatal(err)
-	}
-	switch {
-	case seeded:
-		fmt.Println("init-chat-home: seeded")
-	case refreshed:
-		fmt.Println("init-chat-home: provider refreshed")
-	default:
-		fmt.Println("init-chat-home: existing home preserved")
 	}
 }
 
@@ -560,4 +500,20 @@ func isLoopbackAddr(addr string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// profileImages — образ рабочего места с учётом надстройки профиля
+// (images.dockerfile): без явного --image рабочий образ —
+// agctl-dsh-<профиль>:<тег> поверх базового. Явный --image — как есть.
+func profileImages(fsSet *flag.FlagSet, prof *profile.Data, image string) (base, work string) {
+	explicit := false
+	fsSet.Visit(func(f *flag.Flag) {
+		if f.Name == "image" {
+			explicit = true
+		}
+	})
+	if explicit || prof == nil || prof.Images.Dockerfile == "" {
+		return image, image
+	}
+	return image, profile.OverlayImage(image, prof.ID)
 }

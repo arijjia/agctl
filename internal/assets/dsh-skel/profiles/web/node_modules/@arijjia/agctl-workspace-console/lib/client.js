@@ -4,7 +4,7 @@
 // tasks: слот sidebar.panellist + страница в слоте main). Содержимое — единое
 // место настройки воркспейсов для всех ролей:
 //   • Возможности — платформенный каталог пакетов (навык + шаблоны/скрипты
-//     одним кликом, например «Презентации по шаблону вуза»);
+//     одним кликом; каталог задаёт профиль организации — catalog/<id>);
 //   • Системный промт — AGENTS.md воркспейса;
 //   • Компоненты — скиллы/инструменты/данные/промпты с галочками включения
 //     (выключенные уходят в серверный stash, невидимый агенту и autosave);
@@ -350,7 +350,7 @@ window.__ModuleLoader__.load({
 					const promptCard = el("div", "wsc-card", null);
 					const ta = el("textarea", "wsc-prompt");
 					ta.value = promptText || "";
-					ta.placeholder = "Например: презентации собирать по шаблону вуза, отчёты — по ГОСТ…";
+					ta.placeholder = "Например: отчёты оформлять по ГОСТ, код — с тестами…";
 					const promptSave = el("button", "wsc-btn secondary;margin-top:8px", "Сохранить промт");
 					promptSave.disabled = true;
 					ta.addEventListener("input", () => { promptSave.disabled = false; });

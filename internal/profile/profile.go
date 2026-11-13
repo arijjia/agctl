@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -43,6 +44,24 @@ type LLMExtraProvider struct {
 	Model     string `yaml:"model"`
 	Models    string `yaml:"models"`
 	APIKeyEnv string `yaml:"api_key_env"`
+}
+
+// Scenario — готовый сценарий рабочего места: кнопка в диалоге создания
+// воркспейса, которая клонирует репо-донор (содержимое организации).
+type Scenario struct {
+	ID          string `yaml:"id" json:"id"`
+	Title       string `yaml:"title" json:"title"`
+	Description string `yaml:"description" json:"description"`
+	CloneURL    string `yaml:"clone_url" json:"cloneUrl"`
+}
+
+// images — образы рабочего места, которые задаёт организация.
+type images struct {
+	// Dockerfile — надстройка над базовым agctl-dsh (путь внутри профиля):
+	// FROM ${BASE} + пакеты организации. Пусто = базовый образ как есть.
+	Dockerfile string `yaml:"dockerfile"`
+	// Dev — каталог образов лаунчера developer'а (теги или реестр Nexus).
+	Dev []string `yaml:"dev"`
 }
 
 type llm struct {
@@ -80,10 +99,19 @@ type Data struct {
 		JiraURL string `yaml:"jira_url"`
 	} `yaml:"examples"`
 
+	// Workspace — содержимое организации для рабочих мест: готовые
+	// сценарии. Пакеты возможностей лежат файлами в catalog/<id>/ профиля.
+	Workspace struct {
+		Scenarios []Scenario `yaml:"scenarios"`
+	} `yaml:"workspace"`
+
+	Images images `yaml:"images"`
+
 	// Source — откуда загружен профиль (для логов и тестов).
 	Source string `yaml:"-"`
 
 	logo []byte
+	fsys fs.FS // корень профиля (catalog/, image/, assets/)
 }
 
 // EmbeddedNames — имена профилей, встроенных в бинарь.
@@ -125,6 +153,7 @@ func LoadDir(dir string) (*Data, error) {
 	if err := d.finalize("dir:" + abs); err != nil {
 		return nil, err
 	}
+	d.fsys = os.DirFS(abs)
 	if p := d.Brand.Logo; p != "" {
 		logo, err := os.ReadFile(filepath.Join(abs, filepath.FromSlash(p)))
 		if err != nil {
@@ -189,6 +218,9 @@ func loadFS(fsys embed.FS, dir, source string) (*Data, error) {
 	if err := d.finalize(source); err != nil {
 		return nil, err
 	}
+	if sub, err := fs.Sub(fsys, dir); err == nil {
+		d.fsys = sub
+	}
 	if p := d.Brand.Logo; p != "" {
 		logo, err := fsys.ReadFile(dir + "/" + p)
 		if err != nil {
@@ -216,6 +248,19 @@ func (d *Data) finalize(source string) error {
 	if d.Brand.Letter == "" {
 		d.Brand.Letter = firstGrapheme(d.Brand.Name)
 	}
+	seen := map[string]bool{}
+	for i, sc := range d.Workspace.Scenarios {
+		if sc.ID == "" || sc.Title == "" || sc.CloneURL == "" {
+			return fmt.Errorf("workspace.scenarios[%d]: нужны id, title и clone_url", i)
+		}
+		if seen[sc.ID] {
+			return fmt.Errorf("workspace.scenarios: повтор id %q", sc.ID)
+		}
+		seen[sc.ID] = true
+	}
+	if p := d.Images.Dockerfile; p != "" && (strings.HasPrefix(p, "/") || strings.Contains(p, "..")) {
+		return fmt.Errorf("images.dockerfile: путь внутри профиля, без .. и абсолютных путей: %q", p)
+	}
 	d.Source = source
 	return nil
 }
@@ -238,6 +283,12 @@ type View struct {
 	LLMModel          string
 	LLMModels         string
 	LLMExtraProviders []LLMExtraProvider // дополнительные провайдеры (без секретов)
+	Scenarios         []Scenario         // готовые сценарии диалога создания воркспейса
+	DevImages         []string           // каталог образов лаунчера developer'а
+	ImageDockerfile   string             // надстройка образа внутри профиля ("" = нет)
+	// FS — корень профиля: catalog/<id>/ (пакеты возможностей), image/
+	// (контекст надстройки образа). nil у профиля без файловой части.
+	FS fs.FS
 
 	brandJSON string
 }
@@ -269,6 +320,10 @@ func (d *Data) View() View {
 		LLMModel:          d.LLM.DefaultModel,
 		LLMModels:         d.LLM.DefaultModels,
 		LLMExtraProviders: append([]LLMExtraProvider(nil), d.LLM.ExtraProviders...),
+		Scenarios:         append([]Scenario(nil), d.Workspace.Scenarios...),
+		DevImages:         append([]string(nil), d.Images.Dev...),
+		ImageDockerfile:   d.Images.Dockerfile,
+		FS:                d.fsys,
 	}
 	if len(d.logo) > 0 {
 		v.LogoDataURI = "data:image/png;base64," + base64.StdEncoding.EncodeToString(d.logo)
@@ -311,4 +366,37 @@ func firstGrapheme(s string) string {
 	}
 	r := []rune(s)[0]
 	return strings.ToUpper(string(r))
+}
+
+// OverlayImage — тег образа организации поверх базового agctl-dsh:
+// agctl-dsh:0.2.2 → agctl-dsh-<id>:0.2.2 (реестр и digest сохраняются как
+// есть: reg:5000/agctl-dsh:1 → reg:5000/agctl-dsh-<id>:1).
+func OverlayImage(base, id string) string {
+	if id == "" {
+		return base
+	}
+	slash := strings.LastIndex(base, "/")
+	name, tag := base, ""
+	if i := strings.LastIndex(base, ":"); i > slash {
+		name, tag = base[:i], base[i:]
+	}
+	return name + "-" + id + tag
+}
+
+// ImageContext — контекст сборки надстройки: каталог Dockerfile внутри
+// профиля и имя файла. ok=false, если надстройки нет.
+func (v View) ImageContext() (ctx fs.FS, dockerfile string, ok bool) {
+	if v.ImageDockerfile == "" || v.FS == nil {
+		return nil, "", false
+	}
+	dir, file := path.Split(v.ImageDockerfile)
+	dir = strings.TrimSuffix(dir, "/")
+	if dir == "" {
+		return v.FS, file, true
+	}
+	sub, err := fs.Sub(v.FS, dir)
+	if err != nil {
+		return nil, "", false
+	}
+	return sub, file, true
 }

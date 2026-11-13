@@ -13,7 +13,7 @@ func (s *Server) myChatRuntime(userID int64) *chatRuntime {
 // lifecycle remains owned exclusively by agctl serve (request wake + TTL reaper).
 func (s *Server) handleMyRuntimeGet(w http.ResponseWriter, _ *http.Request, id identity) {
 	if rt := s.myChatRuntime(id.ID); rt != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"status": "running", "sshPort": rt.handle.SSHPort})
+		writeJSON(w, http.StatusOK, map[string]any{"status": "running", "sshPort": rt.handle.SSHPort, "sshHost": rt.handle.SSHHost})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "sleeping", "sshPort": 0})

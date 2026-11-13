@@ -29,7 +29,6 @@ import (
 	"github.com/arijjia/agctl/internal/provision"
 	agctlrt "github.com/arijjia/agctl/internal/runtime"
 	"github.com/arijjia/agctl/internal/runtime/dockerrt"
-	"github.com/arijjia/agctl/internal/runtime/k8srt"
 	"github.com/arijjia/agctl/internal/secrets"
 	"github.com/arijjia/agctl/internal/store"
 )
@@ -40,13 +39,16 @@ import (
 const defaultRegisterPerMinute = 30
 
 type Config struct {
-	Home                    string // $AGCTL_HOME
-	Addr                    string // слушающий адрес основного UI/API
-	MaxPerUser              int    // legacy seat limit; no effect in v3
-	MemoryBytes             int64
-	NanoCPUs                int64
-	Image                   string
-	DevImages               []string // каталог образов лаунчера developer'а (пусто = только cfg.Image)
+	Home        string // $AGCTL_HOME
+	Addr        string // слушающий адрес основного UI/API
+	MaxPerUser  int    // legacy seat limit; no effect in v3
+	MemoryBytes int64
+	NanoCPUs    int64
+	Image       string
+	DevImages   []string // каталог образов лаунчера developer'а (пусто = только cfg.Image)
+	// BaseImage — базовый agctl-dsh под надстройкой профиля (images.dockerfile);
+	// пусто или равен Image = надстройки нет.
+	BaseImage               string
 	BinDir                  string
 	Version                 string // версия agctl (метка контейнеров, диагностика дрейфа сборок)
 	SecureCookies           bool   // true when agctl is served behind a trusted HTTPS terminator
@@ -64,10 +66,6 @@ type Config struct {
 	RegisterPerMinute       int                // лимит регистраций с одного IP за минуту: 0 — дефолт платформы (30), <0 — отключить (нагрузочные прогоны)
 	RequireApproval         bool               // legacy workspace flag; create endpoint is tombstoned in v3
 	ExperimentalLocalBridge bool               // opt-in pairing/status/revoke API for local connector
-	Runtime                 string             // chat runtime: ""/docker (default) | k8s (prototype; карточка k8s-chat-runtime-adapter)
-	K8sNamespace            string             // namespace чат-рантайма k8s (storage scope установки)
-	K8sKubeconfig           string             // путь kubeconfig; пусто — in-cluster credentials
-	K8sReadinessWait        time.Duration      // бюджет ожидания Pod Ready при EnsureChat (0 — не ждать)
 	DefaultLLM              provision.Provider // платформенный провайдер чата по умолчанию (из профиля/env); личный секрет пользователя его перекрывает
 	DevEnv                  []string           // имена переменных хоста, пробрасываемые в контейнер developer/admin (значения — из окружения serve: .env экспортируется make)
 	Profile                 *profile.Data      // профиль организации (брендинг/дефолты); nil = нейтральный agctl
@@ -125,48 +123,31 @@ var (
 // New builds the development default (Docker for the unified per-user runtime).
 // Kubernetes deployments should inject their runtime providers.
 func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
-	// Chat runtime selector (карточка k8s-chat-runtime-adapter): явный opt-in,
-	// Docker остаётся default. RuntimeIface (dev-воркспейсы/лаунчер/control-plane)
-	// всегда dockerrt: host-path контракт workspace'ов в k8srt не перенесён.
-	// Валидация имени — до любого конструктора: fast-fail без Docker-демона.
-	runtime := strings.ToLower(strings.TrimSpace(cfg.Runtime))
-	switch runtime {
-	case "", "docker", "k8s":
-	default:
-		return nil, fmt.Errorf("server: неизвестный chat runtime %q (допустимо: docker, k8s)", cfg.Runtime)
+	// Профильная надстройка образа (upstream): собирается только когда база
+	// и целевой образ различаются.
+	var overlay fs.FS
+	var overlayDockerfile string
+	if cfg.Profile != nil && cfg.BaseImage != "" && cfg.BaseImage != cfg.Image {
+		overlay, overlayDockerfile, _ = cfg.Profile.View().ImageContext()
 	}
-	var chatProvider agctlrt.ChatProvider
 	rt, err := dockerrt.New(dockerrt.Config{
-		Image:       cfg.Image,
-		MemoryBytes: cfg.MemoryBytes,
-		NanoCPUs:    cfg.NanoCPUs,
-		BinDir:      cfg.BinDir,
-		Home:        cfg.Home,
-		DshSkel:     assetsSkel,
-		Version:     cfg.Version,
+		BaseImage:         cfg.BaseImage,
+		Overlay:           overlay,
+		OverlayDockerfile: overlayDockerfile,
+		Image:             cfg.Image,
+		MemoryBytes:       cfg.MemoryBytes,
+		NanoCPUs:          cfg.NanoCPUs,
+		BinDir:            cfg.BinDir,
+		Home:              cfg.Home,
+		DshSkel:           assetsSkel,
+		Version:           cfg.Version,
 	}, assets.Image)
 	if err != nil {
 		return nil, err
 	}
-	chatProvider = rt
-	sweepDockerChats := true
-	if runtime == "k8s" {
-		chat, chatErr := k8srt.New(k8srt.Config{
-			Namespace:     cfg.K8sNamespace,
-			Kubeconfig:    cfg.K8sKubeconfig,
-			Image:         cfg.Image,
-			ReadinessWait: cfg.K8sReadinessWait,
-		})
-		if chatErr != nil {
-			return nil, fmt.Errorf("k8s chat runtime: %w", chatErr)
-		}
-		chatProvider = chat
-		// Docker-свип дрейфа сносит контейнеры прошлой agctl-dsh сборки; при
-		// k8s-чате agctl их не создаёт — свип не нужен.
-		sweepDockerChats = false
-		log.Printf("chat runtime: kubernetes prototype (namespace %q); dev-воркспейсы и control-plane остаются на Docker", cfg.K8sNamespace)
-	}
-	s, err := NewWithRuntimeProviders(db, sec, cfg, rt, chatProvider)
+	// Chat runtime выбирается в cmd/agctl/runtime_select.go (upstream-архитектура:
+	// docker | k8s | ax, WaitReady/ReadyTimeout у k8srt); server.New — Docker-путь.
+	s, err := NewWithRuntimeProviders(db, sec, cfg, rt, rt)
 	if err != nil {
 		return nil, err
 	}
@@ -174,12 +155,10 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 	// (новый серв про них не знает, TTL-рипер их не усыплёт) и продолжают
 	// раздавать старый dsh web. Сносим заранее; /chat/ пересоздаёт среды
 	// лениво — данные пользователей живут на маунтах, не в контейнере.
-	if sweepDockerChats {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if n := rt.SweepVersionDrift(ctx, chatContainerNamePrefix(cfg.Home)); n > 0 {
-			log.Printf("[chat] свип дрейфа: удалены контейнеры прошлой сборки: %d", n)
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if n := rt.SweepVersionDrift(ctx, chatContainerNamePrefix(cfg.Home)); n > 0 {
+		log.Printf("[chat] свип дрейфа: удалены контейнеры прошлой сборки: %d", n)
 	}
 	return s, nil
 }
@@ -323,7 +302,7 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("DELETE /api/projects/{name}", s.requireUser(s.handleProjectDelete))
 	// Консоль воркспейсов («Возможности»): каталог компонентов скиллов,
 	// инструментов и промптов проекта + включение/выключение на сервере, и
-	// платформенный каталог пакетов (например, презентации по шаблону вуза).
+	// каталог пакетов профиля организации (catalog/<id> в профиле).
 	// Доступен всем ролям: пользователь настраивает свои воркспейсы сам.
 	mux.HandleFunc("GET /api/catalog", s.requireUser(s.handleCatalogList))
 	mux.HandleFunc("GET /api/projects/{name}/catalog", s.requireUser(s.handleProjectCatalogGet))
