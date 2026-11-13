@@ -126,4 +126,10 @@ type axConfig struct {
 	RouterCert      string `yaml:"router_cert"`
 	RouterKey       string `yaml:"router_key"`
 	ReadyTimeoutSec int    `yaml:"ready_timeout_sec"`
+	// AteAPI — адрес ate-api-server (Control API Substrate) для автоматической
+	// egress-инъекции ключей LLM при ax-inject-llm-key=0; пусто = политику
+	// акторов ведёт оператор вручную.
+	AteAPI string `yaml:"ate_api"`
+	// AteCluster — имя кластера в credentialUri ate-secret://k8s.io/cluster/<cluster>/….
+	AteCluster string `yaml:"ate_cluster"`
 }

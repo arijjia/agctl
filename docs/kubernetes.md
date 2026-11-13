@@ -184,12 +184,31 @@ Guest-сервисы Substrate (`spec.debug`, `ax ssh`) раннер не под
 По умолчанию (`--ax-inject-llm-key=1`) ключи провайдеров попадают в env
 задачи — как в Docker/k8s, но env задачи AX хранится открыто и виден в
 `ax get task`. Нулевое доверие Substrate предполагает иное:
-`--ax-inject-llm-key=0` — ключей в песочнице нет, dsh шлёт
-`Authorization: Bearer placeholder`, а egress-шлюз Substrate
-(`atenet-egress`) подменяет заголовок реальным ключом из Secret по
-`EgressPolicy` актора — пример `deploy/ax/egress-policy.example.yaml`.
-Политику сейчас создаёт оператор (`kubectl ate create egress-policy`);
-автоматизация в agctl — в бэклоге.
+`--ax-inject-llm-key=0` — ключей в песочнице нет, env задачи несёт
+`placeholder`, dsh шлёт `Authorization: Bearer placeholder`, а egress-шлюз
+Substrate (`atenet-egress`) подменяет заголовок реальным ключом из Secret
+по `EgressPolicy` актора.
+
+С `--ax-ate-api <addr>` (env `AGCTL_AX_ATE_API`, default
+`serve.ax.ate_api`) agctl ведёт инъекцию сам: на каждом `EnsureChat`
+синхронизирует Secret'ы `agctl-llm-*` с ключами провайдеров (in-cluster
+service account шлюза, namespace пода) и создаёт/обновляет EgressPolicy
+актора через Control API Substrate (`CreateActorEgressPolicy` /
+`UpdateActorEgressPolicy` с uid/version-предусловиями; `--ax-ate-cluster`,
+по умолчанию `cluster.local`, задаёт имя кластера в
+`ate-secret://k8s.io/cluster/<cluster>/…`). Ротация ключа меняет Secret,
+не трогая задачу и политику; смена провайдера обновляет правила политики.
+Без `--ax-ate-api` политику создаёт оператор вручную
+(`kubectl ate create egress-policy`, пример
+`deploy/ax/egress-policy.example.yaml`); env задачи в этом режиме ключей
+и placeholder'ов не содержит вовсе.
+
+Требования автоматического режима: ate-api-server доступен шлюзу по gRPC
+(внутри кластера; mTLS-обвязка — по роадмапу), развёрнут
+credential-provider `kubernetes-secrets` (см. README Substrate) с правами
+чтения Secret'ов namespace agctl. IP-адреса вместо DNS-имён в base URL
+провайдера не поддерживаются паттернами правил — такие эндпоинты
+остаются за ручной политикой оператора.
 
 ### Ограничения режима ax (v1)
 
