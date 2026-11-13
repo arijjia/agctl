@@ -51,7 +51,10 @@ for _ in $(seq 1 60); do curl -fsS "$BASE/" >/dev/null 2>&1 && break; sleep 2; d
 curl -fsS "$BASE/" | grep -q "__AGCTL_BRAND__" && echo "  ✓ страница входа"
 
 JAR_ADMIN=$(mktemp); JAR_USER=$(mktemp)
-register() { curl -fsS -c "$1" -H 'Content-Type: application/json' -d "{\"login\":\"$2\",\"password\":\"$3\"}" "$BASE/api/register" >/dev/null; }
+register() { # идемпотентно: на существующем кластере register даёт 400 — логинимся
+  curl -fsS -c "$1" -H 'Content-Type: application/json' -d "{\"login\":\"$2\",\"password\":\"$3\"}" "$BASE/api/register" >/dev/null 2>&1 ||
+  curl -fsS -c "$1" -H 'Content-Type: application/json' -d "{\"login\":\"$2\",\"password\":\"$3\"}" "$BASE/api/login" >/dev/null
+}
 register "$JAR_ADMIN" e2eadmin 'E2e-admin-pass-1!'
 register "$JAR_USER" e2euser 'E2e-user-pass-1!'
 echo "  ✓ пользователи зарегистрированы"
