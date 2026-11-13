@@ -8,7 +8,7 @@ size: L
 area: platform
 repo: arijjia/agctl
 created: 2026-11-11
-updated: 2026-11-13
+updated: 2026-11-14
 tags: [kubernetes, substrate, ax, runtime]
 depends: []
 epic: ""
@@ -68,3 +68,4 @@ Live-прогон на настоящем кластере (а тем более
 - 2026-11-13: refl: refl: fetch-at-boot без live-кластера покрыт юнит-тестами трёх слоёв (payload, endpoint, runner-парсер); слабое место — маршрутизуемость AGCTL_GATEWAY_URL из песочницы (ClusterIP vs ingress) проверит только live-прогон п.2.
 - 2026-11-13: п.5 сделан в ветке agent/ax-guest-ssh (merge c30c102, слита владельцем в main): выбрана опция A — guest-сервисы Substrate как opt-in. Фактура из апстрима (зафиксирована здесь как источники решения): ax ssh — НЕ sshd и не TCP-туннель, это gRPC-сервисы пакета agent-substrate/env/guest (process: StartProcess/StreamProcessOutput/SignalProcess; filesystem) на :80 раннера, гейт spec.debug (docs/sandbox.md апстрима AX); клиент ax ssh диалится прямо до worker IP или через atenet-router (443 mTLS / 80 port-forward). Реализовано: --ax-debug-ssh ставит spec.debug задачам, раннер монтирует guest-gRPC рядом с probes/прокси через h2c (http.Protocols SetHTTP1+SetUnencryptedHTTP2 — паттерн cmd/ate-env-guest апстрима).
 - 2026-11-13: refl: refl: п.5 закрыт opt-in флагом на установку (не per-user): гранулярность per-пользователя (роль developer) отложена до live-прогона — карточка не определяла требование, решение владельца зафиксировано в «Проверить перед пушем» merge-окна. Пункты 1-2 остаются за live-кластером (Docker-демон на хосте разработчика так и не появился за все три тура).
+- 2026-11-14: уточнение п.5 (merge e5c4e16): гранулярность per-user из «Проверить перед пушем» окна c30c102 закрыта — spec.debug только задачам с SSH-ключом (SSHPubKey ≠ '', роли developer/admin, семантика docker/k8s «поднять sshd»); роли user guest-сервисов не получают никогда; debug в specHash — поздний ключ = видимый дрейф с осознанным пересозданием.
