@@ -28,14 +28,17 @@ img_build:
 	docker build --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
 	@$(MAKE) --no-print-directory img_profile
 
+# PIP_INDEX_URL — зеркало PyPI (Nexus организации) для стадии wheels надстройки.
+PIP_INDEX_ARG = $(if $(PIP_INDEX_URL),--build-arg PIP_INDEX_URL=$(PIP_INDEX_URL))
+
 ## img_profile: надстройка образа выбранного профиля (PROFILE=<id>) поверх уже собранных базовых
 img_profile:
 	@if [ -z "$(PROFILE_DOCKERFILE)" ]; then \
 	  echo "образ: профиль $(PROFILE) без надстройки — рабочие места на $(IMG)"; exit 0; fi; \
 	ctx=profiles/$(PROFILE)/$$(dirname "$(PROFILE_DOCKERFILE)"); \
 	f=profiles/$(PROFILE)/$(PROFILE_DOCKERFILE); \
-	docker build --build-arg BASE=$(IMG) -t $(call overlay_tag,$(IMG)) -f "$$f" "$$ctx" && \
-	docker build --build-arg BASE=$(IMG_NOSSH) -t $(call overlay_tag,$(IMG_NOSSH)) -f "$$f" "$$ctx" && \
+	docker build $(PIP_INDEX_ARG) --build-arg BASE=$(IMG) -t $(call overlay_tag,$(IMG)) -f "$$f" "$$ctx" && \
+	docker build $(PIP_INDEX_ARG) --build-arg BASE=$(IMG_NOSSH) -t $(call overlay_tag,$(IMG_NOSSH)) -f "$$f" "$$ctx" && \
 	echo "✓ образы профиля $(PROFILE): $(call overlay_tag,$(IMG)), $(call overlay_tag,$(IMG_NOSSH))"
 
 # img_build_nossh: пересобрать только вариант «без SSH» (контекст уже собран
