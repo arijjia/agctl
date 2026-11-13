@@ -1,5 +1,5 @@
 ---
-schema: 1.0.0
+schema: 1.1.0
 id: k8s-substrate-ax-backend
 title: "Kubernetes-бэкенды k8s и ax (Google AX + Agent Substrate): хвосты после первой волны"
 status: open
@@ -8,10 +8,12 @@ size: L
 area: platform
 repo: arijjia/agctl
 created: 2026-11-11
-updated: 2026-11-11
+updated: 2026-11-13
 tags: [kubernetes, substrate, ax, runtime]
 depends: []
 epic: ""
+sessions:
+  - session-c780be29-3c20-4064-a46e-9f9eb1cb8b92:work
 ---
 ## Описание
 
@@ -59,3 +61,6 @@ Live-прогон на настоящем кластере (а тем более
 ## Журнал
 
 - 2026-11-11: создано по итогам первой волны (k8srt/axrt/ax-runner, deploy/k8s, docs/kubernetes.md).
+- 2026-11-13: п.3 сделан (merge 25b754e): авто-egress-инъекция — Secret'ы agctl-llm-* + EgressPolicy актора через Control API Substrate (--ax-ate-api), placeholder в env. Замечание по источникам: карточки не хватало имени API CreateActorEgressPolicy/формата credentialUri — извлечено из substrate@v1.0.0 (api/ateapi/v1, cmd/kubectl-ate): политика синглтон 'default' на актора, update с uid/version-предусловиями, URI ate-secret://k8s.io/cluster/<cluster>/<ns>/<secret>/<key>; перенесено в docs/kubernetes.md.
+- 2026-11-13: refl: refl: п.1-2 (kind-смоук, live-валидация) заблокированы отсутствием Docker-демона на хосте разработчика; п.4 (конфиг провайдера у шлюза по токену раннера) и п.5 (SSH ax: решение владельца) не делались — карточка остаётся open.
+- 2026-11-13: текущий тур закрыт: п.3 merged, п.1/2 нужны Docker/kind + живой кластер Substrate/AX, п.4/5 — следующая итерация.
