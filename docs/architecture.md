@@ -241,8 +241,10 @@ host port; это не «слушать всю LAN». Почему релея н
   `docs/kubernetes.md`. Не реализованы: HA control-plane, egress-политики
   подов, автоматическое создание EgressPolicy Substrate; live-прогон на
   кластере с Substrate/AX в репо не автоматизирован.
-- MFA/SSO и egress allowlist не реализованы; текущие остаточные риски —
-  `docs/secure-gateway.md`.
+- Egress allowlist в режиме docker — opt-in (`Config.EgressAllowlist`,
+  `internal/runtime/dockerrt/egress.go`): контейнеры на выделенной сети
+  `agctl-egress-*`, наружу только DNS и хост-шлюз. MFA/SSO не реализованы;
+  текущие остаточные риски — `docs/secure-gateway.md`.
 
 ## 7. Физическая карта и код
 
@@ -252,8 +254,18 @@ host port; это не «слушать всю LAN». Почему релея н
 реальные host/container границы. Один персональный контейнер v3 содержит
 dsh web (bind на eth0 контейнера; релей удалён) и, для developer, sshd;
 `agctl serve` и go-git autosave —
-один Go-процесс, горутины не отдельные процессы. Подпись внешнего LLM на
-карте — из профиля организации (`map.llm_label`; нейтральный срез —
-`llm.corp.example :443`); карта пересобрана archify по пину
-`72fa4218` (все гейты pass, улики сверены) — после смены профиля и
-существенных правок кода карту стоит пересобрать заново.
+один Go-процесс, горутины не отдельные процессы. Рамка «Кластер» —
+альтернативные бэкенды `--runtime k8s | ax` (под пользователя; актор
+Substrate с `agctl ax-runner` как PID 1), egress-allowlist — opt-in сеть
+Docker. Подпись внешнего LLM на карте — из профиля организации
+(`map.llm_label`; нейтральный `agctl` — `LLM gateway`).
+
+Рабочий цикл: `make map` проверяет спецификацию (`bin/map-check.py`: ссылки
+между узлами, улики против строк кода, sha256 спецификации против receipt
+`agctl-processes.delivery.json`), пересобирает HTML, если `archify` есть в
+PATH (`ARCHIFY=…`), и открывает карту; `make map_build` — только пересборка,
+`make map_check` — только проверка. Спецификация сверена с кодом по пину
+`03e00df` (2026-11-13: k8s/ax, egress-allowlist, prewarm-пул, `/map`,
+локальный go-git autosave без push); HTML пересобирается archify при
+следующем прогоне `make map_build` — пока receipt указывает на пин `f0c6c71`,
+`make map` об этом предупреждает.
