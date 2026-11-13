@@ -31,9 +31,15 @@ spec:
             # - name: AGCTL_AX_ROUTER_CA
             #   value: /run/servicedns-ca/trust-bundle.pem
             # 1 = ключи LLM в env задачи; 0 = ключи инжектит egress-шлюз
-            # Substrate (deploy/ax/egress-policy.example.yaml).
+            # Substrate. Раскомментируйте AGCTL_AX_ATE_API — и agctl сам
+            # ведёт Secret'ы agctl-llm-* и EgressPolicy акторов
+            # (docs/kubernetes.md «Ключи LLM»).
             - name: AGCTL_AX_INJECT_LLM_KEY
               value: "1"
+            # - name: AGCTL_AX_ATE_API
+            #   value: ate-api-server.ate-system.svc.cluster.local:443
+            # - name: AGCTL_AX_ATE_CLUSTER
+            #   value: cluster.local
             - name: AGCTL_K8S_SHARED_CLAIM
               $patch: delete
           volumeMounts:
