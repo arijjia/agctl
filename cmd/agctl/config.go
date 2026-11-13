@@ -21,6 +21,7 @@ type userConfig struct {
 	Serve      struct {
 		Runtime        string    `yaml:"runtime"` // docker | k8s | ax
 		Addr           string    `yaml:"addr"`
+		PublicURL      string    `yaml:"public_url"`
 		Image          string    `yaml:"image"`
 		DevImages      string    `yaml:"dev_images"`
 		DevEnv         string    `yaml:"dev_env"`

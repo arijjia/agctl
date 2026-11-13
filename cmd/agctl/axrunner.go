@@ -32,6 +32,7 @@ import (
 
 	"github.com/arijjia/agctl/internal/assets"
 	"github.com/arijjia/agctl/internal/provision"
+	"github.com/arijjia/agctl/internal/runtime/axrt"
 	"gopkg.in/yaml.v3"
 )
 
@@ -104,7 +105,21 @@ func cmdAXRunner(args []string) {
 			log.Fatal(err)
 		}
 	}
-	if err := prepareChatHome(*home, providerFromEnv(), true, os.Getenv("AGCTL_DEFAULT_FULL_ACCESS") == "1"); err != nil {
+	// Провайдер dsh: fetch-at-boot у шлюза (env задачи содержит только
+	// AGCTL_GATEWAY_URL), иначе AGCTL_LLM_* окружения задачи.
+	taskName := task.Metadata.Name
+	if taskName == "" {
+		taskName = "unknown"
+	}
+	provider := providerAtBoot(taskName, os.Getenv("AGCTL_GATEWAY_URL"), os.Getenv("AGCTL_RUNNER_TOKEN"))
+	source := "env задачи"
+	if provider != nil {
+		source = provider.source
+	} else {
+		provider = &runnerProvider{Provider: providerFromEnv()}
+	}
+	log.Printf("ax-runner: провайдер %s (%s)", provider.Provider.Alias(), source)
+	if err := prepareChatHome(*home, provider.Provider, true, os.Getenv("AGCTL_DEFAULT_FULL_ACCESS") == "1"); err != nil {
 		log.Fatal(err)
 	}
 	command := task.Spec.Command
@@ -376,6 +391,60 @@ func bearerMatches(header, token string) bool {
 }
 
 // ── подготовка DSH_HOME (общая с init-chat-home) ───────────────────────────
+
+// runnerProvider — платформенный провайдер для dsh: из fetch-at-boot
+// (шлюз agctl по токену раннера), иначе из AGCTL_LLM_* окружения задачи.
+type runnerProvider struct {
+	provision.Provider
+	source string
+}
+
+// providerAtBoot — конфиг провайдера у шлюза (GET /ax/provider-config/<task>
+// с Bearer-токеном раннера); env задачи его не содержит. Ошибка или пустой
+// ответ — nil: вызывающий падает громко (тихий fallback оставил бы dsh без
+// провайдера или с протухшим).
+func providerAtBoot(taskName, gatewayURL, token string) *runnerProvider {
+	if gatewayURL == "" || token == "" {
+		return nil
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	raw, err := axrt.FetchProviderConfig(client, gatewayURL, taskName, token)
+	if err != nil {
+		log.Printf("ax-runner: провайдер у шлюза недоступен: %v", err)
+		return nil
+	}
+	var cfg axrt.ProviderConfigPayload
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		log.Printf("ax-runner: конфиг провайдера шлюза: %v", err)
+		return nil
+	}
+	p := provision.Provider{
+		Name:    cfg.Alias,
+		BaseURL: firstString(cfg.BaseURLs),
+		Model:   cfg.Model,
+		Models:  cfg.Models,
+		APIKey:  cfg.APIKey,
+	}
+	for _, extra := range cfg.Extras {
+		x := provision.ExtraProvider{
+			Name: extra.Name, BaseURL: extra.BaseURL, Model: extra.Model,
+			Models: extra.Models, APIKey: extra.APIKey,
+		}
+		x.APIKeyEnv = x.KeyEnv()
+		p.Extras = append(p.Extras, x)
+	}
+	return &runnerProvider{Provider: p, source: "gateway(fetch-at-boot)"}
+}
+
+// firstString — первый непустой элемент.
+func firstString(vals []string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
 
 // providerFromEnv — платформенный провайдер из AGCTL_LLM_* окружения
 // (K8s init-контейнер, раннер AX): ключи дополнительных провайдеров — из env

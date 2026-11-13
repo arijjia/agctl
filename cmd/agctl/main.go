@@ -178,6 +178,7 @@ func cmdServe(args []string) {
 	devEnv := fsSet.String("dev-env", envOr("AGCTL_DEV_ENV", cfg.Serve.DevEnv), "имена переменных окружения хоста, пробрасываемые в контейнер developer'а через запятую (значения из .env); пусто = не пробрасывать")
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
+	publicURL := fsSet.String("public-url", envOr("AGCTL_PUBLIC_URL", cfg.Serve.PublicURL), "базовый URL шлюза, видимый песочницам (fetch-at-boot раннера AX); пусто = http://<первый не-loopback IP>:<порт --addr>")
 	experimentalLocalBridge := fsSet.Bool("experimental-local-bridge", false, "experimental local connector pairing API (requires trusted TLS ingress and --secure-cookies)")
 	chatTTLMin := fsSet.Int("chat-ttl-min", nonZeroOr(cfg.Serve.ChatTTLMin, 60), "минуты простоя персонального контейнера до сна (том пользователя сохраняется)")
 	registerPerMin := fsSet.Int("register-per-min", nonZeroOr(cfg.Serve.RegisterPerMin, 30), "лимит регистраций с одного IP в минуту; 0 — отключить защиту (нагрузочные прогоны)")
@@ -251,6 +252,7 @@ func cmdServe(args []string) {
 		BinDir:                  firstNonEmpty(*binDir, "dist"),
 		Version:                 version,
 		SecureCookies:           *secureCookies,
+		PublicURL:               derivePublicURL(*publicURL, *addr),
 		ExperimentalLocalBridge: *experimentalLocalBridge,
 		CORSOrigins:             splitCSV(*corsOrigins),
 		Tier0:                   *tier0,
@@ -516,4 +518,39 @@ func profileImages(fsSet *flag.FlagSet, prof *profile.Data, image string) (base,
 		return image, image
 	}
 	return image, profile.OverlayImage(image, prof.ID)
+}
+
+// derivePublicURL — базовый URL шлюза для песочниц: явный --public-url,
+// иначе http://<не-loopback IPv4 хоста>:<порт --addr>; не нашлось — адрес
+// как задан (без схемы).
+func derivePublicURL(publicURL, addr string) string {
+	if publicURL != "" {
+		return strings.TrimRight(publicURL, "/")
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = outboundIPv4()
+	}
+	if host == "" {
+		return "http://" + addr
+	}
+	return "http://" + net.JoinHostPort(host, port)
+}
+
+// outboundIPv4 — адрес интерфейса с маршрутом по умолчанию (как docker
+// bridge видит хост); пусто — не нашлось.
+func outboundIPv4() string {
+	conn, err := net.Dial("udp", "8.8.8.8:53")
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	host, _, err := net.SplitHostPort(conn.LocalAddr().String())
+	if err != nil {
+		return ""
+	}
+	return host
 }
