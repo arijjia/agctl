@@ -44,7 +44,9 @@ kind load docker-image --name "$KIND_CLUSTER" agctl-serve:dev "agctl-dsh:${TAG}"
 echo "▶ деплой"
 kubectl apply -k deploy/k8s/overlays/kind
 kubectl -n "$NS" rollout status deployment/agctl --timeout=240s
-BASE="http://127.0.0.1:${PORT}"
+# BASE_URL — обход NodePort (например, kind в colima/nested docker, где
+# extraPortMappings до хоста не доносятся): kubectl port-forward + свой адрес.
+BASE="${BASE_URL:-http://127.0.0.1:${PORT}}"
 for _ in $(seq 1 60); do curl -fsS "$BASE/" >/dev/null 2>&1 && break; sleep 2; done
 curl -fsS "$BASE/" | grep -q "__AGCTL_BRAND__" && echo "  ✓ страница входа"
 
