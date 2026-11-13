@@ -160,14 +160,18 @@ AX всегда запускает контейнер командой `/usr/loc
    dsh не доходят.
 
 SSH в режиме ax — guest-сервисы Substrate (п.5 карточки
-k8s-substrate-ax-backend, опция A выбрана как opt-in). `ax ssh` апстрима —
+k8s-substrate-ax-backend, опция A, opt-in + per-user). `ax ssh` апстрима —
 это не sshd: раннер поднимает на том же :80 guest-gRPC Substrate
 (`agent-substrate/env/guest`: process + filesystem, h2c рядом с
 пробами/прокси — паттерн раннера апстрима AX), доступ к которому = произвольный
-exec и файлы в песочнице. По умолчанию выключено; включение на всю установку —
-`--ax-debug-ssh` (env `AGCTL_AX_DEBUG_SSH=1`, `serve.ax.debug_ssh`): шлюз
-ставит `spec.debug` задачам, раннер поднимает guest-сервисы (workspace =
-рабочий каталог пользователя), оператор даёт доступ `ax ssh <task>` — с хоста
+exec и файлы в песочнице. Включение установки — `--ax-debug-ssh` (env
+`AGCTL_AX_DEBUG_SSH=1`, `serve.ax.debug_ssh`, по умолчанию выключено);
+шлюз ставит `spec.debug` ТОЛЬКО задачам пользователей с SSH-ключом роли
+developer/admin (`spec.SSHPubKey` ≠ "" — та же семантика, что «поднять sshd»
+в docker/k8s; роли user guest-сервисов не получают никогда). Загрузка ключа
+позже — дрейф specHash: пересоздание по `--ax-recreate-on-drift` или руками
+(`ax delete task`). Раннер поднимает guest-сервисы (workspace = рабочий
+каталог пользователя), оператор даёт доступ `ax ssh <task>` — с хоста
 с сетевым доступом до воркеров или через `atenet-router` (443 mTLS / 80).
 Кабинет по-прежнему показывает «спит» (`HasActiveSSH` = false: платформенного
 ssh-канала нет) — терминал разработчика либо dsh web, либо `ax ssh` руками.

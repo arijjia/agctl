@@ -110,7 +110,7 @@ func registerRuntimeFlags(fsSet *flag.FlagSet, cfg userConfig) *runtimeFlags {
 	rf.axRecreateOnDrift = fsSet.Bool("ax-recreate-on-drift", envOr("AGCTL_AX_RECREATE_ON_DRIFT", "0") == "1", "пересоздавать задачу при смене образа/провайдера (данные актора теряются)")
 	rf.axAteAPI = fsSet.String("ax-ate-api", envOr("AGCTL_AX_ATE_API", a.AteAPI), "адрес ate-api-server (Control API Substrate) для авто-egress-инъекции ключей LLM при --ax-inject-llm-key=0; пусто = политику ведёт оператор")
 	rf.axAteCluster = fsSet.String("ax-ate-cluster", envOr("AGCTL_AX_ATE_CLUSTER", firstNonEmpty(a.AteCluster, "cluster.local")), "имя кластера в credentialUri ate-secret://k8s.io/cluster/<cluster>/…")
-	rf.axDebugSSH = fsSet.Bool("ax-debug-ssh", envOr("AGCTL_AX_DEBUG_SSH", a.DebugSSH) == "1", "spec.debug задач ax: guest-сервисы Substrate на :80 раннера (ax ssh = произвольный exec в песочнице); opt-in на установку")
+	rf.axDebugSSH = fsSet.Bool("ax-debug-ssh", envOr("AGCTL_AX_DEBUG_SSH", a.DebugSSH) == "1", "guest-сервисы ax ssh (spec.debug) задачам пользователей с SSH-ключом роли developer/admin; opt-in на установку, роли user их не получают")
 	return rf
 }
 
