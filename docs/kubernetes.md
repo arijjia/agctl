@@ -144,7 +144,11 @@ AX всегда запускает контейнер командой `/usr/loc
 1. читает `AX_TASK_YAML` (снисходительно), применяет `spec.env`;
 2. готовит `DSH_HOME=/workspace/dsh-home` и `HOME=/workspace/work` на
    долговечном томе актора (скелет, провайдер, плагины, пресет роли — тот же
-   набор, что в Docker и в init-контейнере k8s);
+   набор, что в Docker и в init-контейнере k8s); провайдер — fetch-at-boot
+   у шлюза (`GET /ax/provider-config/<task>` по `AGCTL_GATEWAY_URL` с
+   Bearer `AGCTL_RUNNER_TOKEN`; недоступный шлюз в этом режиме — громкий
+   fatal раннера), fallback — env задачи `AGCTL_LLM_*`
+   (режим `AGCTL_AX_PROVIDER_AT_BOOT=0`);
 3. запускает `spec.command` (по умолчанию `agctl-entrypoint` → dsh web на
    eth0:3080) в своей группе процессов, перезапускает при выходе с backoff,
    по SIGTERM — TERM группе, через 10 с KILL;
@@ -184,19 +188,50 @@ Guest-сервисы Substrate (`spec.debug`, `ax ssh`) раннер не под
 По умолчанию (`--ax-inject-llm-key=1`) ключи провайдеров попадают в env
 задачи — как в Docker/k8s, но env задачи AX хранится открыто и виден в
 `ax get task`. Нулевое доверие Substrate предполагает иное:
-`--ax-inject-llm-key=0` — ключей в песочнице нет, dsh шлёт
-`Authorization: Bearer placeholder`, а egress-шлюз Substrate
-(`atenet-egress`) подменяет заголовок реальным ключом из Secret по
-`EgressPolicy` актора — пример `deploy/ax/egress-policy.example.yaml`.
-Политику сейчас создаёт оператор (`kubectl ate create egress-policy`);
-автоматизация в agctl — в бэклоге.
+`--ax-inject-llm-key=0` — ключей в песочнице нет, env задачи несёт
+`placeholder`, dsh шлёт `Authorization: Bearer placeholder`, а egress-шлюз
+Substrate (`atenet-egress`) подменяет заголовок реальным ключом из Secret
+по `EgressPolicy` актора.
+
+С `--ax-ate-api <addr>` (env `AGCTL_AX_ATE_API`, default
+`serve.ax.ate_api`) agctl ведёт инъекцию сам: на каждом `EnsureChat`
+синхронизирует Secret'ы `agctl-llm-*` с ключами провайдеров (in-cluster
+service account шлюза, namespace пода) и создаёт/обновляет EgressPolicy
+актора через Control API Substrate (`CreateActorEgressPolicy` /
+`UpdateActorEgressPolicy` с uid/version-предусловиями; `--ax-ate-cluster`,
+по умолчанию `cluster.local`, задаёт имя кластера в
+`ate-secret://k8s.io/cluster/<cluster>/…`). Ротация ключа меняет Secret,
+не трогая задачу и политику; смена провайдера обновляет правила политики.
+Без `--ax-ate-api` политику создаёт оператор вручную
+(`kubectl ate create egress-policy`, пример
+`deploy/ax/egress-policy.example.yaml`); env задачи в этом режиме ключей
+и placeholder'ов не содержит вовсе.
+
+Требования автоматического режима: ate-api-server доступен шлюзу по gRPC
+(внутри кластера; mTLS-обвязка — по роадмапу), развёрнут
+credential-provider `kubernetes-secrets` (см. README Substrate) с правами
+чтения Secret'ов namespace agctl. IP-адреса вместо DNS-имён в base URL
+провайдера не поддерживаются паттернами правил — такие эндпоинты
+остаются за ручной политикой оператора.
 
 ### Ограничения режима ax (v1)
 
-- **Задача неизменяема.** Образ и провайдер фиксируются при `CreateTask`;
-  смена профиля/ключа/образа применится к новым пользователям, для старых
-  шлюз пишет предупреждение. `--ax-recreate-on-drift` пересоздаёт задачу,
-  но `/workspace` актора (проекты, история сессий) при этом теряется.
+- **Задача неизменяема.** Образ фиксируется при `CreateTask`; смена
+  образа применится к новым пользователям, для старых шлюз пишет
+  предупреждение. `--ax-recreate-on-drift` пересоздаёт задачу, но
+  `/workspace` актора (проекты, история сессий) при этом теряется.
+- **Конфиг провайдера — fetch-at-boot (по умолчанию).** Провайдер LLM не
+  входит в env/spec задачи (`AGCTL_AX_PROVIDER_AT_BOOT=1`): env несёт
+  только `AGCTL_GATEWAY_URL` (шлюз agctl, `--public-url`), а раннер при
+  каждом boot забирает актуальный конфиг у шлюза —
+  `GET /ax/provider-config/<task>` с Bearer-токеном раннера
+  (`--ax-runner-token`; тот же, что у boot-log). Смена профиля/ключа
+  применяется на следующем resume без пересоздания задачи — дрейфа specHash
+  нет, `/workspace` сохраняется. Ключи в payload следуют режиму инъекции:
+  `--ax-inject-llm-key=1` — реальный ключ, egress-автоматизация —
+  `placeholder` (подменит atenet-egress), ручная политика — пусто (dsh
+  спросит пользователя). Отключение (`AGCTL_AX_PROVIDER_AT_BOOT=0`)
+  возвращает конфиг в env задачи (дрейф при смене провайдера).
 - **Проектные API шлюза** (файлы, autosave, инструкции) данных актора не
   видят: пользователь работает с проектами внутри dsh web.
 - **SSH** недоступен (см. раннер).

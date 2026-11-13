@@ -1,13 +1,16 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/arijjia/agctl/internal/provision"
 )
@@ -81,6 +84,17 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request, id 
 		}
 	}
 	clone := strings.TrimSpace(req.CloneUrl) != ""
+	// Квота тома (карточка chat-prewarm-pool, план 3): новый проект не
+	// создаётся, если том пользователя уже упёрся в лимит. Обход файлов —
+	// редкая операция создания, не на горячем пути.
+	if q := s.userVolumeQuotaGB(id.ID); q > 0 {
+		if used := userVolumeUsage(s.cfg.Home, id.ID); used >= int64(q*1e9) {
+			_ = s.db.Audit(id.Login, "project.create.quota", req.Name, "")
+			writeErr(w, http.StatusForbidden, fmt.Sprintf(
+				"квота тома исчерпана (%.1f ГБ); освободите место или попросите администратора поднять лимит", q))
+			return
+		}
+	}
 	// Клонирование по URL — developer-настройка: это сетевой запрос с сервера,
 	// обычному режиму user он не нужен (карточка dev-workspace-clone-url).
 	var (
@@ -139,6 +153,9 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request, id 
 
 // autosaveLocalProjects runs for every user's personal volume, including sleeping
 // chats. It never provisions a missing volume or adopts non-repository folders.
+// Повторы сбойного проекта идут с backoff: после autosaveFailThreshold подряд
+// неудач — разовый repair-pass и экспоненциальная пауза (до autosaveBackoffCap),
+// чтобы «уже сломанный» проект не молотил лог каждые 2 минуты.
 func (s *Server) autosaveLocalProjects() {
 	users, err := s.db.UsersList()
 	if err != nil {
@@ -151,10 +168,96 @@ func (s *Server) autosaveLocalProjects() {
 			continue
 		}
 		for _, project := range projects {
-			if _, err := provision.AutosaveLocalProject(s.cfg.Home, user.ID, project.Name); err != nil && !os.IsNotExist(err) {
+			key := autosaveKey(user.ID, project.Name)
+			if !s.autosaveDue(key) {
+				continue
+			}
+			_, err := provision.AutosaveLocalProject(s.cfg.Home, user.ID, project.Name)
+			switch {
+			case err == nil || os.IsNotExist(err):
+				s.autosaveSucceeded(key)
+			case s.autosaveFailed(key, err):
 				// Avoid file paths/content in logs; autosave is invisible to chat UI.
-				log.Printf("[project-autosave] u%d: local save failed", user.ID)
+				log.Printf("[project-autosave] u%d %s: local save failed (%s), backing off",
+					user.ID, project.Name, autosaveFailReason(err))
+				if provision.AutosaveRepairPass(s.cfg.Home, user.ID, project.Name, autosaveStaleLockAge) {
+					log.Printf("[project-autosave] u%d %s: repair pass removed stale index.lock", user.ID, project.Name)
+				}
+			default:
+				// Повторная неудача в backoff-окне — молча, причина уже в логе.
 			}
 		}
+	}
+}
+
+const (
+	autosaveFailThreshold = 3                // подряд неудач до repair-pass и backoff
+	autosaveBackoffCap    = time.Hour        // потолок экспоненциальной паузы
+	autosaveStaleLockAge  = 10 * time.Minute // index.lock старше — протухший
+)
+
+// autosaveFailState — счётчик подряд идущих неудач autosave одного проекта.
+type autosaveFailState struct {
+	fails int
+	next  time.Time // раньше этой попытки не стартуем
+}
+
+func autosaveKey(userID int64, name string) string {
+	return fmt.Sprintf("%d/%s", userID, name)
+}
+
+// autosaveDue — true, если проект не в backoff-паузе.
+func (s *Server) autosaveDue(key string) bool {
+	s.autosaveMu.Lock()
+	defer s.autosaveMu.Unlock()
+	st, ok := s.autosaveFails[key]
+	return !ok || !time.Now().Before(st.next)
+}
+
+// autosaveSucceeded обнуляет серию неудач.
+func (s *Server) autosaveSucceeded(key string) {
+	s.autosaveMu.Lock()
+	defer s.autosaveMu.Unlock()
+	delete(s.autosaveFails, key)
+}
+
+// autosaveFailed наращивает серию и возвращает true, только если пора
+// реагировать (порог достигнут или пауза истекла): в этот момент вызывающий
+// делает repair-pass и пишет причину в лог.
+func (s *Server) autosaveFailed(key string, err error) bool {
+	s.autosaveMu.Lock()
+	defer s.autosaveMu.Unlock()
+	if s.autosaveFails == nil {
+		s.autosaveFails = map[string]autosaveFailState{}
+	}
+	st := s.autosaveFails[key]
+	st.fails++
+	if st.fails < autosaveFailThreshold {
+		s.autosaveFails[key] = st
+		return st.fails == 1 // первая неудача серии — сразу в лог
+	}
+	// Порог и далее: экспоненциальная пауза 1x, 2x, 4x… периода, с потолком.
+	step := s.cfg.AutosaveEvery << (st.fails - autosaveFailThreshold)
+	if step <= 0 || step > autosaveBackoffCap {
+		step = autosaveBackoffCap
+	}
+	st.next = time.Now().Add(step)
+	s.autosaveFails[key] = st
+	return true
+}
+
+// autosaveFailReason — короткая причина сбоя для лога: без путей и контента.
+func autosaveFailReason(err error) string {
+	switch {
+	case errors.Is(err, provision.ErrInvalidProject):
+		return "invalid tree"
+	case os.IsNotExist(err):
+		return "missing"
+	case os.IsTimeout(err), errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case strings.Contains(err.Error(), "index.lock"):
+		return "index locked"
+	default:
+		return "git error"
 	}
 }

@@ -1,11 +1,12 @@
 name: dsh-bump
 
-# Еженедельный cron снят: его гейт e2e-smoke.sh проверяет v2-workspaces,
-# удалённые в v3 (POST /api/workspaces → 410), поэтому расписание давало
-# гарантированно красный запуск каждый понедельник. Вернуть cron после
-# v3-сценария e2e (персональный контейнер + проекты). Ручной запуск:
+# Еженедельный cron: гейт e2e-smoke переписан под v3 (персональный
+# контейнер + проекты, карточка e2e-smoke-v3), красные запуски v2-эпохи
+# больше не воспроизводятся. Ручной запуск:
 #   gh workflow run dsh-bump --repo arijjia/agctl
 on:
+  schedule:
+    - cron: "23 4 * * 1" # еженедельно по понедельникам (как до e16fce9)
   workflow_dispatch:
 
 permissions:
@@ -16,11 +17,11 @@ jobs:
   bump:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.27"
       - name: Обновить pin DSH до latest rc/stable
@@ -51,7 +52,7 @@ jobs:
           CLEANUP: "1"
         run: bin/e2e-smoke.sh
       - if: steps.diff.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ github.token }}
           branch: bot/dsh-upgrade

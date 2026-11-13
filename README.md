@@ -262,7 +262,14 @@ Ctrl+C так же корректно.
   Снятие галочки переносит компонент в серверный stash
   `/workspace/<имя>/.agctl/stash/` — агент его больше не видит, включение
   возвращает; stash не коммитится autosave'ом (go-git `wt.Excludes` +
-  `.git/info/exclude`), репка-донор не правится. API:
+  `.git/info/exclude`), репка-донор не правится. Autosave также всегда
+  пропускает тяжёлые каталоги (`.venv/`, `venv/`, `node_modules/`,
+  `__pycache__/`, `dist/`) поверх пользовательского `.gitignore`; список
+  переопределяется переменной `AGCTL_AUTOSAVE_HEAVY_EXCLUDES`
+  (запятая-список паттернов, `off` — отключить). Сбойный проект после
+  трёх неудач подряд уходит в экспоненциальный backoff (до часа) с разовым
+  repair-pass (снятие протухшего `.git/index.lock` старше 10 минут) —
+  причина сбоя пишется в up.log одной строкой без путей. API:
   `GET/PUT /api/projects/{name}/components`,
   `GET/POST/DELETE /api/projects/{name}/catalog[/{id}]`,
   `GET/PUT /api/projects/{name}/prompt`; последний выбор хранится в
@@ -395,7 +402,10 @@ agctl version
 | `--image T` | тег образа персонального runtime (по умолчанию `agctl-dsh:0.2.0`) |
 | `--bin-dir D` | каталог linux-сборок agctl для образа (по умолчанию `./dist`) |
 | `--mem-gb N` / `--cpus N` | лимиты персонального контейнера (по умолчанию 2 ГБ / 2 CPU) |
-| `--chat-ttl-min N` | idle TTL персонального контейнера, минуты (по умолчанию 60) |
+| `--chat-ttl-min N` | idle TTL персонального контейнера, минуты (по умолчанию 60); per-user — `PUT /api/admin/users/{id}/limits` |
+| `--chat-prewarm-n N` | prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл; он же — потолок одновременно тёплых рантаймов). Подогрев при логине и каждые `--chat-prewarm-every` (15 мин) |
+| `--volume-quota-gb N` | квота тома пользователя в ГБ (0 = выкл): новый воркспейс не создаётся при исчерпании; per-user — там же в limits |
+| `--litellm-quotas` | enforcement квот токенов из админки: минтить персональные виртуальные ключи LiteLLM (`POST /key/generate`) и подставлять вместо платформенного ключа при старте рантайма. Требует `--litellm-admin-url`/`AGCTL_LITELLM_ADMIN_URL` и env `AGCTL_LITELLM_ADMIN_KEY` (ключ — только env, не в гите/образе/логах). Смена/снятие квоты ротирует ключ; личный секрет пользователя не трогается |
 | `--tier0=false` | отключить корневой маршрут в личный чат (для админ-only стенда) |
 | `--secure-cookies` | флаг Secure у cookies (за HTTPS-ingress) |
 | `--experimental-local-bridge` | experimental API-коннектора (по решению владельца локальный backend UX отложен; флаг по умолчанию выключен) |

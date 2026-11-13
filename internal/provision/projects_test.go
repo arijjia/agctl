@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -312,5 +313,101 @@ func TestCloneProjectFromLocalRepo(t *testing.T) {
 	}
 	if _, err := CloneProject(home, 7, "Ещё", "https://"); !errors.Is(err, ErrInvalidProject) {
 		t.Fatalf("bad URL = %v, want ErrInvalidProject", err)
+	}
+}
+
+func TestAutosaveIgnoresHeavyDirs(t *testing.T) {
+	home := t.TempDir()
+	if _, err := CreateProject(home, 1, "demo"); err != nil {
+		t.Fatal(err)
+	}
+	path, _ := ProjectDirectory(home, 1, "demo")
+	projectTestWrite(t, filepath.Join(path, "main.txt"), "one")
+	for _, heavy := range []string{
+		".venv/pyvenv.cfg", ".venv/lib/python/site/pkg/util.py",
+		"venv/bin/python", "node_modules/pkg/index.js",
+		"nested/__pycache__/mod.cpython-312.pyc", "dist/bundle.js",
+	} {
+		projectTestWrite(t, filepath.Join(path, heavy), "heavy")
+	}
+	if changed, err := AutosaveLocalProject(home, 1, "demo"); err != nil || !changed {
+		t.Fatalf("save: %v %v", changed, err)
+	}
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	files, err := commit.Files()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := files.ForEach(func(f *object.File) error {
+		seen[f.Name] = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, banned := range []string{".venv", "venv", "node_modules", "__pycache__", "dist"} {
+		for name := range seen {
+			if strings.HasPrefix(name, banned+"/") || strings.Contains(name, "/"+banned+"/") {
+				t.Errorf("heavy dir committed: %s", name)
+			}
+		}
+	}
+	if !seen["main.txt"] {
+		t.Error("main.txt not committed")
+	}
+	// Повторный autosave чист: тяжёлые каталоги не вызывают изменений.
+	if changed, err := AutosaveLocalProject(home, 1, "demo"); err != nil || changed {
+		t.Fatalf("repeat: %v %v", changed, err)
+	}
+}
+
+func TestAutosaveHeavyExcludesEnvOverride(t *testing.T) {
+	t.Setenv("AGCTL_AUTOSAVE_HEAVY_EXCLUDES", "off")
+	if got := AutosaveHeavyExcludes(); len(got) != 0 {
+		t.Fatalf("off: %v", got)
+	}
+	t.Setenv("AGCTL_AUTOSAVE_HEAVY_EXCLUDES", "target/, build")
+	got := AutosaveHeavyExcludes()
+	if len(got) != 2 || got[0] != "target/" || got[1] != "build" {
+		t.Fatalf("custom: %v", got)
+	}
+}
+
+func TestAutosaveRepairPassRemovesStaleLockOnly(t *testing.T) {
+	home := t.TempDir()
+	if _, err := CreateProject(home, 1, "demo"); err != nil {
+		t.Fatal(err)
+	}
+	path, _ := ProjectDirectory(home, 1, "demo")
+	lock := filepath.Join(path, ".git", "index.lock")
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if AutosaveRepairPass(home, 1, "demo", 10*time.Minute) {
+		t.Fatal("fresh lock removed")
+	}
+	if _, err := os.Stat(lock); err != nil {
+		t.Fatal("fresh lock vanished", err)
+	}
+	past := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(lock, past, past); err != nil {
+		t.Fatal(err)
+	}
+	if !AutosaveRepairPass(home, 1, "demo", 10*time.Minute) {
+		t.Fatal("stale lock kept")
+	}
+	if _, err := os.Stat(lock); !os.IsNotExist(err) {
+		t.Fatal("stale lock still present", err)
 	}
 }

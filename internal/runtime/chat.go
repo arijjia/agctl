@@ -27,6 +27,9 @@ type ChatSpec struct {
 	// DefaultFullAccess — роль user: пресет разрешений danger-full-access
 	// назначается дефолтом свежих сессий (пресет-селектор user не показывается).
 	DefaultFullAccess bool
+	// EgressAllowlist — контейнер на выделенной сети, egress только DNS
+	// (карточка egress-allowlist; opt-in флаг serve).
+	EgressAllowlist bool
 	// DevEnv — переменные окружения контейнера (KEY=VALUE) для ролей
 	// developer/admin: креды доменных скриптов (GitLab/Jira) и оверрайды LLM
 	// из хостового .env. Роль user их не получает.

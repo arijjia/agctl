@@ -311,6 +311,12 @@ func safeSubPath(id string) bool {
 	return id != "" && id != "." && id != ".." && !strings.ContainsAny(id, "/\\\x00") && !strings.HasPrefix(id, ".")
 }
 
+// waitPodReady (карточка k8s-chat-runtime-adapter) заменён upstream-парой
+// waitReady + WaitReady/ReadyTimeout в Config: EnsureChat ждёт Pod Ready,
+// сохраняя Pod/PVC для диагностики при таймауте (см. waitReady ниже).
+
+// podReady — см. единая реализация ниже (upstream).
+
 // ensurePVC создаёт PersistentVolumeClaim тома пользователя, если его нет
 // (ReadWriteOnce; размер и storage-класс — из конфигурации провайдера).
 func (p *Provider) ensurePVC(ctx context.Context, name string, labels map[string]string) error {

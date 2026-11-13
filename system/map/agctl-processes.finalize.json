@@ -1,20 +1,20 @@
 {
   "schemaVersion": 1,
-  "ok": true,
+  "ok": false,
   "command": "finalize",
-  "status": "pass",
+  "status": "fail",
   "type": "architecture",
   "quality": "showcase",
-  "startedAt": "2026-11-05T08:09:03.389Z",
+  "startedAt": "2026-11-12T13:50:30.931Z",
   "specification": {
-    "path": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261105-130250/candidate.json",
-    "sha256": "186c59a72af7aea779f0c672b3f76b531ebca2545a23cda8cb4b1831fa6fd6a2",
-    "bytes": 25772
+    "path": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.architecture.json",
+    "sha256": "4dd2814deb51bf6a001db696982c6e1514505b1f120786e54a49651321c5047c",
+    "bytes": 31794
   },
   "artifact": {
-    "path": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261105-130250/agctl-processes.html",
-    "sha256": "bac004e31fe84a1513eeeba420769da4a32266ab085eac13b8ef3e46f16042c0",
-    "bytes": 795171
+    "path": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.html",
+    "sha256": "64097f237260a59fa3b4614f64454d6ab56aa474f8259765f38fdce0e2f8863d",
+    "bytes": 888232
   },
   "stages": {
     "validate": {
@@ -23,16 +23,16 @@
       "durationMs": null,
       "execution": "embedded-in-deliver",
       "command": [
-        "/opt/homebrew/Cellar/node/25.2.1/bin/node",
-        "/Users/masha/.agents/skills/archify/bin/archify.mjs",
+        "/Users/malex/.hermes/node/bin/node",
+        "/Users/malex/.agents/skills/archify/bin/archify.mjs",
         "deliver",
         "architecture",
-        "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261105-130250/candidate.json",
-        "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261105-130250/agctl-processes.html",
+        "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.architecture.json",
+        "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.html",
         "--quality",
         "showcase",
         "--repo-root",
-        "/Users/masha/src/arijjia/cit/agctl",
+        "/Users/malex/src2/dump/agctlwt/map-decompose-serve",
         "--json"
       ],
       "receipt": {
@@ -40,8 +40,8 @@
         "ok": true,
         "command": "validate",
         "specification": {
-          "sha256": "186c59a72af7aea779f0c672b3f76b531ebca2545a23cda8cb4b1831fa6fd6a2",
-          "bytes": 25772
+          "sha256": "4dd2814deb51bf6a001db696982c6e1514505b1f120786e54a49651321c5047c",
+          "bytes": 31794
         },
         "validation": {
           "checksPassed": 9,
@@ -56,35 +56,35 @@
     "deliver": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 193,
+      "durationMs": 344,
       "command": [
-        "/opt/homebrew/Cellar/node/25.2.1/bin/node",
-        "/Users/masha/.agents/skills/archify/bin/archify.mjs",
+        "/Users/malex/.hermes/node/bin/node",
+        "/Users/malex/.agents/skills/archify/bin/archify.mjs",
         "deliver",
         "architecture",
-        "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261105-130250/candidate.json",
-        "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261105-130250/agctl-processes.html",
+        "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.architecture.json",
+        "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.html",
         "--quality",
         "showcase",
         "--repo-root",
-        "/Users/masha/src/arijjia/cit/agctl",
+        "/Users/malex/src2/dump/agctlwt/map-decompose-serve",
         "--json"
       ],
       "receipt": {
         "schemaVersion": 1,
-        "receiptId": "39ae4a96-1afb-4996-9faa-1e3bebbb894a",
+        "receiptId": "07d89ce7-7372-4965-a96d-1230b81bc704",
         "ok": true,
         "command": "deliver",
         "type": "architecture",
-        "input": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261105-130250/candidate.json",
-        "output": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261105-130250/agctl-processes.html",
+        "input": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.architecture.json",
+        "output": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.html",
         "specification": {
-          "sha256": "186c59a72af7aea779f0c672b3f76b531ebca2545a23cda8cb4b1831fa6fd6a2",
-          "bytes": 25772
+          "sha256": "4dd2814deb51bf6a001db696982c6e1514505b1f120786e54a49651321c5047c",
+          "bytes": 31794
         },
         "artifact": {
-          "sha256": "bac004e31fe84a1513eeeba420769da4a32266ab085eac13b8ef3e46f16042c0",
-          "bytes": 795171
+          "sha256": "64097f237260a59fa3b4614f64454d6ab56aa474f8259765f38fdce0e2f8863d",
+          "bytes": 888232
         },
         "validation": {
           "checksPassed": 9,
@@ -97,8 +97,8 @@
         "evidence": {
           "verified": true,
           "repository": "git@github.com:arijjia/agctl",
-          "revision": "eaa04287ce7c8cba1675955a6894d39b0621282e",
-          "references": 33,
+          "revision": "f0c6c714ca0817d1f330e667659ae1cb43d1f0a6",
+          "references": 47,
           "linkMode": "local-only"
         },
         "update": {
@@ -117,20 +117,20 @@
     "check": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 80,
+      "durationMs": 205,
       "command": [
-        "/opt/homebrew/Cellar/node/25.2.1/bin/node",
-        "/Users/masha/.agents/skills/archify/bin/archify.mjs",
+        "/Users/malex/.hermes/node/bin/node",
+        "/Users/malex/.agents/skills/archify/bin/archify.mjs",
         "check",
-        "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261105-130250/agctl-processes.html",
+        "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.html",
         "--require-provenance"
       ],
       "receipt": {
         "ok": true,
-        "file": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261105-130250/agctl-processes.html",
+        "file": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.html",
         "artifact": {
-          "sha256": "bac004e31fe84a1513eeeba420769da4a32266ab085eac13b8ef3e46f16042c0",
-          "bytes": 795171
+          "sha256": "64097f237260a59fa3b4614f64454d6ab56aa474f8259765f38fdce0e2f8863d",
+          "bytes": 888232
         },
         "checks": [
           {
@@ -197,18 +197,18 @@
             "containerBorderRuns": 0,
             "labelRouteClearanceIssues": 0,
             "labelCanvasOverflowIssues": 0,
-            "minLabelRouteClearance": 8.5,
+            "minLabelRouteClearance": 20,
             "desktopReadabilityIssues": 0,
             "viewportHeightIssues": 0,
-            "minProjectedNodeTextPx": 6.066478873239436,
-            "maxBends": 3,
-            "routesOverSuggestedBends": 1,
-            "maxStretch": 1.114,
-            "routesOverSuggestedStretch": 0,
-            "minSegmentPx": 17,
-            "minInteriorSegmentPx": 45,
-            "shortSegmentCount": 0,
-            "shortEndpointSegmentCount": 0,
+            "minProjectedNodeTextPx": 6.39546783625731,
+            "maxBends": 4,
+            "routesOverSuggestedBends": 5,
+            "maxStretch": 1.615,
+            "routesOverSuggestedStretch": 2,
+            "minSegmentPx": 14,
+            "minInteriorSegmentPx": 54,
+            "shortSegmentCount": 1,
+            "shortEndpointSegmentCount": 1,
             "shortInteriorSegmentCount": 0,
             "microSegmentCount": 0
           },
@@ -223,6 +223,54 @@
             "detours": [
               {
                 "relationship": {
+                  "id": "c2",
+                  "from": "runmgr",
+                  "to": "dockerd",
+                  "label": "REST over Unix socket",
+                  "collectionIndex": 1,
+                  "artifactIndex": 2
+                },
+                "bends": 2,
+                "stretch": 1.615
+              },
+              {
+                "relationship": {
+                  "id": "c4",
+                  "from": "chatgw",
+                  "to": "dshchat",
+                  "label": "шлюзы → DNAT :3080",
+                  "collectionIndex": 3,
+                  "artifactIndex": 4
+                },
+                "bends": 3,
+                "stretch": 1.139
+              },
+              {
+                "relationship": {
+                  "id": "c6",
+                  "from": "dshchat",
+                  "to": "llm",
+                  "label": "HTTPS :443",
+                  "collectionIndex": 4,
+                  "artifactIndex": 5
+                },
+                "bends": 3,
+                "stretch": 1.4
+              },
+              {
+                "relationship": {
+                  "id": "c11",
+                  "from": "conn",
+                  "to": "api",
+                  "label": "WSS :443 · yamux",
+                  "collectionIndex": 6,
+                  "artifactIndex": 7
+                },
+                "bends": 3,
+                "stretch": 1
+              },
+              {
+                "relationship": {
                   "id": "c14",
                   "from": "dshchat",
                   "to": "dshhome",
@@ -232,17 +280,29 @@
                 },
                 "bends": 3,
                 "stretch": 1
+              },
+              {
+                "relationship": {
+                  "id": "c15",
+                  "from": "bg",
+                  "to": "gitstore",
+                  "label": "go-git autosave · push",
+                  "collectionIndex": 10,
+                  "artifactIndex": 11
+                },
+                "bends": 4,
+                "stretch": 1.215
               }
             ]
           },
           "leadingSpace": {
             "measured": true,
-            "emptyTopPx": 78,
-            "emptyTopRatio": 0.069,
-            "occupiedTop": 78,
+            "emptyTopPx": 4,
+            "emptyTopRatio": 0.005,
+            "occupiedTop": 4,
             "viewBoxTop": 0,
-            "canvasHeight": 1136,
-            "typicalNodeHeight": 88,
+            "canvasHeight": 878,
+            "typicalNodeHeight": 76,
             "reviewSuggested": false
           },
           "desktopReadability": {
@@ -251,7 +311,7 @@
             "availableDiagramWidth": 1346,
             "actualBudgetPx": 1346,
             "actualReaderWidth": 1376,
-            "desiredReaderWidth": 1694.0625,
+            "desiredReaderWidth": 1398,
             "viewportCap": 1376,
             "limit": "viewport-cap",
             "requestedTargetPx": 7.5,
@@ -259,744 +319,90 @@
             "hardFloorPx": 6,
             "hardFloorMet": true,
             "minimumOwner": {
-              "kind": "edge",
-              "id": "c1",
-              "from": "browser",
-              "to": "serve"
+              "kind": "node",
+              "id": "bg"
             },
-            "minimumSourceTextPx": 8,
-            "minimumProjectedTextPx": 6.066478873239436,
-            "semanticTextCount": 49
+            "minimumSourceTextPx": 6.5,
+            "minimumProjectedTextPx": 6.39546783625731,
+            "semanticTextCount": 60
           },
           "issues": []
         },
         "provenance": "current",
-        "deliveryReceiptId": "39ae4a96-1afb-4996-9faa-1e3bebbb894a"
+        "deliveryReceiptId": "07d89ce7-7372-4965-a96d-1230b81bc704"
       }
     },
     "browser-check": {
-      "status": "pass",
-      "exitCode": 0,
-      "durationMs": 4239,
+      "status": "fail",
+      "exitCode": 1,
+      "durationMs": 13,
       "command": [
-        "/opt/homebrew/Cellar/node/25.2.1/bin/node",
-        "/Users/masha/.agents/skills/archify/bin/archify.mjs",
+        "/Users/malex/.hermes/node/bin/node",
+        "/Users/malex/.agents/skills/archify/bin/archify.mjs",
         "browser-check",
-        "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261105-130250/agctl-processes.html",
+        "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.html",
         "--json",
         "--require-provenance"
       ],
       "execution": "in-process",
       "receipt": {
         "schemaVersion": 1,
-        "ok": true,
+        "ok": false,
         "command": "browser-check",
         "evidenceKind": "automated-browser",
-        "status": "pass",
+        "status": "fail",
         "visualReview": "not-requested",
         "provenance": "current",
-        "deliveryReceiptId": "39ae4a96-1afb-4996-9faa-1e3bebbb894a",
+        "deliveryReceiptId": "07d89ce7-7372-4965-a96d-1230b81bc704",
         "artifact": {
-          "path": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261105-130250/agctl-processes.html",
-          "sha256": "bac004e31fe84a1513eeeba420769da4a32266ab085eac13b8ef3e46f16042c0",
-          "bytes": 795171
+          "path": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.html",
+          "sha256": "64097f237260a59fa3b4614f64454d6ab56aa474f8259765f38fdce0e2f8863d",
+          "bytes": 888232
         },
         "state": {
           "detail": "read",
           "motion": "still"
         },
         "chrome": {
-          "status": "available",
-          "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+          "status": "not-checked",
+          "executable": null
         },
-        "diagnostics": [],
+        "diagnostics": [
+          {
+            "code": "viewer/evidence-path-conflict",
+            "severity": "error",
+            "message": "browser-check will not replace the existing unowned evidence path \"/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.browser-check.json\".",
+            "subject": {
+              "artifact": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.html",
+              "evidencePath": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.browser-check.json"
+            },
+            "evidence": {
+              "reason": {
+                "code": "ownership-sidecar-path-mismatch"
+              }
+            },
+            "supportedFixes": [
+              "move the conflicting file aside, or choose a separate --out-dir, then rerun browser-check"
+            ]
+          }
+        ],
         "containment": {
-          "status": "pass",
+          "status": "fail",
           "policy": "fit-or-reader-declared-readable-vertical-scroll",
-          "viewports": [
-            {
-              "width": 1440,
-              "height": 900,
-              "theme": "light",
-              "innerWidth": 1440,
-              "innerHeight": 900,
-              "scrollWidth": 1440,
-              "scrollHeight": 1004,
-              "overflowX": false,
-              "overflowY": true,
-              "verticalScrollAccepted": true,
-              "overflowDisposition": "readable-vertical-scroll",
-              "readerLayout": "adaptive",
-              "readerOverflow": "authored",
-              "readerFit": "intrinsic-height",
-              "ok": true,
-              "readerWidth": 1376,
-              "diagramWidth": 1346,
-              "pageComposition": {
-                "bodyPaddingPx": 12,
-                "headerPx": 52,
-                "diagramChromePx": 78,
-                "svgPx": 861,
-                "cardsPx": 0,
-                "viewBoxHeight": 1136
-              },
-              "viewBoxWidth": 1775,
-              "minimumProjectedNodeTextPx": 6.066478873239436,
-              "minimumProjectedNonEdgeTextPx": 6.521464788732394,
-              "minimumProjectedEdgeTextPx": 6.066478873239436,
-              "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
-              "minimumProjectedNodeTextDetail": "edge",
-              "minimumProjectedNodeTextOwner": {
-                "kind": "edge",
-                "id": "c1",
-                "from": "browser",
-                "to": "serve"
-              },
-              "minimumRequiredNodeTextPx": 6,
-              "readabilityOk": true,
-              "hasLegend": true,
-              "hasNavigationDock": true,
-              "legendDockIntersectionArea": 0,
-              "dockStageIntersectionArea": 0,
-              "dockStageGap": 10,
-              "requiredDockStageGap": 10,
-              "viewerChromeStageOk": true,
-              "viewerChromeReserve": 54,
-              "viewerChromeActive": true,
-              "viewerChromeOk": true,
-              "resolvedTheme": "light"
-            },
-            {
-              "width": 1600,
-              "height": 1000,
-              "theme": "light",
-              "innerWidth": 1600,
-              "innerHeight": 1000,
-              "scrollWidth": 1600,
-              "scrollHeight": 1172,
-              "overflowX": false,
-              "overflowY": true,
-              "verticalScrollAccepted": true,
-              "overflowDisposition": "readable-vertical-scroll",
-              "readerLayout": "adaptive",
-              "readerOverflow": "authored",
-              "readerFit": "intrinsic-height",
-              "ok": true,
-              "readerWidth": 1536,
-              "diagramWidth": 1506,
-              "pageComposition": {
-                "bodyPaddingPx": 64,
-                "headerPx": 60,
-                "diagramChromePx": 84,
-                "svgPx": 964,
-                "cardsPx": 0,
-                "viewBoxHeight": 1136
-              },
-              "viewBoxWidth": 1775,
-              "minimumProjectedNodeTextPx": 6.787605633802817,
-              "minimumProjectedNonEdgeTextPx": 7.296676056338027,
-              "minimumProjectedEdgeTextPx": 6.787605633802817,
-              "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
-              "minimumProjectedNodeTextDetail": "edge",
-              "minimumProjectedNodeTextOwner": {
-                "kind": "edge",
-                "id": "c1",
-                "from": "browser",
-                "to": "serve"
-              },
-              "minimumRequiredNodeTextPx": 6,
-              "readabilityOk": true,
-              "hasLegend": true,
-              "hasNavigationDock": true,
-              "legendDockIntersectionArea": 0,
-              "dockStageIntersectionArea": 0,
-              "dockStageGap": 10,
-              "requiredDockStageGap": 10,
-              "viewerChromeStageOk": true,
-              "viewerChromeReserve": 54,
-              "viewerChromeActive": true,
-              "viewerChromeOk": true,
-              "resolvedTheme": "light"
-            },
-            {
-              "width": 1920,
-              "height": 1080,
-              "theme": "light",
-              "innerWidth": 1920,
-              "innerHeight": 1080,
-              "scrollWidth": 1920,
-              "scrollHeight": 1275,
-              "overflowX": false,
-              "overflowY": true,
-              "verticalScrollAccepted": true,
-              "overflowDisposition": "readable-vertical-scroll",
-              "readerLayout": "adaptive",
-              "readerOverflow": "authored",
-              "readerFit": "intrinsic-height",
-              "ok": true,
-              "readerWidth": 1695,
-              "diagramWidth": 1665,
-              "pageComposition": {
-                "bodyPaddingPx": 64,
-                "headerPx": 60,
-                "diagramChromePx": 84,
-                "svgPx": 1066,
-                "cardsPx": 0,
-                "viewBoxHeight": 1136
-              },
-              "viewBoxWidth": 1775,
-              "minimumProjectedNodeTextPx": 7.504225352112676,
-              "minimumProjectedNonEdgeTextPx": 8.067042253521127,
-              "minimumProjectedEdgeTextPx": 7.504225352112676,
-              "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
-              "minimumProjectedNodeTextDetail": "edge",
-              "minimumProjectedNodeTextOwner": {
-                "kind": "edge",
-                "id": "c1",
-                "from": "browser",
-                "to": "serve"
-              },
-              "minimumRequiredNodeTextPx": 6,
-              "readabilityOk": true,
-              "hasLegend": true,
-              "hasNavigationDock": true,
-              "legendDockIntersectionArea": 0,
-              "dockStageIntersectionArea": 0,
-              "dockStageGap": 10,
-              "requiredDockStageGap": 10,
-              "viewerChromeStageOk": true,
-              "viewerChromeReserve": 54,
-              "viewerChromeActive": true,
-              "viewerChromeOk": true,
-              "resolvedTheme": "light"
-            },
-            {
-              "width": 2048,
-              "height": 1320,
-              "theme": "light",
-              "innerWidth": 2048,
-              "innerHeight": 1320,
-              "scrollWidth": 2048,
-              "scrollHeight": 1320,
-              "overflowX": false,
-              "overflowY": false,
-              "verticalScrollAccepted": false,
-              "overflowDisposition": "contained",
-              "readerLayout": "adaptive",
-              "readerOverflow": null,
-              "readerFit": "intrinsic-height",
-              "ok": true,
-              "readerWidth": 1741,
-              "diagramWidth": 1691,
-              "pageComposition": {
-                "bodyPaddingPx": 64,
-                "headerPx": 68,
-                "diagramChromePx": 94,
-                "svgPx": 1082,
-                "cardsPx": 0,
-                "viewBoxHeight": 1136
-              },
-              "viewBoxWidth": 1775,
-              "minimumProjectedNodeTextPx": 7.621408450704226,
-              "minimumProjectedNonEdgeTextPx": 8.193014084507043,
-              "minimumProjectedEdgeTextPx": 7.621408450704226,
-              "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
-              "minimumProjectedNodeTextDetail": "edge",
-              "minimumProjectedNodeTextOwner": {
-                "kind": "edge",
-                "id": "c1",
-                "from": "browser",
-                "to": "serve"
-              },
-              "minimumRequiredNodeTextPx": 6,
-              "readabilityOk": true,
-              "hasLegend": true,
-              "hasNavigationDock": true,
-              "legendDockIntersectionArea": 0,
-              "dockStageIntersectionArea": 0,
-              "dockStageGap": 10,
-              "requiredDockStageGap": 10,
-              "viewerChromeStageOk": true,
-              "viewerChromeReserve": 44,
-              "viewerChromeActive": true,
-              "viewerChromeOk": true,
-              "resolvedTheme": "light"
-            }
-          ]
+          "viewports": []
         },
         "themeStates": {
-          "status": "pass",
-          "viewports": [
-            {
-              "width": 1440,
-              "height": 900,
-              "requestedTheme": "light",
-              "resolvedTheme": "light",
-              "ok": true
-            },
-            {
-              "width": 1600,
-              "height": 1000,
-              "requestedTheme": "light",
-              "resolvedTheme": "light",
-              "ok": true
-            },
-            {
-              "width": 1920,
-              "height": 1080,
-              "requestedTheme": "light",
-              "resolvedTheme": "light",
-              "ok": true
-            },
-            {
-              "width": 2048,
-              "height": 1320,
-              "requestedTheme": "light",
-              "resolvedTheme": "light",
-              "ok": true
-            },
-            {
-              "width": 1440,
-              "height": 900,
-              "requestedTheme": "dark",
-              "resolvedTheme": "dark",
-              "ok": true
-            },
-            {
-              "width": 2048,
-              "height": 1320,
-              "requestedTheme": "dark",
-              "resolvedTheme": "dark",
-              "ok": true
-            }
-          ]
+          "status": "fail",
+          "viewports": []
         },
         "readability": {
-          "status": "pass",
+          "status": "fail",
           "minimumProjectedNodeTextPx": 6,
-          "viewports": [
-            {
-              "width": 1440,
-              "height": 900,
-              "theme": "light",
-              "innerWidth": 1440,
-              "innerHeight": 900,
-              "scrollWidth": 1440,
-              "scrollHeight": 1004,
-              "overflowX": false,
-              "overflowY": true,
-              "verticalScrollAccepted": true,
-              "overflowDisposition": "readable-vertical-scroll",
-              "readerLayout": "adaptive",
-              "readerOverflow": "authored",
-              "readerFit": "intrinsic-height",
-              "ok": true,
-              "readerWidth": 1376,
-              "diagramWidth": 1346,
-              "pageComposition": {
-                "bodyPaddingPx": 12,
-                "headerPx": 52,
-                "diagramChromePx": 78,
-                "svgPx": 861,
-                "cardsPx": 0,
-                "viewBoxHeight": 1136
-              },
-              "viewBoxWidth": 1775,
-              "minimumProjectedNodeTextPx": 6.066478873239436,
-              "minimumProjectedNonEdgeTextPx": 6.521464788732394,
-              "minimumProjectedEdgeTextPx": 6.066478873239436,
-              "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
-              "minimumProjectedNodeTextDetail": "edge",
-              "minimumProjectedNodeTextOwner": {
-                "kind": "edge",
-                "id": "c1",
-                "from": "browser",
-                "to": "serve"
-              },
-              "minimumRequiredNodeTextPx": 6,
-              "readabilityOk": true,
-              "hasLegend": true,
-              "hasNavigationDock": true,
-              "legendDockIntersectionArea": 0,
-              "dockStageIntersectionArea": 0,
-              "dockStageGap": 10,
-              "requiredDockStageGap": 10,
-              "viewerChromeStageOk": true,
-              "viewerChromeReserve": 54,
-              "viewerChromeActive": true,
-              "viewerChromeOk": true,
-              "resolvedTheme": "light"
-            },
-            {
-              "width": 1600,
-              "height": 1000,
-              "theme": "light",
-              "innerWidth": 1600,
-              "innerHeight": 1000,
-              "scrollWidth": 1600,
-              "scrollHeight": 1172,
-              "overflowX": false,
-              "overflowY": true,
-              "verticalScrollAccepted": true,
-              "overflowDisposition": "readable-vertical-scroll",
-              "readerLayout": "adaptive",
-              "readerOverflow": "authored",
-              "readerFit": "intrinsic-height",
-              "ok": true,
-              "readerWidth": 1536,
-              "diagramWidth": 1506,
-              "pageComposition": {
-                "bodyPaddingPx": 64,
-                "headerPx": 60,
-                "diagramChromePx": 84,
-                "svgPx": 964,
-                "cardsPx": 0,
-                "viewBoxHeight": 1136
-              },
-              "viewBoxWidth": 1775,
-              "minimumProjectedNodeTextPx": 6.787605633802817,
-              "minimumProjectedNonEdgeTextPx": 7.296676056338027,
-              "minimumProjectedEdgeTextPx": 6.787605633802817,
-              "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
-              "minimumProjectedNodeTextDetail": "edge",
-              "minimumProjectedNodeTextOwner": {
-                "kind": "edge",
-                "id": "c1",
-                "from": "browser",
-                "to": "serve"
-              },
-              "minimumRequiredNodeTextPx": 6,
-              "readabilityOk": true,
-              "hasLegend": true,
-              "hasNavigationDock": true,
-              "legendDockIntersectionArea": 0,
-              "dockStageIntersectionArea": 0,
-              "dockStageGap": 10,
-              "requiredDockStageGap": 10,
-              "viewerChromeStageOk": true,
-              "viewerChromeReserve": 54,
-              "viewerChromeActive": true,
-              "viewerChromeOk": true,
-              "resolvedTheme": "light"
-            },
-            {
-              "width": 1920,
-              "height": 1080,
-              "theme": "light",
-              "innerWidth": 1920,
-              "innerHeight": 1080,
-              "scrollWidth": 1920,
-              "scrollHeight": 1275,
-              "overflowX": false,
-              "overflowY": true,
-              "verticalScrollAccepted": true,
-              "overflowDisposition": "readable-vertical-scroll",
-              "readerLayout": "adaptive",
-              "readerOverflow": "authored",
-              "readerFit": "intrinsic-height",
-              "ok": true,
-              "readerWidth": 1695,
-              "diagramWidth": 1665,
-              "pageComposition": {
-                "bodyPaddingPx": 64,
-                "headerPx": 60,
-                "diagramChromePx": 84,
-                "svgPx": 1066,
-                "cardsPx": 0,
-                "viewBoxHeight": 1136
-              },
-              "viewBoxWidth": 1775,
-              "minimumProjectedNodeTextPx": 7.504225352112676,
-              "minimumProjectedNonEdgeTextPx": 8.067042253521127,
-              "minimumProjectedEdgeTextPx": 7.504225352112676,
-              "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
-              "minimumProjectedNodeTextDetail": "edge",
-              "minimumProjectedNodeTextOwner": {
-                "kind": "edge",
-                "id": "c1",
-                "from": "browser",
-                "to": "serve"
-              },
-              "minimumRequiredNodeTextPx": 6,
-              "readabilityOk": true,
-              "hasLegend": true,
-              "hasNavigationDock": true,
-              "legendDockIntersectionArea": 0,
-              "dockStageIntersectionArea": 0,
-              "dockStageGap": 10,
-              "requiredDockStageGap": 10,
-              "viewerChromeStageOk": true,
-              "viewerChromeReserve": 54,
-              "viewerChromeActive": true,
-              "viewerChromeOk": true,
-              "resolvedTheme": "light"
-            },
-            {
-              "width": 2048,
-              "height": 1320,
-              "theme": "light",
-              "innerWidth": 2048,
-              "innerHeight": 1320,
-              "scrollWidth": 2048,
-              "scrollHeight": 1320,
-              "overflowX": false,
-              "overflowY": false,
-              "verticalScrollAccepted": false,
-              "overflowDisposition": "contained",
-              "readerLayout": "adaptive",
-              "readerOverflow": null,
-              "readerFit": "intrinsic-height",
-              "ok": true,
-              "readerWidth": 1741,
-              "diagramWidth": 1691,
-              "pageComposition": {
-                "bodyPaddingPx": 64,
-                "headerPx": 68,
-                "diagramChromePx": 94,
-                "svgPx": 1082,
-                "cardsPx": 0,
-                "viewBoxHeight": 1136
-              },
-              "viewBoxWidth": 1775,
-              "minimumProjectedNodeTextPx": 7.621408450704226,
-              "minimumProjectedNonEdgeTextPx": 8.193014084507043,
-              "minimumProjectedEdgeTextPx": 7.621408450704226,
-              "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
-              "minimumProjectedNodeTextDetail": "edge",
-              "minimumProjectedNodeTextOwner": {
-                "kind": "edge",
-                "id": "c1",
-                "from": "browser",
-                "to": "serve"
-              },
-              "minimumRequiredNodeTextPx": 6,
-              "readabilityOk": true,
-              "hasLegend": true,
-              "hasNavigationDock": true,
-              "legendDockIntersectionArea": 0,
-              "dockStageIntersectionArea": 0,
-              "dockStageGap": 10,
-              "requiredDockStageGap": 10,
-              "viewerChromeStageOk": true,
-              "viewerChromeReserve": 44,
-              "viewerChromeActive": true,
-              "viewerChromeOk": true,
-              "resolvedTheme": "light"
-            }
-          ]
+          "viewports": []
         },
         "viewerChrome": {
-          "status": "pass",
-          "viewports": [
-            {
-              "width": 1440,
-              "height": 900,
-              "theme": "light",
-              "innerWidth": 1440,
-              "innerHeight": 900,
-              "scrollWidth": 1440,
-              "scrollHeight": 1004,
-              "overflowX": false,
-              "overflowY": true,
-              "verticalScrollAccepted": true,
-              "overflowDisposition": "readable-vertical-scroll",
-              "readerLayout": "adaptive",
-              "readerOverflow": "authored",
-              "readerFit": "intrinsic-height",
-              "ok": true,
-              "readerWidth": 1376,
-              "diagramWidth": 1346,
-              "pageComposition": {
-                "bodyPaddingPx": 12,
-                "headerPx": 52,
-                "diagramChromePx": 78,
-                "svgPx": 861,
-                "cardsPx": 0,
-                "viewBoxHeight": 1136
-              },
-              "viewBoxWidth": 1775,
-              "minimumProjectedNodeTextPx": 6.066478873239436,
-              "minimumProjectedNonEdgeTextPx": 6.521464788732394,
-              "minimumProjectedEdgeTextPx": 6.066478873239436,
-              "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
-              "minimumProjectedNodeTextDetail": "edge",
-              "minimumProjectedNodeTextOwner": {
-                "kind": "edge",
-                "id": "c1",
-                "from": "browser",
-                "to": "serve"
-              },
-              "minimumRequiredNodeTextPx": 6,
-              "readabilityOk": true,
-              "hasLegend": true,
-              "hasNavigationDock": true,
-              "legendDockIntersectionArea": 0,
-              "dockStageIntersectionArea": 0,
-              "dockStageGap": 10,
-              "requiredDockStageGap": 10,
-              "viewerChromeStageOk": true,
-              "viewerChromeReserve": 54,
-              "viewerChromeActive": true,
-              "viewerChromeOk": true,
-              "resolvedTheme": "light"
-            },
-            {
-              "width": 1600,
-              "height": 1000,
-              "theme": "light",
-              "innerWidth": 1600,
-              "innerHeight": 1000,
-              "scrollWidth": 1600,
-              "scrollHeight": 1172,
-              "overflowX": false,
-              "overflowY": true,
-              "verticalScrollAccepted": true,
-              "overflowDisposition": "readable-vertical-scroll",
-              "readerLayout": "adaptive",
-              "readerOverflow": "authored",
-              "readerFit": "intrinsic-height",
-              "ok": true,
-              "readerWidth": 1536,
-              "diagramWidth": 1506,
-              "pageComposition": {
-                "bodyPaddingPx": 64,
-                "headerPx": 60,
-                "diagramChromePx": 84,
-                "svgPx": 964,
-                "cardsPx": 0,
-                "viewBoxHeight": 1136
-              },
-              "viewBoxWidth": 1775,
-              "minimumProjectedNodeTextPx": 6.787605633802817,
-              "minimumProjectedNonEdgeTextPx": 7.296676056338027,
-              "minimumProjectedEdgeTextPx": 6.787605633802817,
-              "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
-              "minimumProjectedNodeTextDetail": "edge",
-              "minimumProjectedNodeTextOwner": {
-                "kind": "edge",
-                "id": "c1",
-                "from": "browser",
-                "to": "serve"
-              },
-              "minimumRequiredNodeTextPx": 6,
-              "readabilityOk": true,
-              "hasLegend": true,
-              "hasNavigationDock": true,
-              "legendDockIntersectionArea": 0,
-              "dockStageIntersectionArea": 0,
-              "dockStageGap": 10,
-              "requiredDockStageGap": 10,
-              "viewerChromeStageOk": true,
-              "viewerChromeReserve": 54,
-              "viewerChromeActive": true,
-              "viewerChromeOk": true,
-              "resolvedTheme": "light"
-            },
-            {
-              "width": 1920,
-              "height": 1080,
-              "theme": "light",
-              "innerWidth": 1920,
-              "innerHeight": 1080,
-              "scrollWidth": 1920,
-              "scrollHeight": 1275,
-              "overflowX": false,
-              "overflowY": true,
-              "verticalScrollAccepted": true,
-              "overflowDisposition": "readable-vertical-scroll",
-              "readerLayout": "adaptive",
-              "readerOverflow": "authored",
-              "readerFit": "intrinsic-height",
-              "ok": true,
-              "readerWidth": 1695,
-              "diagramWidth": 1665,
-              "pageComposition": {
-                "bodyPaddingPx": 64,
-                "headerPx": 60,
-                "diagramChromePx": 84,
-                "svgPx": 1066,
-                "cardsPx": 0,
-                "viewBoxHeight": 1136
-              },
-              "viewBoxWidth": 1775,
-              "minimumProjectedNodeTextPx": 7.504225352112676,
-              "minimumProjectedNonEdgeTextPx": 8.067042253521127,
-              "minimumProjectedEdgeTextPx": 7.504225352112676,
-              "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
-              "minimumProjectedNodeTextDetail": "edge",
-              "minimumProjectedNodeTextOwner": {
-                "kind": "edge",
-                "id": "c1",
-                "from": "browser",
-                "to": "serve"
-              },
-              "minimumRequiredNodeTextPx": 6,
-              "readabilityOk": true,
-              "hasLegend": true,
-              "hasNavigationDock": true,
-              "legendDockIntersectionArea": 0,
-              "dockStageIntersectionArea": 0,
-              "dockStageGap": 10,
-              "requiredDockStageGap": 10,
-              "viewerChromeStageOk": true,
-              "viewerChromeReserve": 54,
-              "viewerChromeActive": true,
-              "viewerChromeOk": true,
-              "resolvedTheme": "light"
-            },
-            {
-              "width": 2048,
-              "height": 1320,
-              "theme": "light",
-              "innerWidth": 2048,
-              "innerHeight": 1320,
-              "scrollWidth": 2048,
-              "scrollHeight": 1320,
-              "overflowX": false,
-              "overflowY": false,
-              "verticalScrollAccepted": false,
-              "overflowDisposition": "contained",
-              "readerLayout": "adaptive",
-              "readerOverflow": null,
-              "readerFit": "intrinsic-height",
-              "ok": true,
-              "readerWidth": 1741,
-              "diagramWidth": 1691,
-              "pageComposition": {
-                "bodyPaddingPx": 64,
-                "headerPx": 68,
-                "diagramChromePx": 94,
-                "svgPx": 1082,
-                "cardsPx": 0,
-                "viewBoxHeight": 1136
-              },
-              "viewBoxWidth": 1775,
-              "minimumProjectedNodeTextPx": 7.621408450704226,
-              "minimumProjectedNonEdgeTextPx": 8.193014084507043,
-              "minimumProjectedEdgeTextPx": 7.621408450704226,
-              "minimumProjectedNodeText": "HTTP + WS/SSE · :8929",
-              "minimumProjectedNodeTextDetail": "edge",
-              "minimumProjectedNodeTextOwner": {
-                "kind": "edge",
-                "id": "c1",
-                "from": "browser",
-                "to": "serve"
-              },
-              "minimumRequiredNodeTextPx": 6,
-              "readabilityOk": true,
-              "hasLegend": true,
-              "hasNavigationDock": true,
-              "legendDockIntersectionArea": 0,
-              "dockStageIntersectionArea": 0,
-              "dockStageGap": 10,
-              "requiredDockStageGap": 10,
-              "viewerChromeStageOk": true,
-              "viewerChromeReserve": 44,
-              "viewerChromeActive": true,
-              "viewerChromeOk": true,
-              "resolvedTheme": "light"
-            }
-          ]
+          "status": "fail",
+          "viewports": []
         },
         "captures": {
           "status": "not-requested",
@@ -1006,29 +412,51 @@
         "sidecars": {
           "receipt": "agctl-processes.browser-check.json",
           "files": []
-        }
+        },
+        "error": "browser-check will not replace the existing unowned evidence path \"/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.browser-check.json\"."
       }
     }
   },
-  "diagnostics": [],
+  "browserCheck": {
+    "requested": true,
+    "ran": false
+  },
+  "diagnostics": [
+    {
+      "code": "viewer/evidence-path-conflict",
+      "severity": "error",
+      "message": "browser-check will not replace the existing unowned evidence path \"/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.browser-check.json\".",
+      "subject": {
+        "artifact": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.html",
+        "evidencePath": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.browser-check.json"
+      },
+      "evidence": {
+        "reason": {
+          "code": "ownership-sidecar-path-mismatch"
+        }
+      },
+      "supportedFixes": [
+        "move the conflicting file aside, or choose a separate --out-dir, then rerun browser-check"
+      ]
+    }
+  ],
   "evidence": {
-    "receipt": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261105-130250/agctl-processes.finalize.json",
-    "summaryReceipt": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261105-130250/agctl-processes.finalize-summary.json",
-    "browserCheckReceipt": "/Users/masha/src/arijjia/cit/agctl-hq/.archify/architecture-agctl-processes-20261105-130250/agctl-processes.browser-check.json"
+    "receipt": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.finalize.json",
+    "summaryReceipt": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.finalize-summary.json",
+    "browserCheckReceipt": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.browser-check.json"
   },
   "visualReview": "not-requested",
-  "finishedAt": "2026-11-05T08:09:08.019Z",
-  "durationMs": 4629,
+  "failedStage": "browser-check",
+  "finishedAt": "2026-11-12T13:50:31.628Z",
+  "durationMs": 697,
   "update": {
-    "status": "update_available",
-    "installedVersion": "3.0.1",
+    "status": "current",
+    "installedVersion": "3.2.0",
     "availableVersion": "3.2.0",
-    "releaseNotes": "https://github.com/tt-a1i/archify/releases/tag/v3.2.0",
-    "severity": "normal",
-    "checkedAt": "2026-11-05T08:05:53.316Z",
+    "releaseNotes": null,
+    "checkedAt": "2026-11-12T13:06:45.139Z",
     "source": "cache",
-    "noticeRequired": true,
-    "noticeText": "Archify update: 3.0.1 → 3.2.0. A previous check at 2026-11-05T08:05:53.316Z found a newer release. Release notes: https://github.com/tt-a1i/archify/releases/tag/v3.2.0. The installed Skill has not changed; ask to snooze or ignore this reminder.",
-    "eventKey": "archify@sha256:70e210265c59f24dcbdf2a502ff671104b5454e7ee7d3554aecd86bad32384f5"
+    "noticeRequired": false,
+    "noticeText": null
   }
 }

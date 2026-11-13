@@ -1,14 +1,18 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/arijjia/agctl/internal/provision"
 	git "github.com/go-git/go-git/v5"
 )
 
@@ -151,5 +155,50 @@ func TestProjectsCloneURLPolicy(t *testing.T) {
 	// Обычное создание без cloneUrl продолжает работать.
 	if code, body := e.do(e.admin, "POST", "/api/projects", map[string]string{"name": "plain"}); code != http.StatusCreated {
 		t.Fatalf("plain create = %d %s", code, body)
+	}
+}
+
+func TestAutosaveFailReasonShort(t *testing.T) {
+	cases := map[string]struct {
+		err  error
+		want string
+	}{
+		"invalid": {provision.ErrInvalidProject, "invalid tree"},
+		"timeout": {context.DeadlineExceeded, "timeout"},
+		"locked":  {errors.New("index.lock exists"), "index locked"},
+		"other":   {errors.New("reference refs/heads/x: something"), "git error"},
+	}
+	for name, c := range cases {
+		if got := autosaveFailReason(c.err); got != c.want {
+			t.Errorf("%s: got %q, want %q", name, got, c.want)
+		}
+	}
+}
+
+func TestAutosaveBackoffAfterThreshold(t *testing.T) {
+	s := &Server{cfg: Config{AutosaveEvery: time.Minute}}
+	key := autosaveKey(1, "demo")
+	// Первая неудача серии — в лог, вторая — молча.
+	if !s.autosaveFailed(key, errors.New("boom")) {
+		t.Fatal("first failure not reported")
+	}
+	if s.autosaveFailed(key, errors.New("boom")) {
+		t.Fatal("second failure reported")
+	}
+	// До порога паузы нет: проект пробуется каждый тик.
+	if !s.autosaveDue(key) {
+		t.Fatal("backoff before threshold")
+	}
+	// Третья — repair/backoff-момент и пауза.
+	if !s.autosaveFailed(key, errors.New("boom")) {
+		t.Fatal("threshold failure not reported")
+	}
+	if s.autosaveDue(key) {
+		t.Fatal("backoff missing after threshold")
+	}
+	// Успех сбрасывает серию.
+	s.autosaveSucceeded(key)
+	if !s.autosaveDue(key) {
+		t.Fatal("success did not reset backoff")
 	}
 }

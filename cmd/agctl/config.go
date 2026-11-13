@@ -21,6 +21,7 @@ type userConfig struct {
 	Serve      struct {
 		Runtime        string    `yaml:"runtime"` // docker | k8s | ax
 		Addr           string    `yaml:"addr"`
+		PublicURL      string    `yaml:"public_url"`
 		Image          string    `yaml:"image"`
 		DevImages      string    `yaml:"dev_images"`
 		DevEnv         string    `yaml:"dev_env"`
@@ -126,4 +127,10 @@ type axConfig struct {
 	RouterCert      string `yaml:"router_cert"`
 	RouterKey       string `yaml:"router_key"`
 	ReadyTimeoutSec int    `yaml:"ready_timeout_sec"`
+	// AteAPI — адрес ate-api-server (Control API Substrate) для автоматической
+	// egress-инъекции ключей LLM при ax-inject-llm-key=0; пусто = политику
+	// акторов ведёт оператор вручную.
+	AteAPI string `yaml:"ate_api"`
+	// AteCluster — имя кластера в credentialUri ate-secret://k8s.io/cluster/<cluster>/….
+	AteCluster string `yaml:"ate_cluster"`
 }

@@ -65,12 +65,22 @@ func TestChatShellRoleSpecificRightPane(t *testing.T) {
 	doc := "<!doctype html><html><head></head><body></body></html>"
 	srv := &Server{brand: profile.Neutral()}
 	user := string(srv.injectChatShellForRole([]byte(doc), "user"))
-	if !strings.Contains(user, `data-agctl="chat-shell-user"`) || !strings.Contains(user, `aria-label="Open right sidebar"`) {
-		t.Fatal("ordinary user must get pre-paint right-panel hiding")
+	if !strings.Contains(user, `data-agctl="chat-shell-user"`) || !strings.Contains(user, `aria-label^="Access mode"`) {
+		t.Fatal("ordinary user must get pre-paint dev-surface hiding")
+	}
+	// Правая панель превью для user не прячется (dsh-right-panel-for-user-role).
+	if strings.Contains(user, `aria-label="Open right sidebar"`) {
+		t.Fatal("user style must not hide the right sidebar toggle")
+	}
+	// Правая панель превью для user не прячется (dsh-right-panel-for-user-role):
+	// безусловного сжатия колонки быть не должно, только ready-gated (D8).
+	if strings.Count(user, "grid-template-columns:auto") != 1 ||
+		!strings.Contains(user, `html:not([data-agctl-developer-tools-ready="1"]) div[style*="grid-template-columns"]`) {
+		t.Fatal("user style must not force-collapse the right column unconditionally")
 	}
 	for _, role := range []string{"developer", "admin"} {
 		got := string(srv.injectChatShellForRole([]byte(doc), role))
-		if strings.Contains(got, `data-agctl="chat-shell-user"`) || strings.Contains(got, `aria-label="Open right sidebar"`) {
+		if strings.Contains(got, `data-agctl="chat-shell-user"`) || strings.Contains(got, `aria-label^="Access mode"`) {
 			t.Fatalf("role %s must keep the complete native right panel", role)
 		}
 		if !strings.Contains(got, "data-agctl-early-brand") {
@@ -291,11 +301,12 @@ func TestChatShellScriptStrictModeDeclarations(t *testing.T) {
 }
 
 // TestChatShellRoleSpecificRightPane уже проверяет user-стиль; здесь — D8:
-// developer/admin получают pre-paint схлопывание колонки с флагом готовности,
-// который снимает клиентский плагин после подтверждения роли.
+// ВСЕ роли получают pre-paint схлопывание колонки с флагом готовности,
+// который снимает клиентский плагин после подтверждения роли (для user —
+// тоже: панель превью общая, плагин ставит флаг любой известной роли).
 func TestChatShellDeveloperReadyFlag(t *testing.T) {
 	srv := &Server{brand: fixtureView(t)}
-	for _, role := range []string{"developer", "admin"} {
+	for _, role := range []string{"developer", "admin", "user"} {
 		head := string(srv.injectChatShellForRole([]byte("<html><head></head></html>"), role))
 		if !strings.Contains(head, `chat-shell-developer`) {
 			t.Fatalf("роль %s: нет developer-стиля схлопывания", role)
@@ -303,12 +314,8 @@ func TestChatShellDeveloperReadyFlag(t *testing.T) {
 		if !strings.Contains(head, `html:not([data-agctl-developer-tools-ready="1"])`) {
 			t.Fatalf("роль %s: схлопывание не привязано к флагу готовности", role)
 		}
-		if strings.Contains(head, `chat-shell-user`) {
+		if role != "user" && strings.Contains(head, `chat-shell-user`) {
 			t.Fatalf("роль %s: случайно получил user-стиль", role)
 		}
-	}
-	head := string(srv.injectChatShellForRole([]byte("<html><head></head></html>"), "user"))
-	if strings.Contains(head, `chat-shell-developer`) {
-		t.Fatal("роль user: не должен получать developer-стиль")
 	}
 }

@@ -7,6 +7,7 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,16 +53,30 @@ type Config struct {
 	BinDir                  string
 	Version                 string // версия agctl (метка контейнеров, диагностика дрейфа сборок)
 	SecureCookies           bool   // true when agctl is served behind a trusted HTTPS terminator
+	PublicURL               string // базовый URL шлюза, видимый песочницам (fetch-at-boot раннера AX); пусто = derive из --addr
 	AutosaveEvery           time.Duration
 	CORSOrigins             []string           // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
 	Tier0                   bool               // корень платформы ведёт в персональный чат (/chat/)
+	EgressAllowlist         bool               // чат-контейнеры на выделенной сети: egress только DNS и хост-шлюз (карточка egress-allowlist)
 	ChatTTL                 time.Duration      // idle TTL персонального runtime (по умолчанию 60 мин)
+	ChatPrewarmN            int                // prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл); он же — потолок пула
+	ChatPrewarmEvery        time.Duration      // период цикла подогрева (по умолчанию 15 мин)
+	VolumeQuotaGB           float64            // квота тома пользователя в ГБ (0 = выкл); per-user — settings KV
+	LiteLLMQuotas           bool               // enforcement квот токенов виртуальными ключами LiteLLM
+	LiteLLMAdminURL         string             // admin-API LiteLLM (env AGCTL_LITELLM_ADMIN_URL / --litellm-admin-url)
+	LiteLLMAdminKey         string             // admin-ключ LiteLLM (только env AGCTL_LITELLM_ADMIN_KEY; не логируется)
 	RegisterPerMinute       int                // лимит регистраций с одного IP за минуту: 0 — дефолт платформы (30), <0 — отключить (нагрузочные прогоны)
 	RequireApproval         bool               // legacy workspace flag; create endpoint is tombstoned in v3
 	ExperimentalLocalBridge bool               // opt-in pairing/status/revoke API for local connector
 	DefaultLLM              provision.Provider // платформенный провайдер чата по умолчанию (из профиля/env); личный секрет пользователя его перекрывает
 	DevEnv                  []string           // имена переменных хоста, пробрасываемые в контейнер developer/admin (значения — из окружения serve: .env экспортируется make)
 	Profile                 *profile.Data      // профиль организации (брендинг/дефолты); nil = нейтральный agctl
+	// AxRunnerToken — токен раннера AX для GET /ax/provider-config/<task>
+	// (fetch-at-boot конфига провайдера; бэкенд ax). Пусто = endpoint выключен.
+	AxRunnerToken string
+	// AxProviderConfig — JSON конфига провайдера по имени задачи AX
+	// (axrt.Provider.ProviderConfigByTask); nil при непустом токене = 503.
+	AxProviderConfig func(task string) (json.RawMessage, bool)
 }
 
 // RuntimeIface — то, что серверу нужно от docker-рантайма (мокается в тестах).
@@ -87,14 +102,23 @@ type Server struct {
 	tokMu  sync.Mutex // кэш boot-токенов dsh web по воркспейсам
 	tokens map[string]string
 
-	chatMu       sync.Mutex             // персональные per-user runtime: ленивое создание и TTL
-	chats        map[int64]*chatRuntime // userID → живой runtime handle
-	chatLocks    map[int64]*sync.Mutex  // сериализация первого старта per-user
-	chatProvider agctlrt.ChatProvider   // Docker now; K8s adapter can return a Service DNS endpoint
-	localBridge  *bridge.Manager        // experimental outbound local-backend connector, opt-in routes only
-	requestMu    sync.Mutex             // не допускать двойной approve одной заявки
-	startedAt    time.Time              // время старта серва (сводка админки)
-	proxyAuditN  atomic.Int64           // счётчик записей журнала шлюза для периодической обрезки
+	chatMu        sync.Mutex                   // персональные per-user runtime: ленивое создание и TTL
+	chats         map[int64]*chatRuntime       // userID → живой runtime handle
+	chatLocks     map[int64]*sync.Mutex        // сериализация первого старта per-user
+	chatProvider  agctlrt.ChatProvider         // Docker now; K8s adapter can return a Service DNS endpoint
+	localBridge   *bridge.Manager              // experimental outbound local-backend connector, opt-in routes only
+	requestMu     sync.Mutex                   // не допускать двойной approve одной заявки
+	autosaveMu    sync.Mutex                   // серия неудач autosave: backoff + repair-pass
+	autosaveFails map[string]autosaveFailState // "userID/project" → счётчик/пауза
+	prewarmMu     sync.Mutex                   // не перекрывать циклы prewarm-пула
+	prewarmActive bool
+	llmMu         sync.Mutex             // виртуальные ключи LiteLLM по квотам
+	llmKeys       map[int64]*llmKeyState // userID → заминченный ключ (ротация при смене квоты)
+	warmHits      atomic.Int64           // ensureChat из тёплого кэша (hit-rate пула)
+	coldStarts    atomic.Int64           // холодные старты ensureChat: счётчик и суммарное время
+	coldTotalMS   atomic.Int64
+	startedAt     time.Time    // время старта серва (сводка админки)
+	proxyAuditN   atomic.Int64 // счётчик записей журнала шлюза для периодической обрезки
 
 }
 
@@ -107,6 +131,8 @@ var (
 // New builds the development default (Docker for the unified per-user runtime).
 // Kubernetes deployments should inject their runtime providers.
 func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
+	// Профильная надстройка образа (upstream): собирается только когда база
+	// и целевой образ различаются.
 	var overlay fs.FS
 	var overlayDockerfile string
 	if cfg.Profile != nil && cfg.BaseImage != "" && cfg.BaseImage != cfg.Image {
@@ -127,6 +153,8 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Chat runtime выбирается в cmd/agctl/runtime_select.go (upstream-архитектура:
+	// docker | k8s | ax, WaitReady/ReadyTimeout у k8srt); server.New — Docker-путь.
 	s, err := NewWithRuntimeProviders(db, sec, cfg, rt, rt)
 	if err != nil {
 		return nil, err
@@ -166,6 +194,9 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 	}
 	if s.cfg.ChatTTL <= 0 {
 		s.cfg.ChatTTL = 60 * time.Minute
+	}
+	if s.cfg.ChatPrewarmEvery <= 0 {
+		s.cfg.ChatPrewarmEvery = 15 * time.Minute
 	}
 	if s.cfg.MaxPerUser <= 0 {
 		s.cfg.MaxPerUser = 3
@@ -272,6 +303,9 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.handleMe)
+	// Раннер AX при каждом boot забирает конфиг провайдера по токену раннера
+	// (бэкенд ax, ProviderAtBoot): env задачи конфиг не содержит.
+	mux.HandleFunc("GET /ax/provider-config/{task}", s.handleAxProviderConfig)
 	mux.HandleFunc("GET /api/projects", s.requireUser(s.handleProjectsList))
 	mux.HandleFunc("POST /api/projects", s.requireUser(s.handleProjectCreate))
 	// Удаление воркспейса вместе с каталогом на диске (нативное удаление dsh
@@ -293,6 +327,8 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/projects/{name}/file", s.requireUser(s.handleProjectFileDownload))
 	mux.HandleFunc("GET /api/projects/{name}/components", s.requireUser(s.handleProjectComponentsGet))
 	mux.HandleFunc("PUT /api/projects/{name}/components", s.requireUser(s.handleProjectComponentsPut))
+	mux.HandleFunc("GET /api/projects/{name}/mcp", s.requireUser(s.handleProjectMcpGet))
+	mux.HandleFunc("PUT /api/projects/{name}/mcp", s.requireUser(s.handleProjectMcpPut))
 	mux.HandleFunc("GET /api/chat/folders", s.requireUser(s.handleChatFoldersGet))
 	mux.HandleFunc("PUT /api/chat/folders", s.requireUser(s.handleChatFoldersPut))
 	mux.HandleFunc("GET /api/templates", s.requireUser(s.handleTemplates)) // legacy
@@ -335,6 +371,7 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	// Админ-панель супер-админа (карточка admin-panel-super-admin).
 	mux.HandleFunc("GET /api/admin/overview", s.requireAdmin(s.handleAdminOverview))
 	mux.HandleFunc("GET /api/admin/users/details", s.requireAdmin(s.handleAdminUsersDetailed))
+	mux.HandleFunc("PUT /api/admin/users/{id}/limits", s.requireAdmin(s.handleAdminUserLimitsPut))
 	mux.HandleFunc("GET /api/admin/containers", s.requireAdmin(s.handleAdminContainers))
 	mux.HandleFunc("POST /api/admin/containers/{name}/stop", s.requireAdmin(s.handleAdminContainerStop))
 	mux.HandleFunc("POST /api/admin/containers/{name}/start", s.requireAdmin(s.handleAdminContainerStart))
@@ -476,6 +513,21 @@ func (s *Server) StartBackground(ctx context.Context) {
 			case <-t.C:
 				s.autosaveAll()
 				s.autosaveLocalProjects()
+			}
+		}
+	}()
+	go func() { // prewarm-пул: тёплая среда к входу (login-хук — отдельно)
+		if !s.prewarmEnabled() {
+			return
+		}
+		t := time.NewTicker(s.cfg.ChatPrewarmEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s.prewarmOnce(nil)
 			}
 		}
 	}()
@@ -952,3 +1004,37 @@ func atoiDefault(s string, def int) int {
 }
 
 var _ = filepath.Join // keep import in sync for platform-specific files
+
+// handleAxProviderConfig — конфиг провайдера LLM для раннера песочницы AX
+// (GET /ax/provider-config/<task>; Bearer = токен раннера): fetch-at-boot
+// при ProviderAtBoot — env задачи конфиг не содержит, раннер всегда
+// стартует с актуальным провайдером. Неизвестная задача — 404 (раннер
+// падает громко: тихий пустой конфиг оставил бы dsh без провайдера).
+func (s *Server) handleAxProviderConfig(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.AxRunnerToken == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if !bearerTokenMatches(r.Header.Get("Authorization"), s.cfg.AxRunnerToken) {
+		http.NotFound(w, r)
+		return
+	}
+	task := r.PathValue("task")
+	if task == "" || s.cfg.AxProviderConfig == nil {
+		http.NotFound(w, r)
+		return
+	}
+	raw, ok := s.cfg.AxProviderConfig(task)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(raw)
+}
+
+// bearerTokenMatches — постоянное по времени сравнение Bearer-токена.
+func bearerTokenMatches(header, token string) bool {
+	got := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1
+}

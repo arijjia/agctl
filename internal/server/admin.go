@@ -80,6 +80,18 @@ func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request, _ i
 			}
 		}
 	}
+	// Prewarm-пул (карточка chat-prewarm-pool): hit-rate тёплых сред
+	// и среднее время холодного старта — метрики R1.3.
+	coldN := s.coldStarts.Load()
+	coldAvgMS := float64(0)
+	if coldN > 0 {
+		coldAvgMS = float64(s.coldTotalMS.Load()) / float64(coldN)
+	}
+	warmN := s.warmHits.Load()
+	hitRate := float64(0)
+	if warmN+coldN > 0 {
+		hitRate = float64(warmN) / float64(warmN+coldN)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"users": map[string]any{
 			"total":  len(users),
@@ -91,8 +103,18 @@ func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request, _ i
 		"memoryBytes":    memTotal,
 		"image":          s.cfg.Image,
 		"chatTTLMinutes": int(s.cfg.ChatTTL / time.Minute),
-		"version":        s.cfg.Version,
-		"startedAt":      s.startedAt.UTC().Format(time.RFC3339),
+		"chatPrewarm": map[string]any{
+			"enabled":      s.prewarmEnabled(),
+			"poolSize":     s.cfg.ChatPrewarmN,
+			"warmNow":      s.warmCount(),
+			"everyMinutes": int(s.cfg.ChatPrewarmEvery / time.Minute),
+			"poolHitRate":  hitRate,
+			"warmHits":     warmN,
+			"coldStarts":   coldN,
+			"coldAvgMs":    coldAvgMS,
+		},
+		"version":   s.cfg.Version,
+		"startedAt": s.startedAt.UTC().Format(time.RFC3339),
 	})
 }
 
@@ -416,6 +438,8 @@ func (s *Server) handleAdminQuotaPut(w http.ResponseWriter, r *http.Request, id 
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Enforcement: сменившаяся квота ротирует виртуальные ключи LiteLLM.
+	s.invalidateQuotaKeys(req.Scope, req.Subject)
 	_ = s.db.Audit(id.Login, "admin.quota.set", req.Scope+":"+req.Subject,
 		"daily="+strconv.FormatInt(req.DailyTokens, 10)+"; monthly="+strconv.FormatInt(req.MonthlyTokens, 10))
 	quotas, _ := s.db.QuotaList()
@@ -429,13 +453,28 @@ func (s *Server) handleAdminQuotaDelete(w http.ResponseWriter, r *http.Request, 
 		writeErr(w, http.StatusBadRequest, "неверный id квоты")
 		return
 	}
+	// Enforcement: запоминаем scope/subject до удаления — для отзыва ключей.
+	deleted := store.Quota{}
+	for _, q := range mustQuotaList(s) {
+		if q.ID == qid {
+			deleted = q
+		}
+	}
 	if err := s.db.QuotaDelete(qid); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if deleted.ID != 0 {
+		s.invalidateQuotaKeys(deleted.Scope, deleted.Subject)
+	}
 	_ = s.db.Audit(id.Login, "admin.quota.delete", strconv.FormatInt(qid, 10), "")
 	quotas, _ := s.db.QuotaList()
 	writeJSON(w, http.StatusOK, map[string]any{"quotas": quotas})
+}
+
+func mustQuotaList(s *Server) []store.Quota {
+	quotas, _ := s.db.QuotaList()
+	return quotas
 }
 
 // ── шлюз /chat/: гейт роли + журнал запросов ────────────────────────────────

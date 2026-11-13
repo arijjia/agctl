@@ -81,13 +81,26 @@ type Config struct {
 	// ReadyTimeout — ожидание Ready=True после resume (по умолчанию 180 с).
 	ReadyTimeout time.Duration
 	// InjectLLMKey — класть ключи провайдеров в env задачи. false = ключи в
-	// песочницу не попадают: оператор настраивает egress-инъекцию учётных
-	// данных Substrate (atenet-egress, replaceHeaders Authorization).
+	// песочницу не попадают: env получает placeholder, а реальный ключ
+	// подменяет egress-шлюз Substrate (atenet-egress, replaceHeaders
+	// Authorization). Egress != nil — agctl сам ведёт EgressPolicy актора и
+	// Secret с ключами (egress.go); nil — политику настраивает оператор.
 	InjectLLMKey bool
+	// Egress — автоматизация egress-инъекции при InjectLLMKey=false; nil =
+	// ручная политика оператора (docs/kubernetes.md).
+	Egress *EgressAutomation
 	// RecreateOnDrift — задача AX неизменяема; при смене образа/провайдера
 	// пересоздать её (данные /workspace актора теряются!). false = оставить
 	// старую задачу и предупредить в логе.
 	RecreateOnDrift bool
+	// ProviderAtBoot — не класть конфиг провайдера LLM в env задачи: раннер
+	// забирает его у шлюза (GatewayURL) при каждом boot по токену раннера.
+	// Провайдер выпадает из specHash — смена профиля/ключа не дрейфует,
+	// задача и /workspace актора не пересоздаются.
+	ProviderAtBoot bool
+	// GatewayURL — базовый URL шлюза agctl для fetch-at-boot раннера
+	// (требуется при ProviderAtBoot).
+	GatewayURL string
 	// CPU/Memory — лимиты песочницы (quantity: "2", "4Gi").
 	CPU    string
 	Memory string
@@ -100,6 +113,7 @@ type Provider struct {
 	router *http.Client
 	conn   *grpc.ClientConn
 	warned sync.Map
+	specs  sync.Map // task name → ChatSpec (fetch-at-boot раннера)
 }
 
 // New — gRPC-клиент к ax-server и HTTP-клиент к маршрутизатору.
@@ -140,6 +154,9 @@ func NewWithClient(cfg Config, ax v1alpha1.AXClient, router *http.Client) (*Prov
 	}
 	if u, err := url.Parse(cfg.RouterURL); err != nil || u.Scheme == "" || u.Host == "" {
 		return nil, fmt.Errorf("axrt: invalid router URL %q", cfg.RouterURL)
+	}
+	if cfg.ProviderAtBoot && cfg.GatewayURL == "" {
+		return nil, fmt.Errorf("axrt: provider-at-boot requires gateway URL")
 	}
 	if cfg.ReadyTimeout <= 0 {
 		cfg.ReadyTimeout = defaultReadyTimeout
@@ -222,6 +239,14 @@ func (p *Provider) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 		return agctlrt.ChatHandle{}, fmt.Errorf("axrt: runtime and storage IDs are required")
 	}
 	name := TaskName(spec.RuntimeID)
+	if p.cfg.Egress != nil && !p.cfg.InjectLLMKey {
+		if err := p.cfg.Egress.EnsureEgressPolicy(ctx, p.cfg.Atespace, name, spec); err != nil {
+			return agctlrt.ChatHandle{}, err
+		}
+	}
+	if p.cfg.ProviderAtBoot {
+		p.specs.Store(name, spec)
+	}
 	desired := p.buildTask(name, spec)
 	task, err := p.ax.GetTask(ctx, &v1alpha1.GetTaskRequest{Atespace: p.cfg.Atespace, Name: name})
 	switch {
@@ -284,19 +309,33 @@ func taskNameOf(id string) string {
 func (p *Provider) buildTask(name string, spec agctlrt.ChatSpec) *v1alpha1.Task {
 	modelsJSON, _ := json.Marshal(spec.Provider.AllModels())
 	env := map[string]string{
-		"DSH_HOME":               "/workspace/dsh-home",
-		"HOME":                   "/workspace/work",
-		"AGCTL_WS_ID":            spec.RuntimeID,
-		"NPM_CONFIG_CACHE":       "/tmp/npm-cache",
-		"XDG_CACHE_HOME":         "/tmp/cache",
-		"AGCTL_LLM_PROVIDER":     spec.Provider.Alias(),
-		"AGCTL_LLM_BASE_URL":     spec.Provider.BaseURL,
-		"AGCTL_LLM_MODEL":        spec.Provider.Model,
-		"AGCTL_LLM_MODELS":       string(modelsJSON),
-		"AGCTL_REFRESH_PROVIDER": "1",
+		"DSH_HOME":         "/workspace/dsh-home",
+		"HOME":             "/workspace/work",
+		"AGCTL_WS_ID":      spec.RuntimeID,
+		"NPM_CONFIG_CACHE": "/tmp/npm-cache",
+		"XDG_CACHE_HOME":   "/tmp/cache",
 	}
-	if p.cfg.InjectLLMKey && spec.Provider.APIKey != "" {
-		env["AGCTL_LLM_API_KEY"] = spec.Provider.APIKey
+	if p.cfg.ProviderAtBoot && p.cfg.GatewayURL != "" {
+		// Конфиг провайдера — не в spec задачи: раннер заберёт его у шлюза
+		// при каждом boot (GET /ax/provider-config/<task> по токену раннера),
+		// смена профиля/ключа не меняет specHash.
+		env["AGCTL_GATEWAY_URL"] = p.cfg.GatewayURL
+	} else {
+		env["AGCTL_LLM_PROVIDER"] = spec.Provider.Alias()
+		env["AGCTL_LLM_BASE_URL"] = spec.Provider.BaseURL
+		env["AGCTL_LLM_MODEL"] = spec.Provider.Model
+		env["AGCTL_LLM_MODELS"] = string(modelsJSON)
+		env["AGCTL_REFRESH_PROVIDER"] = "1"
+	}
+	if !p.cfg.ProviderAtBoot && spec.Provider.APIKey != "" {
+		switch {
+		case p.cfg.InjectLLMKey:
+			env["AGCTL_LLM_API_KEY"] = spec.Provider.APIKey
+		case p.cfg.Egress != nil:
+			// egress-инъекция: placeholder в env, реальный ключ подставит
+			// atenet-egress по EgressPolicy актора (egress.go)
+			env["AGCTL_LLM_API_KEY"] = PlaceholderAPIKey
+		}
 	}
 	type extraSpec struct {
 		Name      string
@@ -311,11 +350,16 @@ func (p *Provider) buildTask(name string, spec agctlrt.ChatSpec) *v1alpha1.Task 
 			continue
 		}
 		extras = append(extras, extraSpec{Name: extra.Name, BaseURL: extra.BaseURL, Model: extra.DefaultModel(), Models: extra.AllModels(), APIKeyEnv: extra.KeyEnv()})
-		if p.cfg.InjectLLMKey && extra.APIKey != "" {
-			env[extra.KeyEnv()] = extra.APIKey
+		if !p.cfg.ProviderAtBoot && extra.APIKey != "" {
+			switch {
+			case p.cfg.InjectLLMKey:
+				env[extra.KeyEnv()] = extra.APIKey
+			case p.cfg.Egress != nil:
+				env[extra.KeyEnv()] = PlaceholderAPIKey
+			}
 		}
 	}
-	if len(extras) > 0 {
+	if len(extras) > 0 && !p.cfg.ProviderAtBoot {
 		if raw, err := json.Marshal(extras); err == nil {
 			env["AGCTL_LLM_EXTRA_PROVIDERS"] = string(raw)
 		}

@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/arijjia/agctl/internal/provision"
 	agctlrt "github.com/arijjia/agctl/internal/runtime"
@@ -247,5 +249,91 @@ func TestPersistentResourcesFollowStorageIDAcrossRuntimeReplacement(t *testing.T
 	}
 	if _, err := client.CoreV1().PersistentVolumeClaims("agctl").Get(ctx, pvcName, metav1.GetOptions{}); err != nil {
 		t.Fatalf("stable PVC removed with old generation: %v", err)
+	}
+}
+
+// TestEnsureChatWaitsForPodReady — EnsureChat с WaitReady/ReadyTimeout дожидается
+// PodReady: gateway не получает Endpoint неготового чата (карточка
+// k8s-chat-runtime-adapter).
+func TestEnsureChatWaitsForPodReady(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewSimpleClientset()
+	provider, err := NewWithClient(Config{
+		Namespace: "agctl", Image: "registry.example.invalid/agctl-dsh:0.2.0",
+		WaitReady:    true,
+		ReadyTimeout: 5 * time.Second,
+	}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := agctlrt.ChatSpec{
+		RuntimeID: "chat-wait-u17", StorageID: "u17", UserID: 17,
+		Provider: provision.Provider{BaseURL: "https://llm.example.invalid/v1", Model: "model-a"},
+	}
+	name := resourceName(spec.RuntimeID)
+	done := make(chan error, 1)
+	go func() {
+		_, err := provider.EnsureChat(ctx, spec)
+		done <- err
+	}()
+	// Даём ensurePod создать Pod в статусе «не Ready», затем знаменуем готовность.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		pod, err := client.CoreV1().Pods("agctl").Get(ctx, name, metav1.GetOptions{})
+		if err == nil {
+			pod.Status.Conditions = append(pod.Status.Conditions, corev1.PodCondition{
+				Type: corev1.PodReady, Status: corev1.ConditionTrue,
+			})
+			if _, err := client.CoreV1().Pods("agctl").UpdateStatus(ctx, pod, metav1.UpdateOptions{}); err != nil {
+				t.Fatalf("UpdateStatus: %v", err)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pod не создался за 3s: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("EnsureChat: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("EnsureChat не завершился после PodReady")
+	}
+}
+
+// TestEnsureChatReadinessTimeout — pod, который так и не стал Ready, роняет
+// EnsureChat по бюджету, а не возвращает неготовый Endpoint.
+func TestEnsureChatReadinessTimeout(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewSimpleClientset()
+	provider, err := NewWithClient(Config{
+		Namespace: "agctl", Image: "registry.example.invalid/agctl-dsh:0.2.0",
+		WaitReady:    true,
+		ReadyTimeout: 120 * time.Millisecond,
+	}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := agctlrt.ChatSpec{
+		RuntimeID: "chat-timeout-u17", StorageID: "u17", UserID: 17,
+		Provider: provision.Provider{BaseURL: "https://llm.example.invalid/v1", Model: "model-a"},
+	}
+	start := time.Now()
+	_, err = provider.EnsureChat(ctx, spec)
+	if err == nil {
+		t.Fatal("ожидали ошибку readiness-таймаута, получили nil")
+	}
+	if !strings.Contains(err.Error(), "not ready within") {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed < 100*time.Millisecond {
+		t.Fatalf("EnsureChat вернулся раньше бюджета: %s", elapsed)
+	}
+	// Compute снесён не был — Pod остаётся (диагностика по events), PVC жив.
+	if _, err := client.CoreV1().Pods("agctl").Get(ctx, resourceName(spec.RuntimeID), metav1.GetOptions{}); err != nil {
+		t.Fatalf("pod пропал после таймаута: %v", err)
 	}
 }

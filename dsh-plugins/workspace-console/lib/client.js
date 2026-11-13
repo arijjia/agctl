@@ -268,15 +268,16 @@ window.__ModuleLoader__.load({
 				};
 
 				const loadDetails = async () => {
-					if (!state.sel) { renderDetails(null, null, ""); return; }
+					if (!state.sel) { renderDetails(null, null, "", null); return; }
 					setStatus("Читаем настройки воркспейса…");
 					const encName = encodeURIComponent(state.sel);
-					const [catData, compData, promptData] = await Promise.all([
+					const [catData, compData, promptData, mcpData] = await Promise.all([
 						api("/api/projects/" + encName + "/catalog"),
 						api("/api/projects/" + encName + "/components"),
 						api("/api/projects/" + encName + "/prompt").catch(() => ({ prompt: "" })),
+						api("/api/projects/" + encName + "/mcp").catch(() => null),
 					]);
-					renderDetails(catData, compData, (promptData && promptData.prompt) || "");
+					renderDetails(catData, compData, (promptData && promptData.prompt) || "", mcpData);
 					setStatus("");
 				};
 
@@ -292,7 +293,7 @@ window.__ModuleLoader__.load({
 				refreshBtn.addEventListener("click", () => guard(loadProjects()));
 
 				// ── правая колонка: детали выбранного воркспейса ──────────────────
-				const renderDetails = (catData, compData, promptText) => {
+				const renderDetails = (catData, compData, promptText, mcpData) => {
 					right.replaceChildren(statusLine);
 					if (!state.sel) {
 						right.appendChild(el("p", "font-size:12.5px;color:var(--dsw-alias-label-tertiary,#888)",
@@ -366,6 +367,70 @@ window.__ModuleLoader__.load({
 					});
 					promptCard.append(ta, promptSave);
 					right.appendChild(promptCard);
+
+					// ── MCP-серверы (карточка workspace-mcp-config) ────────────────
+					right.appendChild(el("h3", "margin:14px 0 2px;font-size:12px;font-weight:700", "MCP-серверы"));
+					right.appendChild(el("p", "margin:0 0 6px;font-size:11px;color:var(--dsw-alias-label-tertiary,#888)",
+						"Серверы платформенного каталога для этого воркспейса. Выбор собирает dsh-пресет — создайте сессию воркспейса с пресетом «" + (mcpData && mcpData.presetID || "agctl-ws-…") + "», и новая сессия получит ровно этот набор."));
+					const mcpCard = el("div", "wsc-card", null);
+					if (!mcpData) {
+						mcpCard.appendChild(el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888);margin:4px 0",
+							"Раздел MCP недоступен (нужен свежий agctl serve)."));
+					} else {
+						const mcpState = { selected: new Set(mcpData.selected || []) };
+						const keyInput = el("input", null, null);
+						keyInput.type = "password";
+						keyInput.style.cssText = "width:100%;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l1,#555);border-radius:8px;padding:7px 8px;background:transparent;color:inherit;font:inherit;font-size:12px";
+						keyInput.placeholder = mcpData.tavilyKeySet ? "Ключ TAVILY_API_KEY сохранён — введите новый, чтобы заменить" : "Ключ TAVILY_API_KEY (tvly-…)";
+						const mcpErr = el("p", "font-size:11px;color:#e06666;margin:6px 0 0;min-height:14px", "");
+						const mcpRows = [];
+						for (const server of mcpData.servers || []) {
+							const row = el("label", "wsc-row;cursor:pointer");
+							const box = el("input", null, null);
+							box.type = "checkbox";
+							box.checked = mcpState.selected.has(server.id);
+							box.addEventListener("change", () => {
+								if (box.checked) mcpState.selected.add(server.id);
+								else mcpState.selected.delete(server.id);
+								syncKeyVisibility();
+							});
+							const text = el("div", "min-width:0;flex:1");
+							text.appendChild(el("div", "font-size:12.5px;font-weight:600", server.title || server.id));
+							if (server.description) text.appendChild(el("div", "font-size:11px;color:var(--dsw-alias-label-tertiary,#888)", server.description));
+							row.append(box, text);
+							mcpCard.appendChild(row);
+							mcpRows.push({ server, box });
+						}
+						const keyWrap = el("div", "margin:8px 0 0", null);
+						keyWrap.appendChild(keyInput);
+						mcpCard.appendChild(keyWrap);
+						const mcpSave = el("button", "wsc-btn secondary;margin-top:8px", "Сохранить MCP");
+						const syncKeyVisibility = () => {
+							const needKey = mcpRows.some(({ server, box }) => server.secretEnv && box.checked);
+							keyWrap.style.display = needKey ? "block" : "none";
+						};
+						syncKeyVisibility();
+						mcpSave.addEventListener("click", async () => {
+							mcpSave.disabled = true;
+							mcpErr.textContent = "";
+							setStatus("Сохраняем MCP-набор…");
+							try {
+								const payload = { servers: mcpRows.filter(({ box }) => box.checked).map(({ server }) => server.id) };
+								if (keyInput.value) payload.tavilyKey = keyInput.value;
+								const fresh = await api("/api/projects/" + encName + "/mcp", "PUT", payload);
+								keyInput.value = "";
+								keyInput.placeholder = fresh.tavilyKeySet ? "Ключ TAVILY_API_KEY сохранён — введите новый, чтобы заменить" : keyInput.placeholder;
+								setStatus("MCP-набор сохранён. Новые сессии с пресетом «" + (fresh.presetID || "agctl-ws-…") + "» получат этот набор.");
+							} catch (err) {
+								mcpErr.textContent = String(err.message || err);
+								setStatus("");
+							} finally {
+								mcpSave.disabled = false;
+							}
+						});
+						mcpCard.append(mcpSave, mcpErr);
+					}
+					right.appendChild(mcpCard);
 
 					// ── Файлы (скачивание артефактов) ──────────────────────────────
 					right.appendChild(el("h3", "margin:14px 0 2px;font-size:12px;font-weight:700", "Файлы"));
