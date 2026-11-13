@@ -81,9 +81,14 @@ type Config struct {
 	// ReadyTimeout — ожидание Ready=True после resume (по умолчанию 180 с).
 	ReadyTimeout time.Duration
 	// InjectLLMKey — класть ключи провайдеров в env задачи. false = ключи в
-	// песочницу не попадают: оператор настраивает egress-инъекцию учётных
-	// данных Substrate (atenet-egress, replaceHeaders Authorization).
+	// песочницу не попадают: env получает placeholder, а реальный ключ
+	// подменяет egress-шлюз Substrate (atenet-egress, replaceHeaders
+	// Authorization). Egress != nil — agctl сам ведёт EgressPolicy актора и
+	// Secret с ключами (egress.go); nil — политику настраивает оператор.
 	InjectLLMKey bool
+	// Egress — автоматизация egress-инъекции при InjectLLMKey=false; nil =
+	// ручная политика оператора (docs/kubernetes.md).
+	Egress *EgressAutomation
 	// RecreateOnDrift — задача AX неизменяема; при смене образа/провайдера
 	// пересоздать её (данные /workspace актора теряются!). false = оставить
 	// старую задачу и предупредить в логе.
@@ -222,6 +227,11 @@ func (p *Provider) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 		return agctlrt.ChatHandle{}, fmt.Errorf("axrt: runtime and storage IDs are required")
 	}
 	name := TaskName(spec.RuntimeID)
+	if p.cfg.Egress != nil && !p.cfg.InjectLLMKey {
+		if err := p.cfg.Egress.EnsureEgressPolicy(ctx, p.cfg.Atespace, name, spec); err != nil {
+			return agctlrt.ChatHandle{}, err
+		}
+	}
 	desired := p.buildTask(name, spec)
 	task, err := p.ax.GetTask(ctx, &v1alpha1.GetTaskRequest{Atespace: p.cfg.Atespace, Name: name})
 	switch {
@@ -295,8 +305,15 @@ func (p *Provider) buildTask(name string, spec agctlrt.ChatSpec) *v1alpha1.Task 
 		"AGCTL_LLM_MODELS":       string(modelsJSON),
 		"AGCTL_REFRESH_PROVIDER": "1",
 	}
-	if p.cfg.InjectLLMKey && spec.Provider.APIKey != "" {
-		env["AGCTL_LLM_API_KEY"] = spec.Provider.APIKey
+	if spec.Provider.APIKey != "" {
+		switch {
+		case p.cfg.InjectLLMKey:
+			env["AGCTL_LLM_API_KEY"] = spec.Provider.APIKey
+		case p.cfg.Egress != nil:
+			// egress-инъекция: placeholder в env, реальный ключ подставит
+			// atenet-egress по EgressPolicy актора (egress.go)
+			env["AGCTL_LLM_API_KEY"] = PlaceholderAPIKey
+		}
 	}
 	type extraSpec struct {
 		Name      string
@@ -311,8 +328,13 @@ func (p *Provider) buildTask(name string, spec agctlrt.ChatSpec) *v1alpha1.Task 
 			continue
 		}
 		extras = append(extras, extraSpec{Name: extra.Name, BaseURL: extra.BaseURL, Model: extra.DefaultModel(), Models: extra.AllModels(), APIKeyEnv: extra.KeyEnv()})
-		if p.cfg.InjectLLMKey && extra.APIKey != "" {
-			env[extra.KeyEnv()] = extra.APIKey
+		if extra.APIKey != "" {
+			switch {
+			case p.cfg.InjectLLMKey:
+				env[extra.KeyEnv()] = extra.APIKey
+			case p.cfg.Egress != nil:
+				env[extra.KeyEnv()] = PlaceholderAPIKey
+			}
 		}
 	}
 	if len(extras) > 0 {

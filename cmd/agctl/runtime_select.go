@@ -72,6 +72,8 @@ type runtimeFlags struct {
 	axReadyTimeout    *int
 	axInjectLLMKey    *bool
 	axRecreateOnDrift *bool
+	axAteAPI          *string
+	axAteCluster      *string
 }
 
 // registerRuntimeFlags — флаги с дефолтами из env (AGCTL_RUNTIME, AGCTL_K8S_*,
@@ -105,6 +107,8 @@ func registerRuntimeFlags(fsSet *flag.FlagSet, cfg userConfig) *runtimeFlags {
 	rf.axReadyTimeout = fsSet.Int("ax-ready-timeout", nonZeroOr(envInt("AGCTL_AX_READY_TIMEOUT", 0), nonZeroOr(a.ReadyTimeoutSec, 180)), "секунд ожидания Ready задачи после resume")
 	rf.axInjectLLMKey = fsSet.Bool("ax-inject-llm-key", envOr("AGCTL_AX_INJECT_LLM_KEY", "1") != "0", "класть ключи LLM в env задачи; 0 = ключи инжектит egress-шлюз Substrate (replaceHeaders)")
 	rf.axRecreateOnDrift = fsSet.Bool("ax-recreate-on-drift", envOr("AGCTL_AX_RECREATE_ON_DRIFT", "0") == "1", "пересоздавать задачу при смене образа/провайдера (данные актора теряются)")
+	rf.axAteAPI = fsSet.String("ax-ate-api", envOr("AGCTL_AX_ATE_API", a.AteAPI), "адрес ate-api-server (Control API Substrate) для авто-egress-инъекции ключей LLM при --ax-inject-llm-key=0; пусто = политику ведёт оператор")
+	rf.axAteCluster = fsSet.String("ax-ate-cluster", envOr("AGCTL_AX_ATE_CLUSTER", firstNonEmpty(a.AteCluster, "cluster.local")), "имя кластера в credentialUri ate-secret://k8s.io/cluster/<cluster>/…")
 	return rf
 }
 
@@ -186,6 +190,13 @@ func buildServer(rf *runtimeFlags, db *store.DB, sec *secrets.Manager, cfg serve
 		}
 		if cfg.MemoryBytes <= 0 {
 			axCfg.Memory = ""
+		}
+		if !axCfg.InjectLLMKey && *rf.axAteAPI != "" {
+			eg, err := axEgressAutomation(*rf.axAteAPI, *rf.axAteCluster, *rf.k8sKubeconfig)
+			if err != nil {
+				return nil, err
+			}
+			axCfg.Egress = eg
 		}
 		provider, err := axrt.New(axCfg)
 		if err != nil {
