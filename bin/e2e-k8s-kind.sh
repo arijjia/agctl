@@ -59,7 +59,9 @@ echo "  ✓ пользователи зарегистрированы"
 echo "▶ /chat/ от user: ожидание пода dsh (до 5 мин)"
 ok=0
 for _ in $(seq 1 150); do
-  code=$(curl -s -o /tmp/agctl-e2e-chat.html -w '%{http_code}' -b "$JAR_USER" "$BASE/chat/")
+  # -L + сохранение cookie: первый /chat/ поднимает под и редиректит (303)
+  # на себя же; без записи cookie цикл ловит 303 вечно.
+  code=$(curl -s -L -c "$JAR_USER" -b "$JAR_USER" -o /tmp/agctl-e2e-chat.html -w '%{http_code}' "$BASE/chat/")
   if [ "$code" = "200" ] && grep -q "__AGCTL_BRAND__" /tmp/agctl-e2e-chat.html; then ok=1; break; fi
   sleep 2
 done
