@@ -44,12 +44,17 @@ kind load docker-image --name "$KIND_CLUSTER" agctl-serve:dev "agctl-dsh:${TAG}"
 echo "▶ деплой"
 kubectl apply -k deploy/k8s/overlays/kind
 kubectl -n "$NS" rollout status deployment/agctl --timeout=240s
-BASE="http://127.0.0.1:${PORT}"
+# BASE_URL — обход NodePort (например, kind в colima/nested docker, где
+# extraPortMappings до хоста не доносятся): kubectl port-forward + свой адрес.
+BASE="${BASE_URL:-http://127.0.0.1:${PORT}}"
 for _ in $(seq 1 60); do curl -fsS "$BASE/" >/dev/null 2>&1 && break; sleep 2; done
 curl -fsS "$BASE/" | grep -q "__AGCTL_BRAND__" && echo "  ✓ страница входа"
 
 JAR_ADMIN=$(mktemp); JAR_USER=$(mktemp)
-register() { curl -fsS -c "$1" -H 'Content-Type: application/json' -d "{\"login\":\"$2\",\"password\":\"$3\"}" "$BASE/api/register" >/dev/null; }
+register() { # идемпотентно: на существующем кластере register даёт 400 — логинимся
+  curl -fsS -c "$1" -H 'Content-Type: application/json' -d "{\"login\":\"$2\",\"password\":\"$3\"}" "$BASE/api/register" >/dev/null 2>&1 ||
+  curl -fsS -c "$1" -H 'Content-Type: application/json' -d "{\"login\":\"$2\",\"password\":\"$3\"}" "$BASE/api/login" >/dev/null
+}
 register "$JAR_ADMIN" e2eadmin 'E2e-admin-pass-1!'
 register "$JAR_USER" e2euser 'E2e-user-pass-1!'
 echo "  ✓ пользователи зарегистрированы"
@@ -57,16 +62,23 @@ echo "  ✓ пользователи зарегистрированы"
 echo "▶ /chat/ от user: ожидание пода dsh (до 5 мин)"
 ok=0
 for _ in $(seq 1 150); do
-  code=$(curl -s -o /tmp/agctl-e2e-chat.html -w '%{http_code}' -b "$JAR_USER" "$BASE/chat/")
+  # -L + сохранение cookie: первый /chat/ поднимает под и редиректит (303)
+  # на себя же; без записи cookie цикл ловит 303 вечно.
+  code=$(curl -s -L -c "$JAR_USER" -b "$JAR_USER" -o /tmp/agctl-e2e-chat.html -w '%{http_code}' "$BASE/chat/")
   if [ "$code" = "200" ] && grep -q "__AGCTL_BRAND__" /tmp/agctl-e2e-chat.html; then ok=1; break; fi
   sleep 2
 done
 [ "$ok" = "1" ] || { echo "✗ чат не поднялся (код $code)"; kubectl -n "$NS" get pod -o wide; kubectl -n "$NS" logs deployment/agctl --tail=50; exit 1; }
-POD=$(kubectl -n "$NS" get pod -l app.kubernetes.io/name=agctl-dsh-chat -o jsonpath='{.items[0].metadata.name}')
+POD=$(kubectl -n "$NS" get pod -l app.kubernetes.io/name=agctl-dsh-chat --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}') # новейший: под только что поднят этим прогоном
 echo "  ✓ под пользователя: $POD"
 kubectl -n "$NS" get pvc -l app.kubernetes.io/name=agctl-dsh-chat | grep -q data- && echo "  ✓ PVC пользователя создан"
 
 echo "▶ сон рантайма"
+# /api/me/runtime/* требует роль developer: заявка от user + апрув админом.
+curl -fsS -b "$JAR_USER" -H 'Content-Type: application/json' -d '{"motivation":"e2e"}' "$BASE/api/role-requests" >/dev/null 2>&1 || true # 409 на повторном прогоне — ок
+RID=$(curl -fsS -b "$JAR_ADMIN" "$BASE/api/role-requests" | sed -n 's/.*"id":\([0-9]*\),"login":"e2euser","motivation":"e2e","status":"pending".*/\1/p' | head -1)
+[ -n "$RID" ] && curl -fsS -X POST -b "$JAR_ADMIN" "$BASE/api/role-requests/$RID/approve" >/dev/null
+curl -fsS -c "$JAR_USER" -b "$JAR_USER" -H 'Content-Type: application/json' -d '{"login":"e2euser","password":"E2e-user-pass-1!"}' "$BASE/api/login" >/dev/null # сессия с новой ролью
 curl -fsS -X POST -b "$JAR_USER" "$BASE/api/me/runtime/stop" | grep -q sleeping
 for _ in $(seq 1 60); do kubectl -n "$NS" get pod "$POD" >/dev/null 2>&1 || break; sleep 2; done
 kubectl -n "$NS" get pod "$POD" >/dev/null 2>&1 && { echo "✗ под не удалён после stop"; exit 1; }

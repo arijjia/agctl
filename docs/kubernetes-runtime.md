@@ -34,24 +34,40 @@ RuntimeID (критерий карточки выполнен); SSH developer'а
 NetworkPolicy на поды шлюза (`--k8s-gateway-labels`); livenessProbe;
 SweepVersionDrift по метке версии; pods/exec.
 
+## Live-верификация (kind, 2026-11-13)
+
+`bin/e2e-k8s-kind.sh` прогнан живьём (kind v0.33 в colima на macOS/arm64,
+NodePort обойдён через `BASE_URL` + `kubectl port-forward` — extraPortMappings
+в nested docker до хоста не доносятся): admission без warnings, pull образов,
+init-container DSH_HOME, PVC attach, readiness (WaitReady), gateway-трафик
+через Service DNS, StopChat удаляет compute и сохраняет PVC —
+`✓ k8s e2e smoke OK`.
+
+RBAC least-privilege проверен живьём (`kubectl auth can-i` от SA `agctl`):
+создание/удаление pods/services/networkpolicies/secrets/pvc в своём
+namespace — yes; clusterroles/namespaces и чужой namespace — no.
+
+По ходу прогона починен сам смоук и kind-overlay (см. коммиты ветки):
+image-transform матчил переименованное base-имя (ErrImageNeverPull),
+`AGCTL_PROFILE_DIR` без ConfigMap профиля ронял serve, kustomize-патч
+volumes, cookie/-L в /chat/-цикле, идемпотентный register, роль developer
+через role-request для stop-ручки, выбор новейшего чат-пода.
+
 ## Ограничения (честно, live не проверено)
 
 - Dev-воркспейсы и control-plane запускаются на Docker даже при `--runtime k8s`
   (host-path контракт workspace'ов в k8s не перенесён; upstream передаёт
   provider и как RuntimeIface, но живой прогон этого режима не делался).
-- Live cluster smoke (admission, image pull, init-container, PVC attach,
-  readiness, policy, stop) в рамках карточки не прогнан — docker/kind в
-  сессии были недоступны; fake-client тесты доказательством deployment не
-  считаются. Чек-лист см. `docs/kubernetes.md` + `bin/e2e-k8s-kind.sh`.
+- NetworkPolicy исполняет только CNI с policy-поддержкой; kind (kindnet) её
+  НЕ энфорсит — ingress/egress-изоляция на целевом кластере требует
+  target-CNI validation.
 
 ## Требования к кластеру при production-переезде (проверить живьём)
 
-- **RBAC least-privilege**: отдельный ServiceAccount agctl с правами только на
-  pods/services/networkpolicies/secrets/pvc в своём namespace, без кластерных
-  ролей; чат-поды — без SA-токена.
-- **Secret encryption-at-rest**: ключи LLM только через `SecretKeyRef`;
-  включить etcd-шифрование `secrets` (EncryptionConfiguration) и проверить.
-- **PVC retention/backup**: storage-класс со снапшотами, документированный
-  retention (пользовательские воркспейсы = пользовательские данные).
 - **Egress policy**: egress подов не ограничен — target-CNI validation и
   egress-политика (эквивалент Docker `egress-allowlist`) до production.
+- **Secret encryption-at-rest**: ключи LLM только через `SecretKeyRef`;
+  включить etcd-шифрование `secrets` (EncryptionConfiguration) и проверить
+  живьём (в kind не проверяемо осмысленно).
+- **PVC backup**: retention подов не удаляет PVC (live ✓ в смоук); для
+  production — storage-класс со снапшотами и документированный retention.

@@ -6,7 +6,10 @@ kind: Kustomization
 resources:
   - ../../base
 images:
-  - name: agctl-serve
+  # base уже переименовал образ в registry.example.com/… — матчить нужно
+  # итоговое имя base-трансформа, иначе overlay молча не применяется и узел
+  # получает недоступный registry (ErrImageNeverPull).
+  - name: registry.example.com/agctl/agctl-serve
     newName: agctl-serve
     newTag: dev
 patches:
