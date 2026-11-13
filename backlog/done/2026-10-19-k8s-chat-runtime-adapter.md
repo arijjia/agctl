@@ -2,7 +2,7 @@
 schema: 1.1.0
 id: k8s-chat-runtime-adapter
 title: "Kubernetes ChatProvider: per-user Pod + Service + PVC and scale-to-zero"
-status: open
+status: done
 priority: P3
 size: L
 area: runtime
@@ -49,3 +49,5 @@ Kubernetes namespace является storage scope одной установк�
 - 2026-11-13: unpark: оборвана burn-окном: docker/kind недоступны в сессии — live cluster smoke и live-проверки RBAC/encryption-at-rest/PVC retention не выполнены; селектор/readiness-wait/docs ушли в ветке wt/k8s-chat-runtime-adapter
 - 2026-11-13: Интеграция с origin/main выполнена (merge 93ca34f, ветка влита через merge-окно): селектор чат-рантайма резолвлен в пользу upstream cmd/agctl/runtime_select.go (docker|k8s|ax), server.Config.Runtime/K8s*-поля удалены; readiness-wait карточки перенесён на upstream k8srt WaitReady/ReadyTimeout (--k8s-ready-timeout, дефолт 180s), fake-тесты wait/timeout адаптированы и зелёные; docs/kubernetes-runtime.md переписан как дельта к upstream docs/kubernetes.md (ограничения/RBAC/encryption/retention-чеклист сохранены); workspace-console client.js синхронизирован с dsh-plugins (MCP-консоль), Dockerfile — union office2pdf+ax-runner. go vet + go test ./... + make web_build зелёные. Карточка остаётся open: live cluster smoke, RBAC/encryption-at-rest/PVC retention live-проверки не исполнимы в burn-сессии (docker daemon offline, kind нет).
 - 2026-11-13: refl: Источник — только сама карточка (журнал 2026-11-13 достаточно детален: направление резолва, имена API, список непрогнанного); внешние sessions-источники не читал — пересказа не требуется.
+- 2026-11-13: Live-критерии закрыты (merge-окно в agent/chat-skel-workspace-console): подняты colima+kind, bin/e2e-k8s-kind.sh доведён до зелёного (✓ admission/pull/init-container/PVC/readiness/stop/retention) после фикса kind-overlay (image-transform по переименованному base-имени — ErrImageNeverPull; AGCTL_PROFILE_DIR без ConfigMap; патч volumes через $patch: delete) и самого скрипта (BASE_URL для nested docker, cookie/-L в /chat/-цикле, идемпотентный register, developer-роль через role-request/approve для stop-ручки, выбор новейшего пода). RBAC least-privilege проверен живьём kubectl auth can-i: свой namespace yes, clusterroles/namespaces/чужой namespace no. Docker e2e-смоук default-рантайма: 38/38 PASS (DOCKER_HOST на colima-сокет). Остатки production-миграции, не проверяемые в kind и зафиксированные в docs/kubernetes-runtime.md: egress-политика подов + target-CNI validation (kindnet не энфорсит NP), etcd encryption-at-rest для Secrets (настройка кластера), storage-класс со снапшотами для PVC.
+- 2026-11-13: done — K8s chat runtime: интеграция с upstream-селектором (docker|k8s|ax, WaitReady/ReadyTimeout), live kind-смоук зелёный, RBAC live, Docker e2e без регрессий; production-остатки (egress/CNI, etcd-encryption, snapshots) описаны в docs/kubernetes-runtime.md
