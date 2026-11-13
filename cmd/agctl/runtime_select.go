@@ -198,9 +198,20 @@ func buildServer(rf *runtimeFlags, db *store.DB, sec *secrets.Manager, cfg serve
 			}
 			axCfg.Egress = eg
 		}
+		// Fetch-at-boot: конфиг провайдера раннер берёт у шлюза по токену
+		// раннера — env/spec задачи его не содержит, дрейфа при смене
+		// профиля/ключа нет (п.4 карточки k8s-substrate-ax-backend).
+		axCfg.ProviderAtBoot = envOr("AGCTL_AX_PROVIDER_AT_BOOT", "1") == "1"
+		if axCfg.ProviderAtBoot {
+			axCfg.GatewayURL = cfg.PublicURL
+		}
 		provider, err := axrt.New(axCfg)
 		if err != nil {
 			return nil, err
+		}
+		if axCfg.ProviderAtBoot {
+			cfg.AxRunnerToken = token
+			cfg.AxProviderConfig = provider.ProviderConfigByTask
 		}
 		srv, err := server.NewWithRuntimeProviders(db, sec, cfg, provider, provider)
 		if err != nil {

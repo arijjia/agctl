@@ -7,6 +7,7 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,6 +53,7 @@ type Config struct {
 	BinDir                  string
 	Version                 string // версия agctl (метка контейнеров, диагностика дрейфа сборок)
 	SecureCookies           bool   // true when agctl is served behind a trusted HTTPS terminator
+	PublicURL               string // базовый URL шлюза, видимый песочницам (fetch-at-boot раннера AX); пусто = derive из --addr
 	AutosaveEvery           time.Duration
 	CORSOrigins             []string           // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
 	Tier0                   bool               // корень платформы ведёт в персональный чат (/chat/)
@@ -69,6 +71,12 @@ type Config struct {
 	DefaultLLM              provision.Provider // платформенный провайдер чата по умолчанию (из профиля/env); личный секрет пользователя его перекрывает
 	DevEnv                  []string           // имена переменных хоста, пробрасываемые в контейнер developer/admin (значения — из окружения serve: .env экспортируется make)
 	Profile                 *profile.Data      // профиль организации (брендинг/дефолты); nil = нейтральный agctl
+	// AxRunnerToken — токен раннера AX для GET /ax/provider-config/<task>
+	// (fetch-at-boot конфига провайдера; бэкенд ax). Пусто = endpoint выключен.
+	AxRunnerToken string
+	// AxProviderConfig — JSON конфига провайдера по имени задачи AX
+	// (axrt.Provider.ProviderConfigByTask); nil при непустом токене = 503.
+	AxProviderConfig func(task string) (json.RawMessage, bool)
 }
 
 // RuntimeIface — то, что серверу нужно от docker-рантайма (мокается в тестах).
@@ -295,6 +303,9 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.handleMe)
+	// Раннер AX при каждом boot забирает конфиг провайдера по токену раннера
+	// (бэкенд ax, ProviderAtBoot): env задачи конфиг не содержит.
+	mux.HandleFunc("GET /ax/provider-config/{task}", s.handleAxProviderConfig)
 	mux.HandleFunc("GET /api/projects", s.requireUser(s.handleProjectsList))
 	mux.HandleFunc("POST /api/projects", s.requireUser(s.handleProjectCreate))
 	// Удаление воркспейса вместе с каталогом на диске (нативное удаление dsh
@@ -993,3 +1004,37 @@ func atoiDefault(s string, def int) int {
 }
 
 var _ = filepath.Join // keep import in sync for platform-specific files
+
+// handleAxProviderConfig — конфиг провайдера LLM для раннера песочницы AX
+// (GET /ax/provider-config/<task>; Bearer = токен раннера): fetch-at-boot
+// при ProviderAtBoot — env задачи конфиг не содержит, раннер всегда
+// стартует с актуальным провайдером. Неизвестная задача — 404 (раннер
+// падает громко: тихий пустой конфиг оставил бы dsh без провайдера).
+func (s *Server) handleAxProviderConfig(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.AxRunnerToken == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if !bearerTokenMatches(r.Header.Get("Authorization"), s.cfg.AxRunnerToken) {
+		http.NotFound(w, r)
+		return
+	}
+	task := r.PathValue("task")
+	if task == "" || s.cfg.AxProviderConfig == nil {
+		http.NotFound(w, r)
+		return
+	}
+	raw, ok := s.cfg.AxProviderConfig(task)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(raw)
+}
+
+// bearerTokenMatches — постоянное по времени сравнение Bearer-токена.
+func bearerTokenMatches(header, token string) bool {
+	got := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1
+}
