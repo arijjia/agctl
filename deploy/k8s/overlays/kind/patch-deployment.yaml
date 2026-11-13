@@ -9,6 +9,8 @@ spec:
         - name: agctl
           imagePullPolicy: Never
           env:
+            - name: AGCTL_PROFILE_DIR
+              value: "" # без ConfigMap профиля (make k8s_profile) — встроенный нейтральный agctl
             - name: AGCTL_K8S_IMAGE
               value: agctl-dsh:0.2.2
             - name: AGCTL_K8S_PULL_POLICY
