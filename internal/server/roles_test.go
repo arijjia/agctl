@@ -85,7 +85,7 @@ func TestDeveloperSSHInChatContainer(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	rt, err := e.srv.ensureChat(1)
+	rt, err := e.srv.ensureChat(1, 0)
 	if err != nil {
 		t.Fatalf("ensureChat: %v", err)
 	}
@@ -120,8 +120,8 @@ func TestDeveloperSSHInChatContainer(t *testing.T) {
 	}
 	// Simulate service-owned sleep (user-facing start/stop API is not exposed).
 	e.srv.chatMu.Lock()
-	current := e.srv.chats[1]
-	delete(e.srv.chats, 1)
+	current := e.srv.chats[chatKey{1, 0}]
+	delete(e.srv.chats, chatKey{1, 0})
 	e.srv.chatMu.Unlock()
 	if current == nil {
 		t.Fatal("expected running chat before simulated sleep")
@@ -129,7 +129,7 @@ func TestDeveloperSSHInChatContainer(t *testing.T) {
 	if err := e.rt.StopChat(context.Background(), current.handle); err != nil {
 		t.Fatalf("service stop: %v", err)
 	}
-	next, err := e.srv.ensureChat(1)
+	next, err := e.srv.ensureChat(1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestDZ2UserDefaultFullAccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rt, err := e.srv.ensureChat(u.ID)
+	rt, err := e.srv.ensureChat(u.ID, 0)
 	if err != nil {
 		t.Fatalf("ensure user chat: %v", err)
 	}
@@ -180,9 +180,9 @@ func TestDZ2UserDefaultFullAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.srv.chatMu.Lock()
-	delete(e.srv.chats, u.ID)
+	delete(e.srv.chats, chatKey{u.ID, 0})
 	e.srv.chatMu.Unlock()
-	rt, err = e.srv.ensureChat(u.ID)
+	rt, err = e.srv.ensureChat(u.ID, 0)
 	if err != nil {
 		t.Fatalf("ensure developer chat: %v", err)
 	}

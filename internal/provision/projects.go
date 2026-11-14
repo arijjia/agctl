@@ -98,7 +98,15 @@ func ValidProjectName(name string) bool {
 // ProjectWorkRoot validates every component beneath the trusted AGCTL_HOME.
 // It may provision storage before the first chat container is started.
 func ProjectWorkRoot(home string, userID int64, create bool) (string, error) {
-	if userID <= 0 {
+	return ProjectWorkRootIn(home, fmt.Sprintf("u%d", userID), create)
+}
+
+// ProjectWorkRootIn — рабочий каталог StorageID-тома пользователя
+// (карточка developer-multi-containers: слоты — отдельные тома u<ID>s<N>;
+// шлюз читает workspace активного слота). storageID валидируется как
+// безопасное имя каталога: один сегмент, без ".." и слэшей.
+func ProjectWorkRootIn(home, storageID string, create bool) (string, error) {
+	if storageID == "" || storageID != filepath.Base(storageID) || storageID == "." || storageID == ".." {
 		return "", ErrInvalidProject
 	}
 	root, err := filepath.EvalSymlinks(home)
@@ -109,7 +117,7 @@ func ProjectWorkRoot(home string, userID int64, create bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for _, part := range []string{"chats", fmt.Sprintf("u%d", userID), "work"} {
+	for _, part := range []string{"chats", storageID, "work"} {
 		root = filepath.Join(root, part)
 		if err := projectDirectory(root, create); err != nil {
 			return "", err
@@ -140,10 +148,19 @@ func projectDirectory(path string, create bool) error {
 // ProjectDirectory resolves an existing project for folder/session integration.
 // Callers must not accept a user-supplied directory in place of the name.
 func ProjectDirectory(home string, userID int64, name string) (string, error) {
+	if userID <= 0 {
+		return "", ErrInvalidProject
+	}
+	return ProjectDirectoryIn(home, fmt.Sprintf("u%d", userID), name)
+}
+
+// ProjectDirectoryIn — проект в томе конкретного StorageID (активный слот
+// мульти-рантайма).
+func ProjectDirectoryIn(home, storageID, name string) (string, error) {
 	if !ValidProjectName(name) {
 		return "", ErrInvalidProject
 	}
-	root, err := ProjectWorkRoot(home, userID, false)
+	root, err := ProjectWorkRootIn(home, storageID, false)
 	if err != nil {
 		return "", err
 	}

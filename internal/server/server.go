@@ -58,6 +58,7 @@ type Config struct {
 	CORSOrigins             []string           // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
 	Tier0                   bool               // корень платформы ведёт в персональный чат (/chat/)
 	EgressAllowlist         bool               // чат-контейнеры на выделенной сети: egress только DNS и хост-шлюз (карточка egress-allowlist)
+	LauncherSlotsMax        int                // максимум живых слотов developer'а (--launcher-slots-max; карточка developer-multi-containers, 0/вне диапазона = дефолт 3)
 	ChatTTL                 time.Duration      // idle TTL персонального runtime (по умолчанию 60 мин)
 	ChatPrewarmN            int                // prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл); он же — потолок пула
 	ChatPrewarmEvery        time.Duration      // период цикла подогрева (по умолчанию 15 мин)
@@ -103,8 +104,8 @@ type Server struct {
 	tokens map[string]string
 
 	chatMu        sync.Mutex                   // персональные per-user runtime: ленивое создание и TTL
-	chats         map[int64]*chatRuntime       // userID → живой runtime handle
-	chatLocks     map[int64]*sync.Mutex        // сериализация первого старта per-user
+	chats         map[chatKey]*chatRuntime     // (userID, слот) → живой runtime handle
+	chatLocks     map[chatKey]*sync.Mutex      // сериализация первого старта per (user, slot)
 	chatProvider  agctlrt.ChatProvider         // Docker now; K8s adapter can return a Service DNS endpoint
 	localBridge   *bridge.Manager              // experimental outbound local-backend connector, opt-in routes only
 	requestMu     sync.Mutex                   // не допускать двойной approve одной заявки
@@ -186,7 +187,7 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 	s := &Server{
 		db: db, sec: sec, cfg: cfg, rt: workspaceRuntime, chatProvider: chatProvider, brand: brand,
 		localBridge: bridge.NewManager(),
-		tokens:      map[string]string{}, chats: map[int64]*chatRuntime{}, chatLocks: map[int64]*sync.Mutex{},
+		tokens:      map[string]string{}, chats: map[chatKey]*chatRuntime{}, chatLocks: map[chatKey]*sync.Mutex{},
 		startedAt: time.Now(),
 	}
 	if s.cfg.AutosaveEvery == 0 {
@@ -278,7 +279,7 @@ func (s *Server) Close() {
 	for _, chat := range s.chats {
 		handles = append(handles, chat.handle)
 	}
-	s.chats = map[int64]*chatRuntime{}
+	s.chats = map[chatKey]*chatRuntime{}
 	s.chatMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -366,6 +367,12 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/me/runtime/stop", s.requireDeveloper(s.handleMeRuntimeStop))
 	mux.HandleFunc("GET /api/me/containers", s.requireDeveloper(s.handleMeContainers))
 	mux.HandleFunc("GET /api/me/runtime/logs", s.requireDeveloper(s.handleMeRuntimeLogs))
+	// Слоты мульти-рантайма (карточка developer-multi-containers).
+	mux.HandleFunc("GET /api/me/slots", s.requireDeveloper(s.handleMeSlots))
+	mux.HandleFunc("PUT /api/me/slots/{slot}/image", s.requireDeveloper(s.handleMeSlotImagePut))
+	mux.HandleFunc("POST /api/me/slots/{slot}/start", s.requireDeveloper(s.handleMeSlotStart))
+	mux.HandleFunc("POST /api/me/slots/{slot}/stop", s.requireDeveloper(s.handleMeSlotStop))
+	mux.HandleFunc("POST /api/me/slots/{slot}/activate", s.requireDeveloper(s.handleMeSlotActivate))
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
 	// Админ-панель супер-админа (карточка admin-panel-super-admin).
@@ -619,17 +626,17 @@ func (s *Server) reconcile() {
 		return
 	}
 	type deadChat struct {
-		userID int64
-		rt     *chatRuntime
+		key chatKey
+		rt  *chatRuntime
 	}
 	var dead []deadChat
 	s.chatMu.Lock()
-	for uid, rt := range s.chats {
+	for k, rt := range s.chats {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		st, err := hr.HealthStatus(ctx, rt.handle.InstanceID)
 		cancel()
 		if err == nil && st == "unhealthy" {
-			dead = append(dead, deadChat{userID: uid, rt: rt})
+			dead = append(dead, deadChat{key: k, rt: rt})
 		}
 	}
 	s.chatMu.Unlock()
@@ -638,11 +645,11 @@ func (s *Server) reconcile() {
 		s.forgetToken(chatTokenCacheKey(d.rt.handle))
 		err := s.chatProvider.StopChat(ctx, d.rt.handle)
 		cancel()
-		s.evictChat(d.userID, d.rt)
+		s.evictChat(d.key.uid, d.key.slot, d.rt)
 		if err != nil {
-			log.Printf("[chat] reconcile: останов unhealthy-рантайма пользователя %d: %v", d.userID, err)
+			log.Printf("[chat] reconcile: останов unhealthy-рантайма пользователя %d слот %d: %v", d.key.uid, d.key.slot, err)
 		} else {
-			log.Printf("[chat] reconcile: пользователь %d — контейнер unhealthy (dsh не отвечает), среда пересоздастся при следующем открытии", d.userID)
+			log.Printf("[chat] reconcile: пользователь %d слот %d — контейнер unhealthy (dsh не отвечает), среда пересоздастся при следующем открытии", d.key.uid, d.key.slot)
 		}
 	}
 }
