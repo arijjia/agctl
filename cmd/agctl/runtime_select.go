@@ -59,6 +59,7 @@ type runtimeFlags struct {
 	k8sSSHHost       *string
 	k8sReadyTimeout  *int
 	k8sGatewayLabels *string
+	k8sEgressPolicy  *bool
 	k8sLiveness      *bool
 	k8sPullPolicy    *string
 
@@ -94,6 +95,7 @@ func registerRuntimeFlags(fsSet *flag.FlagSet, cfg userConfig) *runtimeFlags {
 	rf.k8sSSHHost = fsSet.String("k8s-ssh-host", envOr("AGCTL_K8S_SSH_HOST", k.SSHHost), "внешний адрес узлов/балансировщика для SSH developer'а (NodePort); пусто = SSH выключен")
 	rf.k8sReadyTimeout = fsSet.Int("k8s-ready-timeout", nonZeroOr(envInt("AGCTL_K8S_READY_TIMEOUT", 0), nonZeroOr(k.ReadyTimeoutSec, 180)), "секунд ожидания готовности пода при старте рантайма")
 	rf.k8sGatewayLabels = fsSet.String("k8s-gateway-selector", envOr("AGCTL_K8S_GATEWAY_SELECTOR", firstNonEmpty(k.GatewaySelector, "app.kubernetes.io/name=agctl")), "метки подов шлюза (k=v,…) для NetworkPolicy ingress на dsh; пусто = любой под namespace")
+	rf.k8sEgressPolicy = fsSet.Bool("k8s-egress-policy", envOr("AGCTL_K8S_EGRESS_POLICY", firstNonEmpty(k.EgressPolicy, "0")) == "1", "egress-политика чат-подов: DNS + ipBlock LLM-хостов провайдеров (карточка k8s-pod-egress-policy); требует CNI с NetworkPolicy")
 	rf.k8sLiveness = fsSet.Bool("k8s-liveness", envOr("AGCTL_K8S_LIVENESS", "1") != "0", "livenessProbe dsh (agctl-dsh-net health)")
 	rf.k8sPullPolicy = fsSet.String("k8s-pull-policy", envOr("AGCTL_K8S_PULL_POLICY", firstNonEmpty(k.PullPolicy, "IfNotPresent")), "imagePullPolicy подов: IfNotPresent | Always | Never")
 
@@ -142,6 +144,7 @@ func buildServer(rf *runtimeFlags, db *store.DB, sec *secrets.Manager, cfg serve
 			ReadyTimeout:     time.Duration(*rf.k8sReadyTimeout) * time.Second,
 			SSHHost:          *rf.k8sSSHHost,
 			GatewaySelector:  parseLabels(*rf.k8sGatewayLabels),
+			EgressPolicy:     *rf.k8sEgressPolicy,
 			Liveness:         *rf.k8sLiveness,
 		}
 		if cfg.NanoCPUs <= 0 {

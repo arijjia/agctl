@@ -2,17 +2,18 @@
 schema: 1.5.0
 id: k8s-pod-egress-policy
 title: "Egress-политика подов k8s: opt-in allowlist LLM-хостов"
-status: open
+status: in-progress
 priority: P3
 size: M
 area: runtime
 repo: arijjia/agctl
 created: 2026-11-14
-updated: 2026-11-14
+updated: 2026-11-15
 tags: ["kubernetes", "security", "network"]
 depends: [egress-allowlist]
 sessions:
   - session-c780be29-3c20-4064-a46e-9f9eb1cb8b92:work
+  - session-1247c577-a767-45f9-80c3-6e31877ad29a:work
 ---
 
 ## Описание
