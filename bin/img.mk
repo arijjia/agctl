@@ -26,6 +26,7 @@ overlay_tag = $(shell printf '%s' '$1' | sed -E 's|^(.*/)?([^/:]+)(:[^/]*)?$$|\1
 # нет (падало из коробки: "/skel": not found). Скелет нужен entrypoint'у для
 # самопосева пустого тома из /opt/dsh-skel; форма src/. dst/ не вкладывает
 # dsh-skel внутрь, если .build-img/skel уже создан.
+## img_build: образы рабочего места: agctl-dsh, agctl-dsh-nossh, вкус web (IMG_FLAVORS) и надстройка профиля PROFILE
 img_build:
 	GOOS=linux GOARCH=$(IMG_GOARCH) go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-linux-$(IMG_GOARCH) ./cmd/agctl
 	rm -rf .build-img && mkdir -p .build-img
@@ -58,9 +59,11 @@ img_profile:
 
 # img_build_nossh: пересобрать только вариант «без SSH» (контекст уже собран
 # img_build; бинарь берём из dist).
+## img_build_nossh: пересобрать только agctl-dsh-nossh из уже готового .build-img
 img_build_nossh:
 	docker build --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
 
+## img_build_amd64: agctl-dsh под linux/amd64 (например, с Apple Silicon для x86-сервера)
 img_build_amd64:
 	GOOS=linux GOARCH=amd64 go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-linux-amd64 ./cmd/agctl
 	rm -rf .build-img && mkdir -p .build-img

@@ -44,6 +44,7 @@ flowchart LR
 | Документ | О чём |
 |---|---|
 | [docs/local-mode.md](docs/local-mode.md) | **Локальный режим `agctl dev`**: платформа на машине разработчика — установка, доступы в хранилище ОС, мост к хосту, обновления с откатом |
+| [docs/cli-and-build.md](docs/cli-and-build.md) | **Сборка, make, CLI и автодополнение**: из чего состоит бинарь, этапы сборки (SPA → бинарь → образы), все цели make, все команды `agctl` и `agctl dev`, fish |
 | [docs/architecture.md](docs/architecture.md) | **Текущая архитектура v3**: единый runtime пользователя, роли, проекты, SSH, шлюзы и healthcheck — с точными ссылками на код. Физической карте соответствует файл `system/map/agctl-processes.html` |
 | [docs/customization.md](docs/customization.md) | **Кастомизация под свою организацию**: профиль (`profile.yaml` + логотип), брендинг, LLM-дефолты, `make profile-fetch` |
 | [docs/architecture-roadmap.md](docs/architecture-roadmap.md) | **Архитектурный роадмап**: где мы сейчас, горизонты 1–3, принципы |
@@ -128,34 +129,18 @@ make logs                     # хвост лога; остановка — make
 
 ### Установка CLI глобально и автодополнение (fish)
 
-Бинарь agctl самодостаточен (Go, без рантайм-зависимостей) — глобальная
-установка это копия в каталог из PATH:
+Одна команда из корня репозитория собирает SPA, бинарь и linux-сборку
+(для образа) и ставит их вместе с автодополнением fish:
 
 ```bash
-make go_build                                  # свежая сборка в dist/agctl
-mkdir -p ~/.local/bin && cp dist/agctl ~/.local/bin/
-agctl version                                  # проверка
+make install        # ~/.local/bin/agctl, ~/.local/lib/agctl/, ~/.config/fish/completions/agctl.fish
+agctl version       # agctl 0.1.0 <коммит> <дата> — проверить, что в PATH свежий
 ```
 
-Если `~/.local/bin` ещё не в PATH (чистое окружение), в fish это одна строка
-в `~/.config/fish/config.fish` (или разовая команда):
-
-```fish
-fish_add_path ~/.local/bin
-```
-
-Автодополнение fish — подсказки подкоманд, флагов и значений (приоритеты
-бэклога, пути к каталогам):
-
-```bash
-mkdir -p ~/.config/fish/completions
-agctl completion fish > ~/.config/fish/completions/agctl.fish
-# проверить: напечатать «agctl » и нажать Tab
-```
-
-Скрипт статический: после обновления agctl (новые команды/флаги) повторить
-генерацию той же командой. В чистом окружении порядок такой: Go, Docker,
-Node по быстрому старту выше → `make go_build` → две команды установки.
+Повторяйте `make install` после `git pull`: старый бинарь в PATH — частая
+причина «неизвестная команда "dev"». Если `~/.local/bin` ещё не в PATH, в
+fish: `fish_add_path ~/.local/bin`. Как пользоваться автодополнением и
+весь CLI — [docs/cli-and-build.md](docs/cli-and-build.md).
 
 ### Конфигурация CLI (~/.config/agctl/config.yaml)
 
@@ -416,7 +401,7 @@ agctl version
 |---|---|
 | `--home DIR` | каталог данных (по умолчанию `~/.agctl`) |
 | `--addr H:P` | слушающий адрес (по умолчанию `127.0.0.1:8929`) |
-| `--image T` | тег образа персонального runtime (по умолчанию `agctl-dsh:0.2.0`) |
+| `--image T` | тег образа персонального runtime (по умолчанию `agctl-dsh:0.2.2`) |
 | `--bin-dir D` | каталог linux-сборок agctl для образа (по умолчанию `./dist`) |
 | `--mem-gb N` / `--cpus N` | лимиты персонального контейнера (по умолчанию 2 ГБ / 2 CPU) |
 | `--chat-ttl-min N` | idle TTL персонального контейнера, минуты (по умолчанию 60); per-user — `PUT /api/admin/users/{id}/limits` |
@@ -484,6 +469,7 @@ SSH-туннель и укажи его локальные host/port.
 
 | Цель | Что делает |
 |---|---|
+| `make install` | SPA + бинарь + linux-сборка в `~/.local/bin`/`~/.local/lib/agctl` + автодополнение fish (подробно — [docs/cli-and-build.md](docs/cli-and-build.md)) |
 | `make hooks` | установить pre-commit hook: gofmt + go vet, node --check, тест синка плагинов ↔ dsh-skel, блок случайного коммита `.env` |
 | `make go_build` / `go test ./...` | бинарь / полный Go-suite (включая роли, проекты, autosave, legacy tombstones) |
 | `make web_build` | React SPA → `web/dist` → `go:embed` |

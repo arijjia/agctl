@@ -1,6 +1,9 @@
 # agctl — платформа агентских рабочих мест (один Go-бинарь).
 VERSION ?= 0.1.0
-LDFLAGS := -s -w -X main.version=$(VERSION)
+# Коммит и дата сборки — в `agctl version` (отличить свежий бинарь от старого).
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
+BUILD_DATE ?= $(shell date -u +%Y-%m-%d)
+LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 
 # Секреты и переопределения — в .env (шаблон: .env.example). .env не коммитится,
 # его переменные экспортируются во все цели (serve читает AGCTL_LLM_* сам:
@@ -15,6 +18,7 @@ include bin/*.mk
 
 .DEFAULT_GOAL := help
 .PHONY: all build test help
+## all: go_build + web_build + img_build
 all: go_build web_build img_build
 build: go_build
 test: go_test
