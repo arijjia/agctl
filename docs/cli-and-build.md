@@ -367,7 +367,7 @@ Chromium, LibreOffice.
 
 | Команда | Флаги и аргументы | Что делает |
 |---|---|---|
-| `dev init` | `--profile ID`, `--profile-dir DIR`, `--image REF`, `--flavor web\|1c`, `--workdir DIR`, `--addr 127.0.0.1:PORT`, `--yes`, `--no-pull` | мастер (подробно ниже) |
+| `dev init` | `--profile ID`, `--profile-dir DIR`, `--image REF`, `--flavor web\|1c`, `--workdir DIR`, `--addr 127.0.0.1:PORT`, `--yes`, `--cli`, `--no-pull` | профиль и папка проектов; образ и доступы — в лаунчере (подробно ниже) |
 | `dev up [DIR]` | `--no-open`, `--foreground` | проверяет Docker и свободный порт, запускает фоновый `dev serve`, ждёт готовности, открывает браузер со ссылкой входа. `DIR` становится `/workspace` вместо папки из `dev.yaml` |
 | `dev down` | — | остановить сервер и контейнер; данные сохраняются |
 | `dev status` | — | адрес, образ, папка, контейнер, мост |
@@ -381,13 +381,16 @@ Chromium, LibreOffice.
 | `dev rollback` | `--restore-data` | вернуть `previous_image`, при необходимости и dsh-home из бэкапа |
 | `dev doctor` | — | Docker, образ, доступы, сеть, мост — с подсказками |
 
-Что делает мастер `dev init`:
-1. выбирает профиль и образ;
+Что делает `dev init`:
+1. выбирает профиль (`--profile` или `--profile-dir`);
 2. спрашивает папку проектов (весь `$HOME` и `/` запрещены);
-3. спрашивает доступы: ключ LLM, адрес и токен GitLab, адрес, логин и
-   токен Jira;
-4. переносит белый список моста из профиля;
-5. скачивает образ.
+3. берёт образ из `--image`/`--flavor` или первый из профиля;
+4. переносит белый список моста из профиля.
+
+Образ и доступы (ключ LLM, GitLab, Jira) настраиваются **в лаунчере** после
+`dev up`: вкладки «Рабочее место» и «Доступы» (подробно —
+[local-mode.md](local-mode.md)). С `--cli` — по-старому, мастером в
+терминале: номер образа, доступы, скачивание образа.
 
 Пример полностью без вопросов:
 
@@ -467,7 +470,7 @@ agctl перегенерируйте файл (или снова выполни�
 ```
 agctl ⇥                  → serve dev bridge backlog connect sync config version …
 agctl dev ⇥              → init up down status open logs secrets bridge update rollback doctor help
-agctl dev init --⇥       → --profile --profile-dir --image --flavor --workdir --addr --yes --no-pull
+agctl dev init --⇥       → --profile --profile-dir --image --flavor --workdir --addr --yes --cli --no-pull
 agctl dev init --flavor ⇥ → web 1c
 agctl dev up ⇥           → каталоги
 agctl dev up --⇥         → --no-open --foreground

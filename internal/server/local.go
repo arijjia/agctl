@@ -35,12 +35,16 @@ type LocalMode struct {
 	BridgeLog    string             // журнал вызовов моста
 	Env          []string           // KEY=VALUE в контейнер (секреты из хранилища ОС)
 	Shutdown     func()             // остановка процесса (POST /api/local/shutdown)
+	// Hooks — хост для лаунчера: доступы (хранилище ОС), образы (dev.yaml,
+	// pull/сборка). nil — лаунчер без раздела локального режима, env из Env.
+	Hooks LocalHooks
 }
 
 // localState — рантайм-состояние локального режима сервера.
 type localState struct {
 	ownerID int64
 	bridge  *localbridge.Bridge
+	task    *localTask // подготовка рабочего места из лаунчера
 }
 
 func (s *Server) isLocal() bool { return s.cfg.Local != nil }
@@ -83,8 +87,14 @@ func (s *Server) initLocal() error {
 	if err != nil {
 		return err
 	}
-	s.local = &localState{ownerID: id, bridge: b}
+	s.local = &localState{ownerID: id, bridge: b, task: &localTask{state: "idle"}}
 	provision.SetLocalWorkRoot(s.cfg.Home, id, lm.WorkDir)
+	// Источник правды об образе — dev.yaml (его меняют и лаунчер, и CLI).
+	if lm.Hooks != nil {
+		if err := s.db.SettingSet(chatImageSettingKey(id), lm.Hooks.CurrentImage()); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -96,6 +106,7 @@ func (s *Server) registerLocalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/local/bridge/pending/{id}/{verdict}", s.requireControl(s.handleBridgeDecide))
 	mux.HandleFunc("GET "+localbridge.PathTools, s.requireBridge(s.handleBridgeTools))
 	mux.HandleFunc("POST "+localbridge.PathCall, s.requireBridge(s.handleBridgeCall))
+	s.registerLocalUIRoutes(mux)
 }
 
 func bearer(r *http.Request) string {
@@ -141,13 +152,26 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if h := s.cfg.Local.Hooks; h != nil {
+		// Лаунчер: образ и доступы — в браузере. Если всё готово (образ на
+		// машине, ключ модели задан) — рабочее место прогревается сразу.
+		ready := h.LLMKey() != ""
+		cur := h.CurrentImage()
+		present := false
+		for _, im := range h.Images() {
+			present = present || (im.Ref == cur && im.Present)
+		}
+		if ready && present {
+			s.startLocalRuntime(false)
+		}
+		http.Redirect(w, r, "/launcher", http.StatusSeeOther)
+		return
+	}
 	go func() {
 		if _, err := s.ensureChat(s.local.ownerID); err != nil {
 			log.Printf("[local] старт рабочего места: %v", err)
 		}
 	}()
-	// Образ выбран в dev.yaml, рабочее место уже прогревается — сразу в чат
-	// (лаунчер доступен по /launcher: логи, рестарт контейнера).
 	http.Redirect(w, r, "/chat/", http.StatusSeeOther)
 }
 
@@ -223,7 +247,11 @@ func (s *Server) localChatExtras(userID int64) (workDir string, env []string) {
 	if !s.isLocal() || s.local == nil || userID != s.local.ownerID {
 		return "", nil
 	}
-	env = append(env, s.cfg.Local.Env...)
+	if h := s.cfg.Local.Hooks; h != nil {
+		env = append(env, h.ContainerEnv()...)
+	} else {
+		env = append(env, s.cfg.Local.Env...)
+	}
 	env = append(env,
 		localbridge.EnvURL+"="+s.cfg.Local.BridgeURL,
 		localbridge.EnvToken+"="+s.cfg.Local.BridgeToken,

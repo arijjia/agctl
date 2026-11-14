@@ -531,10 +531,10 @@ func (s *Server) userProvider(userID int64) provision.Provider {
 			if len(models) == 0 {
 				models = []string{sec.Model}
 			}
-			return provision.Provider{BaseURL: sec.BaseURL, Model: sec.Model, Models: models, APIKey: key, Extras: s.cfg.DefaultLLM.Extras}
+			return provision.Provider{BaseURL: sec.BaseURL, Model: sec.Model, Models: models, APIKey: key, Extras: s.defaultLLM().Extras}
 		}
 	}
-	return s.cfg.DefaultLLM
+	return s.defaultLLM()
 }
 
 // ensureChat asks the runtime provider to ensure the user's stable Chat runtime
