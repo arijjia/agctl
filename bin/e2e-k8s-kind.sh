@@ -98,7 +98,7 @@ spec:
   containers:
     - name: httpd
       image: busybox:1.36
-      args: ["sh", "-c", "mkdir -p /www && echo ok > /www/index.html && exec httpd -f -p 8000 -h /www"]
+      args: ["sh", "-c", "mkdir -p /tmp/www && echo ok > /tmp/www/index.html && exec httpd -f -p 8000 -h /tmp/www"]
       ports:
         - containerPort: 8000
       securityContext:
@@ -166,8 +166,15 @@ if [ "$EGRESS" = "1" ]; then
   echo "▶ egress-политика чат-пода"
   kubectl -n "$NS" get networkpolicy "netegress-$POD" >/dev/null && echo "  ✓ политика netegress создана"
   # Разрешённый LLM-хост: HTTP-ответ приходит (код неважен — соединение есть).
-  code=$(kubectl -n "$NS" exec "$POD" -c dsh -- curl -s -o /dev/null -w '%{http_code}' --max-time 8 "http://fake-llm.${NS}.svc.cluster.local:8000/" 2>/dev/null || echo blocked)
-  [ "$code" != "blocked" ] && [ "$code" != "000" ] && echo "  ✓ разрешённый хост отвечает (HTTP $code)" || { echo "✗ разрешённый хост заблокирован (код $code)"; exit 1; }
+  set +e
+  code=$(kubectl -n "$NS" exec "$POD" -c dsh -- curl -s -o /dev/null -w '%{http_code}' --max-time 8 "http://fake-llm.${NS}.svc.cluster.local:8000/" 2>/dev/null)
+  rc=$?
+  set -e
+  if [ "$rc" = "0" ] && [ "$code" != "000" ] && [ -n "$code" ]; then
+    echo "  ✓ разрешённый хост отвечает (HTTP $code)"
+  else
+    echo "✗ разрешённый хост не отвечает (rc=$rc код=$code)"; exit 1
+  fi
   # Посторонний хост: pod IP шлюза — соединение должно повиснуть (timeout).
   GWIP=$(kubectl -n "$NS" get pod -l app.kubernetes.io/name=agctl -o jsonpath='{.items[0].status.podIP}')
   if kubectl -n "$NS" exec "$POD" -c dsh -- curl -s -o /dev/null --max-time 6 "http://${GWIP}:8929/" 2>/dev/null; then
