@@ -21,8 +21,17 @@ type McpServerSpec struct {
 	Title       string   // человекочитаемое имя в консоли
 	Description string   // подсказка в консоли
 	ServerName  string   // serverName ряда cordis
-	Args        []string // аргументы npx после -y
+	Args        []string // аргументы npx после -y (или Command)
 	SecretEnv   string   // "" — сервер без ключа; иначе имя env-переменной
+	// Command — исполняемый файл сервера; пусто = npx (с -y).
+	Command string
+	// PassEnv — переменные рабочего места (доступы GitLab/Jira, мост),
+	// которые нужны серверу: значения берутся из env контейнера
+	// пользователя и пишутся в пресет 0600. Нет значения — переменная не
+	// передаётся (сервер сообщит, чего не хватает).
+	PassEnv []string
+	// LocalOnly — только в локальном режиме (agctl dev): мост к хосту.
+	LocalOnly bool
 }
 
 // PlatformMcpServers — каталог MCP-серверов платформы. Список согласован с
@@ -32,6 +41,15 @@ var PlatformMcpServers = []McpServerSpec{
 	{ID: "ddg", Title: "DuckDuckGo", Description: "Веб-поиск, без ключа", ServerName: "ddg", Args: []string{"duckduckgo-mcp-server"}},
 	{ID: "context7", Title: "Context7", Description: "Документация библиотек, без ключа", ServerName: "context7", Args: []string{"@upstash/context7-mcp"}},
 	{ID: "tavily", Title: "Tavily", Description: "Веб-поиск, нужен ключ TAVILY_API_KEY", ServerName: "tavily", Args: []string{"tavily-mcp"}, SecretEnv: "TAVILY_API_KEY"},
+	{ID: "gitlab", Title: "GitLab", Description: "Задачи, MR, пайплайны, файлы репозиториев; доступ — личный токен GitLab разработчика", ServerName: "gitlab",
+		Args: []string{"@zereight/mcp-gitlab@2.3.27"}, PassEnv: []string{"GITLAB_PERSONAL_ACCESS_TOKEN", "GITLAB_API_URL"}},
+	{ID: "jira", Title: "Jira", Description: "Задачи и комментарии Jira (Server/DC — личный токен, Cloud — логин+API-токен); ставится при первом запуске через uvx", ServerName: "jira",
+		Command: "uvx", Args: []string{"mcp-atlassian==0.24.4"},
+		PassEnv: []string{"JIRA_URL", "JIRA_PERSONAL_TOKEN", "JIRA_USERNAME", "JIRA_API_TOKEN", "UV_INDEX_URL"}},
+	{ID: "playwright", Title: "Playwright", Description: "Браузер для агента: открыть страницу, кликнуть, скриншот, e2e; нужен образ с браузерами (вкус web)", ServerName: "playwright",
+		Args: []string{"@playwright/mcp@0.0.85", "--headless", "--isolated", "--no-sandbox", "--browser", "chromium"}},
+	{ID: "host-bridge", Title: "Мост к хосту", Description: "Разрешённые команды на компьютере разработчика (белый список agctl dev)", ServerName: "host-bridge",
+		Command: "agctl", Args: []string{"bridge", "mcp"}, PassEnv: []string{"AGCTL_BRIDGE_URL", "AGCTL_BRIDGE_TOKEN"}, LocalOnly: true},
 }
 
 // PlatformMcpServer — выбор записи каталога по id; ok=false для чужого id.
@@ -86,14 +104,23 @@ func EnsureWorkspaceMcpPreset(dshHome, project string, specs []McpServerSpec, se
 				env[s.SecretEnv] = v
 			}
 		}
+		for _, name := range s.PassEnv {
+			if v := secretEnv[name]; v != "" {
+				env[name] = v
+			}
+		}
+		command, args := "npx", append([]string{"-y"}, s.Args...)
+		if s.Command != "" {
+			command, args = s.Command, append([]string(nil), s.Args...)
+		}
 		rows = append(rows, mcpCordisRow{
 			ID:   "mcp-" + s.ServerName,
 			Name: "@deepseek-ai/dsh-mcp-client",
 			Config: map[string]any{
 				"serverName": s.ServerName,
 				"transport":  "stdio",
-				"command":    "npx",
-				"args":       append([]string{"-y"}, s.Args...),
+				"command":    command,
+				"args":       args,
 				"env":        env,
 			},
 		})

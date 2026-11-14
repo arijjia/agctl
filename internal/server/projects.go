@@ -20,6 +20,12 @@ import (
 // подтверждение — на клиенте). Сессионные записи dsh (том) не трогаются:
 // история чатов сохраняется, воркспейс исчезает из списка.
 func (s *Server) handleProjectDelete(w http.ResponseWriter, r *http.Request, id identity) {
+	if s.isLocal() {
+		// Каталоги локального режима — настоящие папки разработчика: из
+		// интерфейса их не стираем (только убрать из списка dsh).
+		writeErr(w, http.StatusConflict, "локальный режим: папки проектов с диска из интерфейса не удаляются — удалите вручную, если нужно")
+		return
+	}
 	name := r.PathValue("name")
 	if _, code, msg := s.resolveProjectDir(id.ID, name); code != 0 && code != http.StatusNotFound {
 		writeErr(w, code, msg)

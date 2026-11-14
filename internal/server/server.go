@@ -77,6 +77,8 @@ type Config struct {
 	// AxProviderConfig — JSON конфига провайдера по имени задачи AX
 	// (axrt.Provider.ProviderConfigByTask); nil при непустом токене = 503.
 	AxProviderConfig func(task string) (json.RawMessage, bool)
+	// Local — однопользовательский локальный режим (agctl dev up); nil = сервер.
+	Local *LocalMode
 }
 
 // RuntimeIface — то, что серверу нужно от docker-рантайма (мокается в тестах).
@@ -118,6 +120,7 @@ type Server struct {
 	coldStarts    atomic.Int64           // холодные старты ensureChat: счётчик и суммарное время
 	coldTotalMS   atomic.Int64
 	startedAt     time.Time    // время старта серва (сводка админки)
+	local         *localState  // локальный режим (agctl dev): владелец и мост; nil — сервер
 	proxyAuditN   atomic.Int64 // счётчик записей журнала шлюза для периодической обрезки
 
 }
@@ -224,6 +227,11 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 		DeleteSession: db.DeleteSession,
 		CookieSecure:  cfg.SecureCookies,
 	}
+	if cfg.Local != nil {
+		if err := s.initLocal(); err != nil {
+			return nil, err
+		}
+	}
 	return s, nil
 }
 
@@ -299,6 +307,9 @@ func (s *Server) Close() {
 func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux := http.NewServeMux()
 
+	if s.isLocal() {
+		s.registerLocalRoutes(mux)
+	}
 	mux.HandleFunc("POST /api/register", s.handleRegister)
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
@@ -512,7 +523,11 @@ func (s *Server) StartBackground(ctx context.Context) {
 				return
 			case <-t.C:
 				s.autosaveAll()
-				s.autosaveLocalProjects()
+				// Локальный режим: /workspace — настоящие репозитории
+				// разработчика, автокоммиты в них недопустимы.
+				if !s.isLocal() {
+					s.autosaveLocalProjects()
+				}
 			}
 		}
 	}()

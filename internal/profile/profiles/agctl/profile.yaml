@@ -30,4 +30,5 @@ examples:
 images:
   dev:
     - agctl-dsh:0.2.2
+    - agctl-dsh-web:0.2.2
     - agctl-dsh-nossh:0.2.2

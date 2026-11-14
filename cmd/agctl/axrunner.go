@@ -30,7 +30,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/agent-substrate/env/guest"
 	"github.com/arijjia/agctl/internal/assets"
 	"github.com/arijjia/agctl/internal/provision"
 	"github.com/arijjia/agctl/internal/runtime/axrt"
@@ -368,10 +367,7 @@ func runnerHandler(sup *supervisor, target, token string, debug bool, workDir st
 	var guestSrv *grpc.Server
 	var guestCleanup func()
 	if debug {
-		cfg := guest.DefaultConfig()
-		cfg.Workspace = workDir
-		cfg.LogDir = "/tmp/agctl-guest-logs"
-		srv, cleanup, err := guest.NewServer(cfg)
+		srv, cleanup, err := newGuestServer(workDir)
 		if err != nil {
 			log.Printf("ax-runner: guest-сервисы недоступны (ax ssh не заработает): %v", err)
 		} else {

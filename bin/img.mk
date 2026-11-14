@@ -3,6 +3,10 @@ IMG ?= agctl-dsh:0.2.2
 # Вариант «без SSH» для лаунчера developer'а (карточка developer-launcher-images):
 # тот же образ с ENV AGCTL_NO_SSHD=1 — sshd не поднимается даже с ключом.
 IMG_NOSSH ?= agctl-dsh-nossh:0.2.2
+# Вкус «web» (локальный режим, веб-разработка): Playwright + Chromium поверх
+# базового. IMG_FLAVORS= (пусто) — не собирать вкусы.
+IMG_WEB ?= agctl-dsh-web:0.2.2
+IMG_FLAVORS ?= web
 IMG_ARCH := $(shell docker version --format '{{.Server.Arch}}' 2>/dev/null || echo aarch64)
 IMG_GOARCH := $(subst aarch64,arm64,$(subst x86_64,amd64,$(IMG_ARCH)))
 
@@ -10,6 +14,10 @@ IMG_GOARCH := $(subst aarch64,arm64,$(subst x86_64,amd64,$(IMG_ARCH)))
 # собирается поверх обоих базовых вариантов как agctl-dsh-<id>:<тег> и
 # agctl-dsh-<id>-nossh:<тег> — те же имена выводит agctl serve.
 PROFILE_DOCKERFILE = $(if $(wildcard profiles/$(PROFILE)/profile.yaml),$(shell sed -n 's/^  dockerfile: *//p' profiles/$(PROFILE)/profile.yaml | head -1))
+# Вкусы профиля: каталоги profiles/<id>/image/flavors/<вкус>/Dockerfile
+# (FROM ${BASE} = надстройка профиля) → agctl-dsh-<id>-<вкус>:<тег>.
+PROFILE_FLAVORS = $(notdir $(patsubst %/,%,$(dir $(wildcard profiles/$(PROFILE)/image/flavors/*/Dockerfile))))
+flavor_tag = $(call overlay_tag,$(IMG:%:$(lastword $(subst :, ,$(IMG)))=%))-$1:$(lastword $(subst :, ,$(IMG)))
 overlay_tag = $(shell printf '%s' '$1' | sed -E 's|^(.*/)?([^/:]+)(:[^/]*)?$$|\1\2-$(PROFILE)\3|')
 
 .PHONY: img_build img_build_amd64 img_build_nossh img_profile
@@ -26,6 +34,8 @@ img_build:
 	cp dist/agctl-linux-$(IMG_GOARCH) .build-img/agctl
 	docker build -t $(IMG) .build-img
 	docker build --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
+	@if echo " $(IMG_FLAVORS) " | grep -q ' web '; then \
+	  docker build --build-arg BASE=$(IMG) -t $(IMG_WEB) .build-img/flavors/web; fi
 	@$(MAKE) --no-print-directory img_profile
 
 # PIP_INDEX_URL — зеркало PyPI (Nexus организации) для стадии wheels надстройки.
@@ -39,7 +49,12 @@ img_profile:
 	f=profiles/$(PROFILE)/$(PROFILE_DOCKERFILE); \
 	docker build $(PIP_INDEX_ARG) --build-arg BASE=$(IMG) -t $(call overlay_tag,$(IMG)) -f "$$f" "$$ctx" && \
 	docker build $(PIP_INDEX_ARG) --build-arg BASE=$(IMG_NOSSH) -t $(call overlay_tag,$(IMG_NOSSH)) -f "$$f" "$$ctx" && \
-	echo "✓ образы профиля $(PROFILE): $(call overlay_tag,$(IMG)), $(call overlay_tag,$(IMG_NOSSH))"
+	if docker image inspect $(IMG_WEB) >/dev/null 2>&1; then \
+	  docker build $(PIP_INDEX_ARG) --build-arg BASE=$(IMG_WEB) -t $(call overlay_tag,$(IMG_WEB)) -f "$$f" "$$ctx"; fi && \
+	for fl in $(PROFILE_FLAVORS); do \
+	  docker build $(PIP_INDEX_ARG) --build-arg BASE=$(call overlay_tag,$(IMG)) -t "$(call flavor_tag,$$fl)" \
+	    -f "profiles/$(PROFILE)/image/flavors/$$fl/Dockerfile" "profiles/$(PROFILE)/image/flavors/$$fl" || exit 1; done && \
+	echo "✓ образы профиля $(PROFILE): $(call overlay_tag,$(IMG)), $(call overlay_tag,$(IMG_NOSSH))$(if $(PROFILE_FLAVORS), + вкусы профиля: $(PROFILE_FLAVORS))"
 
 # img_build_nossh: пересобрать только вариант «без SSH» (контекст уже собран
 # img_build; бинарь берём из dist).

@@ -32,7 +32,9 @@ func TestDevEnvInjectedForDeveloperOnly(t *testing.T) {
 	if !okDev {
 		t.Fatal("ChatSpec developer не зафиксирован")
 	}
-	if len(specDev.DevEnv) != 1 || !strings.Contains(specDev.DevEnv[0], "WSCHECK_GITLAB_TOKEN=glpat-test") {
+	// + путь к файлу доступов для команд агента (agent_creds.go)
+	if len(specDev.DevEnv) != 2 || !strings.Contains(specDev.DevEnv[0], "WSCHECK_GITLAB_TOKEN=glpat-test") ||
+		specDev.DevEnv[1] != "AGCTL_CREDENTIALS_ENV=/home/dsh/.agctl/credentials.env" {
 		t.Fatalf("DevEnv developer: %v (незаданные имена и пустые значения пропускаются)", specDev.DevEnv)
 	}
 

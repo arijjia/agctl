@@ -101,6 +101,9 @@ func ProjectWorkRoot(home string, userID int64, create bool) (string, error) {
 	if userID <= 0 {
 		return "", ErrInvalidProject
 	}
+	if dir, ok := localWorkRoot(home, userID); ok {
+		return dir, nil
+	}
 	root, err := filepath.EvalSymlinks(home)
 	if err != nil {
 		return "", err

@@ -79,6 +79,10 @@ func requestIP(r *http.Request) string {
 // факт регистрации и роль пишутся в audit, сессия ставится сразу.
 // Частота регистраций с одного адреса ограничена (дефект D3).
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if s.isLocal() {
+		writeErr(w, http.StatusForbidden, "локальный режим: регистрации нет, вход — agctl dev open")
+		return
+	}
 	if s.regLimit != nil {
 		if ok, retryAfter := s.regLimit.Allow(requestIP(r)); !ok {
 			secs := int((retryAfter + time.Second - 1) / time.Second)
