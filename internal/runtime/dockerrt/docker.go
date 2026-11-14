@@ -144,6 +144,16 @@ func (rt *Runtime) buildBase(ctx context.Context, tag string) error {
 	if err := extractFS(rt.imageFS, "image", ctxDir); err != nil {
 		return fmt.Errorf("docker: контекст образа: %w", err)
 	}
+	// COPY skel/ в Dockerfile: скелет DSH_HOME (как .build-img/skel в make).
+	skel := filepath.Join(ctxDir, "skel")
+	if err := os.MkdirAll(skel, 0o755); err != nil {
+		return err
+	}
+	if rt.cfg.DshSkel != nil {
+		if err := extractFS(rt.cfg.DshSkel, "dsh-skel", skel); err != nil {
+			return fmt.Errorf("docker: скелет DSH_HOME: %w", err)
+		}
+	}
 	dst := filepath.Join(ctxDir, "agctl")
 	if err := copyFile(bin, dst); err != nil {
 		return fmt.Errorf("docker: копирование %s: %w", bin, err)
