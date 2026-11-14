@@ -183,29 +183,42 @@ func NewWithClient(cfg Config, ax v1alpha1.AXClient, router *http.Client) (*Prov
 	return &Provider{cfg: cfg, ax: ax, router: router}, nil
 }
 
+// routerTLSConfig — TLS-конфигурация маршрутизатора (опционально mTLS):
+// общий для routerClient и ChatHandle (чат-прокси шлюза ходит в тот же
+// Endpoint https и должен доверять тем же корням/нести тот же клиентский
+// сертификат).
+func routerTLSConfig(cfg Config) (*tls.Config, error) {
+	if cfg.RouterCA == "" && cfg.RouterClientCert == "" {
+		return nil, nil
+	}
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+	if cfg.RouterCA != "" {
+		pem, err := os.ReadFile(cfg.RouterCA)
+		if err != nil {
+			return nil, fmt.Errorf("axrt: router CA: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("axrt: router CA %s: no certificates", cfg.RouterCA)
+		}
+		tlsCfg.RootCAs = pool
+	}
+	if cfg.RouterClientCert != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.RouterClientCert, cfg.RouterClientKey)
+		if err != nil {
+			return nil, fmt.Errorf("axrt: router client certificate: %w", err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{cert}
+	}
+	return tlsCfg, nil
+}
+
 // routerClient — HTTP-клиент маршрутизатора (опционально mTLS).
 func routerClient(cfg Config) (*http.Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if cfg.RouterCA != "" || cfg.RouterClientCert != "" {
-		tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
-		if cfg.RouterCA != "" {
-			pem, err := os.ReadFile(cfg.RouterCA)
-			if err != nil {
-				return nil, fmt.Errorf("axrt: router CA: %w", err)
-			}
-			pool := x509.NewCertPool()
-			if !pool.AppendCertsFromPEM(pem) {
-				return nil, fmt.Errorf("axrt: router CA %s: no certificates", cfg.RouterCA)
-			}
-			tlsCfg.RootCAs = pool
-		}
-		if cfg.RouterClientCert != "" {
-			cert, err := tls.LoadX509KeyPair(cfg.RouterClientCert, cfg.RouterClientKey)
-			if err != nil {
-				return nil, fmt.Errorf("axrt: router client certificate: %w", err)
-			}
-			tlsCfg.Certificates = []tls.Certificate{cert}
-		}
+	if tlsCfg, err := routerTLSConfig(cfg); err != nil {
+		return nil, err
+	} else if tlsCfg != nil {
 		transport.TLSClientConfig = tlsCfg
 	}
 	return &http.Client{Transport: transport, Timeout: 30 * time.Second}, nil
@@ -291,11 +304,16 @@ func (p *Provider) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	if err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
+	tlsCfg, err := routerTLSConfig(p.cfg)
+	if err != nil {
+		return agctlrt.ChatHandle{}, err
+	}
 	return agctlrt.ChatHandle{
 		RuntimeID:  spec.RuntimeID,
 		InstanceID: instanceID(task),
 		Endpoint:   p.cfg.RouterURL,
 		Headers:    map[string]string{HeaderTargetActor: p.cfg.Atespace + "/" + name},
+		TLSConfig:  tlsCfg,
 	}, nil
 }
 

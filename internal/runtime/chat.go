@@ -4,6 +4,7 @@ package runtime
 
 import (
 	"context"
+	"crypto/tls"
 	"strings"
 
 	"github.com/arijjia/agctl/internal/provision"
@@ -53,6 +54,11 @@ type ChatHandle struct {
 	// (например, ate-target-actor маршрутизатора Agent Substrate: один общий
 	// Endpoint, актор выбирается заголовком). nil = ничего не добавлять.
 	Headers map[string]string
+	// TLSConfig — TLS-параметры Endpoint (mTLS маршрутизатора Substrate:
+	// доверенные корни + клиентский сертификат). nil = обычный TLS с
+	// системными корнями. Шлюз обязан использовать её в транспорте прокси
+	// (адаптер её не разделяет).
+	TLSConfig *tls.Config
 }
 
 // ChatProvider manages scale-to-zero Chat compute while keeping StorageID's

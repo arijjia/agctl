@@ -45,6 +45,13 @@ spec:
           volumeMounts:
             - name: data
               $patch: delete
+            # home (SQLite шлюза) обязательно монтировать: distroless-ФС
+            # read-only, без PVC agctl-home serve падает на mkdir
+            # /var/lib/agctl.
+            - name: home
+              mountPath: /var/lib/agctl
+            - name: tmp
+              mountPath: /tmp
             # - name: podidentity
             #   mountPath: /run/podidentity.podcert.ate.dev
             #   readOnly: true
@@ -54,6 +61,8 @@ spec:
       volumes:
         - name: data
           $patch: delete
+        - name: tmp
+          emptyDir: {}
         # - name: podidentity
         #   projected:
         #     sources:
