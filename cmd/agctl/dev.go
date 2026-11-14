@@ -30,6 +30,7 @@ import (
 	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 
+	"github.com/arijjia/agctl/internal/assets"
 	"github.com/arijjia/agctl/internal/localbridge"
 	"github.com/arijjia/agctl/internal/localmode"
 	"github.com/arijjia/agctl/internal/profile"
@@ -141,7 +142,15 @@ func devInit(home string, args []string) error {
 		cfg.Profile, cfg.ProfileDir = *prof, ""
 	}
 	if *profDir != "" {
-		cfg.ProfileDir = *profDir
+		// Абсолютный путь: dev up / dev serve запускаются из любой папки.
+		abs, err := filepath.Abs(*profDir)
+		if err != nil {
+			return err
+		}
+		if st, err := os.Stat(filepath.Join(abs, "profile.yaml")); err != nil || st.IsDir() {
+			return fmt.Errorf("--profile-dir %s: нет profile.yaml", abs)
+		}
+		cfg.ProfileDir = abs
 	}
 	if cfg.ProfileDir == "" {
 		cfg.Profile = ask("Профиль организации", firstNonEmpty(cfg.Profile, "agctl"))
@@ -281,6 +290,70 @@ func devResolveProfile(cfg *localmode.Config) (*profile.Data, error) {
 	return profile.Resolve(firstNonEmpty(cfg.Profile, "agctl"), cfg.ProfileDir, "profiles", filepath.Join(localmode.Home(), "profiles"), filepath.Join(defaultHome(), "profiles"))
 }
 
+// devEnsureImage — образ рабочего места есть локально; нет — docker pull;
+// нет и в реестре — собрать на этой машине всю цепочку (базовый → web →
+// надстройка профиля → вкус профиля) из встроенного контекста, профиля и
+// linux-сборки agctl рядом с бинарём. Первый раз — 10–20 минут.
+func devEnsureImage(cfg *localmode.Config) error {
+	p, err := devResolveProfile(cfg)
+	if err != nil {
+		return err
+	}
+	target := firstNonEmpty(cfg.Image, devDefaultImage(p, cfg.Flavor))
+	ctx := context.Background()
+	if _, err := dockerrt.ImageID(ctx, target); err == nil {
+		return nil
+	}
+	pctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
+	defer cancel()
+	fmt.Printf("… образа %s нет локально — пробую docker pull\n", target)
+	if err := dockerrt.PullImage(pctx, target); err == nil {
+		fmt.Printf("✓ образ %s скачан\n", target)
+		return nil
+	}
+	b := dockerrt.DevBuild{
+		Target: target, Flavor: devFlavorOf(cfg, p, target), BinDir: "dist",
+		ImageFS: assets.Image, SkelFS: assets.DshSkel,
+		Log: func(m string) { fmt.Println("  " + m) },
+	}
+	if p != nil {
+		b.ProfileID = p.ID
+		v := p.View()
+		b.ProfileFS = v.FS
+		if ov, df, ok := v.ImageContext(); ok {
+			b.Overlay, b.OverlayDockerfile = ov, df
+		}
+	}
+	fmt.Printf("… в реестре его тоже нет — собираю на этой машине: %s\n  (первый раз 10–20 минут: npm, apt, браузеры; дальше — из кэша Docker)\n",
+		strings.Join(dockerrt.DevBuildPlan(b), " → "))
+	bctx, bcancel := context.WithTimeout(ctx, 90*time.Minute)
+	defer bcancel()
+	if err := dockerrt.BuildDevImage(bctx, b); err != nil {
+		return fmt.Errorf("сборка образа: %w", err)
+	}
+	return nil
+}
+
+// devFlavorOf — вкус образа: из dev.yaml, иначе по имени образа (-web, -<вкус профиля>).
+func devFlavorOf(cfg *localmode.Config, p *profile.Data, image string) string {
+	if cfg.Flavor != "" {
+		return cfg.Flavor
+	}
+	if strings.Contains(image, "-web") {
+		return "web"
+	}
+	if p != nil && p.View().FS != nil {
+		if ents, err := fs.ReadDir(p.View().FS, "image/flavors"); err == nil {
+			for _, e := range ents {
+				if e.IsDir() && strings.HasSuffix(strings.SplitN(image, ":", 2)[0], "-"+e.Name()) {
+					return e.Name()
+				}
+			}
+		}
+	}
+	return ""
+}
+
 // devDefaultImage — образ по профилю: вкус (первое совпадение id в имени
 // образа из images.dev), иначе первый из images.dev, иначе базовый.
 func devDefaultImage(p *profile.Data, flavor string) string {
@@ -345,6 +418,9 @@ func devUp(home string, args []string) error {
 		return nil
 	}
 	if _, err := dockerrt.PingDaemon(context.Background()); err != nil {
+		return err
+	}
+	if err := devEnsureImage(cfg); err != nil {
 		return err
 	}
 	if ln, err := net.Listen("tcp", cfg.Addr); err != nil {

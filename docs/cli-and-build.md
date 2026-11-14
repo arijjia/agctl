@@ -135,18 +135,23 @@ MCP-сервер «host-bridge».
 
 Если образа нет локально, `init` пробует `docker pull`.
 
-Если образа нет нигде, **`dev up` собирает базовый образ сам** из контекста,
-встроенного в бинарь. Для этого нужна linux-сборка agctl под архитектуру
-Docker. Её ищут по очереди:
+Если образа нет ни локально, ни в реестре, **`dev up` собирает его сам на
+этой машине** — всю цепочку, как `make img_build` / `img_profile`, пропуская
+уже готовые ступени (`dockerrt.BuildDevImage`):
+
+```
+agctl-dsh:0.2.2                базовый — из контекста, встроенного в бинарь
+agctl-dsh-web:0.2.2            вкус web — тоже встроен
+agctl-dsh[-web]-utmn:0.2.2     надстройка профиля — из profile_dir/image
+agctl-dsh-utmn-1c:0.2.2        вкус профиля — из profile_dir/image/flavors/1c
+```
+
+Первый раз это 10–20 минут, потом всё берётся из кэша Docker. Для базовой
+ступени нужна linux-сборка agctl под архитектуру Docker. Её ищут по
+очереди:
 1. `./dist`;
 2. папка самого бинаря;
 3. `<папка бинаря>/../lib/agctl` (туда её кладёт `make install`).
-
-Ещё два случая:
-- **Профиль с `images.dockerfile`** (например, utmn): надстройку профиля
-  сервер тоже соберёт сам из `--profile-dir`.
-- **Вкусы web и 1c** собираются только через `make img_build` или берутся из
-  реестра (Nexus). Бинарь их сам не собирает.
 
 ### Как собрать бинарь «под локальный режим»
 
@@ -156,7 +161,7 @@ Docker. Её ищут по очереди:
 |---|---|
 | своя машина, есть репозиторий | `make install`, затем `agctl dev init` и `agctl dev up` |
 | своя машина, нужны образы web или 1С | `make img_build` (web) или `make img_build PROFILE=utmn` (надстройка utmn и её вкусы), затем `agctl dev init --flavor web` |
-| другая машина без репозитория | `make release_local`. На ту машину скопировать `agctl-<os>-<arch>` (переименовать в `agctl`) и рядом **в ту же папку** `agctl-linux-<arch Docker>`. Базовый образ соберётся при первом `dev up` — минут 10–20, тянет npm, apt и GitHub. Вкусы — только из реестра: `docker login` в Nexus, затем `agctl dev init --image <реестр>/agctl-dsh-web:0.2.2` |
+| другая машина без репозитория | `make release_local`. На ту машину скопировать `agctl-<os>-<arch>` (переименовать в `agctl`) и рядом **в ту же папку** `agctl-linux-<arch Docker>`. Образ (включая вкусы и надстройку профиля из `--profile-dir`) соберётся при первом `dev up` — минут 10–20, тянет npm, apt, PyPI и GitHub. Готовые образы из реестра быстрее: `docker login` в Nexus, затем `agctl dev init --image <реестр>/agctl-dsh-web:0.2.2` |
 | организация (пилот) | `make img_build PROFILE=utmn` + `make img_push REGISTRY=<nexus>/agctl`; разработчики получают только бинарь, а образы тянут из Nexus |
 
 ---
