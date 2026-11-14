@@ -2,7 +2,7 @@
 schema: 1.1.0
 id: k8s-substrate-ax-backend
 title: "Kubernetes-бэкенды k8s и ax (Google AX + Agent Substrate): хвосты после первой волны"
-status: open
+status: done
 priority: P2
 size: L
 area: platform
@@ -14,6 +14,7 @@ depends: []
 epic: ""
 sessions:
   - session-c780be29-3c20-4064-a46e-9f9eb1cb8b92:work
+  - session-1247c577-a767-45f9-80c3-6e31877ad29a:work
 ---
 ## Описание
 
@@ -70,3 +71,7 @@ Live-прогон на настоящем кластере (а тем более
 - 2026-11-13: refl: refl: п.5 закрыт opt-in флагом на установку (не per-user): гранулярность per-пользователя (роль developer) отложена до live-прогона — карточка не определяла требование, решение владельца зафиксировано в «Проверить перед пушем» merge-окна. Пункты 1-2 остаются за live-кластером (Docker-демон на хосте разработчика так и не появился за все три тура).
 - 2026-11-14: уточнение п.5 (merge e5c4e16): гранулярность per-user из «Проверить перед пушем» окна c30c102 закрыта — spec.debug только задачам с SSH-ключом (SSHPubKey ≠ '', роли developer/admin, семантика docker/k8s «поднять sshd»); роли user guest-сервисов не получают никогда; debug в specHash — поздний ключ = видимый дрейф с осознанным пересозданием.
 - 2026-11-14: п.6 закрыт созданием отложенных карточек: k8s-pod-egress-policy (open, gate ready попытка 2; механизм зафиксирован — ipBlock-лист NetworkPolicy + DNS-resolve шлюзом, env AGCTL_K8S_EGRESS_POLICY, depends egress-allowlist) и ha-control-plane (open, gate ready с первой попытки; PostgreSQL+Leases, решение стека за владельцем в п.1 плана — осознанно: это развилка эксплуатации, не дизайна).
+- 2026-11-14: п.1 закрыт: Docker/kind появились на хосте, make k8s_e2e_kind пройден зелёным впервые (kind v1.37, k8s 1.37, arm64). Починен bin/e2e-k8s-kind.sh: (а) авто-fallback на kubectl port-forward 30930→service/agctl:80, когда extraPortMappings Docker Desktop↔kind не доносят хост-порт (соединение принимается, ответ не возвращается — probe с --max-time 5); (б) wait-циклы переписаны на if/then — probe под set -e убивал скрипт; (в) port-forward целился в 8929, а сервисный порт 80. Документировано в docs/kubernetes.md §2.
+- 2026-11-14: п.2 закрыт live-пилотом на kind (Substrate v1.0 cf5768a0 + AX, gVisor): ate-setup в кластер, ax-server локальной сборки, WorkerPool agctl-pool через ko (requests ужаты под 8Gi-узел kind), overlay deploy/k8s/overlays/ax-kind (NodePort 30930, mTLS-роутер). Подтверждено: вход пользователя → задача AX → актор RUNNING в gVisor-песочнице → dsh web через маршрутизатор отвечает чат-шеллом; suspend/resume цикл — актор возвращается с тем же uid и сохранённым /workspace. Источники: субстрат-факты (роутер 1.0 только mTLS 8443, default-deny egress из песочницы, атезпейс-RBAC global owner для ax-server, podsecurity baseline ломает воркер) перенесены в docs/kubernetes.md §3 и комментарии overlay; клоны апстримов — ~/src2/dump/k8s-substrate-ax-backend/{substrate,ax}.
+- 2026-11-14: refl: refl: пилот вскрыл три интеграционных дефекта, два закрыты кодом agctl (ChatHandle.TLSConfig для mTLS-прокси; overlays/ax без монтирования home), один — патчем локального клона ax (wakeup-probe 30s не дожидается boot dsh в gVisor + workspace-ready поллинг по прямому :80 воркера недостижим при default-deny) — кандидаты в апстрим AX, изложены в финальном отчёте тура. fetch-at-boot в kind-пилоте выключен (AGCTL_AX_PROVIDER_AT_BOOT=0): ClusterIP шлюза из песочницы недостижим — ровно риск, предсказанный в refl 2026-11-13; проверка маршрутизуемости AGCTL_GATEWAY_URL остаётся за кластером с egress-allowlist (k8s-pod-egress-policy).
+- 2026-11-14: done — Карточка закрыта: п.1 — kind-смоук k8s зелёный (живой первый прогон, скрипт починен); п.2 — live-пилот ax на kind с Substrate v1.0 и gVisor: вход, чат-шелл из песочницы через mTLS-роутер, suspend/resume с /workspace; п.3-6 были закрыты ранее (25b754e, c5e3211, e5c4e16, карточки k8s-pod-egress-policy/ha-control-plane). Остаток: kind-смоук в CI и маршрутизуемость fetch-at-boot — за k8s-pod-egress-policy/CI-волной.
