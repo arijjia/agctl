@@ -8,7 +8,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -133,7 +132,7 @@ func (rt *Runtime) buildOverlay(ctx context.Context) error {
 
 // buildBase собирает базовый agctl-dsh из встроенного контекста под тегом tag.
 func (rt *Runtime) buildBase(ctx context.Context, tag string) error {
-	bin, err := findLinuxBinary(rt.cfg.BinDir)
+	bin, err := findLinuxBinary(rt.cfg.BinDir, rt.daemonArch(ctx))
 	if err != nil {
 		return err
 	}
@@ -186,21 +185,64 @@ func (rt *Runtime) buildContext(ctx context.Context, ctxDir, tag, dockerfile str
 	return nil
 }
 
-// findLinuxBinary ищет Linux-сборку agctl в binDir (агл-порядок arm64→amd64,
-// fallback — архитектура хоста); нет сборки → ошибка с подсказкой `make image`.
-func findLinuxBinary(binDir string) (string, error) {
-	// при запуске на mac собираем под архитектуру демона docker; на практике
-	// make image кладёт dist/agctl-linux-<arm64|amd64> — берём обе по очереди.
-	for _, arch := range []string{"arm64", "amd64"} {
-		p := filepath.Join(binDir, "agctl-linux-"+arch)
-		if _, err := os.Stat(p); err == nil {
-			return p, nil
+// findLinuxBinary ищет Linux-сборку agctl под архитектуру демона Docker
+// (arch: arm64|amd64; "" — любая). Где ищем, по порядку:
+//   - binDir (make image кладёт dist/agctl-linux-<arch>);
+//   - рядом с запущенным бинарём (релиз: agctl-darwin-arm64 и
+//     agctl-linux-* в одной папке — образ собирается без исходников);
+//   - <папка бинаря>/../lib/agctl (make install: ~/.local/lib/agctl);
+//   - сам запущенный бинарь, если он linux той же архитектуры.
+func findLinuxBinary(binDir, arch string) (string, error) {
+	archs := []string{"arm64", "amd64"}
+	if arch != "" {
+		archs = []string{arch}
+	}
+	dirs := []string{binDir}
+	self, _ := os.Executable()
+	if self != "" {
+		if r, err := filepath.EvalSymlinks(self); err == nil {
+			self = r
+		}
+		dirs = append(dirs, filepath.Dir(self), filepath.Join(filepath.Dir(self), "..", "lib", "agctl"))
+	}
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		for _, a := range archs {
+			for _, name := range []string{"agctl-linux-" + a, "agctl_linux_" + a} {
+				p := filepath.Join(dir, name)
+				if st, err := os.Stat(p); err == nil && !st.IsDir() {
+					return p, nil
+				}
+			}
 		}
 	}
-	if _, err := os.Stat(filepath.Join(binDir, "agctl-linux-"+runtime.GOARCH)); err == nil {
-		return filepath.Join(binDir, "agctl-linux-"+runtime.GOARCH), nil
+	if self != "" && runtime.GOOS == "linux" && (arch == "" || arch == runtime.GOARCH) {
+		return self, nil
 	}
-	return "", errors.New("нет linux-сборки agctl: выполните `make image` (она собирает dist/agctl-linux-*)")
+	want := "agctl-linux-<arm64|amd64>"
+	if arch != "" {
+		want = "agctl-linux-" + arch
+	}
+	return "", fmt.Errorf("нет linux-сборки agctl (%s) ни в %s, ни рядом с бинарём: положите её рядом с agctl (есть в релизе) или выполните `make image`", want, binDir)
+}
+
+// daemonArch — архитектура демона Docker в терминах Go (arm64|amd64; "" —
+// не узнали).
+func (rt *Runtime) daemonArch(ctx context.Context) string {
+	res, err := rt.cli.Info(ctx, client.InfoOptions{})
+	if err != nil {
+		return ""
+	}
+	switch a := strings.ToLower(res.Info.Architecture); a {
+	case "x86_64", "amd64":
+		return "amd64"
+	case "aarch64", "arm64":
+		return "arm64"
+	default:
+		return ""
+	}
 }
 
 // extractFS распаковывает поддерево embed-FS (префикс prefix) в каталог dst:

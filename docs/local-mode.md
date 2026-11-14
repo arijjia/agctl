@@ -11,8 +11,10 @@
 
 - **Docker**: Docker Desktop (macOS / Windows с WSL2), Docker Engine (Linux),
   либо Rancher Desktop / Podman Desktop / Colima.
-- **Бинарь `agctl`** под вашу ОС (выдаёт команда платформы; собрать самим —
-  `make release_local`). Клонировать репозиторий и собирать образы не нужно.
+- **Бинарь `agctl`** под вашу ОС (выдаёт команда платформы). Из исходников —
+  `make install`; для другой машины — `make release_local`, и рядом с бинарём
+  положить `agctl-linux-<arch>`: тогда `dev up` соберёт базовый образ сам,
+  если его нет в реестре. Подробно — [cli-and-build.md](cli-and-build.md).
 - 8 ГБ ОЗУ, ~15 ГБ диска (образ с браузерами — 2–3 ГБ).
 - Доступ к реестру образов организации: `docker login <реестр>`.
 

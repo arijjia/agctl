@@ -38,6 +38,24 @@ import (
 // version подставляется ldflags при сборке (make/goreleaser).
 var version = "dev"
 
+// commit и buildDate — коммит и дата сборки (ldflags, make).
+var (
+	commit    = ""
+	buildDate = ""
+)
+
+// versionLine — строка `agctl version`.
+func versionLine() string {
+	v := "agctl " + version
+	if commit != "" {
+		v += " " + commit
+	}
+	if buildDate != "" {
+		v += " " + buildDate
+	}
+	return fmt.Sprintf("%s (%s/%s %s)", v, runtime.GOOS, runtime.GOARCH, runtime.Version())
+}
+
 // Дефолтов LLM в коде больше нет: платформа универсальна, а организация
 // задаётся профилем (internal/profile). Нейтральный agctl — без LLM-дефолтов;
 // профиль организации (например utmn) несёт свои.
@@ -105,7 +123,7 @@ func main() {
 	case "bridge": // клиент моста к хосту (внутри контейнера локального режима)
 		cmdBridge(os.Args[2:])
 	case "version":
-		fmt.Printf("agctl %s (%s/%s %s)\n", version, runtime.GOOS, runtime.GOARCH, runtime.Version())
+		fmt.Println(versionLine())
 	case "help", "-h", "--help":
 		usage()
 	default:

@@ -5,21 +5,26 @@
 GOARCH_DOCKER := $(subst aarch64,arm64,$(subst x86_64,amd64,$(shell docker version --format '{{.Server.Arch}}' 2>/dev/null || go env GOARCH)))
 
 .PHONY: go_build go_test go_vet go_run go_fmt go_linux
+## go_build: бинарь agctl под эту машину → dist/agctl (SPA встраивается из web/dist — сначала web_build)
 go_build:
 	go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl ./cmd/agctl
 
+## go_test: go test ./...
 go_test:
 	go test ./...
 
+## go_vet: go vet ./...
 go_vet:
 	go vet ./...
 
+## go_run: go_build + ./dist/agctl serve на переднем плане
 go_run: go_build
 	./dist/agctl serve
 
+## go_fmt: gofmt -w cmd internal
 go_fmt:
 	gofmt -w cmd internal
 
 ## go_linux: linux-сборка бинаря для образа (нужна up/corp при первом старте)
 go_linux:
-	GOOS=linux GOARCH=$(GOARCH_DOCKER) go build -trimpath -o dist/agctl-linux-$(GOARCH_DOCKER) ./cmd/agctl
+	GOOS=linux GOARCH=$(GOARCH_DOCKER) go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-linux-$(GOARCH_DOCKER) ./cmd/agctl
