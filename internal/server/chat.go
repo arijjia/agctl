@@ -905,6 +905,14 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 		return
 	}
 	authority := target.Host
+	// mTLS-Endpoint рантайма (ax + https-маршрутизатор Substrate): транспорт
+	// прокси должен доверять корням адаптера и нести его клиентский
+	// сертификат — ChatHandle.TLSConfig (tls.Clone защищает от мутаций).
+	transport := proxyTransport
+	if rt.handle.TLSConfig != nil {
+		transport = proxyTransport.Clone()
+		transport.TLSClientConfig = rt.handle.TLSConfig.Clone()
+	}
 	const prefix = "/chat"
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
@@ -932,7 +940,7 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 		},
 		FlushInterval: -1,
 		Transport: &mintTransport{
-			base:  proxyTransport,
+			base:  transport,
 			token: func() string { return s.chatToken(r.Context(), rt.handle) },
 		},
 		ModifyResponse: func(resp *http.Response) error {

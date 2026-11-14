@@ -1,5 +1,6 @@
 # kind-пилот: без ConfigMap профиля — встроенный нейтральный agctl;
-# llm-ключей нет (dsh спросит пользователя).
+# llm-ключей нет (dsh спросит пользователя). Роутер Substrate 1.0 — только
+# mTLS (8443/8444, http :80 нет): PodCertificate шлюза + https-роутер.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,3 +13,31 @@ spec:
           env:
             - name: AGCTL_PROFILE_DIR
               value: ""
+            - name: AGCTL_AX_ROUTER_URL
+              value: https://atenet-router.ate-system.svc:443
+            - name: AGCTL_AX_ROUTER_CERT
+              value: /run/podidentity.podcert.ate.dev/credential-bundle.pem
+            - name: AGCTL_AX_ROUTER_KEY
+              value: /run/podidentity.podcert.ate.dev/credential-bundle.pem
+            - name: AGCTL_AX_ROUTER_CA
+              value: /run/servicedns-ca/trust-bundle.pem
+          volumeMounts:
+            - name: podidentity
+              mountPath: /run/podidentity.podcert.ate.dev
+              readOnly: true
+            - name: servicedns-ca
+              mountPath: /run/servicedns-ca
+              readOnly: true
+      volumes:
+        - name: podidentity
+          projected:
+            sources:
+              - podCertificate:
+                  credentialBundlePath: credential-bundle.pem
+                  keyType: ECDSAP256
+                  signerName: podidentity.podcert.ate.dev/identity
+        # kind v1.37 не проецирует clusterTrustBundle (feature gate off) —
+        # CA кладём ConfigMap'ом из кластерного бандла.
+        - name: servicedns-ca
+          configMap:
+            name: agctl-servicedns-ca
