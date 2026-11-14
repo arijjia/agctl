@@ -70,6 +70,7 @@ make img_serve_build K8S_ARCH="$ARCH" IMG_SERVE=agctl-serve:dev >/dev/null
 kind load docker-image --name "$KIND_CLUSTER" agctl-serve:dev "agctl-dsh:${TAG}"
 
 echo "▶ деплой"
+kubectl apply -k deploy/k8s/overlays/kind
 if [ "$EGRESS" = "1" ]; then
   # Фейковый LLM-хост: headless svc — DNS шлюза вернёт pod IP, он попадёт в
   # ipBlock egress-политики чата (ClusterIP в ipBlock не работает).
@@ -102,9 +103,6 @@ spec:
         - containerPort: 8000
 FAKE
   kubectl -n "$NS" wait --for=condition=Ready pod/fake-llm --timeout=120s >/dev/null
-fi
-kubectl apply -k deploy/k8s/overlays/kind
-if [ "$EGRESS" = "1" ]; then
   # Opt-in egress-политика + LLM-эндпоинт шлюза на фейковый хост (его
   # hostname попадёт в ipBlock через DNS-ресолв шлюза).
   kubectl -n "$NS" set env deployment/agctl AGCTL_K8S_EGRESS_POLICY=1 \
