@@ -256,7 +256,22 @@ credential-provider `kubernetes-secrets` (см. README Substrate) с права�
 - Live-проверка на кластере с Substrate/AX в этом репозитории не
   автоматизирована: адаптер покрыт тестами против in-memory ax-server
   (`internal/runtime/axrt/provider_test.go`), контракт раннера — тестами
-  `cmd/agctl/axrunner_test.go`.
+  `cmd/agctl/axrunner_test.go`. Одноразовый kind-пилот (Substrate 1.0 + AX
+  по их README) — `deploy/k8s/overlays/ax-kind`: NodePort 30930, образы из
+  локального реестра kind, `AGCTL_AX_IMAGE` — digest `agctl-dsh` из
+  `make img_push REGISTRY=localhost:5001/agctl`, WorkerPool
+  `deploy/ax/workerpool.yaml` через `ko` (requests под узел kind —
+  `cpu 500m/memory 2Gi`), namespace `agctl` без pod-security-меток
+  (gVisor-воркеру нужен privileged-профиль). Роутер Substrate 1.0 —
+  только mTLS: `AGCTL_AX_ROUTER_URL=https://atenet-router.ate-system.svc:443`
+  (сертификат на короткое имя `.svc`), PodCertificate шлюза +
+  `AGCTL_AX_ROUTER_CA` из clustertrustbundle `servicedns.*` (kind не
+  проецирует clusterTrustBundle — CA кладётся ConfigMap'ом
+  `agctl-servicedns-ca`). Из песочницы ClusterIP-шлюз недостижим
+  (default-deny egress Substrate): в kind-пилоте fetch-at-boot выключен
+  (`AGCTL_AX_PROVIDER_AT_BOOT=0`, конфиг из env задачи); маршрутизуемость
+  `AGCTL_GATEWAY_URL` до шлюза проверяется только на кластере с
+  настроенным egress-allowlist (карточка k8s-pod-egress-policy).
 
 ## 4. Профиль организации в кластере
 
