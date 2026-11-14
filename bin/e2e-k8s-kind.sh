@@ -59,7 +59,7 @@ if [ -z "${BASE_URL:-}" ]; then
   if [ "$ok" != "1" ]; then
     echo "  ⚠ NodePort $PORT с хоста не отвечает — fallback на kubectl port-forward"
     PF_PORT=30930
-    kubectl -n "$NS" port-forward service/agctl "${PF_PORT}:8929" >/dev/null 2>&1 &
+    kubectl -n "$NS" port-forward service/agctl "${PF_PORT}:80" >/dev/null 2>&1 &
     PF_PID=$!
     BASE="http://127.0.0.1:${PF_PORT}"
     for _ in $(seq 1 30); do if probe "$BASE"; then break; fi; sleep 2; done
