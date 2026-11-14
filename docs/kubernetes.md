@@ -115,7 +115,9 @@ make k8s_status
 через `kind load`, overlay `deploy/k8s/overlays/kind` (PVC на пользователя,
 NodePort 30929), регистрация admin+user, `/chat/` от user → под dsh поднят и
 отдаёт чат-шелл → `POST /api/me/runtime/stop` → под удалён, PVC цел. Нужны
-docker, kind, kubectl.
+docker, kind, kubectl. Если NodePort с хостом не доносится (Docker Desktop,
+colima, nested docker) — скрипт сам падает на `kubectl port-forward`
+(BASE_URL задаёт адрес явно).
 
 ## 3. Бэкенд `ax`: Google AX поверх Agent Substrate
 
