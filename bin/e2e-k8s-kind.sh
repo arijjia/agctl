@@ -98,9 +98,17 @@ spec:
   containers:
     - name: httpd
       image: busybox:1.36
-      args: ["sh", "-c", "echo ok > /www/index.html && exec httpd -f -p 8000 -h /www"]
+      args: ["sh", "-c", "mkdir -p /www && echo ok > /www/index.html && exec httpd -f -p 8000 -h /www"]
       ports:
         - containerPort: 8000
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        seccompProfile:
+          type: RuntimeDefault
 FAKE
   kubectl -n "$NS" wait --for=condition=Ready pod/fake-llm --timeout=120s >/dev/null
   # Opt-in egress-политика + LLM-эндпоинт шлюза на фейковый хост (его
