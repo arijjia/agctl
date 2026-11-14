@@ -55,16 +55,17 @@ BASE="${BASE_URL:-http://127.0.0.1:${PORT}}"
 probe() { curl -fsS --max-time 5 "$1/" >/dev/null 2>&1; }
 if [ -z "${BASE_URL:-}" ]; then
   ok=0
-  for _ in $(seq 1 15); do probe "$BASE" && { ok=1; break; }; sleep 2; done
+  for _ in $(seq 1 15); do if probe "$BASE"; then ok=1; break; fi; sleep 2; done
   if [ "$ok" != "1" ]; then
     echo "  ⚠ NodePort $PORT с хоста не отвечает — fallback на kubectl port-forward"
     PF_PORT=30930
     kubectl -n "$NS" port-forward service/agctl "${PF_PORT}:8929" >/dev/null 2>&1 &
     PF_PID=$!
     BASE="http://127.0.0.1:${PF_PORT}"
+    for _ in $(seq 1 30); do if probe "$BASE"; then break; fi; sleep 2; done
   fi
 fi
-for _ in $(seq 1 60); do probe "$BASE" && break; sleep 2; done
+for _ in $(seq 1 60); do if probe "$BASE"; then break; fi; sleep 2; done
 curl -fsS "$BASE/" | grep -q "__AGCTL_BRAND__" && echo "  ✓ страница входа"
 
 JAR_ADMIN=$(mktemp); JAR_USER=$(mktemp)
