@@ -176,6 +176,7 @@ func cmdServe(args []string) {
 	image := fsSet.String("image", firstNonEmpty(cfg.Serve.Image, "agctl-dsh:0.2.2"), "тег образа agctl-dsh")
 	devImages := fsSet.String("dev-images", envOr("AGCTL_DEV_IMAGES", firstNonEmpty(cfg.Serve.DevImages, strings.Join(prof.Images.Dev, ","))), "каталог образов лаунчера developer'а через запятую (реестр Nexus и пр.; по умолчанию — images.dev профиля); пусто = только --image")
 	devEnv := fsSet.String("dev-env", envOr("AGCTL_DEV_ENV", cfg.Serve.DevEnv), "имена переменных окружения хоста, пробрасываемые в контейнер developer'а через запятую (значения из .env); пусто = не пробрасывать")
+	launcherSlots := fsSet.Int("launcher-slots-max", envInt("AGCTL_LAUNCHER_SLOTS_MAX", cfg.Serve.LauncherSlotsMax), "максимум живых слотов developer'а в лаунчере (карточка developer-multi-containers; 0 = дефолт 3)")
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
 	publicURL := fsSet.String("public-url", envOr("AGCTL_PUBLIC_URL", cfg.Serve.PublicURL), "базовый URL шлюза, видимый песочницам (fetch-at-boot раннера AX); пусто = http://<первый не-loopback IP>:<порт --addr>")
@@ -249,6 +250,7 @@ func cmdServe(args []string) {
 		BaseImage:               baseImage,
 		DevImages:               splitCSV(*devImages),
 		DevEnv:                  splitCSV(*devEnv),
+		LauncherSlotsMax:        *launcherSlots,
 		BinDir:                  firstNonEmpty(*binDir, "dist"),
 		Version:                 version,
 		SecureCookies:           *secureCookies,

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { launcher, api, type User } from "./api";
+import { launcher, api, type User, type SlotInfo } from "./api";
 import { LogsPanel } from "./LogsPanel";
 
 // Launcher — лаунчер роли developer (карточка developer-launcher-images):
 // после входа контейнер НЕ стартует автоматически; developer выбирает образ
 // (каталог сервера, например Nexus), видит свои контейнеры и управляет ими.
-// Оформление — то же, что у админ-панели (admin-shell): без рамки-карточки,
-// тот же фон/шрифты/заголовок/ширина области.
+// Мульти-рантайм (карточка developer-multi-containers): слоты 0..max-1 —
+// параллельные контейнеры с разными образами; активный слот открывается по
+// /chat/ и чей workspace видят проектные API шлюза. Оформление — то же, что
+// у админ-панели (admin-shell).
 
 type ImagesResp = { images: string[]; default: string; current: string };
 type ContainerRow = {
@@ -16,63 +18,63 @@ type ContainerRow = {
   state: string;
   status: string;
   ssh: boolean;
+  slot?: number;
 };
 
 export default function Launcher({ user }: { user: User }) {
   const [images, setImages] = useState<ImagesResp | null>(null);
-  const [selected, setSelected] = useState("");
+  const [slots, setSlots] = useState<SlotInfo[]>([]);
+  const [slotMax, setSlotMax] = useState(0);
+  const [slotLive, setSlotLive] = useState(0);
   const [containers, setContainers] = useState<ContainerRow[]>([]);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busySlot, setBusySlot] = useState(-1);
   const [logsFor, setLogsFor] = useState("");
   const [logsOpen, setLogsOpen] = useState(false);
 
   const load = useCallback(() => {
-    launcher.images().then((r) => {
-      setImages(r);
-      setSelected(r.current || r.default);
+    launcher.images().then((r) => setImages(r)).catch((e) => setErr(e.message));
+    launcher.slots().then((r) => {
+      setSlots(r.slots || []);
+      setSlotMax(r.max);
+      setSlotLive(r.live);
     }).catch((e) => setErr(e.message));
     launcher.containers().then((r) => setContainers(r.containers || [])).catch(() => setContainers([]));
   }, []);
   useEffect(load, [load]);
 
-  const pick = async (image: string) => {
+  const slotOp = async (slot: number, action: "start" | "stop" | "activate", image?: string) => {
     setErr("");
     setMsg("");
-    try {
-      await launcher.pickImage(image);
-      setSelected(image);
-      setMsg(`Образ для следующего старта: ${image || "(дефолт сервера)"}`);
-    } catch (e: any) {
-      setErr(e.message);
-    }
-  };
-
-  const op = async (action: "start" | "stop") => {
-    setErr("");
-    setMsg("");
-    setBusy(true);
+    setBusySlot(slot);
     try {
       if (action === "start") {
-        await launcher.start();
-        setMsg("Рантайм запускается…");
-        // прогрев ~2 c: пару раз дёрнем список
+        await launcher.slotStart(slot);
+        setMsg(`Слот ${slot} запускается…`);
         setTimeout(load, 1500);
         setTimeout(load, 4000);
-      } else {
-        await launcher.stop();
-        setMsg("Рантайм остановлен, данные на томе сохранены");
+      } else if (action === "stop") {
+        await launcher.slotStop(slot);
+        setMsg(`Слот ${slot} остановлен, данные на томе сохранены`);
         setTimeout(load, 500);
+      } else if (action === "activate") {
+        await launcher.slotActivate(slot);
+        setMsg(`Слот ${slot} активен — /chat/ откроет его`);
+        load();
+      } else if (image !== undefined) {
+        await launcher.slotImage(slot, image);
+        setMsg(`Образ слота ${slot}: ${image || "(дефолт сервера)"}`);
+        load();
       }
     } catch (e: any) {
       setErr(e.message);
     } finally {
-      setBusy(false);
+      setBusySlot(-1);
     }
   };
 
-  const running = containers.some((c) => c.state === "running");
+  const activeSlot = slots.find((s) => s.active);
   const fetchLogs = useCallback(() => launcher.logs(logsFor, 300), [logsFor]);
 
   return (
@@ -82,7 +84,7 @@ export default function Launcher({ user }: { user: User }) {
           <h1>{(window as any).__AGCTL_BRAND__?.name || "agctl"} — лаунчер разработчика</h1>
           <p className="muted small">
             {user.login} · роль developer · контейнер не запускается, пока вы не
-            выбрали образ и не нажали «Запустить»
+            выбрали образ и не нажали «Запустить» · слотов: {slotLive}/{slotMax}
           </p>
         </div>
         <button
@@ -93,52 +95,86 @@ export default function Launcher({ user }: { user: User }) {
         </button>
       </header>
       <nav className="tabs admin-tabs">
-        <button className="tab active">Рантайм</button>
+        <button className="tab active">Рантаймы</button>
       </nav>
       <main className="admin-main">
-        <h2 className="small">Образ запуска</h2>
-        <div className="image-list">
-          {(images?.images || []).map((img) => (
-            <label key={img} className="image-option">
-              <input
-                type="radio"
-                name="image"
-                checked={selected === img}
-                onChange={() => pick(img)}
-              />
-              <span>
-                <span className="mono">{img}</span>
-                {img.includes("nossh") && (
-                  <span className="muted small"> — без SSH-канала</span>
-                )}
-                {img === images?.default && <span className="muted small"> — дефолт</span>}
-              </span>
-            </label>
-          ))}
-          {(!images || !images.images.length) && <p className="muted small">каталог образов пуст</p>}
-        </div>
-
-        <div className="toolbar">
-          <button className="primary" disabled={busy} onClick={() => op("start")}>
-            {busy ? "…" : "Запустить"}
-          </button>
-          <button className="ghost" disabled={busy || !running} onClick={() => op("stop")}>
-            Остановить
-          </button>
-          <a href="/chat/" className="ghost link" aria-disabled={!running}>
-            Открыть чат →
-          </a>
-        </div>
+        <h2 className="small">Слоты (параллельные рантаймы с разными образами)</h2>
+        <table className="admin-table">
+          <thead><tr><th>Слот</th><th>Образ следующего старта</th><th>Состояние</th><th>Запущенный образ</th><th></th></tr></thead>
+          <tbody>
+            {slots.map((s) => (
+              <tr key={s.slot} className={s.active ? "slot-active" : ""}>
+                <td>
+                  {s.slot} {s.active && <span className="badge">активный</span>}
+                </td>
+                <td>
+                  <select
+                    value={s.image || ""}
+                    disabled={busySlot === s.slot}
+                    onChange={(e) => slotOp(s.slot, "image", e.target.value)}
+                  >
+                    <option value="">(дефолт сервера: {images?.default || "—"})</option>
+                    {(images?.images || []).map((img) => (
+                      <option key={img} value={img}>{img}</option>
+                    ))}
+                  </select>
+                </td>
+                <td><span className={`badge state-${s.state}`}>{s.state}</span></td>
+                <td className="muted small">{s.runningImage || "—"}</td>
+                <td className="actions">
+                  {s.state !== "running" && (
+                    <button
+                      className="primary small"
+                      disabled={busySlot === s.slot}
+                      onClick={() => slotOp(s.slot, "start")}
+                    >
+                      {busySlot === s.slot ? "…" : "Запустить"}
+                    </button>
+                  )}
+                  {s.state === "running" && (
+                    <button
+                      className="ghost small"
+                      disabled={busySlot === s.slot}
+                      onClick={() => slotOp(s.slot, "stop")}
+                    >
+                      Остановить
+                    </button>
+                  )}
+                  {!s.active && (
+                    <button
+                      className="ghost small"
+                      disabled={busySlot === s.slot}
+                      onClick={() => slotOp(s.slot, "activate")}
+                      title="Этот слот будет открываться по /chat/"
+                    >
+                      Сделать активным
+                    </button>
+                  )}
+                  {s.active && s.state === "running" && (
+                    <a href="/chat/" className="ghost link">Открыть чат →</a>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {!slots.length && <tr><td colSpan={5} className="muted">слоты загружаются…</td></tr>}
+          </tbody>
+        </table>
+        <p className="muted small">
+          Активный слот открывается по /chat/; его workspace видят проектные API
+          шлюза. Том у каждого слота свой: обмен файлами — через git.
+          {" "}{activeSlot?.state === "running" && <a href="/chat/" className="link">Открыть чат активного слота →</a>}
+        </p>
         {msg && <p className="muted small">{msg}</p>}
         {err && <div className="error">{err}</div>}
 
         <h2 className="small">Мои контейнеры</h2>
         <table className="admin-table">
-          <thead><tr><th>Имя</th><th>Образ</th><th>Состояние</th><th>Статус</th><th>SSH</th><th></th></tr></thead>
+          <thead><tr><th>Имя</th><th>Слот</th><th>Образ</th><th>Состояние</th><th>Статус</th><th>SSH</th><th></th></tr></thead>
           <tbody>
             {containers.map((c) => (
               <tr key={c.name}>
                 <td className="mono small">{c.name}</td>
+                <td className="muted small">{c.slot ?? 0}</td>
                 <td className="muted small">{c.image}</td>
                 <td><span className={`badge state-${c.state}`}>{c.state}</span></td>
                 <td className="muted small">{c.status}</td>
@@ -153,7 +189,7 @@ export default function Launcher({ user }: { user: User }) {
                 </td>
               </tr>
             ))}
-            {!containers.length && <tr><td colSpan={6} className="muted">контейнеров нет — нажмите «Запустить»</td></tr>}
+            {!containers.length && <tr><td colSpan={7} className="muted">контейнеров нет — запустите слот выше</td></tr>}
           </tbody>
         </table>
 

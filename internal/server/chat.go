@@ -70,14 +70,38 @@ func chatContainerNamePrefix(home string) string {
 }
 
 // chatRuntimeID namespaces resource names by agctl home, so deployments sharing
-// a Docker daemon or Kubernetes namespace do not collide.
-func (s *Server) chatRuntimeID(userID int64) string {
-	return fmt.Sprintf("%s-%s-u%d", chatNamePrefix, chatHomeHash(s.cfg.Home), userID)
+// a Docker daemon or Kubernetes namespace do not collide. Слот 0 — основной
+// рантайм с историческим именем (совместимость: существующие установки не
+// мигрируют); слоты 1..N получают суффикс "-s<N>" (карточка
+// developer-multi-containers).
+func (s *Server) chatRuntimeID(userID int64, slot int) string {
+	if slot <= 0 {
+		return fmt.Sprintf("%s-%s-u%d", chatNamePrefix, chatHomeHash(s.cfg.Home), userID)
+	}
+	return fmt.Sprintf("%s-%s-u%d-s%d", chatNamePrefix, chatHomeHash(s.cfg.Home), userID, slot)
 }
 
-// chatStorageID — стабильный StorageID тома пользователя: u<ID>; переживает
-// пересоздание контейнера.
-func chatStorageID(userID int64) string { return "u" + strconv.FormatInt(userID, 10) }
+// chatStorageID — стабильный StorageID тома пользователя: слот 0 — "u<ID>"
+// (исторический), слот N — плоский "u<ID>s<N>" (dockerrt запрещает слэши в
+// StorageID; отдельный каталог на слот: разные образы = разные toolchain'и,
+// общий workspace двух живых агентов — гонки и git-конфликты; обмен файлами
+// между слотами — через git, карточка developer-multi-containers).
+func chatStorageID(userID int64, slot int) string {
+	if slot <= 0 {
+		return "u" + strconv.FormatInt(userID, 10)
+	}
+	return "u" + strconv.FormatInt(userID, 10) + "s" + strconv.Itoa(slot)
+}
+
+// chatKey — ключ рантайма в кэше шлюза: пользователь + слот.
+type chatKey struct {
+	uid  int64
+	slot int
+}
+
+// maxChatSlots — жёсткий потолок слотов (санитизация UI-ввода); рабочий
+// лимит по установке — cfg.LauncherSlotsMax.
+const maxChatSlots = 8
 
 const (
 	chatFoldersStateMaxBytes = 256 << 10
@@ -285,10 +309,14 @@ func (s *Server) handleChatFolderInstructions(w http.ResponseWriter, r *http.Req
 	)
 	if req.Folder != "" {
 		// v3: folder is a real project directory /workspace/<name>.
-		projectDir, err = provision.ProjectDirectory(s.cfg.Home, id.ID, req.Folder)
+		// Активный слот developer'а: проектные API шлюза видят workspace
+		// слота, выбранного лаунчером (карточка developer-multi-containers).
+		storageID := chatStorageID(id.ID, s.activeChatSlot(id.ID, id.Role))
+		projectDir, err = provision.ProjectDirectoryIn(s.cfg.Home, storageID, req.Folder)
 	} else {
 		// Compatibility for old per-session .sessions directories.
-		projectDir, err = safeChatSessionDir(s.cfg.Home, id.ID, sessionID, req.Instructions != "")
+		storageID := chatStorageID(id.ID, s.activeChatSlot(id.ID, id.Role))
+		projectDir, err = safeChatSessionDir(s.cfg.Home, storageID, sessionID, req.Instructions != "")
 	}
 	if err != nil {
 		code := http.StatusNotFound
@@ -393,8 +421,10 @@ func writeManagedFolderInstructions(dir, folder, instructions string) (bool, err
 
 // safeChatSessionDir возвращает канонический каталог сессии внутри дома
 // пользователя (валидация ID, EvalSymlinks, защита от выхода за дом).
-func safeChatSessionDir(home string, userID int64, sessionID string, create bool) (string, error) {
-	if !validChatSessionID(sessionID) {
+// storageID — том пользователя (активный слот мульти-рантайма: карточка
+// developer-multi-containers).
+func safeChatSessionDir(home, storageID, sessionID string, create bool) (string, error) {
+	if !validChatSessionID(sessionID) || storageID == "" || storageID != filepath.Base(storageID) || storageID == "." || storageID == ".." {
 		return "", errInvalidChatSessionPath
 	}
 	canonicalHome, err := filepath.EvalSymlinks(home)
@@ -406,7 +436,7 @@ func safeChatSessionDir(home string, userID int64, sessionID string, create bool
 		return "", err
 	}
 	chatsRoot := filepath.Join(canonicalHome, "chats")
-	userRoot := filepath.Join(chatsRoot, chatStorageID(userID))
+	userRoot := filepath.Join(chatsRoot, storageID)
 	workRoot := filepath.Join(userRoot, "work")
 	for _, dir := range []string{chatsRoot, userRoot, workRoot} {
 		info, err := os.Lstat(dir)
@@ -540,17 +570,19 @@ func (s *Server) userProvider(userID int64) provision.Provider {
 // ensureChat asks the runtime provider to ensure the user's stable Chat runtime
 // is running. First-start locking is per user; different users start in parallel.
 // cachedChatForEnsure — быстрый путь ensureChat: живой кэш на желаемом
-// образе. При расхождении (лаунчер сменил образ у работающего рантайма)
-// усыпляет старый контейнер (docker-стоп без чат-лока, том остаётся),
-// вытесняет кэш и возвращает nil — вызывающий путь пересоздаст рантайм.
-func (s *Server) cachedChatForEnsure(userID int64) *chatRuntime {
+// образе (слот-специфичном). При расхождении (лаунчер сменил образ у
+// работающего рантайма) усыпляет старый контейнер (docker-стоп без
+// чат-лока, том остаётся), вытесняет кэш и возвращает nil — вызывающий
+// путь пересоздаст рантайм.
+func (s *Server) cachedChatForEnsure(userID int64, slot int) *chatRuntime {
+	key := chatKey{userID, slot}
 	s.chatMu.Lock()
-	rt := s.chats[userID]
+	rt := s.chats[key]
 	s.chatMu.Unlock()
 	if rt == nil {
 		return nil
 	}
-	desired := s.developerChatImage(userID)
+	desired := s.developerChatImage(userID, slot)
 	if desired == rt.image {
 		s.chatMu.Lock()
 		rt.lastSeen = time.Now()
@@ -563,38 +595,39 @@ func (s *Server) cachedChatForEnsure(userID int64) *chatRuntime {
 		log.Printf("[chat] смена образа %s: стоп старого рантайма: %v", rt.handle.RuntimeID, err)
 	}
 	stopCancel()
-	s.evictChatByUser(userID)
-	log.Printf("[chat] пользователь %d: образ сменился (%q → %q) — runtime пересоздаётся", userID, rt.image, desired)
+	s.evictChatByUser(userID, slot)
+	log.Printf("[chat] пользователь %d слот %d: образ сменился (%q → %q) — runtime пересоздаётся", userID, slot, rt.image, desired)
 	return nil
 }
 
-func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
+func (s *Server) ensureChat(userID int64, slot int) (*chatRuntime, error) {
 	started := time.Now()
-	if rt := s.cachedChatForEnsure(userID); rt != nil {
+	if rt := s.cachedChatForEnsure(userID, slot); rt != nil {
 		return rt, nil
 	}
 	if s.chats == nil {
 		s.chatMu.Lock()
-		s.chats = make(map[int64]*chatRuntime)
+		s.chats = make(map[chatKey]*chatRuntime)
 		s.chatMu.Unlock()
 	}
 	if s.chatLocks == nil {
 		s.chatMu.Lock()
-		s.chatLocks = make(map[int64]*sync.Mutex)
+		s.chatLocks = make(map[chatKey]*sync.Mutex)
 		s.chatMu.Unlock()
 	}
+	key := chatKey{userID, slot}
 	s.chatMu.Lock()
-	lock := s.chatLocks[userID]
+	lock := s.chatLocks[key]
 	if lock == nil {
 		lock = &sync.Mutex{}
-		s.chatLocks[userID] = lock
+		s.chatLocks[key] = lock
 	}
 	s.chatMu.Unlock()
 
 	lock.Lock()
 	defer lock.Unlock()
 	s.chatMu.Lock()
-	if rt, ok := s.chats[userID]; ok {
+	if rt, ok := s.chats[key]; ok {
 		rt.lastSeen = time.Now()
 		s.chatMu.Unlock()
 		s.warmHits.Add(1)
@@ -608,11 +641,11 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 	spec := agctlrt.ChatSpec{
-		RuntimeID: s.chatRuntimeID(userID), StorageID: chatStorageID(userID),
+		RuntimeID: s.chatRuntimeID(userID, slot), StorageID: chatStorageID(userID, slot),
 		UserID: userID, Provider: s.quotaAwareProvider(userID),
 		SSHPubKey: s.developerSSHPubKey(userID),
 		// Лаунчер developer'а: желаемый образ из настроек ("" = дефолт сервера).
-		Image: s.developerChatImage(userID),
+		Image: s.developerChatImage(userID, slot),
 		// Роль user: агент всегда в Full Access по умолчанию (пресет-селектор
 		// пользователю не показывается). Ошибка чтения роли -> дефолт не меняем.
 		DefaultFullAccess: s.userRole(userID) == "user",
@@ -632,11 +665,11 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 	}
 	rt := &chatRuntime{handle: handle, lastSeen: time.Now(), image: spec.Image}
 	s.chatMu.Lock()
-	s.chats[userID] = rt
+	s.chats[chatKey{userID, slot}] = rt
 	s.chatMu.Unlock()
 	s.coldStarts.Add(1)
 	s.coldTotalMS.Add(time.Since(started).Milliseconds())
-	log.Printf("[chat] пользователь %d: личный runtime поднят (%s)", userID, handle.Endpoint)
+	log.Printf("[chat] пользователь %d слот %d: личный runtime поднят (%s)", userID, slot, handle.Endpoint)
 	return rt, nil
 }
 
@@ -705,11 +738,11 @@ func (s *Server) developerSSHPubKey(userID int64) string {
 // streaming requests are already covered by rt.active.
 func (s *Server) reapIdleChats() {
 	type candidate struct {
-		userID int64
-		rt     *chatRuntime
+		key chatKey
+		rt  *chatRuntime
 	}
 	type expiredChat struct {
-		userID int64
+		key    chatKey
 		handle agctlrt.ChatHandle
 	}
 	var probes []candidate
@@ -717,19 +750,19 @@ func (s *Server) reapIdleChats() {
 	now := time.Now()
 
 	s.chatMu.Lock()
-	for uid, rt := range s.chats {
+	for k, rt := range s.chats {
 		if rt.active != 0 {
 			continue
 		}
-		ttl := s.userChatTTL(uid) // per-user retention (карточка chat-prewarm-pool)
+		ttl := s.userChatTTL(k.uid) // per-user retention (карточка chat-prewarm-pool)
 		probeAfter := ttl - chatSSHActivityProbeWindow
 		if rt.handle.SSHPort > 0 && now.Sub(rt.lastSeen) >= probeAfter {
-			probes = append(probes, candidate{userID: uid, rt: rt})
+			probes = append(probes, candidate{key: k, rt: rt})
 			continue
 		}
 		if shouldSleepChat(rt.lastSeen, now, ttl) {
-			expired = append(expired, expiredChat{userID: uid, handle: rt.handle})
-			delete(s.chats, uid)
+			expired = append(expired, expiredChat{key: k, handle: rt.handle})
+			delete(s.chats, k)
 		}
 	}
 	s.chatMu.Unlock()
@@ -742,12 +775,12 @@ func (s *Server) reapIdleChats() {
 		activeSSH, err := s.chatProvider.HasActiveSSH(ctx, item.rt.handle)
 		cancel()
 		if err != nil {
-			log.Printf("[chat] reaper: SSH activity check user %d: %v; defer sleep", item.userID, err)
+			log.Printf("[chat] reaper: SSH activity check user %d slot %d: %v; defer sleep", item.key.uid, item.key.slot, err)
 			continue
 		}
 
 		s.chatMu.Lock()
-		current := s.chats[item.userID]
+		current := s.chats[item.key]
 		if current != item.rt || current.active != 0 {
 			s.chatMu.Unlock()
 			continue
@@ -758,9 +791,9 @@ func (s *Server) reapIdleChats() {
 			s.chatMu.Unlock()
 			continue
 		}
-		if shouldSleepChat(current.lastSeen, now, s.userChatTTL(item.userID)) {
-			expired = append(expired, expiredChat{userID: item.userID, handle: current.handle})
-			delete(s.chats, item.userID)
+		if shouldSleepChat(current.lastSeen, now, s.userChatTTL(item.key.uid)) {
+			expired = append(expired, expiredChat{key: item.key, handle: current.handle})
+			delete(s.chats, item.key)
 		}
 		s.chatMu.Unlock()
 	}
@@ -771,9 +804,9 @@ func (s *Server) reapIdleChats() {
 		err := s.chatProvider.StopChat(ctx, item.handle)
 		cancel()
 		if err != nil {
-			log.Printf("[chat] reaper: stop user %d: %v", item.userID, err)
+			log.Printf("[chat] reaper: stop user %d slot %d: %v", item.key.uid, item.key.slot, err)
 		} else {
-			log.Printf("[chat] reaper: пользователь %d уснул (runtime удалён, volume сохранён)", item.userID)
+			log.Printf("[chat] reaper: пользователь %d слот %d уснул (runtime удалён, volume сохранён)", item.key.uid, item.key.slot)
 		}
 	}
 }
@@ -790,10 +823,10 @@ func isDialFailure(err error) bool {
 // Возвращает false, если запись уже не актуальна (выселена/заменена) или отказ
 // случился внутри grace — второй случай отличает нормальный прогрев dsh от
 // мёртвого кэша и не должен приводить к пересозданию.
-func (s *Server) markChatDown(userID int64, rt *chatRuntime) bool {
+func (s *Server) markChatDown(userID int64, slot int, rt *chatRuntime) bool {
 	s.chatMu.Lock()
 	defer s.chatMu.Unlock()
-	if s.chats[userID] != rt {
+	if s.chats[chatKey{userID, slot}] != rt {
 		return false
 	}
 	if rt.downSince.IsZero() {
@@ -803,13 +836,22 @@ func (s *Server) markChatDown(userID int64, rt *chatRuntime) bool {
 	return time.Since(rt.downSince) >= chatDownGrace
 }
 
-// evictChatByUser — забыть кэшированный runtime пользователя, не имея его
-// указателя (админ-операции над контейнером снаружи). Сам контейнер не
-// трогается: следующий /chat/ пройдёт через ensureChat и пересоздаст его.
-func (s *Server) evictChatByUser(userID int64) {
+// evictChatByUser — забыть кэшированный runtime пользователя в слоте, не
+// имея его указателя (админ-операции над контейнером снаружи). Сам
+// контейнер не трогается: следующий /chat/ пройдёт через ensureChat и
+// пересоздаст его. Отрицательный slot выселяет все слоты пользователя.
+func (s *Server) evictChatByUser(userID int64, slot int) {
 	s.chatMu.Lock()
 	if s.chats != nil {
-		delete(s.chats, userID)
+		if slot < 0 {
+			for k := range s.chats {
+				if k.uid == userID {
+					delete(s.chats, k)
+				}
+			}
+		} else {
+			delete(s.chats, chatKey{userID, slot})
+		}
 	}
 	s.chatMu.Unlock()
 }
@@ -817,13 +859,14 @@ func (s *Server) evictChatByUser(userID int64) {
 // evictChat забывает мёртвый runtime. Контейнер не трогаем (его может уже не
 // быть), персистентные данные живут на маунтах: следующий /chat/ пройдёт через
 // ensureChat → EnsureChat, которая идемпотентно пересоздаёт контейнер.
-func (s *Server) evictChat(userID int64, rt *chatRuntime) {
+func (s *Server) evictChat(userID int64, slot int, rt *chatRuntime) {
+	key := chatKey{userID, slot}
 	s.chatMu.Lock()
-	if s.chats[userID] == rt {
-		delete(s.chats, userID)
+	if s.chats[key] == rt {
+		delete(s.chats, key)
 	}
 	s.chatMu.Unlock()
-	log.Printf("[chat] пользователь %d: runtime %s недоступен дольше %s — кэш сброшен, контейнер пересоздастся при следующем открытии чата", userID, rt.handle.Endpoint, chatDownGrace)
+	log.Printf("[chat] пользователь %d слот %d: runtime %s недоступен дольше %s — кэш сброшен, контейнер пересоздастся при следующем открытии чата", userID, slot, rt.handle.Endpoint, chatDownGrace)
 }
 
 // writeWarmChatPage — страница авто-повтора, пока личный чат прогревается.
@@ -866,10 +909,13 @@ func (s *Server) rootEntry(w http.ResponseWriter, r *http.Request, webFS fs.FS) 
 
 // chatProxy — gateway for the authenticated user's runtime. Endpoint is
 // provider-owned (loopback for Docker; internal Service DNS for Kubernetes).
+// Слот: роль user — всегда основной (0), developer — активный слот лаунчера
+// (карточка developer-multi-containers).
 func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) {
-	rt, err := s.ensureChat(id.ID)
+	slot := s.activeChatSlot(id.ID, id.Role)
+	rt, err := s.ensureChat(id.ID, slot)
 	if err != nil {
-		log.Printf("[chat] ensure user %d: %v", id.ID, err)
+		log.Printf("[chat] ensure user %d slot %d: %v", id.ID, slot, err)
 		if strings.Contains(r.Header.Get("Accept"), "text/html") {
 			writeWarmChatPage(w)
 			return
@@ -878,7 +924,7 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 		return
 	}
 	s.chatMu.Lock()
-	if current := s.chats[id.ID]; current != rt {
+	if current := s.chats[chatKey{id.ID, slot}]; current != rt {
 		s.chatMu.Unlock()
 		writeErr(w, http.StatusServiceUnavailable, "чат усыплён, обнови страницу")
 		return
@@ -888,7 +934,7 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 	s.chatMu.Unlock()
 	defer func() {
 		s.chatMu.Lock()
-		if s.chats[id.ID] == rt {
+		if s.chats[chatKey{id.ID, slot}] == rt {
 			rt.active--
 			rt.lastSeen = time.Now()
 		}
@@ -981,8 +1027,8 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			log.Printf("[chat] proxy user %d: %v", id.ID, err)
-			if isDialFailure(err) && s.markChatDown(id.ID, rt) {
-				s.evictChat(id.ID, rt)
+			if isDialFailure(err) && s.markChatDown(id.ID, slot, rt) {
+				s.evictChat(id.ID, slot, rt)
 			}
 			if strings.Contains(r.Header.Get("Accept"), "text/html") {
 				writeWarmChatPage(w)

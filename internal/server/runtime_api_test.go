@@ -22,7 +22,7 @@ func TestMyRuntimeStatusReadOnly(t *testing.T) {
 
 	// Запрос статуса будит рантайм? Нет — статус read-only: ensureChat зовёт
 	// только платформа (лаунчер-старт / chatProxy / админ), не сам GET.
-	if _, err := e.srv.ensureChat(2); err != nil {
+	if _, err := e.srv.ensureChat(2, 0); err != nil {
 		t.Fatal(err)
 	}
 	if code, body := e.do(user, "GET", "/api/me/runtime", nil); code != http.StatusOK || !strings.Contains(body, `"status":"running"`) {
@@ -55,7 +55,7 @@ func TestMyRuntimeStatusReadOnly(t *testing.T) {
 			}
 		}
 	}
-	if got := e.rt.chatStops[e.srv.chatRuntimeID(1)]; got != 0 {
+	if got := e.rt.chatStops[e.srv.chatRuntimeID(1, 0)]; got != 0 {
 		t.Fatalf("runtime control request stopped provider %d times", got)
 	}
 }

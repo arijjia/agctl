@@ -53,11 +53,11 @@ func TestPrewarmPoolWarmsRecentUsersUpToLimit(t *testing.T) {
 	}
 	// Свежие по журналу: newest-user и fresh-user; old-user остаётся холодным.
 	for _, uid := range ids[1:] {
-		if e.srv.chats[uid] == nil {
+		if e.srv.chats[chatKey{uid, 0}] == nil {
 			t.Fatalf("пользователь %d не подогрет", uid)
 		}
 	}
-	if e.srv.chats[ids[0]] != nil {
+	if e.srv.chats[chatKey{ids[0], 0}] != nil {
 		t.Fatal("пул разогрел пользователя за пределами лимита")
 	}
 	if e.srv.coldStarts.Load() != 2 {
@@ -93,7 +93,7 @@ func TestPrewarmOnLogin(t *testing.T) {
 	for e.srv.warmCount() == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if e.srv.chats[ids[0]] == nil {
+	if e.srv.chats[chatKey{ids[0], 0}] == nil {
 		t.Fatal("логин не подогрел среду пользователя")
 	}
 }
@@ -105,14 +105,14 @@ func TestPerUserChatTTLOverride(t *testing.T) {
 	if err := e.db.SettingSet(fmt.Sprintf("chat-ttl-min-u%d", ids[0]), "1"); err != nil {
 		t.Fatal(err)
 	}
-	chat, err := e.srv.ensureChat(ids[0])
+	chat, err := e.srv.ensureChat(ids[0], 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// 2 минуты простоя: серверного TTL (час) мало, персонального (минута) хватает.
 	chat.lastSeen = time.Now().Add(-2 * time.Minute)
 	e.srv.reapIdleChats()
-	if e.srv.chats[ids[0]] != nil {
+	if e.srv.chats[chatKey{ids[0], 0}] != nil {
 		t.Fatal("персональный TTL не усыпил runtime")
 	}
 	// Мусор в настройке — серверный дефолт, не падаем.
@@ -127,10 +127,10 @@ func TestPerUserChatTTLOverride(t *testing.T) {
 func TestEnsureChatWarmHitMetrics(t *testing.T) {
 	e := newTestEnv(t, 3)
 	ids := prewarmSeedActivity(t, e, []string{"metric"})
-	if _, err := e.srv.ensureChat(ids[0]); err != nil {
+	if _, err := e.srv.ensureChat(ids[0], 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.srv.ensureChat(ids[0]); err != nil {
+	if _, err := e.srv.ensureChat(ids[0], 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.srv.warmHits.Load(); got != 1 {

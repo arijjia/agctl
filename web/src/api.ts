@@ -60,12 +60,27 @@ export const admin = {
 };
 
 // launcher — API лаунчера developer'а (роль user/developer; админ отклоняется).
+export type SlotInfo = {
+  slot: number;
+  image: string;
+  active: boolean;
+  state: string; // running | exited | absent | …
+  container?: string;
+  status?: string;
+  runningImage?: string;
+};
 export const launcher = {
   images: () => req<{ images: string[]; default: string; current: string }>("GET", "/api/launcher/images"),
   pickImage: (image: string) => req<{ image: string }>("PUT", "/api/me/image", { image }),
   start: () => req<{ status: string }>("POST", "/api/me/runtime/start"),
   stop: () => req<{ status: string }>("POST", "/api/me/runtime/stop"),
   containers: () => req<{ containers: any[] }>("GET", "/api/me/containers"),
+  // Слоты мульти-рантайма (карточка developer-multi-containers).
+  slots: () => req<{ slots: SlotInfo[]; max: number; live: number }>("GET", "/api/me/slots"),
+  slotImage: (slot: number, image: string) => req<{ slot: number; image: string }>("PUT", `/api/me/slots/${slot}/image`, { image }),
+  slotStart: (slot: number) => req<{ slot: number; status: string }>("POST", `/api/me/slots/${slot}/start`),
+  slotStop: (slot: number) => req<{ slot: number; status: string }>("POST", `/api/me/slots/${slot}/stop`),
+  slotActivate: (slot: number) => req<{ slot: number; active: boolean }>("POST", `/api/me/slots/${slot}/activate`),
   logs: (container: string, tail: number) =>
     req<{ container: string; state: string; logs: string }>(
       "GET",

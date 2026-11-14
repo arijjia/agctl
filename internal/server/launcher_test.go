@@ -112,7 +112,7 @@ func TestLauncherImageSwitchRecreatesRuntime(t *testing.T) {
 	env.register(env.admin, "anna", "secret1")
 	dev := makeDeveloper(env, "dev1", "devpass1")
 	uid := int64(2)
-	rid := env.srv.chatRuntimeID(uid)
+	rid := env.srv.chatRuntimeID(uid, 0)
 
 	if code, _ := env.do(dev, "PUT", "/api/me/image", map[string]string{"image": "img-a:1"}); code != 200 {
 		t.Fatalf("pick img-a: %d", code)
@@ -142,7 +142,7 @@ func TestLauncherImageSwitchRecreatesRuntime(t *testing.T) {
 		t.Fatalf("spec.Image = %+v, ждём img-b:1", spec)
 	}
 	env.srv.chatMu.Lock()
-	rt := env.srv.chats[uid]
+	rt := env.srv.chats[chatKey{uid, 0}]
 	cached := ""
 	if rt != nil {
 		cached = rt.image
@@ -168,7 +168,7 @@ func TestLauncherImageFlowsToChatSpec(t *testing.T) {
 		t.Fatalf("start: %d", code)
 	}
 	uid := int64(2) // первый — админ anna, dev1 второй
-	spec, ok := env.rt.chatSpecs[env.srv.chatRuntimeID(uid)]
+	spec, ok := env.rt.chatSpecs[env.srv.chatRuntimeID(uid, 0)]
 	if !ok {
 		t.Fatalf("ChatSpec не зафиксирован; specs=%v", env.rt.chatSpecs)
 	}
@@ -182,7 +182,7 @@ func TestLauncherStartStop(t *testing.T) {
 	env.register(env.admin, "anna", "secret1")
 	dev := makeDeveloper(env, "dev1", "devpass1")
 	uid := int64(2)
-	rid := env.srv.chatRuntimeID(uid)
+	rid := env.srv.chatRuntimeID(uid, 0)
 
 	// старт
 	code, body := env.do(dev, "POST", "/api/me/runtime/start", nil)
@@ -208,7 +208,7 @@ func TestLauncherStartStop(t *testing.T) {
 		t.Fatalf("stops = %d, ждём 1", env.rt.chatStops[rid])
 	}
 	env.srv.chatMu.Lock()
-	evicted := env.srv.chats[uid] == nil
+	evicted := env.srv.chats[chatKey{uid, 0}] == nil
 	env.srv.chatMu.Unlock()
 	if !evicted {
 		t.Fatal("runtime не вытеснен из кэша после stop")

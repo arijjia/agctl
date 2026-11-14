@@ -2,17 +2,18 @@
 schema: 1.1.0
 id: developer-multi-containers
 title: "Лаунчер: несколько параллельных контейнеров на одного developer (редкий кейс)"
-status: open
+status: in-progress
 priority: P3
 size: L
 area: server
 repo: arijjia/agctl
 created: 2026-11-04
-updated: 2026-11-04
+updated: 2026-11-15
 tags: ["developer", "launcher", "multi-runtime"]
 depends: []
 sessions:
   - session-4e3c026b-5dcd-4cb7-96f8-7b7c83085443:work
+  - session-1247c577-a767-45f9-80c3-6e31877ad29a:work
 ---
 ## Описание
 

@@ -219,7 +219,7 @@ func (s *Server) handleAdminContainerStop(w http.ResponseWriter, r *http.Request
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.evictChatByUser(c.UserID)
+	s.evictChatByUser(c.UserID, c.Slot)
 	_ = s.db.Audit(id.Login, "admin.container.stop", c.Name, "runtime удалён, том сохранён")
 	writeJSON(w, http.StatusOK, map[string]any{"status": "stopped", "name": c.Name})
 }
@@ -236,7 +236,7 @@ func (s *Server) handleAdminContainerStart(w http.ResponseWriter, r *http.Reques
 		writeErr(w, http.StatusBadRequest, "не удалось определить пользователя контейнера")
 		return
 	}
-	if _, err := s.ensureChat(c.UserID); err != nil {
+	if _, err := s.ensureChat(c.UserID, c.Slot); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -260,8 +260,8 @@ func (s *Server) handleAdminContainerRestart(w http.ResponseWriter, r *http.Requ
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.evictChatByUser(c.UserID)
-	if _, err := s.ensureChat(c.UserID); err != nil {
+	s.evictChatByUser(c.UserID, c.Slot)
+	if _, err := s.ensureChat(c.UserID, c.Slot); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
