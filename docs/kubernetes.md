@@ -47,7 +47,19 @@ make img_push REGISTRY=registry.example.com/agctl   # печатает digest ag
 - **NetworkPolicy** `net-<…>`: ingress на :3080 только с подов шлюза
   (`--k8s-gateway-selector`, по умолчанию `app.kubernetes.io/name=agctl`);
   egress не ограничивается (URL LLM задаёт пользователь/профиль) — политика
-  egress кластера остаётся за оператором.
+  egress кластера остаётся за оператором. Opt-in иначе:
+  `--k8s-egress-policy` (env `AGCTL_K8S_EGRESS_POLICY`, config
+  `serve.k8s.egress_policy`, off по умолчанию) — отдельная политика
+  `netegress-<…>` на чат-под: DNS (udp/tcp 53) к kube-dns + ipBlock /32
+  CIDR'ы resolved-хостов провайдеров (`AllProviderURLs`: базовый + Extras);
+  шлюз ресолвит при старте чата и обновляет политики живых чатов каждые
+  10 минут (динамические IP LLM-хостов), при StopChat политика удаляется.
+  Полный провал ресолва — громкий отказ EnsureChat (чат без ходa к LLM
+  неработоспособен). Ограничение v1: ipBlock видит только IP, порты
+  LLM-хостов не фильтруются; L7/FQDN (Cilium NetworkPolicy) — отдельная
+  волна при потребности эксплуатации. Требует CNI с поддержкой
+  NetworkPolicy (kindnet в kind не энфорсит; смоук `EGRESS=1
+  make k8s_e2e_kind` ставит Calico и проверяет блокировки).
 - **Secret** `llm-<hash StorageID>` с ключами провайдеров (основной +
   `extra_providers`), в под попадают через `secretKeyRef`.
 - **Данные**: либо подкаталог `<StorageID>/` общего RWX-тома
@@ -105,7 +117,9 @@ make k8s_status
 `--k8s-kubeconfig` (пусто = in-cluster), `--k8s-image`, `--k8s-pull-policy`,
 `--k8s-storage-class`, `--k8s-storage-size`, `--k8s-runtime-class`,
 `--k8s-shared-claim`, `--k8s-ssh-host`, `--k8s-ready-timeout`,
-`--k8s-gateway-selector`, `--k8s-liveness`; лимиты пода — `--cpus`/`--mem-gb`
+`--k8s-gateway-selector`, `--k8s-liveness`; opt-in egress-политика чат-подов
+(`--k8s-egress-policy`, карточка k8s-pod-egress-policy, смоук `EGRESS=1` в
+kind ставит Calico); лимиты пода — `--cpus`/`--mem-gb`
 (те же, что у Docker). Env-эквиваленты `AGCTL_K8S_*`, config.yaml —
 `serve.k8s.*`.
 

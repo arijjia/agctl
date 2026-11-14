@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	agctlrt "github.com/arijjia/agctl/internal/runtime"
 	"github.com/arijjia/agctl/internal/provision"
+	agctlrt "github.com/arijjia/agctl/internal/runtime"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -21,7 +21,7 @@ import (
 
 func TestEgressHostnames(t *testing.T) {
 	spec := agctlrt.ChatSpec{Provider: provision.Provider{
-		BaseURL:  "https://api.llm.example/v1/",            // path и слэш отрезаются
+		BaseURL:  "https://api.llm.example/v1/", // path и слэш отрезаются
 		BaseURLs: []string{"https://api.llm.example", "https://alt.llm.example:8443/v1"},
 		Extras: []provision.ExtraProvider{
 			{Name: "pi", BaseURL: "https://pi.example/api"},
