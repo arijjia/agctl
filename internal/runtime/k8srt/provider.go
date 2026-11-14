@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"sort"
 	"strconv"
@@ -89,6 +90,11 @@ type Config struct {
 	// GatewaySelector — метки подов шлюза agctl: только им NetworkPolicy
 	// разрешает ingress на dsh web. Пусто = любой под namespace.
 	GatewaySelector map[string]string
+	// EgressPolicy — opt-in (карточка k8s-pod-egress-policy): чат-подам
+	// NetworkPolicy Egress — DNS к kube-dns + ipBlock CIDR'ы LLM-хостов
+	// провайдеров (шлюз ресолвит hostname'ы и обновляет политику). Требует
+	// CNI с поддержкой NetworkPolicy (kindnet не энфорсит).
+	EgressPolicy bool
 	// Liveness — добавить livenessProbe (agctl-dsh-net health, как HEALTHCHECK
 	// образа): зависший dsh перезапускается kubelet'ом.
 	Liveness bool
@@ -107,6 +113,9 @@ type Provider struct {
 	client kubernetes.Interface
 	exec   Execer
 	warned sync.Map // runtime name → предупреждение уже выдано
+	// egress — живые чаты с egress-политикой (hostname'ы провайдеров) и
+	// фоновый DNS-ресолвер; активна только при cfg.EgressPolicy.
+	egress egressWatch
 }
 
 // New строит клиент из in-cluster credentials или kubeconfig.
@@ -264,6 +273,25 @@ func (p *Provider) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	}
 	if err := p.ensureNetworkPolicy(ctx, name, runtimeLabels, sshEnabled); err != nil {
 		return agctlrt.ChatHandle{}, err
+	}
+	if p.cfg.EgressPolicy {
+		// Opt-in egress-политика: DNS + ipBlock LLM-хостов провайдеров
+		// (карточка k8s-pod-egress-policy). Полный провал ресолва — громкий
+		// фейл: чат без ходa к LLM неработоспособен.
+		hosts := egressHostnames(spec)
+		cidrs, rerr := resolveCIDRs(hosts, egressResolveTimeout)
+		if rerr != nil && len(cidrs) == 0 {
+			return agctlrt.ChatHandle{}, rerr
+		}
+		if rerr != nil {
+			// Частичный успех: создали политику с тем, что разрешилось;
+			// рефрешер дотянет остальное. Чаty хранит hostname'ы целиком.
+			log.Printf("k8srt: egress-ресолв %s: %v (политика создана по доступным CIDR)", name, rerr)
+		}
+		if err := p.ensureEgressPolicy(ctx, name, runtimeLabels, cidrs); err != nil {
+			return agctlrt.ChatHandle{}, err
+		}
+		p.registerEgress(name, hosts)
 	}
 	pod, err := p.ensurePod(ctx, name, pvcName, secretName, runtimeLabels, spec, sshEnabled)
 	if err != nil {
@@ -802,6 +830,9 @@ func (p *Provider) deleteRuntime(ctx context.Context, name string) error {
 	}
 	if err := p.client.NetworkingV1().NetworkPolicies(p.cfg.Namespace).Delete(ctx, "net-"+name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 		errs = append(errs, fmt.Errorf("delete NetworkPolicy: %w", err))
+	}
+	if p.cfg.EgressPolicy {
+		p.unregisterEgress(ctx, name) // egress-политика + снятие с рефрешера
 	}
 	return errors.Join(errs...)
 }

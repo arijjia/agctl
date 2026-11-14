@@ -114,6 +114,10 @@ type k8sConfig struct {
 	ReadyTimeoutSec int    `yaml:"ready_timeout_sec"`
 	GatewaySelector string `yaml:"gateway_selector"`
 	PullPolicy      string `yaml:"pull_policy"`
+	// EgressPolicy — "1" = egress-политика чат-подов (DNS + ipBlock
+	// LLM-хостов; карточка k8s-pod-egress-policy). Строка для согласованности
+	// с булевыми полями других секций serve.
+	EgressPolicy string `yaml:"egress_policy"`
 }
 
 // axConfig — дефолты бэкенда ax (serve.ax.*; env AGCTL_AX_* и флаги --ax-*
