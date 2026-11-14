@@ -40,7 +40,7 @@ import (
 
 const devUsage = `agctl dev — локальный режим: платформа на этой машине (один пользователь)
 
-  init      настроить: профиль, образ, папка проектов, доступы (Jira/GitLab/LLM)
+  init      настроить: профиль и папка проектов (образ и доступы — в лаунчере; --cli — в терминале)
   up [DIR]  поднять платформу и рабочее место (DIR → /workspace), открыть браузер
   down      остановить (данные и сессии сохраняются)
   status    состояние: адрес, образ, папка, рабочее место, мост
@@ -111,7 +111,8 @@ func devInit(home string, args []string) error {
 	flavor := fs.String("flavor", "", "вкус образа из профиля (web, 1c…)")
 	workdir := fs.String("workdir", "", "папка проектов по умолчанию (→ /workspace)")
 	nonInteractive := fs.Bool("yes", false, "не спрашивать (только флаги)")
-	noPull := fs.Bool("no-pull", false, "не тянуть образ сейчас")
+	noPull := fs.Bool("no-pull", false, "не тянуть образ сейчас (с --cli)")
+	cliWizard := fs.Bool("cli", false, "спросить образ и доступы в терминале (по умолчанию — в браузере, в лаунчере)")
 	addr := fs.String("addr", "", "адрес UI (только 127.0.0.1:PORT), по умолчанию "+localmode.DefaultAddr)
 	_ = fs.Parse(args)
 
@@ -174,7 +175,7 @@ func devInit(home string, args []string) error {
 		cfg.Image = *image
 	} else if cfg.Image == "" {
 		cfg.Image = devDefaultImage(p, cfg.Flavor)
-		if len(p.Images.Dev) > 1 && !*nonInteractive {
+		if len(p.Images.Dev) > 1 && !*nonInteractive && *cliWizard {
 			fmt.Println("Образы профиля:")
 			for i, ref := range p.Images.Dev {
 				fmt.Printf("  %d) %s\n", i+1, ref)
@@ -210,12 +211,14 @@ func devInit(home string, args []string) error {
 	}
 
 	store := localmode.OpenStore(home)
-	fmt.Printf("\nДоступы (хранилище: %s). Enter — пропустить/оставить.\n", store.Backend())
 	if cfg.Env == nil {
 		cfg.Env = map[string]string{}
 	}
+	if *cliWizard {
+		fmt.Printf("\nДоступы (хранилище: %s). Enter — пропустить/оставить.\n", store.Backend())
+	}
 	for _, v := range localmode.Manifest {
-		if *nonInteractive {
+		if *nonInteractive || !*cliWizard {
 			break
 		}
 		if !v.Secret {
@@ -255,12 +258,16 @@ func devInit(home string, args []string) error {
 	}
 	fmt.Printf("\n✓ настройки: %s\n", localmode.Path(home))
 
-	if !*noPull && cfg.Image != "" {
+	if *cliWizard && !*noPull && cfg.Image != "" {
 		if err := devPull(cfg.Image); err != nil {
-			fmt.Printf("  ⚠ образ %s: %v\n    Если образа нет в реестре, его соберёт agctl dev up (нужна сборка из исходников) — или выполните docker login в реестр организации и повторите agctl dev update.\n", cfg.Image, err)
+			fmt.Printf("  ⚠ образ %s: %v\n    Если образа нет в реестре, его соберёт лаунчер (agctl dev up → «Запустить») — или выполните docker login в реестр организации и повторите agctl dev update.\n", cfg.Image, err)
 		}
 	}
-	fmt.Println("\nДальше: agctl dev up   (или agctl dev up ~/src/проект)")
+	if *cliWizard {
+		fmt.Println("\nДальше: agctl dev up   (или agctl dev up ~/src/проект)")
+	} else {
+		fmt.Println("\nДальше: agctl dev up — откроется лаунчер: там образ рабочего места и доступы (ключ модели, GitLab, Jira).")
+	}
 	return nil
 }
 
@@ -290,31 +297,28 @@ func devResolveProfile(cfg *localmode.Config) (*profile.Data, error) {
 	return profile.Resolve(firstNonEmpty(cfg.Profile, "agctl"), cfg.ProfileDir, "profiles", filepath.Join(localmode.Home(), "profiles"), filepath.Join(defaultHome(), "profiles"))
 }
 
-// devEnsureImage — образ рабочего места есть локально; нет — docker pull;
-// нет и в реестре — собрать на этой машине всю цепочку (базовый → web →
-// надстройка профиля → вкус профиля) из встроенного контекста, профиля и
-// linux-сборки agctl рядом с бинарём. Первый раз — 10–20 минут.
-func devEnsureImage(cfg *localmode.Config) error {
+// devServeHooks — хуки лаунчера; профиль не разрешился — без них (CLI-режим).
+func devServeHooks(home string, cfg *localmode.Config, store *localmode.Store) server.LocalHooks {
 	p, err := devResolveProfile(cfg)
-	if err != nil {
-		return err
-	}
-	target := firstNonEmpty(cfg.Image, devDefaultImage(p, cfg.Flavor))
-	ctx := context.Background()
-	if _, err := dockerrt.ImageID(ctx, target); err == nil {
+	if err != nil || p == nil {
+		log.Printf("dev: профиль: %v — лаунчер без выбора образа и доступов", err)
 		return nil
 	}
+	return &devHooks{home: home, store: store, prof: p}
+}
+
+func devPrepareImage(ctx context.Context, p *profile.Data, target, flavor string, logf func(string)) error {
 	pctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
-	fmt.Printf("… образа %s нет локально — пробую docker pull\n", target)
+	logf(fmt.Sprintf("… образа %s нет локально — пробую docker pull", target))
 	if err := dockerrt.PullImage(pctx, target); err == nil {
-		fmt.Printf("✓ образ %s скачан\n", target)
+		logf(fmt.Sprintf("✓ образ %s скачан", target))
 		return nil
 	}
 	b := dockerrt.DevBuild{
-		Target: target, Flavor: devFlavorOf(cfg, p, target), BinDir: "dist",
+		Target: target, Flavor: flavor, BinDir: "dist",
 		ImageFS: assets.Image, SkelFS: assets.DshSkel,
-		Log: func(m string) { fmt.Println("  " + m) },
+		Log: func(m string) { logf("  " + m) },
 	}
 	if p != nil {
 		b.ProfileID = p.ID
@@ -324,8 +328,8 @@ func devEnsureImage(cfg *localmode.Config) error {
 			b.Overlay, b.OverlayDockerfile = ov, df
 		}
 	}
-	fmt.Printf("… в реестре его тоже нет — собираю на этой машине: %s\n  (первый раз 10–20 минут: npm, apt, браузеры; дальше — из кэша Docker)\n",
-		strings.Join(dockerrt.DevBuildPlan(b), " → "))
+	logf(fmt.Sprintf("… в реестре его тоже нет — собираю на этой машине: %s (первый раз 10–20 минут: npm, apt, браузеры; дальше — из кэша Docker)",
+		strings.Join(dockerrt.DevBuildPlan(b), " → ")))
 	bctx, bcancel := context.WithTimeout(ctx, 90*time.Minute)
 	defer bcancel()
 	if err := dockerrt.BuildDevImage(bctx, b); err != nil {
@@ -418,9 +422,6 @@ func devUp(home string, args []string) error {
 		return nil
 	}
 	if _, err := dockerrt.PingDaemon(context.Background()); err != nil {
-		return err
-	}
-	if err := devEnsureImage(cfg); err != nil {
 		return err
 	}
 	if ln, err := net.Listen("tcp", cfg.Addr); err != nil {
@@ -599,6 +600,7 @@ func devServe(home string, args []string) {
 		BridgeTools:  cfg.Bridge.Tools,
 		BridgeLog:    localmode.BridgeJournalPath(home),
 		Env:          env,
+		Hooks:        devServeHooks(home, cfg, store),
 	}
 	serveArgs := []string{
 		"--home", localmode.ServerHome(home),

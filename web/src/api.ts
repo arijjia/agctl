@@ -72,3 +72,35 @@ export const launcher = {
       `/api/me/runtime/logs?tail=${tail || 200}${container ? `&container=${encodeURIComponent(container)}` : ""}`,
     ),
 };
+
+// local — лаунчер локального режима (agctl dev): образ и доступы на этой машине.
+export type LocalEntry = {
+  name: string;
+  title: string;
+  hint?: string;
+  group: string;
+  secret: boolean;
+  set: boolean;
+  value?: string;
+  known: boolean;
+};
+export type LocalUI = {
+  profile: string;
+  workdir: string;
+  images: { ref: string; present: boolean; flavor?: string }[];
+  current: string;
+  secrets: LocalEntry[];
+  storage: string;
+  runtime: { state: string; image?: string };
+  task: { state: string; image: string; log: string[]; error: string; restartNeeded: boolean };
+  llmKeySet: boolean;
+};
+export const local = {
+  ui: () => req<LocalUI>("GET", "/api/local/ui"),
+  setSecret: (name: string, value: string, plain: boolean) =>
+    req<any>("PUT", `/api/local/ui/secrets/${encodeURIComponent(name)}`, { value, plain }),
+  deleteSecret: (name: string) => req<any>("DELETE", `/api/local/ui/secrets/${encodeURIComponent(name)}`),
+  setImage: (image: string) => req<any>("PUT", "/api/local/ui/image", { image }),
+  start: () => req<any>("POST", "/api/local/ui/start"),
+  restart: () => req<any>("POST", "/api/local/ui/restart"),
+};

@@ -353,3 +353,13 @@ button.small { padding: 1px 8px; font-size: 12px; }
   color: var(--muted, #667);
   margin: 20px 0 8px;
 }
+
+/* лаунчер локального режима: доступы и прогресс подготовки */
+.notice { border: 1px solid var(--yellow); color: var(--yellow); border-radius: 8px; padding: 10px 12px; margin: 0 0 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.secret-row { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 0 0 8px; display: flex; flex-direction: column; gap: 6px; max-width: 760px; }
+.secret-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.secret-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; max-width: 760px; }
+.secret-form input[type="password"], .secret-form input[type="text"], .secret-form input:not([type]) { flex: 1; min-width: 200px; }
+label.inline { flex-direction: row; align-items: center; gap: 6px; }
+.task-log { background: #0b0f14; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font: 12.5px/1.45 var(--mono); max-height: 320px; overflow: auto; white-space: pre-wrap; max-width: 900px; }
+button.small { padding: 4px 10px; font-size: 12.5px; }

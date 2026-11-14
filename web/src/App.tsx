@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api, type User } from "./api";
 import AdminPanel from "./AdminPanel";
 import Launcher from "./Launcher";
+import LocalLauncher from "./LocalLauncher";
+import { local, type LocalUI } from "./api";
 
 // Фронт agctl — только страница входа/регистрации. Всё остальное (чат,
 // воркспейсы, профиль) живёт в dsh; после успешного входа корень платформы
@@ -73,6 +75,7 @@ function Login({ onDone }: { onDone: () => void }) {
 export default function App() {
   const [checking, setChecking] = useState(true);
   const [me, setMe] = useState<User | null>(null);
+  const [localUI, setLocalUI] = useState<LocalUI | null>(null);
 
   useEffect(() => {
     // Роль определяет рендер: admin → админ-панель, developer → лаунчер,
@@ -87,7 +90,16 @@ export default function App() {
             return;
           }
           setMe(r.user);
-          setChecking(false);
+          if (r.user.role === "developer") {
+            // локальный режим (agctl dev) — свой лаунчер: образ + доступы
+            local
+              .ui()
+              .then(setLocalUI)
+              .catch(() => setLocalUI(null))
+              .finally(() => setChecking(false));
+          } else {
+            setChecking(false);
+          }
         } else {
           window.location.replace("/");
         }
@@ -103,7 +115,8 @@ export default function App() {
     );
   }
   if (me) {
-    return me.role === "admin" ? <AdminPanel user={me} /> : <Launcher user={me} />;
+    if (me.role === "admin") return <AdminPanel user={me} />;
+    return localUI ? <LocalLauncher user={me} initial={localUI} /> : <Launcher user={me} />;
   }
   return <Login onDone={() => window.location.replace("/")} />;
 }

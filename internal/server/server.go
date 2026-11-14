@@ -121,6 +121,7 @@ type Server struct {
 	coldTotalMS   atomic.Int64
 	startedAt     time.Time    // время старта серва (сводка админки)
 	local         *localState  // локальный режим (agctl dev): владелец и мост; nil — сервер
+	defaultLLMMu  sync.RWMutex // cfg.DefaultLLM меняется на ходу (лаунчер локального режима: ключ модели)
 	proxyAuditN   atomic.Int64 // счётчик записей журнала шлюза для периодической обрезки
 
 }
@@ -905,7 +906,7 @@ func (s *Server) providerOf(w store.Workspace, ownerID int64, req ProviderReq) (
 			models = requested
 		}
 		base := firstModel(baseURLs)
-		return provision.Provider{BaseURL: base, BaseURLs: baseURLs, Model: firstModel(models), Models: models, APIKey: key, Extras: s.cfg.DefaultLLM.Extras}, nil
+		return provision.Provider{BaseURL: base, BaseURLs: baseURLs, Model: firstModel(models), Models: models, APIKey: key, Extras: s.defaultLLM().Extras}, nil
 	}
 	urls, ms := req.allBaseURLs(), req.allModels()
 	return provision.Provider{BaseURL: firstModel(urls), BaseURLs: urls, Model: firstModel(ms), Models: ms, APIKey: req.APIKey}, nil
@@ -1052,4 +1053,20 @@ func (s *Server) handleAxProviderConfig(w http.ResponseWriter, r *http.Request) 
 func bearerTokenMatches(header, token string) bool {
 	got := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
 	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1
+}
+
+// defaultLLM — платформенный провайдер чата (снимок под мьютексом: в
+// локальном режиме ключ модели меняется из лаунчера без рестарта).
+func (s *Server) defaultLLM() provision.Provider {
+	s.defaultLLMMu.RLock()
+	defer s.defaultLLMMu.RUnlock()
+	return s.cfg.DefaultLLM
+}
+
+// setDefaultLLMKey — сменить ключ платформенного провайдера (новый ключ
+// попадёт в dsh-home на следующем старте рабочего места: RefreshProvider).
+func (s *Server) setDefaultLLMKey(key string) {
+	s.defaultLLMMu.Lock()
+	s.cfg.DefaultLLM.APIKey = key
+	s.defaultLLMMu.Unlock()
 }
