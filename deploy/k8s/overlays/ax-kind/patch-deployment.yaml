@@ -1,0 +1,14 @@
+# kind-пилот: без ConfigMap профиля — встроенный нейтральный agctl;
+# llm-ключей нет (dsh спросит пользователя).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agctl
+spec:
+  template:
+    spec:
+      containers:
+        - name: agctl
+          env:
+            - name: AGCTL_PROFILE_DIR
+              value: ""

@@ -1,0 +1,30 @@
+# Пилот бэкенда ax в одноразовом kind-кластере Substrate
+# (docs/kubernetes.md §3): ate-system + ax-server по их README, образы — в
+# локальный реестр kind (localhost:5001), доступ снаружи — NodePort 30930
+# (или kubectl port-forward). AGCTL_AX_IMAGE — digest agctl-dsh из
+# `make img_push REGISTRY=localhost:5001/agctl` (подставить ниже).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../ax
+images:
+  - name: registry.example.com/agctl/agctl-serve
+    newName: localhost:5001/agctl/agctl-serve
+    newTag: dev
+patches:
+  - path: patch-deployment.yaml
+  - target:
+      kind: Service
+      name: agctl
+    patch: |
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: agctl
+      spec:
+        type: NodePort
+        ports:
+          - name: http
+            port: 80
+            targetPort: http
+            nodePort: 30930
