@@ -2,7 +2,7 @@
 schema: 1.5.0
 id: k8s-pod-egress-policy
 title: "Egress-политика подов k8s: opt-in allowlist LLM-хостов"
-status: in-progress
+status: done
 priority: P3
 size: M
 area: runtime
@@ -70,3 +70,7 @@ sessions:
 - 2026-11-14: gate: ready (попытка 2)
 - 2026-11-14: gate passed, feedback cleared
 - 2026-11-14: unpark: тело довнесено, gate ready (попытка 2)
+- 2026-11-15: Реализовано по плану: egress-NetworkPolicy netegress-<runtime> чат-пода (DNS udp/tcp 53 к kube-dns + ipBlock /32 resolved-хостов провайдеров через AllProviderURLs), opt-in --k8s-egress-policy / AGCTL_K8S_EGRESS_POLICY / serve.k8s.egress_policy (off по умолчанию), DNS-ресолв hostname'ов из ChatSpec при EnsureChat + фоновый рефрешер каждые 10 мин (динамические IP), StopChat снимает политику и снимает чат с рефрешера, полный провал ресолва — громкий отказ EnsureChat. Юниты: hostnames/extraction, генерация политики, сравнение правил, lifecycle (create/update/удаление) на fake clientset, loud-fail.
+- 2026-11-15: kind-смоук зелёный (EGRESS=1 make k8s_e2e_kind, Calico v3.29.2 вместо kindnet — тот не энфорсит NetworkPolicy): чат поднимается с политикой, curl из пода dsh на разрешённый fake-llm (headless svc, IP в ipBlock) — HTTP 200, на pod IP шлюза — блокировка по таймауту, StopChat удаляет политику вместе с compute, PVC цел. Извлечено из источников и перенесено: ограничение kindnet (не энфорсит политики) и паттерн headless-svc для ipBlock — в e2e-скрипт и docs/kubernetes.md §2; flag-семантика согласована с AGCTL_K8S_* конвенцией.
+- 2026-11-15: refl: refl: NetworkPolicy-смоук потребовал policy-CNI в kind — Calico ставится поверх кластера без штатного CNI (disableDefaultCNI); pod-спека fake-хоста сразу упёрлась в pod-security restricted namespace (non-root + drop ALL + RuntimeDefault) — полезный якорь для будущих e2e-подов. Обнаруженный при первом прогоне ложнозелёный чек (curl 000 + || echo blocked склеивались) починен на честную пару rc+http_code — паттерн для exec-проверок с curl.
+- 2026-11-15: done — Карточка закрыта: opt-in egress-политика чат-подов k8s реализована и проверена живым kind-смоуком (Calico): DNS+ipBlock LLM-хостов, рефрешер, удаление по StopChat, off по умолчанию. Критерии готовности выполнены: смоук EGRESS=1 зелёный (разрешённый хост 200, посторонний блокируется), поведение инсталляций без флага не меняется. L7/FQDN-фильтрация — за будущей волной при потребности (описано в docs).
