@@ -37,6 +37,9 @@ func (s *Server) StartJiraPoller(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				if !s.isLeader() {
+					continue // фоновые циклы — только лидеру (ha-control-plane)
+				}
 				s.pollJira(ctx)
 			}
 		}

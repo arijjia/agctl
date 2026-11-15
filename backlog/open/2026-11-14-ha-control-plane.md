@@ -2,17 +2,18 @@
 schema: 1.5.0
 id: ha-control-plane
 title: "HA control-plane шлюза: PostgreSQL + leases"
-status: open
+status: in-progress
 priority: P3
 size: L
 area: platform
 repo: arijjia/agctl
 created: 2026-11-14
-updated: 2026-11-14
+updated: 2026-11-15
 tags: ["kubernetes", "ha", "storage"]
 depends: []
 sessions:
   - session-c780be29-3c20-4064-a46e-9f9eb1cb8b92:work
+  - session-1247c577-a767-45f9-80c3-6e31877ad29a:work
 ---
 
 ## Описание
