@@ -37,7 +37,7 @@ function makeEl(tag) {
   return node;
 }
 
-function harness({ me, unauthorized = false } = {}) {
+function harness({ me, sshEnabled, unauthorized = false } = {}) {
   const calls = [];
   const registrations = [];
   const slots = {
@@ -81,7 +81,11 @@ function harness({ me, unauthorized = false } = {}) {
     fetch: async (path) => {
       calls.push(path);
       if (unauthorized && path === '/api/me') return { ok: false, status: 401, json: async () => ({}) };
-      const data = { '/api/me': { user: { login: 'masha', role: me || 'user' } } }[path] || {};
+      const user = { login: 'masha', role: me || 'user' };
+      // sshEnabled: локальный режим (false) не публикует SSH вовсе;
+      // undefined = серверный режим по умолчанию.
+      if (sshEnabled !== undefined) user.sshEnabled = sshEnabled;
+      const data = { '/api/me': { user } }[path] || {};
       return { ok: true, status: 200, json: async () => data };
     },
   });
@@ -168,6 +172,17 @@ test('попап и профиль содержат выход: клик гас�
   assert.match(source, /Выйти из аккаунта/, 'кнопка выхода есть и в шапке профиля');
 });
 
+test('локальный режим (sshEnabled=false) прячет SSH из попапа даже админу', async () => {
+  const { exports, documentStub } = harness({ me: 'admin', sshEnabled: false });
+  const user = await exports.ensureAgctlUser();
+  const container = makeEl('div');
+  const chip = exports.renderChipInto(container, user, true);
+  chip.listeners.click({ stopPropagation() {} });
+  const popup = documentStub.body.children.find((c) => c.dataset && c.dataset.agctlCabinetPopup);
+  assert.ok(popup, 'плашка открылась');
+  assert.deepEqual(popup.children.map((b) => b.textContent), ['Профиль', 'Справка', 'Выйти'], 'пункта SSH-доступ нет');
+});
+
 test('нет панели «Кабинет», управления рантаймом и списка воркспейсов', () => {
   assert.doesNotMatch(source, /sidebar\.panellist|renderSlot\(|slots\.inject\("sidebar\.settings"\)/, 'панель Кабинета и settings-затенение отсутствуют');
   assert.match(source, /slots\.inject\("sidebar\.footer\.action"/, 'чип живёт в штатном footer.action слоте');
@@ -186,6 +201,7 @@ test('нет панели «Кабинет», управления рантай�
   assert.match(source, /grid-template-columns:repeat\(auto-fit/, 'карточки статистики стоят ровной сеткой без разнобоя 3+2');
   assert.match(source, /SSH-доступ/, 'SSH — отдельная вкладка попапа');
   assert.match(source, /me\.role === "developer" \|\| me\.role === "admin"/, 'SSH-вкладка доступна developer и admin');
+  assert.match(source, /me\.sshEnabled !== false/, 'в локальном режиме (sshEnabled=false) SSH скрыт');
   assert.match(source, /Как сделать ключ/, 'микро-гайд по ключу в SSH-вкладке');
   assert.match(source, /api\/me\/ssh/, 'SSH-ключ сохраняется через /api/me/ssh');
   assert.match(source, /Администратор/);
