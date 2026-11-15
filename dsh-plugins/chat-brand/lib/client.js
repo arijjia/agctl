@@ -248,7 +248,7 @@ window.__ModuleLoader__.load({
 			const row = document.createElement('div');
 			row.style.cssText = 'display:flex;flex-direction:column;gap:6px';
 			row.appendChild(Object.assign(document.createElement('span'), {
-				textContent: 'Возможности (можно добавить и потом — в «Воркспейсы: возможности»)',
+				textContent: 'Возможности (можно добавить и потом — в «Возможности» консоли воркспейса)',
 				style: 'font-size:12px;font-weight:600',
 			}));
 			for (const pkg of packages) {
@@ -412,7 +412,7 @@ window.__ModuleLoader__.load({
 					await workspaces.create({ path: directory });
 					close();
 					if (failed.length) {
-						window.alert('Воркспейс создан, но пакеты не установились: ' + failed.join(', ') + '. Установите их позже через «Воркспейсы: возможности».');
+						window.alert('Воркспейс создан, но пакеты не установились: ' + failed.join(', ') + '. Установите их позже через «Возможности».');
 					}
 				} catch (error) {
 					status.textContent = String(error.message || error);

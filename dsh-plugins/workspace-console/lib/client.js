@@ -1,4 +1,4 @@
-// agctl workspace-console — вкладка «Воркспейсы: возможности».
+// agctl workspace-console — вкладка «Возможности» (воркспейсы + каталог пакетов).
 //
 // Полноценная панель в штатном списке панелей dsh (паттерн Plugins/Automation
 // tasks: слот sidebar.panellist + страница в слоте main). Содержимое — единое
@@ -223,7 +223,7 @@ window.__ModuleLoader__.load({
 				const inner = el("div", "max-width:1060px;margin:0 auto", null);
 				page.appendChild(inner);
 
-				inner.appendChild(el("h2", "margin:0 0 2px;font-size:18px;font-weight:650", "Воркспейсы: возможности"));
+				inner.appendChild(el("h2", "margin:0 0 2px;font-size:18px;font-weight:650", "Возможности"));
 				inner.appendChild(el("p", "margin:0 0 16px;font-size:12px;color:var(--dsw-alias-label-tertiary,#888)",
 					"Единое место настройки воркспейсов: возможности из каталога платформы, системный промт и компоненты. «Удалить» стирает воркспейс вместе с каталогом на диске."));
 
@@ -596,7 +596,7 @@ window.__ModuleLoader__.load({
 				name: "sidebar.panellist",
 				id: PANEL_ID,
 				order: 20,
-				label: () => "Воркспейсы: возможности",
+				label: () => "Возможности",
 			}, PanelIcon));
 			// Полноэкранная вкладка той же панели (ключ = id панели).
 			ctx.slots.inject("main", () => ctx.slots.register({
