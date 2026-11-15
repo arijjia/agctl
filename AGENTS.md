@@ -14,7 +14,11 @@ SQLite, DeepSeek Harness в контейнере воркспейса. Публ�
   CI-гард gitleaks. Тестовые прогоны — только в изолированном `$TEST_HOME`
   с уникальным тегом образа; Docker e2e — `scripts/e2e-cabinet.sh`,
   `scripts/e2e-ssh.sh`; браузерный — `tests/e2e-ui` (Playwright).
-- Архитектура и роадмап — `docs/architecture.md`; стратегия — штаб
+- Документация в репо: README — онбординг локального режима,
+  `docs/local-mode-architecture.md` — архитектура, реализация и разбор
+  кодовой базы (локальный / удалённый / кластер). Прежние доки (архитектура
+  v3, Kubernetes, кастомизация, безопасность, capacity, сборка и CLI) —
+  архив в `agctl-hq/docs/`; стратегия — штаб
   (`agctl-hq/docs/agctl-platform-concept-v2.md`,
   `agctl-hq/docs/agctl-sandbox-and-runtime-theory.md`).
 - Перед финалом: `go vet ./... && go test ./...`, SPA собирается

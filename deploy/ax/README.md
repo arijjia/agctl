@@ -9,4 +9,4 @@
 
 Сам шлюз agctl в режиме `ax` — `deploy/k8s/overlays/ax`. Порядок установки,
 маппинг понятий (пользователь → Task → актор), ограничения режима и смоук —
-`docs/kubernetes.md`.
+`agctl-hq/docs/kubernetes.md`.
