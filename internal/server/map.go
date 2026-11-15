@@ -2,7 +2,7 @@ package server
 
 // map.go — страница /map: карта системы (archify-диаграммы) за сессией
 // agctl. Это первое зерно будущей админ-панели (agctl-hq/docs/1.md);
-// сейчас — только список диаграмм и их раздача.
+// сейчас — вкладки диаграмм и их раздача.
 
 import (
 	"html"
@@ -31,17 +31,61 @@ func mapEntries() []string {
 	return names
 }
 
-// handleMapIndex — корень /map: список диаграмм (росток админ-панели).
+// mapTabs — порядок и названия вкладок /map; диаграммы вне списка идут
+// следом под своими именами файлов.
+var mapTabs = []struct{ name, title string }{
+	{"agctl-processes", "Сервер: процессы и порты"},
+	{"agctl-local", "Локальный режим (agctl dev)"},
+	{"agctl-cluster", "Кластер: k8s | ax"},
+}
+
+// handleMapIndex — корень /map: вкладки по диаграммам (?m=имя), выбранная
+// показывается во фрейме. Без JS: вкладка — обычная ссылка.
 func (s *Server) handleMapIndex(w http.ResponseWriter, r *http.Request, _ identity) {
+	type tab struct{ name, title string }
+	have := map[string]bool{}
+	for _, n := range mapEntries() {
+		have[strings.TrimSuffix(n, ".html")] = true
+	}
+	var tabs []tab
+	for _, t := range mapTabs {
+		if have[t.name] {
+			tabs = append(tabs, tab{t.name, t.title})
+			delete(have, t.name)
+		}
+	}
+	for _, n := range mapEntries() {
+		if n := strings.TrimSuffix(n, ".html"); have[n] {
+			tabs = append(tabs, tab{n, n})
+		}
+	}
+	cur := ""
+	if len(tabs) > 0 {
+		cur = tabs[0].name
+	}
+	for _, t := range tabs {
+		if t.name == r.URL.Query().Get("m") {
+			cur = t.name
+		}
+	}
 	var b strings.Builder
 	b.WriteString(`<!doctype html><meta charset="utf-8"><title>agctl — карта системы</title>`)
-	b.WriteString(`<body style="font-family:system-ui;max-width:640px;margin:3rem auto;padding:0 1rem">`)
-	b.WriteString(`<h1>Карта системы agctl</h1><p>Будущая админ-панель; сейчас — диаграммы архитектуры.</p><ul>`)
-	for _, name := range mapEntries() {
-		title := strings.TrimSuffix(name, ".html")
-		b.WriteString(`<li><a href="/map/` + name + `">` + html.EscapeString(title) + `</a></li>`)
+	b.WriteString(`<style>html,body{margin:0;height:100%;background:#0b1020;color:#cbd5e1;font-family:system-ui}` +
+		`body{display:flex;flex-direction:column}nav{display:flex;gap:4px;align-items:center;padding:8px 14px;border-bottom:1px solid #1e293b}` +
+		`nav b{margin-right:12px}nav a{color:#94a3b8;text-decoration:none;padding:6px 12px;border-radius:6px}` +
+		`nav a.on{background:#1e293b;color:#f8fafc}nav a:hover{color:#f8fafc}iframe{flex:1;border:0;width:100%}</style>`)
+	b.WriteString(`<nav><b>Карта системы agctl</b>`)
+	for _, t := range tabs {
+		cls := ""
+		if t.name == cur {
+			cls = ` class="on"`
+		}
+		b.WriteString(`<a` + cls + ` href="/map?m=` + html.EscapeString(t.name) + `">` + html.EscapeString(t.title) + `</a>`)
 	}
-	b.WriteString(`</ul><p style="opacity:.7">Экспериментальный local backend и K8s-прототип помечены на самой диаграмме.</p></body>`)
+	b.WriteString(`</nav>`)
+	if cur != "" {
+		b.WriteString(`<iframe title="карта" src="/map/` + html.EscapeString(cur) + `.html"></iframe>`)
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(b.String()))
 }

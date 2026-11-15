@@ -348,7 +348,7 @@ Chromium, LibreOffice.
 | `make profile-fetch PROFILE_REPO=…` | профиль организации → `profiles/<id>` |
 | `make profiles` | какие профили доступны |
 | `make k8s_render` / `k8s_apply` / `k8s_profile` / `k8s_secret` / `k8s_status` / `k8s_e2e_kind` | деплой и смоук в Kubernetes ([kubernetes.md](kubernetes.md)) |
-| `make map` / `map_build` / `map_check` | карта системы: открыть, пересобрать (нужен archify), проверить |
+| `make map` / `map_build` / `map_check` | карты системы (сервер, локальный режим, кластер — вкладки `/map`): открыть, пересобрать (нужен archify), проверить |
 
 ### Скрипты e2e
 

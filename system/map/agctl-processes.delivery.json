@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "receiptId": "e7619163-306d-4dbe-ad31-a09bb55a4b1d",
+  "receiptId": "6af649fd-187a-4b13-93ac-20ab71ed7896",
   "status": "current",
   "command": "deliver",
   "type": "architecture",
-  "input": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.architecture.json",
-  "output": "/Users/malex/src2/dump/agctlwt/map-decompose-serve/system/map/agctl-processes.html",
+  "input": "/Users/masha/src/cit/agctl/system/map/agctl-processes.architecture.json",
+  "output": "/Users/masha/src/cit/agctl/system/map/agctl-processes.html",
   "specification": {
-    "sha256": "4dd2814deb51bf6a001db696982c6e1514505b1f120786e54a49651321c5047c",
-    "bytes": 31794
+    "sha256": "ad028b774f829a0db10d5242dc4c6da6488389a6928cb1b9c58b497378097e14",
+    "bytes": 32953
   },
   "artifact": {
-    "sha256": "64097f237260a59fa3b4614f64454d6ab56aa474f8259765f38fdce0e2f8863d",
-    "bytes": 888232
+    "sha256": "b1a544e950a2bf10aba211e0f21e89eea736a28e088c710ff72ecf22ac826e9e",
+    "bytes": 896166
   }
 }

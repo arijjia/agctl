@@ -1,0 +1,620 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "agctl dev — локальный режим разработчика",
+    "subtitle": "Всё на машине разработчика: один фоновый agctl dev serve (127.0.0.1) + контейнер рабочего места в локальном Docker",
+    "output": "system/map/agctl-local.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "git@github.com:arijjia/agctl.git",
+      "provider": "github",
+      "link_mode": "local-only",
+      "revision": "a7ed520196b9e33f7085d0881328bb745895a90b"
+    },
+    "views": [
+      {
+        "id": "v-first",
+        "label": "Первый запуск",
+        "focus": [
+          "devcli",
+          "lapi",
+          "browser",
+          "keyring",
+          "devhome"
+        ],
+        "note": "init спрашивает профиль и папку; up стартует serve и даёт ссылку; ключ модели и доступы — во вкладке «Доступы»"
+      },
+      {
+        "id": "v-image",
+        "label": "Образ и запуск",
+        "focus": [
+          "lapi",
+          "imgbuild",
+          "registry",
+          "dockerd",
+          "localctr"
+        ],
+        "note": "выбранного образа нет — pull из реестра, иначе сборка цепочки на машине; затем контейнер рабочего места"
+      },
+      {
+        "id": "v-chat",
+        "label": "Работа в чате",
+        "focus": [
+          "browser",
+          "chatgw",
+          "localctr",
+          "projdir",
+          "llm",
+          "corpsvc"
+        ],
+        "note": "/chat/ проксируется в dsh :3080; агент правит родную папку проектов и ходит в LLM, GitLab, Jira"
+      },
+      {
+        "id": "v-bridge",
+        "label": "Мост к хосту",
+        "focus": [
+          "localctr",
+          "bridge",
+          "hostcmds"
+        ],
+        "note": "агент зовёт хост только через мост: белый список argv из профиля, confirm-инструменты ждут человека"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "devcli",
+      "type": "backend",
+      "label": "agctl dev — CLI",
+      "sublabel": "init · up · down · update · doctor",
+      "pos": [
+        40,
+        334
+      ],
+      "size": [
+        200,
+        88
+      ],
+      "sources": [
+        {
+          "path": "cmd/agctl/dev.go",
+          "line": 58,
+          "label": "cmdDev: init · up · down · update · doctor"
+        },
+        {
+          "path": "cmd/agctl/dev.go",
+          "line": 106,
+          "label": "devInit: профиль и папка (--cli — мастер)"
+        },
+        {
+          "path": "cmd/agctl/dev.go",
+          "line": 397,
+          "label": "devUp: Docker, порт, фоновый serve, ссылка"
+        }
+      ]
+    },
+    {
+      "id": "browser",
+      "type": "frontend",
+      "label": "Браузер разработчика",
+      "sublabel": "/launcher · /chat/ · 127.0.0.1",
+      "pos": [
+        40,
+        494
+      ],
+      "size": [
+        200,
+        88
+      ],
+      "sources": [
+        {
+          "path": "web/src/LocalLauncher.tsx",
+          "line": 92,
+          "label": "LocalLauncher: вкладки образа и доступов"
+        },
+        {
+          "path": "internal/server/local.go",
+          "line": 146,
+          "label": "вход: токен → сессия → /launcher"
+        }
+      ]
+    },
+    {
+      "id": "imgbuild",
+      "type": "backend",
+      "label": "Подготовка рабочего места",
+      "sublabel": "образ: pull или сборка · ensureChat",
+      "pos": [
+        410,
+        200
+      ],
+      "size": [
+        210,
+        76
+      ],
+      "sources": [
+        {
+          "path": "internal/server/local_ui.go",
+          "line": 241,
+          "label": "startLocalRuntime: образ → ensureChat"
+        },
+        {
+          "path": "cmd/agctl/dev.go",
+          "line": 310,
+          "label": "devPrepareImage: pull, иначе сборка"
+        },
+        {
+          "path": "internal/runtime/dockerrt/devbuild.go",
+          "line": 81,
+          "label": "BuildDevImage: base → web → профиль → вкус"
+        }
+      ]
+    },
+    {
+      "id": "lapi",
+      "type": "backend",
+      "label": "Лаунчер /api/local/ui",
+      "sublabel": "образ · доступы · запуск",
+      "pos": [
+        410,
+        340
+      ],
+      "size": [
+        210,
+        76
+      ],
+      "sources": [
+        {
+          "path": "internal/server/local_ui.go",
+          "line": 91,
+          "label": "маршруты /api/local/ui — только владелец"
+        },
+        {
+          "path": "internal/server/local_ui.go",
+          "line": 145,
+          "label": "секрет сохраняется, наружу — «задан»"
+        },
+        {
+          "path": "internal/server/local_ui.go",
+          "line": 102,
+          "label": "requireLocalOwner: сессия + same-Origin"
+        }
+      ]
+    },
+    {
+      "id": "chatgw",
+      "type": "backend",
+      "label": "Шлюз чата /chat/",
+      "sublabel": "proxy · WS · прогрев",
+      "pos": [
+        410,
+        500
+      ],
+      "size": [
+        210,
+        76
+      ],
+      "sources": [
+        {
+          "path": "internal/server/chat.go",
+          "line": 877,
+          "label": "chatProxy: прокси к dsh :3080"
+        },
+        {
+          "path": "internal/server/local.go",
+          "line": 246,
+          "label": "localChatExtras: папка проектов + env"
+        }
+      ]
+    },
+    {
+      "id": "bridge",
+      "type": "security",
+      "label": "Мост к хосту",
+      "sublabel": "белый список argv · confirm",
+      "pos": [
+        410,
+        650
+      ],
+      "size": [
+        210,
+        76
+      ],
+      "sources": [
+        {
+          "path": "internal/localbridge/bridge.go",
+          "line": 209,
+          "label": "Call: белый список, confirm, журнал"
+        },
+        {
+          "path": "internal/localbridge/bridge.go",
+          "line": 107,
+          "label": "Expand: аргументы в argv, без shell"
+        },
+        {
+          "path": "internal/server/local.go",
+          "line": 208,
+          "label": "handleBridgeCall: Bearer-токен моста"
+        }
+      ]
+    },
+    {
+      "id": "keyring",
+      "type": "database",
+      "label": "Хранилище ОС",
+      "sublabel": "Keychain · Cred. Manager · Secret Service",
+      "pos": [
+        720,
+        340
+      ],
+      "size": [
+        230,
+        76
+      ],
+      "sources": [
+        {
+          "path": "internal/localmode/secrets.go",
+          "line": 76,
+          "label": "OpenStore: хранилище ОС или secrets.enc"
+        },
+        {
+          "path": "internal/localmode/secrets.go",
+          "line": 220,
+          "label": "ContainerEnv: доступы → env контейнера"
+        }
+      ]
+    },
+    {
+      "id": "devhome",
+      "type": "database",
+      "label": "~/.agctl-dev — файлы",
+      "sublabel": "dev.yaml · data/ · backups/ · logs/",
+      "pos": [
+        720,
+        430
+      ],
+      "size": [
+        230,
+        66
+      ],
+      "sources": [
+        {
+          "path": "internal/localmode/config.go",
+          "line": 100,
+          "label": "dev.yaml: профиль, образ, папка, env"
+        },
+        {
+          "path": "internal/localmode/state.go",
+          "line": 112,
+          "label": "Backup: снимок dsh-home перед update"
+        }
+      ]
+    },
+    {
+      "id": "dockerd",
+      "type": "cloud",
+      "label": "Docker машины",
+      "sublabel": "Desktop · Colima · Engine",
+      "pos": [
+        1000,
+        208
+      ],
+      "size": [
+        220,
+        60
+      ],
+      "sources": [
+        {
+          "path": "internal/runtime/dockerrt/devbuild.go",
+          "line": 131,
+          "label": "buildFromFS: сборка через Docker API"
+        },
+        {
+          "path": "internal/runtime/dockerrt/docker.go",
+          "line": 205,
+          "label": "findLinuxBinary: agctl-linux-<arch> рядом"
+        }
+      ]
+    },
+    {
+      "id": "localctr",
+      "type": "backend",
+      "label": "dsh web — рабочее место",
+      "sublabel": "образ профиля: base · web · 1c",
+      "pos": [
+        980,
+        490
+      ],
+      "size": [
+        240,
+        96
+      ],
+      "sources": [
+        {
+          "path": "cmd/agctl/dev_hooks.go",
+          "line": 61,
+          "label": "Images: каталог профиля, есть ли локально"
+        },
+        {
+          "path": "internal/localmode/secrets.go",
+          "line": 220,
+          "label": "env доступов (без ключа модели)"
+        }
+      ]
+    },
+    {
+      "id": "projdir",
+      "type": "database",
+      "label": "Папка проектов → /workspace",
+      "sublabel": "родные репозитории · без автокоммитов",
+      "pos": [
+        980,
+        650
+      ],
+      "size": [
+        240,
+        66
+      ],
+      "sources": [
+        {
+          "path": "internal/localmode/config.go",
+          "line": 119,
+          "label": "ValidateWorkDir: папка проектов"
+        }
+      ]
+    },
+    {
+      "id": "hostcmds",
+      "type": "external",
+      "label": "Команды хоста",
+      "sublabel": "ibcmd (1С) и др. из профиля",
+      "pos": [
+        40,
+        655
+      ],
+      "size": [
+        200,
+        66
+      ],
+      "sources": [
+        {
+          "path": "cmd/agctl/dev.go",
+          "line": 1214,
+          "label": "белый список моста — из профиля"
+        }
+      ]
+    },
+    {
+      "id": "registry",
+      "type": "external",
+      "label": "Реестр образов",
+      "sublabel": "если есть: Nexus / ghcr",
+      "pos": [
+        420,
+        20
+      ],
+      "size": [
+        190,
+        76
+      ],
+      "sources": [
+        {
+          "path": "cmd/agctl/dev.go",
+          "line": 380,
+          "label": "devPull: docker pull образа"
+        }
+      ]
+    },
+    {
+      "id": "llm",
+      "type": "external",
+      "label": "LLM gateway",
+      "sublabel": "ключ — из Доступов",
+      "pos": [
+        1290,
+        360
+      ],
+      "size": [
+        130,
+        72
+      ],
+      "sources": [
+        {
+          "path": "internal/server/local_ui.go",
+          "line": 174,
+          "label": "ключ модели — сразу в провайдер serve"
+        }
+      ]
+    },
+    {
+      "id": "corpsvc",
+      "type": "external",
+      "label": "GitLab · Jira",
+      "sublabel": "личные токены",
+      "pos": [
+        1290,
+        505
+      ],
+      "size": [
+        130,
+        66
+      ],
+      "sources": [
+        {
+          "path": "internal/localmode/secrets.go",
+          "line": 38,
+          "label": "манифест доступов: GitLab, Jira"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "e1",
+      "from": "devcli",
+      "to": "lapi",
+      "label": "запуск фоном · Bearer"
+    },
+    {
+      "id": "e2",
+      "from": "browser",
+      "to": "lapi",
+      "label": "вход по токену",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e3",
+      "from": "browser",
+      "to": "chatgw",
+      "label": "/chat/ · WS",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e4",
+      "from": "lapi",
+      "to": "imgbuild",
+      "label": "Запустить"
+    },
+    {
+      "id": "e5",
+      "from": "imgbuild",
+      "to": "registry",
+      "label": "docker pull",
+      "variant": "dashed"
+    },
+    {
+      "id": "e6",
+      "from": "imgbuild",
+      "to": "dockerd",
+      "label": "pull · build · run"
+    },
+    {
+      "id": "e7",
+      "from": "dockerd",
+      "to": "localctr",
+      "label": "контейнер"
+    },
+    {
+      "id": "e8",
+      "from": "lapi",
+      "to": "keyring",
+      "label": "go-keyring",
+      "variant": "dashed"
+    },
+    {
+      "id": "e9",
+      "from": "lapi",
+      "to": "devhome",
+      "label": "dev.yaml",
+      "variant": "dashed"
+    },
+    {
+      "id": "e10",
+      "from": "chatgw",
+      "to": "localctr",
+      "label": "proxy → :3080",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e11",
+      "from": "localctr",
+      "to": "projdir",
+      "label": "bind mount RW"
+    },
+    {
+      "id": "e12",
+      "from": "localctr",
+      "to": "bridge",
+      "label": "HTTP · токен моста"
+    },
+    {
+      "id": "e13",
+      "from": "bridge",
+      "to": "hostcmds",
+      "label": "exec argv"
+    },
+    {
+      "id": "e14",
+      "from": "localctr",
+      "to": "corpsvc",
+      "label": "HTTPS"
+    },
+    {
+      "id": "e15",
+      "from": "localctr",
+      "to": "llm",
+      "label": "HTTPS :443",
+      "variant": "emphasis"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Машина разработчика",
+      "wraps": [
+        "devcli",
+        "browser",
+        "imgbuild",
+        "lapi",
+        "chatgw",
+        "bridge",
+        "keyring",
+        "devhome",
+        "dockerd",
+        "localctr",
+        "projdir",
+        "hostcmds"
+      ],
+      "pad": 16
+    },
+    {
+      "kind": "region",
+      "label": "agctl dev serve — 1 Go-процесс",
+      "wraps": [
+        "imgbuild",
+        "lapi",
+        "chatgw",
+        "bridge"
+      ],
+      "pad": 10
+    },
+    {
+      "kind": "region",
+      "label": "Контейнер рабочего места",
+      "wraps": [
+        "localctr"
+      ],
+      "pad": 10
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Сколько процессов",
+      "items": [
+        "Всегда: agctl dev serve (Go, фон) + Docker машины; CLI agctl dev — короткоживущий",
+        "После «Запустить»: +1 контейнер dsh web на выбранном образе",
+        "Мост: 0 процессов на ожидании; вызов = exec команды хоста из белого списка"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Доступы и секреты",
+      "items": [
+        "Вводятся во вкладке «Доступы» лаунчера; значения в браузер не возвращаются",
+        "Секреты — в хранилище ОС (или secrets.enc), несекретное — в dev.yaml",
+        "Ключ модели применяется сразу; остальное — после перезапуска рабочего места"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Образ рабочего места",
+      "items": [
+        "Каталог — из профиля: базовый, web (Playwright), вкус профиля (1С: Java + BSL LS)",
+        "Нет на машине — docker pull; нет в реестре — сборка base → web → профиль → вкус",
+        "Сборке нужен agctl-linux-<arch> рядом с бинарём или в ../lib/agctl"
+      ]
+    }
+  ]
+}
