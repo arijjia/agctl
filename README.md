@@ -52,7 +52,8 @@ irm https://raw.githubusercontent.com/arijjia/agctl/main/bin/install.ps1 | iex
 ```
 
 Скрипт ([bin/install.sh](bin/install.sh), [bin/install.ps1](bin/install.ps1))
-определяет ОС и архитектуру, скачивает архив последнего релиза и
+определяет ОС и архитектуру, скачивает архив последнего релиза (включая
+pre-release) и
 `checksums.txt` (через `gh`, если он установлен и авторизован, иначе
 напрямую), сверяет SHA-256, кладёт бинарь в `~/.local/bin` (Windows:
 `%LOCALAPPDATA%\agctl`), снимает карантин macOS или отметку «скачано из
@@ -62,6 +63,28 @@ irm https://raw.githubusercontent.com/arijjia/agctl/main/bin/install.ps1 | iex
 Переменные: `AGCTL_VERSION=v0.1.0` — конкретный тег, `AGCTL_INSTALL_DIR` —
 другой каталог, `AGCTL_NO_LINUX=1` — без linux-сборки (образы берутся из
 реестра), `AGCTL_RELEASE_DIR` — папка с уже скачанными архивами.
+
+**Комплект организации.** Если организация публикует свой релиз в
+приватном репозитории профиля `<org>/agctl-profile-<id>` (архив с бинарём,
+linux-сборкой и профилем внутри), тот же скрипт ставит его: нужен
+авторизованный `gh` (`gh auth login`). Профиль кладётся в
+`~/.local/share/agctl/profiles/<id>` (Windows: `%LOCALAPPDATA%\agctl\profiles\<id>`),
+в конце скрипт печатает готовую команду `agctl dev init --profile-dir …`.
+
+macOS и Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/arijjia/agctl/main/bin/install.sh | AGCTL_REPO=<org>/agctl-profile-<id> sh
+```
+
+Windows, PowerShell:
+
+```powershell
+$env:AGCTL_REPO = '<org>/agctl-profile-<id>'; irm https://raw.githubusercontent.com/arijjia/agctl/main/bin/install.ps1 | iex
+```
+
+Повторный запуск обновляет бинарь, linux-сборку и профиль на месте;
+`AGCTL_PROFILE_DIR` — другой каталог профиля.
 
 Дальше — раздел «Запуск». Нужны Docker Desktop (на Windows — с бэкендом WSL 2) и `gh` или `curl`.
 Живьём на Windows локальный режим ещё не прогонялся, так что первый запуск
