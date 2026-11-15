@@ -509,7 +509,7 @@ argv, `pattern`, `confirm`/deny/timeout, журнал.
 | `internal/assets/image/`, `internal/assets/dsh-skel/` | контекст образа и скелет DSH_HOME, встроенные в бинарь (`internal/assets/assets.go`) |
 | `profiles/<id>/local/bridge-tools.yaml`, `images.dev`, `images.dockerfile`, `image/flavors/*` | вклад профиля организации в локальный режим |
 | `bin/install.mk` | `make install` / `uninstall` из исходников |
-| `bin/install.sh`, `bin/install.ps1` | установка из GitHub Releases одной командой (`curl \| sh`, `irm \| iex`): ОС и архитектура, скачивание через `gh` или напрямую, SHA-256, бинарь + linux-сборка, карантин / Unblock-File, PATH; `AGCTL_RELEASE_DIR` — прогон на локальных архивах без релиза |
+| `bin/install.sh`, `bin/install.ps1` | установка из GitHub Releases одной командой (`curl \| sh`, `irm \| iex`): ОС и архитектура, скачивание через `gh` или напрямую, SHA-256, бинарь + linux-сборка, карантин / Unblock-File, PATH; `AGCTL_RELEASE_DIR` — прогон на локальных архивах без релиза; `AGCTL_REPO=<org>/agctl-profile-<id>` — комплект организации из приватного репозитория профиля (zip `agctl-<id>-<версия>-<os>-<arch>.zip` + `checksums-<версия>.txt`, собирает `bin/release.sh` репозитория профиля): бинарь, linux-сборка и профиль в `~/.local/share/agctl/profiles/<id>` |
 | `bin/e2e-local-mode.sh` | живой прогон на изолированном `AGCTL_DEV_HOME`: init → secrets (файловое хранилище) → up → вход по токену → рабочее место с родной папкой и env → мост (вызов, подтверждение, MCP) → update на другой тег с бэкапом → rollback → down |
 
 ## 4. Удалённый (серверный) режим: что там и где в коде
