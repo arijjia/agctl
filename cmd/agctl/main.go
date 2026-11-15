@@ -177,6 +177,9 @@ func cmdServe(args []string) {
 	devImages := fsSet.String("dev-images", envOr("AGCTL_DEV_IMAGES", firstNonEmpty(cfg.Serve.DevImages, strings.Join(prof.Images.Dev, ","))), "каталог образов лаунчера developer'а через запятую (реестр Nexus и пр.; по умолчанию — images.dev профиля); пусто = только --image")
 	devEnv := fsSet.String("dev-env", envOr("AGCTL_DEV_ENV", cfg.Serve.DevEnv), "имена переменных окружения хоста, пробрасываемые в контейнер developer'а через запятую (значения из .env); пусто = не пробрасывать")
 	launcherSlots := fsSet.Int("launcher-slots-max", envInt("AGCTL_LAUNCHER_SLOTS_MAX", cfg.Serve.LauncherSlotsMax), "максимум живых слотов developer'а в лаунчере (карточка developer-multi-containers; 0 = дефолт 3)")
+	haLeaderLease := fsSet.String("ha-leader-lease", envOr("AGCTL_HA_LEADER_LEASE", cfg.Serve.HALeaderLease), "имя coordination.k8s.io Lease для выбора лидера фоновых циклов при 2+ репликах (карточка ha-control-plane); пусто = single-реплика без выборов")
+	haLeaderKubeconfig := fsSet.String("ha-leader-kubeconfig", envOr("AGCTL_HA_LEADER_KUBECONFIG", cfg.Serve.HALeaderKubeconfig), "kubeconfig Lease-клиента (пусто = in-cluster; по умолчанию — как --k8s-kubeconfig не используется)")
+	haLeaderNamespace := fsSet.String("ha-leader-namespace", envOr("AGCTL_HA_LEADER_NAMESPACE", cfg.Serve.HALeaderNamespace), "namespace Lease (пусто = serviceaccount/env/default)")
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
 	publicURL := fsSet.String("public-url", envOr("AGCTL_PUBLIC_URL", cfg.Serve.PublicURL), "базовый URL шлюза, видимый песочницам (fetch-at-boot раннера AX); пусто = http://<первый не-loopback IP>:<порт --addr>")
@@ -251,6 +254,9 @@ func cmdServe(args []string) {
 		DevImages:               splitCSV(*devImages),
 		DevEnv:                  splitCSV(*devEnv),
 		LauncherSlotsMax:        *launcherSlots,
+		HALeaderLease:           *haLeaderLease,
+		HALeaderKubeconfig:      firstNonEmpty(*haLeaderKubeconfig, *rf.k8sKubeconfig),
+		HALeaderNamespace:       *haLeaderNamespace,
 		BinDir:                  firstNonEmpty(*binDir, "dist"),
 		Version:                 version,
 		SecureCookies:           *secureCookies,

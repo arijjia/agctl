@@ -1,0 +1,16 @@
+# 2+ реплики шлюза: PostgreSQL store (план п.1 карточки ha-control-plane) +
+# --ha-leader-lease для фоновых циклов. strategy остаётся Recreate, пока
+# store не переведён на PG (SQLite на RWO-томе реплики не шарит).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agctl
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: agctl
+          env:
+            - name: AGCTL_HA_LEADER_LEASE
+              value: agctl-leader

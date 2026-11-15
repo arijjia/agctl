@@ -1,0 +1,11 @@
+# PDB: при node drain всегда жива минимум одна реплика шлюза (2+ реплики,
+# PostgreSQL store — см. kustomization.yaml этого оверлея).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agctl
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agctl

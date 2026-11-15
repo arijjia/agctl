@@ -26,6 +26,7 @@ import (
 	"github.com/arijjia/agctl/internal/assets"
 	"github.com/arijjia/agctl/internal/auth"
 	"github.com/arijjia/agctl/internal/bridge"
+	"github.com/arijjia/agctl/internal/leaderelection"
 	"github.com/arijjia/agctl/internal/profile"
 	"github.com/arijjia/agctl/internal/provision"
 	agctlrt "github.com/arijjia/agctl/internal/runtime"
@@ -59,6 +60,14 @@ type Config struct {
 	Tier0                   bool               // корень платформы ведёт в персональный чат (/chat/)
 	EgressAllowlist         bool               // чат-контейнеры на выделенной сети: egress только DNS и хост-шлюз (карточка egress-allowlist)
 	LauncherSlotsMax        int                // максимум живых слотов developer'а (--launcher-slots-max; карточка developer-multi-containers, 0/вне диапазона = дефолт 3)
+	// HALeaderLease — имя coordination.k8s.io Lease для выбора лидера фоновых
+	// циклов при 2+ репликах шлюза (карточка ha-control-plane; --ha-leader-lease).
+	// Пусто = фолбэк single-реплики: циклы в процессе без выборов.
+	HALeaderLease string
+	// HALeaderKubeconfig — kubeconfig для Lease-клиента (пусто = in-cluster);
+	// HALeaderNamespace — namespace Lease (пусто = serviceaccount/env/default).
+	HALeaderKubeconfig string
+	HALeaderNamespace  string
 	ChatTTL                 time.Duration      // idle TTL персонального runtime (по умолчанию 60 мин)
 	ChatPrewarmN            int                // prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл); он же — потолок пула
 	ChatPrewarmEvery        time.Duration      // период цикла подогрева (по умолчанию 15 мин)
@@ -113,6 +122,11 @@ type Server struct {
 	autosaveFails map[string]autosaveFailState // "userID/project" → счётчик/пауза
 	prewarmMu     sync.Mutex                   // не перекрывать циклы prewarm-пула
 	prewarmActive bool
+	// leader — holder k8s Lease (карточка ha-control-plane); nil = фолбэк
+	// single-реплики (циклы в процессе, как сейчас). leaderReady — закрыт при
+	// первом переходе кого-то в лидеры (сигнал стартовому свипу).
+	leader      *leaderelection.Holder
+	leaderReady chan struct{}
 	llmMu         sync.Mutex             // виртуальные ключи LiteLLM по квотам
 	llmKeys       map[int64]*llmKeyState // userID → заминченный ключ (ротация при смене квоты)
 	warmHits      atomic.Int64           // ensureChat из тёплого кэша (hit-rate пула)
@@ -164,12 +178,35 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 	// (новый серв про них не знает, TTL-рипер их не усыплёт) и продолжают
 	// раздавать старый dsh web. Сносим заранее; /chat/ пересоздаёт среды
 	// лениво — данные пользователей живут на маунтах, не в контейнере.
+	// При leader-election (2+ реплики, карточка ha-control-plane) свип делает
+	// только лидер — на OnAcquired, иначе реплики гоняются по чужим подам.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if n := rt.SweepVersionDrift(ctx, chatContainerNamePrefix(cfg.Home)); n > 0 {
-		log.Printf("[chat] свип дрейфа: удалены контейнеры прошлой сборки: %d", n)
+	if s.cfg.HALeaderLease != "" && s.leader != nil {
+		go func() { <-s.leaderReady; s.sweepDrift(ctx) }()
+	} else {
+		s.sweepDrift(ctx)
 	}
 	return s, nil
+}
+
+// sweepDrift — одноразовый стартовый свип чат-контейнеров прошлой сборки
+// (делает только лидер, когда включён leader-election). Свип — свойство
+// docker-рантайма (k8s/ax свипают в runtime_select); для остальных
+// реализаций тихо no-op.
+func (s *Server) sweepDrift(ctx context.Context) {
+	if !s.isLeader() {
+		return
+	}
+	sw, ok := any(s.rt).(interface {
+		SweepVersionDrift(ctx context.Context, namePrefix string) int
+	})
+	if !ok {
+		return
+	}
+	if n := sw.SweepVersionDrift(ctx, chatContainerNamePrefix(s.cfg.Home)); n > 0 {
+		log.Printf("[chat] свип дрейфа: удалены контейнеры прошлой сборки: %d", n)
+	}
 }
 
 // NewWithRuntimeProviders is the injection point for orchestrated deployments.
@@ -189,6 +226,32 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 		localBridge: bridge.NewManager(),
 		tokens:      map[string]string{}, chats: map[chatKey]*chatRuntime{}, chatLocks: map[chatKey]*sync.Mutex{},
 		startedAt: time.Now(),
+	}
+	// Leader-election (карточка ha-control-plane, план п.3): 2+ реплик —
+	// фоновые циклы (рипер, prewarm, autosave, reconcile, jira, сессии) гоняет
+	// только лидер; фолбэк single-реплики — lease не задан, циклы как раньше.
+	if s.cfg.HALeaderLease != "" {
+		client, err := leaderelection.ClientFromKubeconfig(s.cfg.HALeaderKubeconfig)
+		if err != nil {
+			return nil, err
+		}
+		s.leaderReady = make(chan struct{})
+		s.leader = leaderelection.New(context.Background(), leaderelection.Options{
+			Client:    client,
+			Namespace: s.cfg.HALeaderNamespace,
+			Name:      s.cfg.HALeaderLease,
+			OnAcquired: func(ctx context.Context) {
+				// Свип дрейфа делает только лидер (см. комментарий в New).
+				select {
+				case <-s.leaderReady:
+				default:
+					close(s.leaderReady)
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				s.sweepDrift(ctx)
+			},
+		})
 	}
 	if s.cfg.AutosaveEvery == 0 {
 		s.cfg.AutosaveEvery = 2 * time.Minute
@@ -274,6 +337,7 @@ func (s *Server) Close() {
 	if s.localBridge != nil {
 		s.localBridge.Close()
 	}
+	s.leader.Close() // выйти из выборов (фоновые циклы подхватит фолловер)
 	s.chatMu.Lock()
 	handles := make([]agctlrt.ChatHandle, 0, len(s.chats))
 	for _, chat := range s.chats {
@@ -495,6 +559,8 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 
 // StartBackground запускает autosave, сверку статусов, чистку сессий
 // и jira-поллер (если настроен через AGCTL_JIRA_*).
+// При leader-election (карточка ha-control-plane) каждый тик спрашивает
+// isLeader: фоновая работа выполняется только репликой-лидером.
 func (s *Server) StartBackground(ctx context.Context) {
 	s.StartJiraPoller(ctx)
 	// рипер персональных чатов: усыпляем контейнеры по простою (том живёт)
@@ -506,6 +572,9 @@ func (s *Server) StartBackground(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				if !s.isLeader() {
+					continue
+				}
 				s.reapIdleChats()
 			}
 		}
@@ -518,6 +587,9 @@ func (s *Server) StartBackground(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				if !s.isLeader() {
+					continue
+				}
 				s.autosaveAll()
 				s.autosaveLocalProjects()
 			}
@@ -534,6 +606,9 @@ func (s *Server) StartBackground(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				if !s.isLeader() {
+					continue
+				}
 				s.prewarmOnce(nil)
 			}
 		}
@@ -546,6 +621,9 @@ func (s *Server) StartBackground(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				if !s.isLeader() {
+					continue
+				}
 				s.reconcile()
 			}
 		}
@@ -558,10 +636,18 @@ func (s *Server) StartBackground(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				if !s.isLeader() {
+					continue
+				}
 				_ = s.db.DeleteExpiredSessions()
 			}
 		}
 	}()
+}
+
+// isLeader — гонять ли фоновый тик этой реплике (leader-election or fallback).
+func (s *Server) isLeader() bool {
+	return s.leader.IsLeader()
 }
 
 // autosaveAll выполняет страховочный go-git commit по всем running-воркспейсам

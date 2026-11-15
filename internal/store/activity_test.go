@@ -62,8 +62,11 @@ func TestProxyRequestsActivity(t *testing.T) {
 		VALUES ('anna', 'h', 'user', ` + at() + `)`); err != nil {
 		t.Fatalf("user insert: %v", err)
 	}
+	// bob — вчера, но строго внутри вчерашнего дня (полночь вчерашнего дня +
+	// 10 часов): привязка «текущий час - 1 день - 3 часа» около полуночи UTC
+	// падала на позавчерашний день (флейк TestProxyRequestsActivity).
 	if _, err := db.Exec(`INSERT INTO users(login, password_hash, role, created_at)
-		VALUES ('bob', 'h', 'user', ` + at("-1 day", "-3 hours") + `)`); err != nil {
+		VALUES ('bob', 'h', 'user', datetime('` + yestDay[:10] + ` 10:00:00'))`); err != nil {
 		t.Fatalf("user insert: %v", err)
 	}
 

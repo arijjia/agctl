@@ -19,20 +19,25 @@ type userConfig struct {
 	Profile    string `yaml:"profile"`
 	ProfileDir string `yaml:"profile_dir"`
 	Serve      struct {
-		Runtime          string    `yaml:"runtime"` // docker | k8s | ax
-		Addr             string    `yaml:"addr"`
-		PublicURL        string    `yaml:"public_url"`
-		Image            string    `yaml:"image"`
-		DevImages        string    `yaml:"dev_images"`
-		DevEnv           string    `yaml:"dev_env"`
-		LauncherSlotsMax int       `yaml:"launcher_slots_max"` // 0 = дефолт 3 (карточка developer-multi-containers)
-		ChatTTLMin       int       `yaml:"chat_ttl_min"`
-		RegisterPerMin   int       `yaml:"register_per_min"`
-		MemGB            float64   `yaml:"mem_gb"`
-		CPUs             float64   `yaml:"cpus"`
-		CORSOrigins      string    `yaml:"cors_origins"`
-		K8s              k8sConfig `yaml:"k8s"`
-		AX               axConfig  `yaml:"ax"`
+		Runtime          string `yaml:"runtime"` // docker | k8s | ax
+		Addr             string `yaml:"addr"`
+		PublicURL        string `yaml:"public_url"`
+		Image            string `yaml:"image"`
+		DevImages        string `yaml:"dev_images"`
+		DevEnv           string `yaml:"dev_env"`
+		LauncherSlotsMax int    `yaml:"launcher_slots_max"` // 0 = дефолт 3 (карточка developer-multi-containers)
+		// HA leader-election (карточка ha-control-plane): Lease для выбора
+		// лидера фоновых циклов при 2+ репликах шлюза.
+		HALeaderLease      string    `yaml:"ha_leader_lease"`
+		HALeaderKubeconfig string    `yaml:"ha_leader_kubeconfig"`
+		HALeaderNamespace  string    `yaml:"ha_leader_namespace"`
+		ChatTTLMin         int       `yaml:"chat_ttl_min"`
+		RegisterPerMin     int       `yaml:"register_per_min"`
+		MemGB              float64   `yaml:"mem_gb"`
+		CPUs               float64   `yaml:"cpus"`
+		CORSOrigins        string    `yaml:"cors_origins"`
+		K8s                k8sConfig `yaml:"k8s"`
+		AX                 axConfig  `yaml:"ax"`
 	} `yaml:"serve"`
 }
 

@@ -119,7 +119,13 @@ make k8s_status
 `--k8s-shared-claim`, `--k8s-ssh-host`, `--k8s-ready-timeout`,
 `--k8s-gateway-selector`, `--k8s-liveness`; opt-in egress-политика чат-подов
 (`--k8s-egress-policy`, карточка k8s-pod-egress-policy, смоук `EGRESS=1` в
-kind ставит Calico); лимиты пода — `--cpus`/`--mem-gb`
+kind ставит Calico); HA leader-election: `--ha-leader-lease=agctl-leader`
+(env `AGCTL_HA_LEADER_LEASE`, config `serve.ha_leader_lease`) — при 2+
+репликах фоновые циклы (TTL-рипер, prewarm, autosave, reconcile, jira,
+чистка сессий, свип дрейфа) выполняет только реплика-лидер через
+coordination.k8s.io Lease (`internal/leaderelection`, LeaseDuration 15c /
+renew 5c, фолловер берёт лидерство после истечения); фолбэк single-реплики —
+флаг не задан, циклы в процессе как раньше. Лимиты пода — `--cpus`/`--mem-gb`
 (те же, что у Docker). Env-эквиваленты `AGCTL_K8S_*`, config.yaml —
 `serve.k8s.*`.
 
