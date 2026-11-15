@@ -626,6 +626,7 @@ func (s *Server) ensureChat(userID int64) (*chatRuntime, error) {
 	if workDir, env := s.localChatExtras(userID); workDir != "" {
 		spec.WorkDir = workDir
 		spec.DevEnv = append(spec.DevEnv, env...)
+		spec.Local = true
 	}
 	// Доступы для команд агента — файлами в dsh-home (bash dsh вычищает
 	// *TOKEN*/*KEY* из env), инструменты находят их по путям из env.

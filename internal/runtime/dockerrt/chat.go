@@ -54,7 +54,11 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	}
 	// Брендинг персонального dsh-home: одинаков для ролей user/developer;
 	// отдельные legacy dev-workspaces в v3 не создаются.
-	if err := provision.EnsureChatPlugins(dshHome, rt.cfg.DshSkel); err != nil {
+	ensurePlugins := provision.EnsureChatPlugins
+	if spec.Local {
+		ensurePlugins = provision.EnsureChatPluginsLocal
+	}
+	if err := ensurePlugins(dshHome, rt.cfg.DshSkel); err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
 	// Дефолт пресета синхронизируется с текущей ролью на каждом старте:

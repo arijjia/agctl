@@ -134,3 +134,54 @@ func TestEnsureChatPluginsWritesCompatEntryAndPrunesStaleFiles(t *testing.T) {
 		t.Fatalf("host-only bundle must not gain a client entry: %v", err)
 	}
 }
+
+// Локальный режим (agctl dev): Кабинет не ставится, а на томе, засеянном
+// серверным путём, вычищается из node_modules, package.json и патча;
+// остальные плагины и серверный путь не меняются.
+func TestEnsureChatPluginsLocalDropsCabinet(t *testing.T) {
+	home := t.TempDir()
+	profile := filepath.Join(home, "profiles", "web")
+	if err := os.MkdirAll(profile, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	packageJSON := `{"name":"dsh-profile-web","dsh":{"profile":{"bundles":["@deepseek-ai/dsh-base"]}}}`
+	if err := os.WriteFile(filepath.Join(profile, "package.json"), []byte(packageJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	patch := "- id: agent-default-model\n  name: \"@deepseek-ai/dsh-agent-default-model\"\n"
+	if err := os.WriteFile(filepath.Join(profile, "cordis.patch.yml"), []byte(patch), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// сначала как на сервере — Кабинет есть
+	if err := provision.EnsureChatPlugins(home, assets.DshSkel); err != nil {
+		t.Fatal(err)
+	}
+	cabinetDir := filepath.Join(profile, "node_modules", "@arijjia", "agctl-cabinet")
+	if _, err := os.Stat(cabinetDir); err != nil {
+		t.Fatalf("серверный путь должен ставить Кабинет: %v", err)
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := provision.EnsureChatPluginsLocal(home, assets.DshSkel); err != nil {
+			t.Fatalf("EnsureChatPluginsLocal attempt %d: %v", attempt+1, err)
+		}
+	}
+	if _, err := os.Stat(cabinetDir); !os.IsNotExist(err) {
+		t.Fatalf("каталог Кабинета должен быть удалён: %v", err)
+	}
+	pj, _ := os.ReadFile(filepath.Join(profile, "package.json"))
+	if strings.Contains(string(pj), "agctl-cabinet") {
+		t.Fatalf("Кабинет остался в бандлах: %s", pj)
+	}
+	cp, _ := os.ReadFile(filepath.Join(profile, "cordis.patch.yml"))
+	if strings.Contains(string(cp), "agctl-cabinet") {
+		t.Fatalf("Кабинет остался в патче: %s", cp)
+	}
+	for _, want := range []string{"agctl-chat-session-files", "agctl-chat-brand", "agctl-workspace-console", "dsh-agent-default-model", "ui-settings-account"} {
+		if !strings.Contains(string(cp), want) {
+			t.Fatalf("в патче потерялось %s:\n%s", want, cp)
+		}
+		if want != "dsh-agent-default-model" && want != "ui-settings-account" && !strings.Contains(string(pj), want) {
+			t.Fatalf("в бандлах потерялось %s: %s", want, pj)
+		}
+	}
+}

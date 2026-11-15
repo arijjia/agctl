@@ -143,3 +143,31 @@ func SetImage(home, image, flavor string) error {
 	cfg.Image, cfg.Flavor = image, flavor
 	return cfg.Save(home)
 }
+
+// SetWorkDir — папка проектов на хосте (→ /workspace) в dev.yaml и в файле
+// состояния запущенного процесса (выбор в лаунчере): `agctl dev up` без
+// аргумента сверяет папку из dev.yaml с папкой живого процесса. Возвращает
+// проверенный абсолютный путь.
+func SetWorkDir(home, dir string) (string, error) {
+	abs, err := ValidateWorkDir(dir)
+	if err != nil {
+		return "", err
+	}
+	editMu.Lock()
+	defer editMu.Unlock()
+	cfg, err := Load(home)
+	if err != nil {
+		return "", err
+	}
+	cfg.WorkDir = abs
+	if err := cfg.Save(home); err != nil {
+		return "", err
+	}
+	if st, err := ReadState(home); err == nil && st != nil {
+		st.WorkDir = abs
+		if err := WriteState(home, *st); err != nil {
+			return "", err
+		}
+	}
+	return abs, nil
+}

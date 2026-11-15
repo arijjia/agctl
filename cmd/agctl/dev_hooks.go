@@ -129,3 +129,7 @@ func (h *devHooks) EnsureImage(ctx context.Context, ref string, logf func(string
 	}
 	return devPrepareImage(ctx, h.prof, ref, devFlavorOf(&localmode.Config{}, h.prof, ref), logf)
 }
+
+func (h *devHooks) SetWorkDir(dir string) (string, error) {
+	return localmode.SetWorkDir(h.home, dir)
+}

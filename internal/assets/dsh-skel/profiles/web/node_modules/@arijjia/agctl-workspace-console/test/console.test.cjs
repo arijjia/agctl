@@ -7,7 +7,7 @@ const source = fs.readFileSync(require('node:path').join(__dirname, '../lib/clie
 
 // Загружаем клиентский бандл в песочнице: ModuleLoader не выполняем, чистые
 // функции достаём из factory-замыкания с фейковыми react/slots.
-function loadModule({ slots } = {}) {
+function loadModule({ slots, me } = {}) {
 	const registrations = [];
 	const sandbox = {
 		window: { __ModuleLoader__: { load(def) { sandbox.__def = def; } } },
@@ -18,7 +18,7 @@ function loadModule({ slots } = {}) {
 			body: { appendChild() {} },
 			addEventListener() {},
 		},
-		fetch: async () => ({ ok: true, json: async () => ({}) }),
+		fetch: async () => ({ ok: true, json: async () => (me || {}) }),
 		require(name) {
 			if (name === 'react') {
 				return { useRef: () => ({}), useEffect: () => {}, createElement: () => null };
@@ -137,4 +137,9 @@ test('deleteProject: сначала каталог (agctl), затем запи�
 	calls.length = 0; // часть 1 (сирота) уже проверена
 	await exports.deleteProject(api, project);
 	assert.deepEqual(calls, ['DELETE /api/projects/vibe', 'dsh.delete w1']);
+});
+
+test('локальный режим определяется по /api/me — файлы и «Скачать» прячутся', async () => {
+	assert.equal(await loadModule({ me: { localMode: true } }).exports.isLocalMode(), true);
+	assert.equal(await loadModule({ me: { user: { login: 'u' } } }).exports.isLocalMode(), false, 'сервер — как раньше');
 });

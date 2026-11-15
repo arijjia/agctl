@@ -101,6 +101,7 @@ export const local = {
     req<any>("PUT", `/api/local/ui/secrets/${encodeURIComponent(name)}`, { value, plain }),
   deleteSecret: (name: string) => req<any>("DELETE", `/api/local/ui/secrets/${encodeURIComponent(name)}`),
   setImage: (image: string) => req<any>("PUT", "/api/local/ui/image", { image }),
+  setWorkdir: (workdir: string) => req<{ workdir: string }>("PUT", "/api/local/ui/workdir", { workdir }),
   start: () => req<any>("POST", "/api/local/ui/start"),
   restart: () => req<any>("POST", "/api/local/ui/restart"),
 };

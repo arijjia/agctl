@@ -100,6 +100,8 @@ export default function LocalLauncher({ user, initial }: { user: User; initial: 
   const [newName, setNewName] = useState("");
   const [newVal, setNewVal] = useState("");
   const [newPlain, setNewPlain] = useState(false);
+  const [workdir, setWorkdir] = useState(initial.workdir);
+  const [workdirEdited, setWorkdirEdited] = useState(false);
 
   const load = useCallback(() => {
     local.ui().then(setUI).catch((e) => setErr(e.message));
@@ -131,6 +133,21 @@ export default function LocalLauncher({ user, initial }: { user: User; initial: 
       note(e.message, true);
     }
   };
+  // Папка проектов на хосте (→ /workspace): применяется при следующем старте.
+  const saveWorkdir = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const r = await local.setWorkdir(workdir);
+      setWorkdir(r.workdir);
+      setWorkdirEdited(false);
+      note(`Папка проектов: ${r.workdir}` + (ui.runtime.state === "running" ? " — перезапустите рабочее место" : ""));
+    } catch (e: any) {
+      note(e.message, true);
+    }
+  };
+  useEffect(() => {
+    if (!workdirEdited) setWorkdir(ui.workdir);
+  }, [ui.workdir, workdirEdited]);
   const run = async (what: "start" | "restart" | "stop") => {
     try {
       if (what === "start") await local.start();
@@ -179,7 +196,7 @@ export default function LocalLauncher({ user, initial }: { user: User; initial: 
         )}
         {ui.task.restartNeeded && (
           <div className="notice">
-            Доступы или образ изменены — рабочее место работает на старых. {" "}
+            Доступы, образ или папка проектов изменены — рабочее место работает на старых. {" "}
             <button className="primary small" disabled={busy} onClick={() => run("restart")}>
               Перезапустить
             </button>
@@ -190,6 +207,30 @@ export default function LocalLauncher({ user, initial }: { user: User; initial: 
 
         {tab === "runtime" && (
           <>
+            <h2 className="small">Папка проектов на этой машине</h2>
+            <form className="toolbar" onSubmit={saveWorkdir}>
+              <input
+                className="mono"
+                style={{ flex: 1, minWidth: 280 }}
+                value={workdir}
+                disabled={busy}
+                spellCheck={false}
+                placeholder={"/Users/you/agctl-projects или C:\\src\\проекты"}
+                onChange={(e) => {
+                  setWorkdir(e.target.value);
+                  setWorkdirEdited(true);
+                }}
+              />
+              <button className="ghost" type="submit" disabled={busy || !workdirEdited || !workdir.trim()}>
+                Сохранить
+              </button>
+            </form>
+            <p className="muted small">
+              Агент видит только эту папку: в контейнере это <span className="mono">/workspace</span>, слева — её
+              подпапки. Папка должна существовать; весь домашний каталог и корень диска отдать нельзя. Новая папка
+              начнёт работать после (пере)запуска рабочего места.
+            </p>
+
             <h2 className="small">Образ рабочего места</h2>
             <div className="image-list">
               {ui.images.map((im) => (
