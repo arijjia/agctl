@@ -101,7 +101,7 @@ spec:
       storage: 1Gi
 YAML
 kubectl apply -f deploy/k8s/base/namespace.yaml >/dev/null
-kubectl apply -f deploy/k8s/base/rbac.yaml >/dev/null
+kubectl apply -f deploy/k8s/base/rbac.yaml -n agctl >/dev/null
 # Мастер-ключ шифрования создаёт ОДИН init-Job до реплик: общий PVC +
 # параллельный EnsureMasterKey — гонка создания ключа (код теперь O_EXCL,
 # но для смоука ключ детерминированно один).
@@ -151,6 +151,7 @@ spec:
         - name: agctl
           image: agctl-serve:dev
           imagePullPolicy: Never
+          args: ["serve", "--addr", "0.0.0.0:8929"]
           env:
             - name: AGCTL_STORE_DSN
               value: postgres://agctl:ha-smoke-pass@postgres.agctl.svc.cluster.local:5432/agctl?sslmode=disable
@@ -158,6 +159,14 @@ spec:
               value: agctl-leader
             - name: AGCTL_RUNTIME
               value: k8s
+          ports:
+            - name: http
+              containerPort: 8929
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 2
           volumeMounts:
             - name: home
               mountPath: /var/lib/agctl
