@@ -154,7 +154,14 @@ func devInit(home string, args []string) error {
 		cfg.ProfileDir = abs
 	}
 	if cfg.ProfileDir == "" {
-		cfg.Profile = ask("Профиль организации", firstNonEmpty(cfg.Profile, "agctl"))
+		def := cfg.Profile
+		if def == "" {
+			// Единственный профиль в каталоге данных (так оставляет
+			// установщик комплекта) — разумный дефолт: init без флагов
+			// подхватывает организацию.
+			def = devDefaultProfile(profile.DataDir())
+		}
+		cfg.Profile = ask("Профиль организации", def)
 	}
 	p, err := devResolveProfile(cfg)
 	if err != nil {
@@ -294,7 +301,43 @@ func addName(list []string, name string) []string {
 }
 
 func devResolveProfile(cfg *localmode.Config) (*profile.Data, error) {
-	return profile.Resolve(firstNonEmpty(cfg.Profile, "agctl"), cfg.ProfileDir, "profiles", filepath.Join(localmode.Home(), "profiles"), filepath.Join(defaultHome(), "profiles"))
+	// Каталог данных пользователя (DataDir) — последний в поиске: туда
+	// кладёт профиль установщик комплекта организации; явный --profile-dir
+	// и дома разработчика сильнее.
+	return profile.Resolve(firstNonEmpty(cfg.Profile, "agctl"), cfg.ProfileDir,
+		"profiles",
+		filepath.Join(localmode.Home(), "profiles"),
+		filepath.Join(defaultHome(), "profiles"),
+		profile.DataDir(),
+	)
+}
+
+// devDefaultProfile — имя профиля по умолчанию для мастера init: если в
+// каталоге данных пользователя лежит ровно один профиль организации (так
+// оставляет установщик комплекта), он и есть разумный дефолт; иначе —
+// нейтральный agctl.
+func devDefaultProfile(dataDir string) string {
+	ents, err := os.ReadDir(dataDir)
+	if err != nil {
+		return "agctl"
+	}
+	found := ""
+	for _, e := range ents {
+		if !e.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dataDir, e.Name(), "profile.yaml")); err != nil {
+			continue
+		}
+		if found != "" {
+			return "agctl" // несколько организаций — выбор за пользователем
+		}
+		found = e.Name()
+	}
+	if found == "" {
+		return "agctl"
+	}
+	return found
 }
 
 // devServeHooks — хуки лаунчера; профиль не разрешился — без них (CLI-режим).
