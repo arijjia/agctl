@@ -11,7 +11,7 @@ import (
 func TestSetDefaultLLMExtraKey(t *testing.T) {
 	s := &Server{cfg: Config{DefaultLLM: provision.Provider{
 		Extras: []provision.ExtraProvider{
-			{Name: "utmn-litellm", BaseURL: "https://litellm-dev.utmn.ru/v1", APIKeyEnv: "AGCTL_LLM_CORP_API_KEY"},
+			{Name: "corp-litellm", BaseURL: "https://llm.corp.example/v1", APIKeyEnv: "AGCTL_LLM_CORP_API_KEY"},
 		},
 	}}}
 	s.setDefaultLLMExtraKey("AGCTL_LLM_CORP_API_KEY", "sk-personal-1")

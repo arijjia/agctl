@@ -15,15 +15,15 @@ import (
 // значения: подписка «провайдер + ключ».
 func TestDevHooksEntriesExtraProviders(t *testing.T) {
 	home := t.TempDir()
-	dir := filepath.Join(home, "profiles", "utmn")
+	dir := filepath.Join(home, "profiles", "corp")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := "schema: 1\nid: utmn\nbrand:\n  name: U\n  letter: U\nllm:\n  default_base_url: https://z.ai/v4\n  default_model: glm-5.3\n  default_models: glm-5.3\n  extra_providers:\n    - name: utmn-litellm\n      base_url: https://litellm-dev.utmn.ru/v1\n      model: qwen-3.8-fast\n      models: qwen-3.8-deep,qwen-3.8-fast\n      api_key_env: AGCTL_LLM_CORP_API_KEY\n"
+	body := "schema: 1\nid: corp\nbrand:\n  name: U\n  letter: U\nllm:\n  default_base_url: https://z.ai/v4\n  default_model: glm-5.3\n  default_models: glm-5.3\n  extra_providers:\n    - name: corp-litellm\n      base_url: https://llm.corp.example/v1\n      model: qwen-3.8-fast\n      models: qwen-3.8-deep,qwen-3.8-fast\n      api_key_env: AGCTL_LLM_CORP_API_KEY\n"
 	if err := os.WriteFile(filepath.Join(dir, "profile.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	prof, err := profile.LoadDir(filepath.Join(home, "profiles", "utmn"))
+	prof, err := profile.LoadDir(filepath.Join(home, "profiles", "corp"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestDevHooksEntriesExtraProviders(t *testing.T) {
 	if found.Group != "llm" || !found.Secret || !found.Known {
 		t.Fatalf("не тот entry: %+v", *found)
 	}
-	if !strings.Contains(found.Title, "utmn-litellm") || !strings.Contains(found.Hint, "litellm-dev.utmn.ru") {
+	if !strings.Contains(found.Title, "corp-litellm") || !strings.Contains(found.Hint, "llm.corp.example") {
 		t.Fatalf("подпись без провайдера/эндпоинта: %+v", *found)
 	}
 	if found.Set {
