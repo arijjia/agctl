@@ -37,12 +37,38 @@
 публиковать и собственный релиз (бинарь + профиль организации в одном
 архиве) в своём приватном репозитории.
 
-Во всех вариантах второй архив, `agctl_linux_<arch>`, нужен только если
-образ рабочего места придётся **собирать на вашей машине** (его нет в
-реестре организации): `agctl dev up` ищет `agctl-linux-<arch>` рядом с
-бинарём или в `../lib/agctl` относительно него. Если образы берутся из
-реестра, этот шаг можно пропустить. Без `gh` то же самое делается через
-браузер: Releases → Assets.
+#### Одной командой
+
+macOS и Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/arijjia/agctl/main/bin/install.sh | sh
+```
+
+Windows 10 / 11, PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/arijjia/agctl/main/bin/install.ps1 | iex
+```
+
+Скрипт ([bin/install.sh](bin/install.sh), [bin/install.ps1](bin/install.ps1))
+определяет ОС и архитектуру, скачивает архив последнего релиза и
+`checksums.txt` (через `gh`, если он установлен и авторизован, иначе
+напрямую), сверяет SHA-256, кладёт бинарь в `~/.local/bin` (Windows:
+`%LOCALAPPDATA%\agctl`), снимает карантин macOS или отметку «скачано из
+интернета» на Windows, рядом кладёт linux-сборку для самосборки образа,
+на Windows добавляет каталог в `PATH` пользователя (на macOS и Linux
+подсказывает, если `~/.local/bin` в `PATH` нет) и печатает `agctl version`.
+Переменные: `AGCTL_VERSION=v0.1.0` — конкретный тег, `AGCTL_INSTALL_DIR` —
+другой каталог, `AGCTL_NO_LINUX=1` — без linux-сборки (образы берутся из
+реестра), `AGCTL_RELEASE_DIR` — папка с уже скачанными архивами.
+
+Дальше — раздел «Запуск». Нужны Docker Desktop (на Windows — с бэкендом WSL 2) и `gh` или `curl`.
+Живьём на Windows локальный режим ещё не прогонялся, так что первый запуск
+там стоит делать вместе с командой платформы.
+
+<details>
+<summary>Те же шаги вручную, по командам</summary>
 
 #### Windows 10 / 11 (PowerShell, Docker Desktop)
 
@@ -179,6 +205,8 @@ agctl version
 Secret Service (сервер, WSL) секреты автоматически уходят в
 `~/.agctl-dev/secrets.enc`. Мост к хосту для контейнеров слушает адрес
 `docker0` сам.
+
+</details>
 
 ### Вариант 2: собрать из исходников
 

@@ -508,7 +508,8 @@ argv, `pattern`, `confirm`/deny/timeout, журнал.
 | `web/src/LocalLauncher.tsx`, `web/src/api.ts` (`local`), `web/src/App.tsx` | лаунчер локального режима и переключение на него |
 | `internal/assets/image/`, `internal/assets/dsh-skel/` | контекст образа и скелет DSH_HOME, встроенные в бинарь (`internal/assets/assets.go`) |
 | `profiles/<id>/local/bridge-tools.yaml`, `images.dev`, `images.dockerfile`, `image/flavors/*` | вклад профиля организации в локальный режим |
-| `bin/install.mk` | `make install` / `uninstall` |
+| `bin/install.mk` | `make install` / `uninstall` из исходников |
+| `bin/install.sh`, `bin/install.ps1` | установка из GitHub Releases одной командой (`curl \| sh`, `irm \| iex`): ОС и архитектура, скачивание через `gh` или напрямую, SHA-256, бинарь + linux-сборка, карантин / Unblock-File, PATH; `AGCTL_RELEASE_DIR` — прогон на локальных архивах без релиза |
 | `bin/e2e-local-mode.sh` | живой прогон на изолированном `AGCTL_DEV_HOME`: init → secrets (файловое хранилище) → up → вход по токену → рабочее место с родной папкой и env → мост (вызов, подтверждение, MCP) → update на другой тег с бэкапом → rollback → down |
 
 ## 4. Удалённый (серверный) режим: что там и где в коде
@@ -648,7 +649,7 @@ sessions, workspaces, secrets, audit_log), `002_template`, `003_models`, `004_ji
 
 | Цель | Что |
 |---|---|
-| `make install` / `uninstall` | SPA + бинарь + linux-сборка → `~/.local/bin`, `~/.local/lib/agctl`, fish |
+| `make install` / `uninstall` | SPA + бинарь + linux-сборка → `~/.local/bin`, `~/.local/lib/agctl`, fish (без исходников — `bin/install.sh` / `install.ps1` из релиза) |
 | `make go_build`, `go_linux`, `go_test`, `go_vet`, `go_fmt` | бинарь, linux-сборка, тесты |
 | `make web_build` | Vite → `web/dist` (закоммичен) → `go:embed` |
 | `make img_build [PROFILE=…]`, `img_profile`, `img_push REGISTRY=…` | образы рабочего места и надстройки профиля |
