@@ -133,6 +133,7 @@ spec:
           persistentVolumeClaim:
             claimName: agctl-home
 YAML
+kubectl apply -f deploy/k8s/base/namespace.yaml >/dev/null
 kubectl apply -f deploy/k8s/base/rbac.yaml >/dev/null
 # Мастер-ключ шифрования создаёт ОДИН init-Job до реплик: общий PVC +
 # параллельный EnsureMasterKey — гонка создания ключа (код теперь O_EXCL,
