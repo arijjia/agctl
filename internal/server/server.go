@@ -1070,3 +1070,17 @@ func (s *Server) setDefaultLLMKey(key string) {
 	s.cfg.DefaultLLM.APIKey = key
 	s.defaultLLMMu.Unlock()
 }
+
+// setDefaultLLMExtraKey — личный ключ доп. провайдера (подписка «провайдер
+// + ключ») сразу в провайдер сервера; новый ключ попадёт в dsh-home на
+// следующем старте рабочего места (как и ключ основного провайдера).
+// Пустое значение — ключ убрали (Delete в лаунчере).
+func (s *Server) setDefaultLLMExtraKey(envName, key string) {
+	s.defaultLLMMu.Lock()
+	defer s.defaultLLMMu.Unlock()
+	for i := range s.cfg.DefaultLLM.Extras {
+		if s.cfg.DefaultLLM.Extras[i].APIKeyEnv == envName {
+			s.cfg.DefaultLLM.Extras[i].APIKey = key
+		}
+	}
+}

@@ -615,6 +615,14 @@ func devServe(home string, args []string) {
 	if len(missing) > 0 {
 		log.Printf("dev: доступы не заданы: %s (agctl dev secrets set …)", strings.Join(missing, ", "))
 	}
+	// Секреты (в т.ч. личные ключи доп. провайдеров) — в env этого процесса:
+	// serve-ребёнок наследует окружение, и profExtraProviders читает ключ
+	// доп. провайдера через os.Getenv; хранилище ОС хоста он не видит.
+	for _, kv := range env {
+		if k, v, ok := strings.Cut(kv, "="); ok && k != "AGCTL_LLM_API_KEY" {
+			_ = os.Setenv(k, v)
+		}
+	}
 	// Изоляция от серверного режима: ни ~/.config/agctl/config.yaml, ни env
 	// серверного запуска (.env make) не влияют на локальный.
 	_ = os.Setenv("AGCTL_CONFIG", filepath.Join(home, "serve-config.yaml"))
