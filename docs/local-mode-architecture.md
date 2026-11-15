@@ -116,9 +116,12 @@ cookie-сессией владельца плюс проверка same-origin �
 
 **`agctl dev init`** (`devInit` в `cmd/agctl/dev.go`):
 
-1. профиль: `--profile ID` (встроенный `agctl` или `profiles/<id>`) либо
-   `--profile-dir DIR` (сохраняется абсолютным, чтобы `up` работал из любой
-   папки);
+1. профиль: `--profile ID` (встроенный `agctl`, `profiles/<id>` из исходников,
+   `~/.agctl-dev/profiles/<id>`, `~/.agctl/profiles/<id>` или каталог данных
+   пользователя `DataDir()` — куда кладёт профиль установщик комплекта;
+   если там ровно один профиль организации, он становится дефолтом мастера)
+   либо `--profile-dir DIR` (сохраняется абсолютным, чтобы `up` работал из
+   любой папки);
 2. белый список моста: если в `dev.yaml` его нет, берётся
    `local/bridge-tools.yaml` профиля (`profileBridgeTools`);
 3. образ: `--image`, иначе `--flavor` → первый образ профиля с `-<вкус>` в
@@ -509,7 +512,7 @@ argv, `pattern`, `confirm`/deny/timeout, журнал.
 | `internal/assets/image/`, `internal/assets/dsh-skel/` | контекст образа и скелет DSH_HOME, встроенные в бинарь (`internal/assets/assets.go`) |
 | `profiles/<id>/local/bridge-tools.yaml`, `images.dev`, `images.dockerfile`, `image/flavors/*` | вклад профиля организации в локальный режим |
 | `bin/install.mk` | `make install` / `uninstall` из исходников |
-| `bin/install.sh`, `bin/install.ps1` | установка из GitHub Releases одной командой (`curl \| sh`, `irm \| iex`): ОС и архитектура, скачивание через `gh` или напрямую, SHA-256, бинарь + linux-сборка, карантин / Unblock-File, PATH; `AGCTL_RELEASE_DIR` — прогон на локальных архивах без релиза; `AGCTL_REPO=<org>/agctl-profile-<id>` — комплект организации из приватного репозитория профиля (zip `agctl-<id>-<версия>-<os>-<arch>.zip` + `checksums-<версия>.txt`, собирает `bin/release.sh` репозитория профиля): бинарь, linux-сборка и профиль в `~/.local/share/agctl/profiles/<id>` |
+| `bin/install.sh`, `bin/install.ps1` | установка из GitHub Releases одной командой (`curl \| sh`, `irm \| iex`): ОС и архитектура, скачивание через `gh` или напрямую, SHA-256, бинарь + linux-сборка, карантин / Unblock-File, PATH; `AGCTL_RELEASE_DIR` — прогон на локальных архивах без релиза; `AGCTL_REPO=<org>/agctl-profile-<id>` — комплект организации из приватного репозитория профиля (zip `agctl-<id>-<версия>-<os>-<arch>.zip` + `checksums-<версия>.txt`, собирает `bin/release.sh` репозитория профиля): бинарь, linux-сборка и профиль в `~/.local/share/agctl/profiles/<id>` (Windows: `%LOCALAPPDATA%\agctl\profiles\<id>`), в конце — авто-init профиля (`agctl dev init --profile-dir … --yes`; `AGCTL_NO_INIT=1` — напечатать команду, `AGCTL_WORKDIR` — папка проектов) |
 | `bin/e2e-local-mode.sh` | живой прогон на изолированном `AGCTL_DEV_HOME`: init → secrets (файловое хранилище) → up → вход по токену → рабочее место с родной папкой и env → мост (вызов, подтверждение, MCP) → update на другой тег с бэкапом → rollback → down |
 
 ## 4. Удалённый (серверный) режим: что там и где в коде

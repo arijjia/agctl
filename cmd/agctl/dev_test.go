@@ -79,3 +79,77 @@ func TestDevDefaultImageFlavor(t *testing.T) {
 	}
 	_ = localmode.DefaultAddr
 }
+
+func TestDevDefaultProfile(t *testing.T) {
+	mkProfile := func(t *testing.T, base, id string) {
+		t.Helper()
+		dir := filepath.Join(base, id)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "profile.yaml"), []byte("schema: 1\nid: "+id+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("нет каталога данных — нейтральный", func(t *testing.T) {
+		if got := devDefaultProfile(filepath.Join(t.TempDir(), "нет-такого")); got != "agctl" {
+			t.Fatalf("got %q, ждём agctl", got)
+		}
+	})
+	t.Run("пустой каталог — нейтральный", func(t *testing.T) {
+		if got := devDefaultProfile(t.TempDir()); got != "agctl" {
+			t.Fatalf("got %q, ждём agctl", got)
+		}
+	})
+	t.Run("один профиль организации — он и есть дефолт", func(t *testing.T) {
+		base := t.TempDir()
+		mkProfile(t, base, "utmn")
+		if got := devDefaultProfile(base); got != "utmn" {
+			t.Fatalf("got %q, ждём utmn", got)
+		}
+	})
+	t.Run("несколько организаций — выбор за пользователем", func(t *testing.T) {
+		base := t.TempDir()
+		mkProfile(t, base, "utmn")
+		mkProfile(t, base, "rshb")
+		if got := devDefaultProfile(base); got != "agctl" {
+			t.Fatalf("got %q, ждём agctl", got)
+		}
+	})
+	t.Run("каталог без profile.yaml и файлы не считаются", func(t *testing.T) {
+		base := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(base, "мусор"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(base, "заметка.txt"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := devDefaultProfile(base); got != "agctl" {
+			t.Fatalf("got %q, ждём agctl", got)
+		}
+	})
+}
+
+// TestDevResolveProfileFindsDataDir — профиль из каталога данных (куда его
+// кладёт установщик комплекта) разрешается по имени без --profile-dir.
+func TestDevResolveProfileFindsDataDir(t *testing.T) {
+	dataDir := t.TempDir()
+	dir := filepath.Join(dataDir, "utmn")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "schema: 1\nid: utmn\nbrand:\n  name: Utmn\n  letter: U\nllm:\n  default_base_url: https://llm.example/v1\n  default_model: m1\n  default_models: m1,m2\n"
+	if err := os.WriteFile(filepath.Join(dir, "profile.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// devResolveProfile зовёт profile.DataDir() — окружение подменить нельзя,
+	// поэтому проверяем сам поиск Resolve с тем же списком каталогов.
+	p, err := profile.Resolve("utmn", "", "profiles", filepath.Join("нет", "profiles"), dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.ID != "utmn" {
+		t.Fatalf("id = %q, ждём utmn", p.ID)
+	}
+}
