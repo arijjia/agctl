@@ -32,8 +32,22 @@ func EnsureMasterKey(home string) (string, error) {
 	if _, err := rand.Read(key); err != nil {
 		return "", fmt.Errorf("secrets: rand: %w", err)
 	}
-	if err := os.WriteFile(p, key, 0o600); err != nil {
+	// O_EXCL: несколько реплик на общем томе (HA, карточка
+	// ha-control-plane) не перетирают ключ друг друга — проигравший гонку
+	// использует уже созданный ключ.
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		if os.IsExist(err) {
+			return p, nil
+		}
+		return "", fmt.Errorf("secrets: create key: %w", err)
+	}
+	if _, err := f.Write(key); err != nil {
+		f.Close()
 		return "", fmt.Errorf("secrets: write key: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return "", fmt.Errorf("secrets: close key: %w", err)
 	}
 	return p, nil
 }

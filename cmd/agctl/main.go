@@ -177,6 +177,9 @@ func cmdServe(args []string) {
 	devImages := fsSet.String("dev-images", envOr("AGCTL_DEV_IMAGES", firstNonEmpty(cfg.Serve.DevImages, strings.Join(prof.Images.Dev, ","))), "каталог образов лаунчера developer'а через запятую (реестр Nexus и пр.; по умолчанию — images.dev профиля); пусто = только --image")
 	devEnv := fsSet.String("dev-env", envOr("AGCTL_DEV_ENV", cfg.Serve.DevEnv), "имена переменных окружения хоста, пробрасываемые в контейнер developer'а через запятую (значения из .env); пусто = не пробрасывать")
 	launcherSlots := fsSet.Int("launcher-slots-max", envInt("AGCTL_LAUNCHER_SLOTS_MAX", cfg.Serve.LauncherSlotsMax), "максимум живых слотов developer'а в лаунчере (карточка developer-multi-containers; 0 = дефолт 3)")
+	// store-dsn: файл SQLite (по умолчанию $AGCTL_HOME/agctl.db) или DSN
+	// postgres://… — PG-бэкенд для 2+ реплик (карточка ha-control-plane).
+	storeDSN := fsSet.String("store-dsn", envOr("AGCTL_STORE_DSN", cfg.Serve.StoreDSN), "хранилище: путь файла SQLite или DSN postgres://user:pass@host/db?sslmode=… (PG — для 2+ реплик)")
 	haLeaderLease := fsSet.String("ha-leader-lease", envOr("AGCTL_HA_LEADER_LEASE", cfg.Serve.HALeaderLease), "имя coordination.k8s.io Lease для выбора лидера фоновых циклов при 2+ репликах (карточка ha-control-plane); пусто = single-реплика без выборов")
 	haLeaderKubeconfig := fsSet.String("ha-leader-kubeconfig", envOr("AGCTL_HA_LEADER_KUBECONFIG", cfg.Serve.HALeaderKubeconfig), "kubeconfig Lease-клиента (пусто = in-cluster; по умолчанию — как --k8s-kubeconfig не используется)")
 	haLeaderNamespace := fsSet.String("ha-leader-namespace", envOr("AGCTL_HA_LEADER_NAMESPACE", cfg.Serve.HALeaderNamespace), "namespace Lease (пусто = serviceaccount/env/default)")
@@ -240,7 +243,11 @@ func cmdServe(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	db, err := store.Open(filepath.Join(absHome, "agctl.db"))
+	dbPath := *storeDSN
+	if dbPath == "" {
+		dbPath = filepath.Join(absHome, "agctl.db")
+	}
+	db, err := store.Open(dbPath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -370,12 +377,17 @@ func profExtraProviders(prof *profile.Data) []provision.ExtraProvider {
 func cmdMigrate(args []string) {
 	fsSet := flag.NewFlagSet("migrate", flag.ExitOnError)
 	home := fsSet.String("home", defaultHome(), "каталог данных agctl")
+	storeDSN := fsSet.String("store-dsn", envOr("AGCTL_STORE_DSN", ""), "хранилище: файл SQLite или DSN postgres://…")
 	_ = fsSet.Parse(args)
 	absHome, err := requireHome(*home)
 	if err != nil {
 		log.Fatal(err)
 	}
-	db, err := store.Open(filepath.Join(absHome, "agctl.db"))
+	dbPath := *storeDSN
+	if dbPath == "" {
+		dbPath = filepath.Join(absHome, "agctl.db")
+	}
+	db, err := store.Open(dbPath)
 	if err != nil {
 		log.Fatal(err)
 	}

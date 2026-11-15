@@ -31,6 +31,7 @@ type userConfig struct {
 		HALeaderLease      string    `yaml:"ha_leader_lease"`
 		HALeaderKubeconfig string    `yaml:"ha_leader_kubeconfig"`
 		HALeaderNamespace  string    `yaml:"ha_leader_namespace"`
+		StoreDSN           string    `yaml:"store_dsn"` // postgres://… — PG-бэкенд store (карточка ha-control-plane); пусто = SQLite-файl
 		ChatTTLMin         int       `yaml:"chat_ttl_min"`
 		RegisterPerMin     int       `yaml:"register_per_min"`
 		MemGB              float64   `yaml:"mem_gb"`
