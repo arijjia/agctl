@@ -1,0 +1,19 @@
+# HA-режим шлюза (карточка ha-control-plane, план п.3-4): 2+ реплики, PDB,
+# leader-election фоновых циклов. Применять ТОЛЬКО после переноса store на
+# PostgreSQL (решение владельца по стеку — план п.1; SQLite RWO-том не
+# разделяется между репликами): сейчас оверлей — заготовка HA-волны.
+#
+#   kubectl apply -k deploy/k8s/overlays/ha
+# + args шлюза: --ha-leader-lease=agctl-leader (env AGCTL_HA_LEADER_LEASE),
+#   readiness по БД-коннекту — после PG-бэкенда store.
+#
+# RBAC: Lease требует rights на coordination.k8s.io/leases в namespace —
+# добавьте в rbac.yaml роль agctl-runtime (rules: leases: get/create/update).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: agctl
+resources:
+  - ../../base
+  - pdb.yaml
+patches:
+  - path: patch-deployment.yaml
