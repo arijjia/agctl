@@ -921,7 +921,7 @@ func devBridge(home string, args []string) error {
 			return err
 		}
 		if len(cfg.Bridge.Tools) == 0 {
-			fmt.Printf("Белый список пуст. Добавьте инструменты в %s, раздел bridge.tools (пример — docs/local-mode.md).\n", localmode.Path(home))
+			fmt.Printf("Белый список пуст. Добавьте инструменты в %s, раздел bridge.tools (пример — docs/local-mode-architecture.md).\n", localmode.Path(home))
 			return nil
 		}
 		for _, t := range cfg.Bridge.Tools {

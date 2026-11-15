@@ -1,4 +1,4 @@
-# ── k8s: образы, деплой и смоук agctl в Kubernetes (docs/kubernetes.md) ──────
+# ── k8s: образы, деплой и смоук agctl в Kubernetes (agctl-hq/docs/kubernetes.md) ──────
 # REGISTRY — реестр, доступный кластеру (registry.example.com/agctl).
 # Образы: agctl-serve (шлюз, deploy/serve.Dockerfile) и agctl-dsh/-nossh
 # (рабочее место; те же, что img_build). Для бэкенда ax нужен digest agctl-dsh.

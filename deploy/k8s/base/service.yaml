@@ -5,7 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/name: agctl
 spec:
-  type: ClusterIP # наружу — через Ingress с TLS (+ --secure-cookies), см. docs/kubernetes.md
+  type: ClusterIP # наружу — через Ingress с TLS (+ --secure-cookies), см. agctl-hq/docs/kubernetes.md
   selector:
     app.kubernetes.io/name: agctl
   ports:

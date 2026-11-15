@@ -33,7 +33,7 @@ var usageSections = []usageSection{
 			{name: "serve", desc: []string{
 				"поднять платформу: UI + API + личные runtime пользователей",
 				"--home DIR · --addr H:P · --image T · --bin-dir D · --profile NAME · --llm-*",
-				"--runtime docker|k8s|ax · --k8s-* · --ax-* (docs/kubernetes.md)",
+				"--runtime docker|k8s|ax · --k8s-* · --ax-* (agctl-hq/docs/kubernetes.md)",
 			}},
 			{name: "migrate", desc: []string{"накатить миграции SQLite вручную"}},
 			{name: "seed-demo-users", desc: []string{"локальные тестовые роли user/developer/admin (после первого admin)"}},

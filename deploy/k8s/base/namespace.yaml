@@ -4,6 +4,6 @@ metadata:
   name: agctl
   labels:
     # Pod Security: поды dsh без SSH — restricted; с SSH (root + capabilities
-    # sshd) нужен baseline — см. docs/kubernetes.md §SSH.
+    # sshd) нужен baseline — см. agctl-hq/docs/kubernetes.md §SSH.
     pod-security.kubernetes.io/enforce: baseline
     pod-security.kubernetes.io/warn: restricted

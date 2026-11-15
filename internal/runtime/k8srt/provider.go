@@ -457,7 +457,7 @@ func selectorLabels(labels map[string]string) map[string]string {
 // шлюза (GatewaySelector; пусто = любой под namespace), sshd — отовсюду, но
 // только когда SSH включён (NodePort приходит с узла, а не из pod-сети).
 // Egress не ограничивается: base URL LLM задаётся пользователем/профилем;
-// политика egress — зона оператора кластера (см. docs/kubernetes.md).
+// политика egress — зона оператора кластера (см. agctl-hq/docs/kubernetes.md).
 func (p *Provider) ensureNetworkPolicy(ctx context.Context, name string, labels map[string]string, sshEnabled bool) error {
 	api := p.client.NetworkingV1().NetworkPolicies(p.cfg.Namespace)
 	policyName := "net-" + name
@@ -615,7 +615,7 @@ func (p *Provider) buildPod(name, pvcName, secretName, image string, labels map[
 	if sshEnabled {
 		// sshd: ssh-keygen -A пишет /etc/ssh, privsep требует chroot и смены
 		// uid/gid — под работает от root с минимальным набором capabilities.
-		// Рекомендуется RuntimeClass gVisor (см. docs/kubernetes.md).
+		// Рекомендуется RuntimeClass gVisor (см. agctl-hq/docs/kubernetes.md).
 		runAsNonRoot, uid, gid = false, 0, 0
 		caps.Add = []corev1.Capability{"CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID", "SYS_CHROOT", "KILL", "AUDIT_WRITE"}
 	}

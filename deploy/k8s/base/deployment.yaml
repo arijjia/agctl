@@ -5,7 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/name: agctl
 spec:
-  replicas: 1 # один serve + SQLite; HA — отдельная волна (docs/architecture-roadmap.md)
+  replicas: 1 # один serve + SQLite; HA — отдельная волна (agctl-hq/docs/architecture-roadmap.md)
   strategy:
     type: Recreate # RWO-дом не делится между двумя подами
   selector:
