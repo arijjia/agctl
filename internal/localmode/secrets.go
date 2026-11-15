@@ -26,7 +26,7 @@ type Var struct {
 	Title  string // подпись в мастере
 	Secret bool   // значение — в хранилище ОС; иначе — в dev.yaml
 	Hint   string // подсказка (где взять)
-	Group  string // llm | gitlab | jira
+	Group  string // llm | gitlab | jira | confluence
 }
 
 // Manifest — известные переменные локального режима. Произвольные имена тоже
@@ -37,6 +37,10 @@ var Manifest = []Var{
 	{Name: "GITLAB_URL", Title: "Адрес GitLab", Group: "gitlab", Hint: "например https://gitlab.example.org"},
 	{Name: "GITLAB_TOKEN", Title: "Личный токен GitLab", Secret: true, Group: "gitlab",
 		Hint: "GitLab → Preferences → Access Tokens, scope api + write_repository"},
+	{Name: "CONFLUENCE_URL", Title: "Адрес Confluence", Group: "confluence",
+		Hint: "например https://confluence.example.org"},
+	{Name: "CONFLUENCE_TOKEN", Title: "Личный токен Confluence (PAT)", Secret: true, Group: "confluence",
+		Hint: "Confluence DC → Настройки → Личные токены доступа; для Cloud — API token"},
 	{Name: "JIRA_URL", Title: "Адрес Jira", Group: "jira", Hint: "например https://jira.example.org"},
 	{Name: "JIRA_USER", Title: "Логин Jira", Group: "jira"},
 	{Name: "JIRA_API_TOKEN", Title: "Личный токен Jira (PAT)", Secret: true, Group: "jira",
