@@ -140,3 +140,19 @@ agctl version
 Secret Service (сервер, WSL) секреты автоматически уходят в
 `~/.agctl-dev/secrets.enc`. Мост к хосту для контейнеров слушает адрес
 `docker0` сам.
+
+## Подключить профиль комплекта организации (обычно делает скрипт)
+
+При установке комплекта (`AGCTL_REPO=<org>/agctl-profile-<id>`) скрипт сам
+выполняет `agctl dev init --profile-dir <каталог> --yes`. Вручную (или при
+`AGCTL_NO_INIT=1`) те же два шага:
+
+```bash
+agctl dev init --profile-dir ~/.local/share/agctl/profiles/<id> --yes   # Windows: --profile-dir "%LOCALAPPDATA%\agctl\profiles\<id>"
+agctl dev up
+```
+
+`--yes` — не задавать вопросов (папка проектов по умолчанию `~/src`,
+передайте свою: `--workdir C:\src\проекты`). Доступы (ключ модели, GitLab,
+Jira) при этом не спрашиваются — их спросит лаунчер в браузере при первом
+`dev up` и положит в хранилище ОС.

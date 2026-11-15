@@ -71,7 +71,9 @@ irm https://raw.githubusercontent.com/arijjia/agctl/main/bin/install.ps1 | iex
 - `AGCTL_VERSION=v0.1.0` — конкретный тег вместо последнего релиза;
 - `AGCTL_INSTALL_DIR` — другой каталог для бинаря;
 - `AGCTL_NO_LINUX=1` — без linux-сборки (образы берутся из реестра);
-- `AGCTL_RELEASE_DIR` — папка с уже скачанными архивами, ничего не качать.
+- `AGCTL_RELEASE_DIR` — папка с уже скачанными архивами, ничего не качать;
+- `AGCTL_WORKDIR` — папка проектов для авто-init комплекта (по умолчанию `~/src`);
+- `AGCTL_NO_INIT=1` — не подключать профиль комплекта самим, напечатать команду.
 
 **Комплект организации.** Если организация публикует свой релиз в
 приватном репозитории профиля `<org>/agctl-profile-<id>` (архив с бинарём,
@@ -89,8 +91,12 @@ linux-сборкой и профилем внутри), тот же скрипт
 3. Запускает команду установки ниже с `AGCTL_REPO=<org>/agctl-profile-<id>`.
 
 Профиль кладётся в `~/.local/share/agctl/profiles/<id>` (Windows:
-`%LOCALAPPDATA%\agctl\profiles\<id>`), в конце скрипт печатает готовую
-команду `agctl dev init --profile-dir …`.
+`%LOCALAPPDATA%\agctl\profiles\<id>`) и **сразу подключается**: скрипт сам
+выполняет `agctl dev init --profile-dir … --yes` — настройки попадают в
+`~/.agctl-dev/dev.yaml` (Windows: `%USERPROFILE%\.agctl-dev`), доступы
+(ключ модели, GitLab, Jira) спросит лаунчер при первом `agctl dev up`.
+Отключить авто-подключение — `AGCTL_NO_INIT=1`; другая папка проектов —
+`AGCTL_WORKDIR=…`.
 
 macOS и Linux:
 

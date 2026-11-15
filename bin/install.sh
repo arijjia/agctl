@@ -9,7 +9,9 @@
 #     AGCTL_REPO=<org>/agctl-profile-<id>: zip agctl-<id>-<версия>-<os>-<arch>.zip
 #     (agctl + agctl-linux-<arch> + profile/) + checksums-<версия>.txt; нужен
 #     авторизованный gh и unzip. Профиль кладётся в
-#     ~/.local/share/agctl/profiles/<id>, в конце печатается команда agctl dev init.
+#     ~/.local/share/agctl/profiles/<id>; в конце скрипт сам подключает
+#     профиль (agctl dev init --profile-dir … --yes; AGCTL_NO_INIT=1 —
+#     не подключать, напечатать команду).
 #
 # Что делает: определяет ОС и архитектуру, скачивает архив и контрольные
 # суммы (через gh, если он есть и авторизован, иначе curl), сверяет SHA-256,
@@ -25,8 +27,10 @@
 #   AGCTL_LIB_DIR      куда класть linux-сборку (по умолчанию <INSTALL_DIR>/../lib/agctl)
 #   AGCTL_PROFILE_DIR  куда класть профиль комплекта (по умолчанию
 #                      ${XDG_DATA_HOME:-~/.local/share}/agctl/profiles/<id>)
+#   AGCTL_WORKDIR      папка проектов для авто-init комплекта (по умолчанию ~/src)
 #   AGCTL_RELEASE_DIR  локальная папка с архивами релиза — ничего не скачивать
 #   AGCTL_NO_LINUX=1   не ставить linux-сборку
+#   AGCTL_NO_INIT=1    не подключать профиль комплекта самим — напечатать команду
 #
 # Windows — bin/install.ps1.
 set -eu
@@ -170,7 +174,12 @@ case ":$PATH:" in
   *":$INSTALL_DIR:"*) ;;
   *) say "ℹ $INSTALL_DIR нет в PATH — добавьте в профиль оболочки, например: export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
 esac
-if [ -n "$profile_id" ]; then
+if [ -n "$profile_id" ] && [ -z "${AGCTL_NO_INIT:-}" ]; then
+  # Подключить профиль самим (--yes — не спрашивать; доступы спросит лаунчер).
+  set -- dev init --profile-dir "$PROFILE_DIR" --yes
+  if [ -n "${AGCTL_WORKDIR:-}" ]; then set -- "$@" --workdir "$AGCTL_WORKDIR"; fi
+  "$INSTALL_DIR/agctl" "$@" || say "⚠ agctl dev init не удался — подключите профиль сами: agctl dev init --profile-dir \"$PROFILE_DIR\""
+elif [ -n "$profile_id" ]; then
   say "Дальше: agctl dev init --profile-dir \"$PROFILE_DIR\" [--flavor …] [--workdir …], затем agctl dev up"
 else
   say "Дальше: agctl dev init, затем agctl dev up"

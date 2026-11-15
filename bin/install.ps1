@@ -1,4 +1,4 @@
-﻿# agctl — установка бинаря одной командой (Windows, PowerShell 5.1+):
+# agctl — установка бинаря одной командой (Windows, PowerShell 5.1+):
 #
 #   irm https://raw.githubusercontent.com/arijjia/agctl/main/bin/install.ps1 | iex
 #
@@ -7,8 +7,9 @@
 #   • комплект организации — релиз приватного репозитория профиля
 #     $env:AGCTL_REPO = '<org>/agctl-profile-<id>': zip agctl-<id>-<версия>-windows-<arch>.zip
 #     (agctl.exe + agctl-linux-<arch> + profile\) + checksums-<версия>.txt; нужен
-#     авторизованный gh. Профиль кладётся в %LOCALAPPDATA%\agctl\profiles\<id>,
-#     в конце печатается команда agctl dev init.
+#     авторизованный gh. Профиль кладётся в %LOCALAPPDATA%\agctl\profiles\<id>;
+#     в конце скрипт сам подключает профиль (agctl dev init --profile-dir …
+#     --yes; AGCTL_NO_INIT=1 — не подключать, напечатать команду).
 #
 # Что делает: скачивает архив и контрольные суммы (через gh, если он есть и
 # авторизован, иначе Invoke-WebRequest), сверяет SHA-256, кладёт agctl.exe в
@@ -22,8 +23,10 @@
 #   AGCTL_VERSION      тег релиза (по умолчанию последний)
 #   AGCTL_INSTALL_DIR  куда ставить (по умолчанию %LOCALAPPDATA%\agctl)
 #   AGCTL_PROFILE_DIR  куда класть профиль комплекта (по умолчанию <INSTALL_DIR>\profiles\<id>)
+#   AGCTL_WORKDIR      папка проектов для авто-init комплекта (по умолчанию ~\src)
 #   AGCTL_RELEASE_DIR  локальная папка с архивами релиза — ничего не скачивать
 #   AGCTL_NO_LINUX=1   не ставить linux-сборку
+#   AGCTL_NO_INIT=1    не подключать профиль комплекта самим — напечатать команду
 #
 # macOS и Linux — bin/install.sh.
 $ErrorActionPreference = 'Stop'
@@ -161,7 +164,15 @@ try {
     if (($env:Path -split ';') -notcontains $installDir) { $env:Path += ";$installDir" }
 
     Write-Host ('✓ ' + ((& $exe version) -join ' '))
-    if ($profileId) {
+    if ($profileId -and -not $env:AGCTL_NO_INIT) {
+        # Подключить профиль самим (--yes — не спрашивать; доступы спросит лаунчер).
+        $initArgs = @('dev', 'init', '--profile-dir', $profileDir, '--yes')
+        if ($env:AGCTL_WORKDIR) { $initArgs += @('--workdir', $env:AGCTL_WORKDIR) }
+        & $exe @initArgs
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "agctl dev init не удался — подключите профиль сами: agctl dev init --profile-dir `"$profileDir`""
+        }
+    } elseif ($profileId) {
         Write-Host "Дальше: agctl dev init --profile-dir `"$profileDir`" [--flavor …] [--workdir C:\src\...], затем agctl dev up"
     } else {
         Write-Host 'Дальше: agctl dev init, затем agctl dev up'
