@@ -129,16 +129,30 @@ window.__ModuleLoader__.load({
 				<h2 style="margin:0 0 14px;font-size:18px">${helpTitle}</h2>
 				<ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.5">
 					<li><b>Воркспейсы</b> — папки проектов в боковой панели. Новая сессия, созданная внутри папки, работает в каталоге этого проекта.</li>
-					<li><b>Создать воркспейс</b> — кнопка в шапке списка Workspaces: пустой или клон публичного GitHub-репозитория. При создании можно сразу отметить «возможности» из каталога организации (если он есть в профиле); менять их потом — в «Воркспейсы: возможности».</li>
-					<li><b>SSH</b> (роли developer/admin) — открой отдельную вкладку «SSH-доступ»: там поле для публичного ключа, готовая команда подключения и микро-гайд. Порт появляется, когда рантайм работает; доступ — только с самого сервера или через туннель.</li>
+					<li><b>Создать воркспейс</b> — кнопка в шапке списка Workspaces: пустой или клон публичного GitHub-репозитория. При создании можно сразу отметить «возможности» из каталога организации (если он есть в профиле); менять их потом — в «Возможности».</li>
 					<li><b>Рантайм</b> управляется agctl автоматически: просыпается при открытии чата и засыпает после часа бездействия; активная SSH-сессия продлевает работу. Логи своего контейнера разработчик смотрит в лаунчере.</li>
 					<li><b>Git</b> — история воркспейса сохраняется автоматически; автопуш во внешний Git не выполняется.</li>
 				</ul>`;
 			sheet.appendChild(box);
-			// Архитектурная карта платформы (/map — archify-диаграммы) нужна
-			// именно developer'ам и админам: ссылка только для этих ролей.
+			// SSH упоминается в справке только там, где он есть: локальный режим
+			// (sshEnabled=false) его не публикует — строку заменяем на нейтральную.
 			ensureAgctlUser().then((me) => {
 				if (!box.isConnected || !me) return;
+				const ul = box.querySelector("ul");
+				const sshAllowed = (me.role === "developer" || me.role === "admin") && me.sshEnabled !== false;
+				if (!sshAllowed && ul) {
+					const lis = ul.querySelectorAll("li");
+					if (lis[2]) lis[2].innerHTML = "<b>Рантайм</b> управляется agctl автоматически: просыпается при открытии чата и засыпает после часа бездействия. Логи своего контейнера разработчик смотрят в лаунчере.";
+				}
+				if (!sshAllowed) return;
+				const ssh = document.createElement("li");
+				ssh.innerHTML = "<b>SSH</b> (роли developer/admin) — открой отдельную вкладку «SSH-доступ»: там поле для публичного ключа, готовая команда подключения и микро-гайд. Порт появляется, когда рантайм работает; доступ — только с самого сервера или через туннель.";
+				if (ul && ul.insertBefore) {
+					const runtimeLi = ul.children[2];
+					if (runtimeLi) ul.insertBefore(ssh, runtimeLi); else ul.appendChild(ssh);
+				}
+				// Архитектурная карта платформы (/map — archify-диаграммы) нужна
+				// именно developer'ам и админам: ссылка только для этих ролей.
 				if (me.role !== "developer" && me.role !== "admin") return;
 				const card = el("div", "border:1px solid var(--dsw-alias-border-l1,#333);border-radius:12px;padding:12px 14px;margin-top:14px");
 				card.appendChild(el("div", "font-size:12px;font-weight:600;margin-bottom:4px", "Архитектурная карта платформы"));
@@ -445,8 +459,9 @@ window.__ModuleLoader__.load({
 			};
 			popup.append(item("Профиль", () => openProfileOverlay(me)));
 			// SSH-доступ — отдельная вкладка с картой ключа и микро-гайдом.
-			// Доступна ролям, которым backend разрешает /api/me/ssh: developer и admin.
-			if (me.role === "developer" || me.role === "admin") popup.append(item("SSH-доступ", () => openSSHOverlay()));
+			// Доступна ролям, которым backend разрешает /api/me/ssh: developer и admin;
+			// локальный режим (sshEnabled=false) SSH не публикует вовсе.
+			if ((me.role === "developer" || me.role === "admin") && me.sshEnabled !== false) popup.append(item("SSH-доступ", () => openSSHOverlay()));
 			popup.append(
 				item("Справка", () => openHelpOverlay()),
 				item("Выйти", async () => {

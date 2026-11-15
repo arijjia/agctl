@@ -13,6 +13,7 @@ const brand = (window as any).__AGCTL_BRAND__?.name || "agctl";
 const groupTitle: Record<string, string> = {
   llm: "Модель (LLM)",
   gitlab: "GitLab",
+  confluence: "Confluence",
   jira: "Jira",
   other: "Другие переменные",
 };
@@ -143,7 +144,7 @@ export default function LocalLauncher({ user, initial }: { user: User; initial: 
 
   const running = ui.runtime.state === "running";
   const current = ui.images.find((i) => i.ref === ui.current);
-  const groups = ["llm", "gitlab", "jira", "other"]
+  const groups = ["llm", "gitlab", "confluence", "jira", "other"]
     .map((g) => ({ g, items: ui.secrets.filter((s) => s.group === g) }))
     .filter((x) => x.items.length);
   const fetchLogs = useCallback(() => launcher.logs("", 300), []);

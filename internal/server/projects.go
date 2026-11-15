@@ -121,7 +121,7 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request, id 
 		case errors.Is(err, provision.ErrInvalidProject):
 			writeErr(w, http.StatusBadRequest, "недопустимое имя проекта; клон — только публичный HTTPS URL github.com/owner/repository")
 		case errors.Is(err, provision.ErrProjectExists):
-			writeErr(w, http.StatusConflict, "воркспейс уже существует: на диске есть непустой каталог с этим именем; старый можно удалить в «Воркспейсы: возможности»")
+			writeErr(w, http.StatusConflict, "воркспейс уже существует: на диске есть непустой каталог с этим именем; старый можно удалить в «Возможности» (консоль воркспейса)")
 		default:
 			log.Printf("[projects] u%d create failed (clone=%t)", id.ID, clone)
 			if clone {
