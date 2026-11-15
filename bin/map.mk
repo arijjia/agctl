@@ -1,7 +1,8 @@
 # ── map: карта системы ───────────────────────────────────────────────────────
-# Карты archify; каждая — вкладка страницы /map работающего сервера (за сессией):
-#   agctl-processes — сервер: процессы, порты, протоколы;
-#   agctl-local     — локальный режим разработчика (agctl dev);
+# Карты archify; каждая — вкладка страницы /map работающего сервера (за сессией)
+# и system/map/index.html (те же вкладки при просмотре с диска):
+#   agctl-processes — сервер — один хост: процессы, порты, протоколы;
+#   agctl-local     — ноутбук: локальный режим разработчика без сервера (agctl dev);
 #   agctl-cluster   — кластер: --runtime k8s | ax.
 # Источник — <имя>.architecture.json рядом; HTML собирает archify
 # (finalize architecture … --quality showcase), sha256 спецификации, из
@@ -9,7 +10,7 @@
 #
 # make map        — проверить спецификации (bin/map-check.py), пересобрать
 #                   через archify, если он есть и HTML отстал, и открыть
-#                   карту MAP_NAME (по умолчанию agctl-processes).
+#                   index.html — все карты вкладками (MAP_NAME=agctl-local — одну).
 # make map_build  — пересобрать HTML всех карт archify (ARCHIFY=команда, например
 #                   ARCHIFY="node ~/src/dot-agents/skills/archify/bin/archify.mjs").
 # make map_check  — только проверка: улики против кода, HTML против спецификации.
@@ -20,7 +21,7 @@
 
 MAP_DIR     := system/map
 MAP_NAMES   := agctl-processes agctl-local agctl-cluster
-MAP_NAME    ?= agctl-processes
+MAP_NAME    ?= index
 MAP_FILE    := $(MAP_DIR)/$(MAP_NAME).html
 ARCHIFY     ?= archify
 # доказательства browser-check archify — вне репозитория

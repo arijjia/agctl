@@ -24,7 +24,8 @@ func mapEntries() []string {
 	}
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
-		if !e.IsDir() && mapNameRe.MatchString(e.Name()) {
+		// index.html — вкладки для просмотра с диска, не диаграмма
+		if !e.IsDir() && mapNameRe.MatchString(e.Name()) && e.Name() != "index.html" {
 			names = append(names, e.Name())
 		}
 	}
@@ -34,8 +35,8 @@ func mapEntries() []string {
 // mapTabs — порядок и названия вкладок /map; диаграммы вне списка идут
 // следом под своими именами файлов.
 var mapTabs = []struct{ name, title string }{
-	{"agctl-processes", "Сервер: процессы и порты"},
-	{"agctl-local", "Локальный режим (agctl dev)"},
+	{"agctl-processes", "Сервер — один хост"},
+	{"agctl-local", "Ноутбук — локальный режим"},
 	{"agctl-cluster", "Кластер: k8s | ax"},
 }
 

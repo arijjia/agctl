@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "receiptId": "6af649fd-187a-4b13-93ac-20ab71ed7896",
+  "receiptId": "f145c4bc-7cbc-45d8-affb-1423d482ef65",
   "status": "current",
   "command": "deliver",
   "type": "architecture",
   "input": "/Users/masha/src/cit/agctl/system/map/agctl-processes.architecture.json",
   "output": "/Users/masha/src/cit/agctl/system/map/agctl-processes.html",
   "specification": {
-    "sha256": "ad028b774f829a0db10d5242dc4c6da6488389a6928cb1b9c58b497378097e14",
-    "bytes": 32953
+    "sha256": "c2bce78d7a487758140a915002be8f313c576f00ef7770cc3b52d80bcb8527db",
+    "bytes": 31682
   },
   "artifact": {
-    "sha256": "b1a544e950a2bf10aba211e0f21e89eea736a28e088c710ff72ecf22ac826e9e",
-    "bytes": 896166
+    "sha256": "e6d7b3ba02cccb38f580bdb84f6c62db061e18e25a6de2b7ffbfad3d5fb1773c",
+    "bytes": 890888
   }
 }

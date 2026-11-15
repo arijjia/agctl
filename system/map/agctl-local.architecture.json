@@ -2,15 +2,15 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "agctl dev — локальный режим разработчика",
-    "subtitle": "Всё на машине разработчика: один фоновый agctl dev serve (127.0.0.1) + контейнер рабочего места в локальном Docker",
+    "title": "Ноутбук — локальный режим разработчика (agctl dev)",
+    "subtitle": "Сервер agctl не нужен: всё на ноутбуке — фоновый agctl dev serve (127.0.0.1) и контейнер в локальном Docker; наружу — только LiteLLM",
     "output": "system/map/agctl-local.html",
     "quality_profile": "showcase",
     "repository": {
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "a7ed520196b9e33f7085d0881328bb745895a90b"
+      "revision": "97cf8af51724e19f0706eb5cafa29a1c6d62eb8d"
     },
     "views": [
       {
@@ -31,11 +31,10 @@
         "focus": [
           "lapi",
           "imgbuild",
-          "registry",
           "dockerd",
           "localctr"
         ],
-        "note": "выбранного образа нет — pull из реестра, иначе сборка цепочки на машине; затем контейнер рабочего места"
+        "note": "выбранного образа нет — сборка цепочки на машине (pull — если образ есть в доступном реестре); затем контейнер"
       },
       {
         "id": "v-chat",
@@ -45,10 +44,9 @@
           "chatgw",
           "localctr",
           "projdir",
-          "llm",
-          "corpsvc"
+          "llm"
         ],
-        "note": "/chat/ проксируется в dsh :3080; агент правит родную папку проектов и ходит в LLM, GitLab, Jira"
+        "note": "/chat/ проксируется в dsh :3080; агент правит родную папку проектов, модель — через LiteLLM"
       },
       {
         "id": "v-bridge",
@@ -70,7 +68,7 @@
       "sublabel": "init · up · down · update · doctor",
       "pos": [
         40,
-        334
+        164
       ],
       "size": [
         200,
@@ -101,7 +99,7 @@
       "sublabel": "/launcher · /chat/ · 127.0.0.1",
       "pos": [
         40,
-        494
+        324
       ],
       "size": [
         200,
@@ -124,10 +122,10 @@
       "id": "imgbuild",
       "type": "backend",
       "label": "Подготовка рабочего места",
-      "sublabel": "образ: pull или сборка · ensureChat",
+      "sublabel": "нет образа — pull/сборка · ensureChat",
       "pos": [
         410,
-        200
+        30
       ],
       "size": [
         210,
@@ -158,7 +156,7 @@
       "sublabel": "образ · доступы · запуск",
       "pos": [
         410,
-        340
+        170
       ],
       "size": [
         210,
@@ -189,7 +187,7 @@
       "sublabel": "proxy · WS · прогрев",
       "pos": [
         410,
-        500
+        330
       ],
       "size": [
         210,
@@ -215,7 +213,7 @@
       "sublabel": "белый список argv · confirm",
       "pos": [
         410,
-        650
+        480
       ],
       "size": [
         210,
@@ -246,7 +244,7 @@
       "sublabel": "Keychain · Cred. Manager · Secret Service",
       "pos": [
         720,
-        340
+        170
       ],
       "size": [
         230,
@@ -272,7 +270,7 @@
       "sublabel": "dev.yaml · data/ · backups/ · logs/",
       "pos": [
         720,
-        430
+        260
       ],
       "size": [
         230,
@@ -298,7 +296,7 @@
       "sublabel": "Desktop · Colima · Engine",
       "pos": [
         1000,
-        208
+        38
       ],
       "size": [
         220,
@@ -324,7 +322,7 @@
       "sublabel": "образ профиля: base · web · 1c",
       "pos": [
         980,
-        490
+        320
       ],
       "size": [
         240,
@@ -350,7 +348,7 @@
       "sublabel": "родные репозитории · без автокоммитов",
       "pos": [
         980,
-        650
+        480
       ],
       "size": [
         240,
@@ -371,7 +369,7 @@
       "sublabel": "ibcmd (1С) и др. из профиля",
       "pos": [
         40,
-        655
+        485
       ],
       "size": [
         200,
@@ -386,37 +384,16 @@
       ]
     },
     {
-      "id": "registry",
-      "type": "external",
-      "label": "Реестр образов",
-      "sublabel": "если есть: Nexus / ghcr",
-      "pos": [
-        420,
-        20
-      ],
-      "size": [
-        190,
-        76
-      ],
-      "sources": [
-        {
-          "path": "cmd/agctl/dev.go",
-          "line": 380,
-          "label": "devPull: docker pull образа"
-        }
-      ]
-    },
-    {
       "id": "llm",
       "type": "external",
-      "label": "LLM gateway",
-      "sublabel": "ключ — из Доступов",
+      "label": "LiteLLM",
+      "sublabel": "адрес — профиль · ключ — Доступы",
       "pos": [
         1290,
-        360
+        304
       ],
       "size": [
-        130,
+        150,
         72
       ],
       "sources": [
@@ -424,27 +401,6 @@
           "path": "internal/server/local_ui.go",
           "line": 174,
           "label": "ключ модели — сразу в провайдер serve"
-        }
-      ]
-    },
-    {
-      "id": "corpsvc",
-      "type": "external",
-      "label": "GitLab · Jira",
-      "sublabel": "личные токены",
-      "pos": [
-        1290,
-        505
-      ],
-      "size": [
-        130,
-        66
-      ],
-      "sources": [
-        {
-          "path": "internal/localmode/secrets.go",
-          "line": 38,
-          "label": "манифест доступов: GitLab, Jira"
         }
       ]
     }
@@ -475,13 +431,6 @@
       "from": "lapi",
       "to": "imgbuild",
       "label": "Запустить"
-    },
-    {
-      "id": "e5",
-      "from": "imgbuild",
-      "to": "registry",
-      "label": "docker pull",
-      "variant": "dashed"
     },
     {
       "id": "e6",
@@ -533,12 +482,6 @@
       "from": "bridge",
       "to": "hostcmds",
       "label": "exec argv"
-    },
-    {
-      "id": "e14",
-      "from": "localctr",
-      "to": "corpsvc",
-      "label": "HTTPS"
     },
     {
       "id": "e15",
@@ -595,7 +538,8 @@
       "items": [
         "Всегда: agctl dev serve (Go, фон) + Docker машины; CLI agctl dev — короткоживущий",
         "После «Запустить»: +1 контейнер dsh web на выбранном образе",
-        "Мост: 0 процессов на ожидании; вызов = exec команды хоста из белого списка"
+        "Мост: 0 процессов на ожидании; вызов = exec команды хоста из белого списка",
+        "Сервер agctl не используется: ни входа, ни данных, ни трафика через него"
       ]
     },
     {
@@ -604,7 +548,8 @@
       "items": [
         "Вводятся во вкладке «Доступы» лаунчера; значения в браузер не возвращаются",
         "Секреты — в хранилище ОС (или secrets.enc), несекретное — в dev.yaml",
-        "Ключ модели применяется сразу; остальное — после перезапуска рабочего места"
+        "Ключ модели применяется сразу; остальное — после перезапуска рабочего места",
+        "Заданы токены GitLab/Jira — агент сам ходит туда из контейнера (по желанию)"
       ]
     },
     {
@@ -612,7 +557,7 @@
       "title": "Образ рабочего места",
       "items": [
         "Каталог — из профиля: базовый, web (Playwright), вкус профиля (1С: Java + BSL LS)",
-        "Нет на машине — docker pull; нет в реестре — сборка base → web → профиль → вкус",
+        "Нет на машине — сборка base → web → профиль → вкус (pull, если образ есть в реестре)",
         "Сборке нужен agctl-linux-<arch> рядом с бинарём или в ../lib/agctl"
       ]
     }

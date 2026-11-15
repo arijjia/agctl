@@ -2,14 +2,14 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "agctl — физика: процессы, порты, протоколы",
+    "title": "agctl — сервер: один хост, процессы и порты",
     "output": "system/map/agctl-processes.html",
     "quality_profile": "showcase",
     "repository": {
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "d8e0e3ee5e1b29bf5740547820694d11a96964ce"
+      "revision": "97cf8af51724e19f0706eb5cafa29a1c6d62eb8d"
     },
     "views": [
       {
@@ -57,17 +57,6 @@
         "note": "SSH к тем же файлам пользователя; Git — локальный go-git autosave в .git проекта (без push); bare repos/ — legacy"
       },
       {
-        "id": "v-local",
-        "label": "Local backend (experimental, legacy)",
-        "focus": [
-          "browser",
-          "api",
-          "conn",
-          "dshlocal"
-        ],
-        "note": "Ноутбук сам инициирует WSS :443; UI едет по /api/local-backend/ui/*"
-      },
-      {
         "id": "v-wl",
         "label": "White-label: ядро + профиль",
         "focus": [
@@ -80,7 +69,7 @@
         "note": "Кастомизация — данные профиля (узел-файлы); шлюзы инжектят брендинг; ядро agctl без литералов организаций (guard)"
       }
     ],
-    "subtitle": "Физика процессов · agctl serve — один Go-процесс: блоки в его рамке — не отдельные процессы · кластер k8s/ax и локальный режим — на соседних вкладках"
+    "subtitle": "agctl serve — один Go-процесс: блоки в его рамке — не отдельные процессы · ноутбук без сервера (agctl dev) и кластер k8s|ax — на соседних вкладках"
   },
   "components": [
     {
@@ -99,8 +88,8 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 461,
-          "end_line": 463,
+          "line": 462,
+          "end_line": 464,
           "label": "GET /admin и /launcher — страницы SPA"
         },
         {
@@ -133,13 +122,13 @@
       "sources": [
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 70,
+          "line": 69,
           "label": "docker-клиент (FromEnv)"
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 374,
-          "end_line": 382,
+          "line": 426,
+          "end_line": 434,
           "label": "публикация :3080 и :2222 только на 127.0.0.1"
         },
         {
@@ -166,8 +155,8 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 307,
-          "end_line": 402,
+          "line": 308,
+          "end_line": 403,
           "label": "mux: API, admin-API, лаунчер, /map"
         },
         {
@@ -178,8 +167,8 @@
         },
         {
           "path": "internal/server/server.go",
-          "line": 365,
-          "end_line": 368,
+          "line": 366,
+          "end_line": 369,
           "label": "апрув/реджект заявок — requireAdmin"
         }
       ]
@@ -205,8 +194,8 @@
         },
         {
           "path": "cmd/agctl/main.go",
-          "line": 240,
-          "end_line": 248,
+          "line": 258,
+          "end_line": 266,
           "label": "EnsureMasterKey + secrets.New + store.Open"
         },
         {
@@ -233,8 +222,8 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 502,
-          "end_line": 541,
+          "line": 503,
+          "end_line": 542,
           "label": "StartBackground: рипер, autosave, reconcile"
         },
         {
@@ -368,7 +357,7 @@
       "sources": [
         {
           "path": "cmd/agctl/main.go",
-          "line": 248,
+          "line": 266,
           "label": "store.Open($AGCTL_HOME/agctl.db)"
         },
         {
@@ -395,8 +384,8 @@
       "sources": [
         {
           "path": "cmd/agctl/main.go",
-          "line": 240,
-          "end_line": 244,
+          "line": 258,
+          "end_line": 262,
           "label": "EnsureMasterKey + secrets.New"
         }
       ]
@@ -423,8 +412,8 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 397,
-          "end_line": 398,
+          "line": 449,
+          "end_line": 450,
           "label": "work → /workspace, dsh-home → /home/dsh bind"
         },
         {
@@ -457,7 +446,7 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 397,
+          "line": 449,
           "label": "work → /workspace bind"
         },
         {
@@ -560,26 +549,26 @@
     {
       "id": "llm",
       "type": "external",
-      "label": "LLM gateway",
+      "label": "LLM gateway (LiteLLM)",
       "sublabel": "из профиля · :443",
       "pos": [
-        994,
+        979,
         0
       ],
       "size": [
-        120,
+        150,
         72
       ],
       "sources": [
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 346,
+          "line": 398,
           "label": "host-gateway в ExtraHosts контейнера"
         },
         {
           "path": "cmd/agctl/main.go",
-          "line": 200,
-          "end_line": 205,
+          "line": 218,
+          "end_line": 223,
           "label": "дефолты LLM из профиля (--llm-*, AGCTL_LLM_*)"
         },
         {
@@ -597,7 +586,7 @@
       "sublabel": "удалённо — только через туннель/VPN",
       "pos": [
         40,
-        720
+        420
       ],
       "size": [
         190,
@@ -612,59 +601,9 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 377,
-          "end_line": 382,
+          "line": 429,
+          "end_line": 434,
           "label": "2222 публикуется на loopback"
-        }
-      ]
-    },
-    {
-      "id": "conn",
-      "type": "backend",
-      "label": "agctl local connect — Go",
-      "sublabel": "исходящий WSS :443 · credential 0600",
-      "pos": [
-        40,
-        420
-      ],
-      "size": [
-        200,
-        76
-      ],
-      "sources": [
-        {
-          "path": "cmd/agctl/local.go",
-          "line": 23,
-          "end_line": 34,
-          "label": "connector: --launch-dsh, WSS"
-        }
-      ]
-    },
-    {
-      "id": "dshlocal",
-      "type": "backend",
-      "label": "dsh web — node (локально)",
-      "sublabel": "127.0.0.1:3080 · HTTP+WS",
-      "pos": [
-        35,
-        560
-      ],
-      "size": [
-        210,
-        76
-      ],
-      "sources": [
-        {
-          "path": "cmd/agctl/local.go",
-          "line": 33,
-          "end_line": 34,
-          "label": "dsh-port 3080, loopback"
-        },
-        {
-          "path": "internal/bridge/bridge.go",
-          "line": 32,
-          "end_line": 43,
-          "label": "authority локального dsh"
         }
       ]
     },
@@ -717,8 +656,8 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 411,
-          "end_line": 418,
+          "line": 463,
+          "end_line": 470,
           "label": "Start: сеть и правила при EgressAllowlist"
         },
         {
@@ -734,16 +673,8 @@
       "kind": "region",
       "label": "Рабочая машина пользователя",
       "wraps": [
-        "browser"
-      ],
-      "pad": 12
-    },
-    {
-      "kind": "region",
-      "label": "Ноутбук (experimental local backend)",
-      "wraps": [
-        "conn",
-        "dshlocal"
+        "browser",
+        "sshclient"
       ],
       "pad": 12
     },
@@ -862,19 +793,6 @@
       "from": "sshclient",
       "to": "sshd",
       "label": "SSH-2 → 127.0.0.1:<dyn>"
-    },
-    {
-      "id": "c11",
-      "from": "conn",
-      "to": "api",
-      "label": "WSS :443 · yamux",
-      "variant": "emphasis"
-    },
-    {
-      "id": "c12",
-      "from": "conn",
-      "to": "dshlocal",
-      "label": "HTTP в yamux → :3080"
     },
     {
       "id": "c13",
@@ -999,6 +917,15 @@
         "Каталог образов — images.dev профиля (agctl-dsh:0.2.2, agctl-dsh-nossh:0.2.2) или --dev-images; желаемый образ — метка agctl.image.desired на контейнере",
         "agctl-dsh-nossh (ENV AGCTL_NO_SSHD=1): sshd не поднимается даже с ключом, порт 2222 не публикуется",
         "Смена образа на живом рантайме: serve усыпляет контейнер и пересоздаёт на желаемом образе (том сохраняется)"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Чего нет на этой карте",
+      "items": [
+        "Ноутбук разработчика без сервера (agctl dev) — вкладка «Ноутбук — локальный режим»",
+        "Кластер вместо dockerd (--runtime k8s | ax) — вкладка «Кластер»",
+        "agctl local connect — старый экспериментальный коннектор, только с --experimental-local-bridge"
       ]
     }
   ]

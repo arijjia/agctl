@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "receiptId": "8f62d9bb-7081-4fd2-bf59-4c1873faeb84",
+  "receiptId": "e874c3eb-5c3c-4d22-aead-33467588f423",
   "status": "current",
   "command": "deliver",
   "type": "architecture",
   "input": "/Users/masha/src/cit/agctl/system/map/agctl-local.architecture.json",
   "output": "/Users/masha/src/cit/agctl/system/map/agctl-local.html",
   "specification": {
-    "sha256": "ad4264b1fd9d7babcaaf4a218880b15cd4a19ce3814d11cdc5683b9dfa679786",
-    "bytes": 15665
+    "sha256": "06c8b6a32c7cf4074473e34a37d9eb5ec2814a6c05c585828a98ef12b5a6ccdc",
+    "bytes": 14895
   },
   "artifact": {
-    "sha256": "df6857d4270d01c50c98bec48758f7184b567c0dd902e7d3ef4c60b8bd3ec525",
-    "bytes": 870106
+    "sha256": "882ee19610a93ba224f87d806a7adae91230cf85f037ea4063d0157604b88870",
+    "bytes": 865645
   }
 }

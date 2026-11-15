@@ -9,7 +9,7 @@
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "d8e0e3ee5e1b29bf5740547820694d11a96964ce"
+      "revision": "97cf8af51724e19f0706eb5cafa29a1c6d62eb8d"
     },
     "views": [
       {
@@ -47,8 +47,8 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 461,
-          "end_line": 463,
+          "line": 462,
+          "end_line": 464,
           "label": "GET /admin и /launcher — страницы SPA"
         },
         {
@@ -81,8 +81,8 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 307,
-          "end_line": 402,
+          "line": 308,
+          "end_line": 403,
           "label": "mux: API, admin-API, лаунчер, /map"
         },
         {
@@ -93,8 +93,8 @@
         },
         {
           "path": "internal/server/server.go",
-          "line": 365,
-          "end_line": 368,
+          "line": 366,
+          "end_line": 369,
           "label": "апрув/реджект заявок — requireAdmin"
         }
       ]
@@ -283,13 +283,13 @@
       "sources": [
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 346,
+          "line": 398,
           "label": "host-gateway в ExtraHosts контейнера"
         },
         {
           "path": "cmd/agctl/main.go",
-          "line": 200,
-          "end_line": 205,
+          "line": 218,
+          "end_line": 223,
           "label": "дефолты LLM из профиля (--llm-*, AGCTL_LLM_*)"
         },
         {
