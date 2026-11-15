@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -100,6 +101,11 @@ func (f *fakeHooks) EnsureImage(ctx context.Context, ref string, logf func(strin
 	f.built = append(f.built, ref)
 	f.present[ref] = true
 	return nil
+}
+
+// SetWorkDir — как localmode.SetWorkDir без dev.yaml: только проверка пути.
+func (f *fakeHooks) SetWorkDir(dir string) (string, error) {
+	return localmode.ValidateWorkDir(dir)
 }
 
 func newLocalUIEnv(t *testing.T) (*testEnv, *fakeHooks) {
@@ -232,5 +238,62 @@ func TestLocalLauncherBuildsMissingImageThenStarts(t *testing.T) {
 	spec = env.rt.chatSpecs[env.srv.chatRuntimeID(env.srv.local.ownerID)]
 	if !strings.Contains(strings.Join(spec.DevEnv, ","), "JIRA_API_TOKEN=jira-tok") {
 		t.Fatalf("новый доступ не попал в контейнер: %v", spec.DevEnv)
+	}
+}
+
+func TestLocalLauncherWorkDir(t *testing.T) {
+	env, _ := newLocalUIEnv(t)
+	c := env.newClient()
+	if code, _ := env.do(c, "GET", "/local/login?token=login-tok", nil); code != http.StatusSeeOther {
+		t.Fatalf("вход: %d", code)
+	}
+	dir := t.TempDir()
+	code, body := env.do(c, "PUT", "/api/local/ui/workdir", map[string]any{"workdir": dir})
+	if code != http.StatusOK {
+		t.Fatalf("смена папки: %d %s", code, body)
+	}
+	want, _ := filepath.EvalSymlinks(dir)
+	if got := env.srv.localWorkDir(); got != want {
+		t.Fatalf("папка проектов: %q, ждали %q", got, want)
+	}
+	if _, extras := env.srv.localChatExtras(env.srv.local.ownerID); !containsStr(extras, "AGCTL_LOCAL_MODE=1") {
+		t.Fatalf("в env рабочего места нет AGCTL_LOCAL_MODE=1: %v", extras)
+	}
+	if wd, _ := env.srv.localChatExtras(env.srv.local.ownerID); wd != want {
+		t.Fatalf("маунт /workspace: %q, ждали %q", wd, want)
+	}
+	// несуществующая папка и корень — отказ, текущая не меняется
+	for _, bad := range []string{filepath.Join(dir, "нет"), "/"} {
+		if code, _ := env.do(c, "PUT", "/api/local/ui/workdir", map[string]any{"workdir": bad}); code != http.StatusBadRequest {
+			t.Fatalf("%s: ждали 400, получили %d", bad, code)
+		}
+	}
+	if got := env.srv.localWorkDir(); got != want {
+		t.Fatalf("после отказа папка сменилась: %q", got)
+	}
+}
+
+func containsStr(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+func TestLocalModeHidesProjectFiles(t *testing.T) {
+	env, _ := newLocalUIEnv(t)
+	c := env.newClient()
+	if code, _ := env.do(c, "GET", "/local/login?token=login-tok", nil); code != http.StatusSeeOther {
+		t.Fatalf("вход: %d", code)
+	}
+	if code, body := env.do(c, "GET", "/api/me", nil); code != http.StatusOK || !strings.Contains(body, `"localMode":true`) {
+		t.Fatalf("/api/me: %d %s", code, body)
+	}
+	for _, path := range []string{"/api/projects/demo/files", "/api/projects/demo/file?path=a.txt"} {
+		if code, _ := env.do(c, "GET", path, nil); code != http.StatusNotFound {
+			t.Fatalf("%s: ждали 404, получили %d", path, code)
+		}
 	}
 }

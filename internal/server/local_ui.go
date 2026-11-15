@@ -39,6 +39,9 @@ type LocalHooks interface {
 	SetImage(ref string) error
 	// EnsureImage: docker pull, а нет в реестре — сборка цепочки на машине.
 	EnsureImage(ctx context.Context, ref string, logf func(string)) error
+	// SetWorkDir — папка проектов на хосте (dev.yaml + файл состояния);
+	// возвращает проверенный абсолютный путь.
+	SetWorkDir(dir string) (string, error)
 }
 
 // localTask — фоновая подготовка рабочего места (скачивание/сборка образа и
@@ -93,6 +96,7 @@ func (s *Server) registerLocalUIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/local/ui/secrets/{name}", s.requireLocalOwner(s.handleLocalSecretPut))
 	mux.HandleFunc("DELETE /api/local/ui/secrets/{name}", s.requireLocalOwner(s.handleLocalSecretDelete))
 	mux.HandleFunc("PUT /api/local/ui/image", s.requireLocalOwner(s.handleLocalImagePut))
+	mux.HandleFunc("PUT /api/local/ui/workdir", s.requireLocalOwner(s.handleLocalWorkDirPut))
 	mux.HandleFunc("POST /api/local/ui/start", s.requireLocalOwner(s.handleLocalStart))
 	mux.HandleFunc("POST /api/local/ui/restart", s.requireLocalOwner(s.handleLocalRestart))
 }
@@ -126,7 +130,7 @@ func (s *Server) handleLocalUI(w http.ResponseWriter, r *http.Request, id identi
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"profile":   s.brand.Name,
-		"workdir":   s.cfg.Local.WorkDir,
+		"workdir":   s.localWorkDir(),
 		"images":    h.Images(),
 		"current":   h.CurrentImage(),
 		"secrets":   h.Entries(),
@@ -221,6 +225,38 @@ func (s *Server) handleLocalImagePut(w http.ResponseWriter, r *http.Request, id 
 	}
 	_ = s.db.Audit(id.Login, "local.image.set", ref, "")
 	writeJSON(w, http.StatusOK, map[string]any{"image": ref})
+}
+
+type localWorkDirReq struct {
+	WorkDir string `json:"workdir"`
+}
+
+// handleLocalWorkDirPut — PUT /api/local/ui/workdir: папка проектов на хосте
+// (→ /workspace). Применяется при следующем старте рабочего места; работающее
+// место помечается «нужен перезапуск».
+func (s *Server) handleLocalWorkDirPut(w http.ResponseWriter, r *http.Request, id identity) {
+	var req localWorkDirReq
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "неверный JSON")
+		return
+	}
+	abs, err := s.localHooks().SetWorkDir(strings.TrimSpace(req.WorkDir))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	prev := s.localWorkDir()
+	s.setLocalWorkDir(abs)
+	if abs != prev {
+		s.chatMu.Lock()
+		running := s.chats[id.ID] != nil
+		s.chatMu.Unlock()
+		if running {
+			s.local.task.markPending()
+		}
+	}
+	_ = s.db.Audit(id.Login, "local.workdir.set", abs, "")
+	writeJSON(w, http.StatusOK, map[string]any{"workdir": abs})
 }
 
 func (s *Server) handleLocalStart(w http.ResponseWriter, r *http.Request, id identity) {

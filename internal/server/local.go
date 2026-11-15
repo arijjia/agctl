@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/arijjia/agctl/internal/auth"
@@ -45,6 +46,28 @@ type localState struct {
 	ownerID int64
 	bridge  *localbridge.Bridge
 	task    *localTask // подготовка рабочего места из лаунчера
+
+	workMu  sync.Mutex
+	workDir string // папка проектов на хосте → /workspace (меняется из лаунчера)
+}
+
+// localWorkDir — текущая папка проектов владельца.
+func (s *Server) localWorkDir() string {
+	if s.local == nil {
+		return s.cfg.Local.WorkDir
+	}
+	s.local.workMu.Lock()
+	defer s.local.workMu.Unlock()
+	return s.local.workDir
+}
+
+// setLocalWorkDir — сменить папку проектов: work-корень владельца и маунт
+// /workspace следующего старта рабочего места.
+func (s *Server) setLocalWorkDir(dir string) {
+	s.local.workMu.Lock()
+	s.local.workDir = dir
+	s.local.workMu.Unlock()
+	provision.SetLocalWorkRoot(s.cfg.Home, s.local.ownerID, dir)
 }
 
 func (s *Server) isLocal() bool { return s.cfg.Local != nil }
@@ -87,7 +110,7 @@ func (s *Server) initLocal() error {
 	if err != nil {
 		return err
 	}
-	s.local = &localState{ownerID: id, bridge: b, task: &localTask{state: "idle"}}
+	s.local = &localState{ownerID: id, bridge: b, task: &localTask{state: "idle"}, workDir: lm.WorkDir}
 	provision.SetLocalWorkRoot(s.cfg.Home, id, lm.WorkDir)
 	// Источник правды об образе — dev.yaml (его меняют и лаунчер, и CLI).
 	if lm.Hooks != nil {
@@ -184,7 +207,7 @@ func (s *Server) handleLocalStatus(w http.ResponseWriter, r *http.Request) {
 		runtime = map[string]any{"state": "running", "image": rt.image, "endpoint": rt.handle.Endpoint}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"version": s.cfg.Version, "image": s.cfg.Image, "workdir": s.cfg.Local.WorkDir,
+		"version": s.cfg.Version, "image": s.cfg.Image, "workdir": s.localWorkDir(),
 		"owner": s.cfg.Local.OwnerLogin, "runtime": runtime,
 		"bridgeTools": len(s.local.bridge.Tools()), "bridgePending": len(s.local.bridge.PendingList()),
 		"profile": s.brand.ID,
@@ -255,8 +278,11 @@ func (s *Server) localChatExtras(userID int64) (workDir string, env []string) {
 	env = append(env,
 		localbridge.EnvURL+"="+s.cfg.Local.BridgeURL,
 		localbridge.EnvToken+"="+s.cfg.Local.BridgeToken,
+		// Плагины dsh узнают локальный режим: реестр воркспейсов сверяется
+		// с содержимым /workspace (папка проектов могла смениться).
+		"AGCTL_LOCAL_MODE=1",
 	)
-	return s.cfg.Local.WorkDir, env
+	return s.localWorkDir(), env
 }
 
 // writeLocalBridgeSkill кладёт скилл моста в dsh-home владельца (dsh

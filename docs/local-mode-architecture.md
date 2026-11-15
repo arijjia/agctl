@@ -413,6 +413,10 @@ agctl-dsh-<профиль>-<вкус>:0.2.2    вкус профиля — <пр
 | `local.go` `localChatExtras` | `/workspace` = папка разработчика, env доступов и мост — только владельцу |
 | `devServe` | `--chat-ttl-min 720`: контейнер не засыпает на обеде; `--dev-env=` пустой: хостовый `.env` не пробрасывается |
 | `provision/local_workroot.go` | `SetLocalWorkRoot`: проекты/воркспейсы владельца резолвятся в его папку, а не в `chats/u1/work` |
+| `local_ui.go` `handleLocalWorkDirPut` | `PUT /api/local/ui/workdir`: папка проектов меняется из лаунчера (`localmode.SetWorkDir` пишет `dev.yaml` и `run/state.json`), новый маунт — со следующего старта рабочего места |
+| `runtime.ChatSpec.Local` → `provision.EnsureChatPluginsLocal` | плагин «Кабинет» не ставится и вычищается с тома (node_modules, `package.json`, `cordis.patch.yml`) |
+| env `AGCTL_LOCAL_MODE=1` → плагин `chat-session-files` | перед регистрацией папок снимает из реестра dsh воркспейсы под `/workspace`, чьих папок больше нет (`workspaceRegistry.delete` сохраняет сессии): слева только подпапки текущего маунта |
+| `project_files.go`, `/api/me` `localMode` → плагин `workspace-console` | файлы проекта (`/api/projects/{name}/files`, `/file`) → 404; в «Возможностях» нет блока «Файлы», на карточках в чате нет «Скачать» |
 
 Роли, заявки, админка, prewarm-пул, квоты, LiteLLM-ключи, SSH developer'а,
 `/w/{id}` — код тот же, но в локальном режиме не задействован.

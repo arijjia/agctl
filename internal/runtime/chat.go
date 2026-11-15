@@ -38,6 +38,9 @@ type ChatSpec struct {
 	// (локальный режим agctl dev: родная папка проектов разработчика).
 	// Пусто = личный work-каталог в доме платформы. Только Docker-бэкенд.
 	WorkDir string
+	// Local — локальный режим agctl dev: без плагина «Кабинет», реестр
+	// воркспейсов dsh сверяется с содержимым /workspace. Только Docker-бэкенд.
+	Local bool
 }
 
 // ChatHandle describes one running runtime generation. Endpoint is private to

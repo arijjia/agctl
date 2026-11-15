@@ -486,10 +486,28 @@ func EnsurePermissionDefaults(home string, fullAccess bool) error {
 // homes. It is idempotent and also upgrades DSH_HOME volumes seeded by older
 // agctl builds. Dev workspaces keep the ordinary DSH web UI.
 func EnsureChatPlugins(home string, skelFS fs.FS) error {
+	return ensureChatPlugins(home, skelFS, false)
+}
+
+// EnsureChatPluginsLocal — то же для локального режима (agctl dev): плагин
+// «Кабинет» (профиль, роли, статистика, SSH, справка платформы) локально не
+// нужен — его нет в бандлах, а на томе, засеянном раньше, он вычищается из
+// node_modules, package.json и cordis.patch.yml.
+func EnsureChatPluginsLocal(home string, skelFS fs.FS) error {
+	return ensureChatPlugins(home, skelFS, true)
+}
+
+func ensureChatPlugins(home string, skelFS fs.FS, local bool) error {
 	if skelFS == nil {
 		return fmt.Errorf("provision: chat plugin skeleton is nil")
 	}
 	bundles := []string{cabinetBundle, chatSessionFilesBundle, chatBrandBundle, workspaceConsoleBundle}
+	if local {
+		bundles = []string{chatSessionFilesBundle, chatBrandBundle, workspaceConsoleBundle}
+		if err := os.RemoveAll(filepath.Join(home, "profiles", "web", "node_modules", filepath.FromSlash(cabinetBundle))); err != nil {
+			return fmt.Errorf("provision: remove cabinet: %w", err)
+		}
+	}
 	for _, bundle := range bundles {
 		dst := filepath.Join(home, "profiles", "web", "node_modules", filepath.FromSlash(bundle))
 		src := "dsh-skel/profiles/web/node_modules/" + bundle
@@ -540,6 +558,17 @@ func EnsureChatPlugins(home string, skelFS fs.FS) error {
 	}
 	bundlesAny, _ := profile["bundles"].([]any)
 	changed := false
+	if local {
+		kept := bundlesAny[:0:0]
+		for _, b := range bundlesAny {
+			if s, _ := b.(string); s == cabinetBundle {
+				changed = true
+				continue
+			}
+			kept = append(kept, b)
+		}
+		bundlesAny = kept
+	}
 	for _, bundle := range bundles {
 		has := false
 		for _, b := range bundlesAny {
@@ -578,6 +607,12 @@ func EnsureChatPlugins(home string, skelFS fs.FS) error {
 		{"agctl-chat-brand", chatBrandBundle},
 		{"agctl-workspace-console", workspaceConsoleBundle},
 	}
+	if local {
+		entries = entries[1:]
+		if patch, err = dropPatchPlugin(patch, cabinetBundle); err != nil {
+			return err
+		}
+	}
 	for _, item := range entries {
 		if bytes.Contains(patch, []byte(item.bundle)) {
 			continue
@@ -604,6 +639,30 @@ func EnsureChatPlugins(home string, skelFS fs.FS) error {
 		return fmt.Errorf("provision: chat profile patch write: %w", err)
 	}
 	return nil
+}
+
+// dropPatchPlugin убирает из cordis.patch.yml записи плагина с именем bundle
+// (YAML-список записей {id, name, …}); без таких записей патч не меняется.
+func dropPatchPlugin(patch []byte, bundle string) ([]byte, error) {
+	if !bytes.Contains(patch, []byte(bundle)) {
+		return patch, nil
+	}
+	var entries []map[string]any
+	if err := yaml.Unmarshal(patch, &entries); err != nil {
+		return nil, fmt.Errorf("provision: chat profile patch parse: %w", err)
+	}
+	kept := entries[:0]
+	for _, e := range entries {
+		if name, _ := e["name"].(string); name == bundle {
+			continue
+		}
+		kept = append(kept, e)
+	}
+	out, err := yaml.Marshal(kept)
+	if err != nil {
+		return nil, fmt.Errorf("provision: chat profile patch: %w", err)
+	}
+	return out, nil
 }
 
 const (
