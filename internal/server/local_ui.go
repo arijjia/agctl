@@ -153,7 +153,7 @@ func (s *Server) handleLocalSecretPut(w http.ResponseWriter, r *http.Request, id
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.afterLocalSecretChange(name)
+	s.afterLocalSecretChange(name, req.Value)
 	_ = s.db.Audit(id.Login, "local.secret.set", name, "")
 	writeJSON(w, http.StatusOK, map[string]any{"name": name, "set": true})
 }
@@ -164,16 +164,19 @@ func (s *Server) handleLocalSecretDelete(w http.ResponseWriter, r *http.Request,
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.afterLocalSecretChange(name)
+	s.afterLocalSecretChange(name, "")
 	_ = s.db.Audit(id.Login, "local.secret.delete", name, "")
 	writeJSON(w, http.StatusOK, map[string]any{"name": name, "set": false})
 }
 
-// afterLocalSecretChange — ключ модели сразу в провайдер сервера; всё
-// остальное — env контейнера: нужно перезапустить рабочее место.
-func (s *Server) afterLocalSecretChange(name string) {
+// afterLocalSecretChange — ключ модели и личные ключи доп. провайдеров
+// сразу в провайдер сервера; всё остальное — env контейнера: нужно
+// перезапустить рабочее место.
+func (s *Server) afterLocalSecretChange(name, value string) {
 	if name == "AGCTL_LLM_API_KEY" {
 		s.setDefaultLLMKey(s.localHooks().LLMKey())
+	} else {
+		s.setDefaultLLMExtraKey(name, value)
 	}
 	s.chatMu.Lock()
 	running := s.chats[s.local.ownerID] != nil

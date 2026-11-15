@@ -29,7 +29,42 @@ func (h *devHooks) cfg() *localmode.Config {
 	return cfg
 }
 
-func (h *devHooks) Entries() []localmode.Entry { return localmode.Entries(h.cfg(), h.store) }
+// Entries — «Доступы» лаунчера: манифест/хранилище + личные ключи доп.
+// провайдеров профиля (extra_providers с api_key_env): подписка «провайдер
+// + ключ» — каждый разработчик вводит свой токен, значение не покидает
+// хранилище ОС.
+func (h *devHooks) Entries() []localmode.Entry {
+	entries := localmode.Entries(h.cfg(), h.store)
+	if h.prof == nil {
+		return entries
+	}
+	seen := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		seen[e.Name] = true
+	}
+	for _, p := range h.prof.LLM.ExtraProviders {
+		env := strings.TrimSpace(p.APIKeyEnv)
+		if env == "" || seen[env] {
+			continue
+		}
+		seen[env] = true
+		hint := strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
+		if models := strings.TrimSpace(p.Models); models != "" {
+			hint += " · модели: " + models
+		}
+		_, setErr := h.store.Get(env)
+		entries = append(entries, localmode.Entry{
+			Name:   env,
+			Title:  "Ключ " + strings.TrimSpace(p.Name) + " (личный)",
+			Hint:   hint,
+			Group:  "llm",
+			Secret: true,
+			Known:  true,
+			Set:    setErr == nil,
+		})
+	}
+	return entries
+}
 
 func (h *devHooks) SetValue(name, value string, plain bool) error {
 	return localmode.SetValue(h.home, h.store, name, value, plain)
