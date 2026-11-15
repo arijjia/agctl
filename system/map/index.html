@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>agctl — карта системы</title>
+<!-- Вкладки карт для просмотра с диска (file://): make map открывает этот файл.
+     Сервер agctl отдаёт те же вкладки на /map (internal/server/map.go). -->
+<style>
+  html, body { margin: 0; height: 100%; background: #0b1020; color: #cbd5e1; font-family: system-ui }
+  body { display: flex; flex-direction: column }
+  nav { display: flex; gap: 4px; align-items: center; padding: 8px 14px; border-bottom: 1px solid #1e293b }
+  nav b { margin-right: 12px }
+  nav a { color: #94a3b8; text-decoration: none; padding: 6px 12px; border-radius: 6px }
+  nav a.on { background: #1e293b; color: #f8fafc }
+  nav a:hover { color: #f8fafc }
+  iframe { flex: 1; border: 0; width: 100% }
+</style>
+<nav>
+  <b>Карта системы agctl</b>
+  <a href="#agctl-processes">Сервер — один хост</a>
+  <a href="#agctl-local">Ноутбук — локальный режим</a>
+  <a href="#agctl-cluster">Кластер: k8s | ax</a>
+</nav>
+<iframe title="карта"></iframe>
+<script>
+  const tabs = [...document.querySelectorAll("nav a")];
+  const frame = document.querySelector("iframe");
+  function show() {
+    const want = location.hash.slice(1);
+    const tab = tabs.find((a) => a.hash.slice(1) === want) || tabs[0];
+    tabs.forEach((a) => a.classList.toggle("on", a === tab));
+    const src = tab.hash.slice(1) + ".html";
+    if (frame.getAttribute("src") !== src) frame.setAttribute("src", src);
+  }
+  addEventListener("hashchange", show);
+  show();
+</script>

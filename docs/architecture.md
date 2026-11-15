@@ -248,24 +248,31 @@ host port; это не «слушать всю LAN». Почему релея н
 
 ## 7. Физическая карта и код
 
-Физическая карта — `system/map/agctl-processes.html`; источник —
-`system/map/agctl-processes.architecture.json` (улики проверяются `archify`
-против revision в meta). Узлы — процессы или файлы/внешние сущности, рамки —
-реальные host/container границы. Один персональный контейнер v3 содержит
-dsh web (bind на eth0 контейнера; релей удалён) и, для developer, sshd;
-`agctl serve` и go-git autosave —
-один Go-процесс, горутины не отдельные процессы. Рамка «Кластер» —
-альтернативные бэкенды `--runtime k8s | ax` (под пользователя; актор
-Substrate с `agctl ax-runner` как PID 1), egress-allowlist — opt-in сеть
-Docker. Подпись внешнего LLM на карте — из профиля организации
-(`map.llm_label`; нейтральный `agctl` — `LLM gateway`).
+Карта системы — три archify-диаграммы в `system/map/`, каждая — вкладка
+страницы `/map` (за сессией) и `system/map/index.html` (с диска, `make map`):
 
-Рабочий цикл: `make map` проверяет спецификацию (`bin/map-check.py`: ссылки
+- `agctl-processes` — «Сервер — один хост»: процессы, порты, протоколы
+  (старый экспериментальный `agctl local connect` на карте не рисуется — он
+  только за флагом `--experimental-local-bridge`);
+- `agctl-local` — «Ноутбук»: локальный режим без сервера (`agctl dev`),
+  наружу ходит только LiteLLM; CLI, фоновый
+  `agctl dev serve` (лаунчер, подготовка образа, шлюз чата, мост к хосту),
+  хранилище ОС, `~/.agctl-dev`, контейнер в локальном Docker, папка проектов;
+- `agctl-cluster` — альтернативные бэкенды `--runtime k8s | ax` (под
+  пользователя; актор Substrate с `agctl ax-runner` как PID 1).
+
+Источник каждой — `<имя>.architecture.json` (улики — файлы и строки кода по
+revision в meta). Узлы — процессы или файлы/внешние сущности, рамки —
+реальные host/container границы. Один персональный контейнер v3 содержит
+dsh web (bind на eth0 контейнера) и, для developer, sshd; `agctl serve` и
+go-git autosave — один Go-процесс, горутины не отдельные процессы.
+Egress-allowlist — opt-in сеть Docker. Подпись внешнего LLM — из профиля
+организации (`map.llm_label`; нейтральный `agctl` — `LLM gateway`).
+
+Рабочий цикл: `make map` проверяет спецификации (`bin/map-check.py`: ссылки
 между узлами, улики против строк кода, sha256 спецификации против receipt
-`agctl-processes.delivery.json`), пересобирает HTML, если `archify` есть в
-PATH (`ARCHIFY=…`), и открывает карту; `make map_build` — только пересборка,
-`make map_check` — только проверка. Спецификация сверена с кодом по пину
-`03e00df` (2026-11-13: k8s/ax, egress-allowlist, prewarm-пул, `/map`,
-локальный go-git autosave без push); HTML пересобирается archify при
-следующем прогоне `make map_build` — пока receipt указывает на пин `f0c6c71`,
-`make map` об этом предупреждает.
+`<имя>.delivery.json`), пересобирает HTML, если archify доступен
+(`ARCHIFY="node …/archify/bin/archify.mjs"`), и открывает карту `MAP_NAME`;
+`make map_build` — только пересборка всех карт (archify проверяет схему,
+раскладку, читаемость на 1440×900 и браузерный рендер), `make map_check` —
+только проверка.
