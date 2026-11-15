@@ -99,40 +99,6 @@ spec:
   resources:
     requests:
       storage: 1Gi
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: agctl
-  namespace: agctl
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: agctl
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: agctl
-    spec:
-      containers:
-        - name: agctl
-          image: agctl-serve:dev
-          imagePullPolicy: Never
-          env:
-            - name: AGCTL_STORE_DSN
-              value: postgres://agctl:ha-smoke-pass@postgres.agctl.svc.cluster.local:5432/agctl?sslmode=disable
-            - name: AGCTL_HA_LEADER_LEASE
-              value: agctl-leader
-            - name: AGCTL_RUNTIME
-              value: k8s
-          volumeMounts:
-            - name: home
-              mountPath: /var/lib/agctl
-      volumes:
-        - name: home
-          persistentVolumeClaim:
-            claimName: agctl-home
 YAML
 kubectl apply -f deploy/k8s/base/namespace.yaml >/dev/null
 kubectl apply -f deploy/k8s/base/rbac.yaml >/dev/null
@@ -163,6 +129,43 @@ spec:
 YAML
 kubectl -n "$NS" wait --for=condition=complete job/agctl-keyinit --timeout=120s >/dev/null
 kubectl -n "$NS" rollout status statefulset/postgres --timeout=180s >/dev/null
+# Шлюз — после готовности Postgres (ping при старте должен пройти сразу).
+cat <<'YAML' | kubectl apply -f - >/dev/null
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agctl
+  namespace: agctl
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agctl
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agctl
+    spec:
+      serviceAccountName: agctl
+      containers:
+        - name: agctl
+          image: agctl-serve:dev
+          imagePullPolicy: Never
+          env:
+            - name: AGCTL_STORE_DSN
+              value: postgres://agctl:ha-smoke-pass@postgres.agctl.svc.cluster.local:5432/agctl?sslmode=disable
+            - name: AGCTL_HA_LEADER_LEASE
+              value: agctl-leader
+            - name: AGCTL_RUNTIME
+              value: k8s
+          volumeMounts:
+            - name: home
+              mountPath: /var/lib/agctl
+      volumes:
+        - name: home
+          persistentVolumeClaim:
+            claimName: agctl-home
+YAML
 kubectl -n "$NS" rollout status deployment/agctl --timeout=240s >/dev/null
 kubectl -n "$NS" get pods -o wide | grep -E "agctl-|postgres" | awk '{print "  " $1 " " $6 " " $7}'
 for p in $(kubectl -n "$NS" get pod -l app.kubernetes.io/name=agctl -o name); do
