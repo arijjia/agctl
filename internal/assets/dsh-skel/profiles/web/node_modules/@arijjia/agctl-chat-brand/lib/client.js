@@ -202,7 +202,12 @@ window.__ModuleLoader__.load({
 				const button = ev.target && ev.target.closest && ev.target.closest('button[aria-label], button[title]');
 				if (!button) return;
 				const labels = [button.getAttribute('aria-label'), button.getAttribute('title')].filter(Boolean);
-				if (!labels.some((label) => /^add workspace$/i.test(label.trim()))) return;
+				// dsh 0.2.2 локализовал интерфейс: нативная кнопка добавления
+				// воркспейса получила aria-label «Добавить рабочую область», и
+				// старый английский матч перестал срабатывать — открывался
+				// встроенный DirectoryPicker контейнерных каталогов вместо
+				// диалога agctl. Матчим оба варианта локализации.
+				if (!labels.some((label) => /^(add workspace|добавить рабочую область)$/i.test(label.trim()))) return;
 				ev.preventDefault();
 				ev.stopImmediatePropagation();
 				void openWorkspaceCreateDialog().catch((error) => window.alert("Не удалось открыть создание воркспейса: " + error.message));

@@ -300,3 +300,15 @@ test("удаление воркспейса = удаление каталога:
 	assert.equal(fromPath(undefined), "");
 	assert.equal(fromPath(null), "");
 });
+
+test("перехват кнопки добавления воркспейса принимает RU-локализацию dsh", async () => {
+	const src = await readFile(clientPath, "utf8");
+	// dsh 0.2.2 локализовал aria-label нативной кнопки («Добавить рабочую
+	// область»); матч только по "add workspace" открывал контейнерный
+	// DirectoryPicker вместо диалога agctl (поймано e2e developer-flow).
+	assert.match(
+		src,
+		/\/\^\(add workspace\|добавить рабочую область\)\$\/i/,
+		"матч перехвата обязан принимать и EN, и RU aria-label",
+	);
+});
