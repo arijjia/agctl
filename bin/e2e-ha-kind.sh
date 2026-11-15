@@ -26,6 +26,7 @@ if ! kind get clusters 2>/dev/null | grep -qx "$KIND_CLUSTER"; then
   kind create cluster --name "$KIND_CLUSTER" --wait 120s >/dev/null 2>&1
 fi
 kubectl config use-context "kind-${KIND_CLUSTER}" >/dev/null
+kubectl apply -f deploy/k8s/base/namespace.yaml >/dev/null
 
 echo "▶ образ шлюза"
 ARCH=$(docker version --format '{{.Server.Arch}}' | sed -e 's/aarch64/arm64/' -e 's/x86_64/amd64/')
