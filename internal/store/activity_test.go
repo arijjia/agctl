@@ -5,7 +5,11 @@ package store
 // регистрации по дням. Данные вставляются с явным ts (UTC «YYYY-MM-DD …»),
 // как их пишет SQLite datetime('now').
 
-import "testing"
+import (
+	"os"
+	"strings"
+	"testing"
+)
 
 func TestProxyRequestsActivity(t *testing.T) {
 	db := openTest(t)
@@ -27,18 +31,54 @@ func TestProxyRequestsActivity(t *testing.T) {
 	// Все времена — от одного начала текущего часа (hs), вычисленного один
 	// раз: «now − 5 минут» в первые минуты часа уезжал в прошлый час, и тест
 	// падал на CI, попавшем на смену часа. Начало часа всегда ≤ now.
-	hs := bucket("strftime('%Y-%m-%d %H:00:00', 'now')")
+	// Диалектность (карточка ha-control-plane): pg — to_char/to_timestamp,
+	// sqlite — strftime/datetime; бакеты-строки Z-суффикса — срезы hs.
+	pg := os.Getenv("AGCTL_TEST_STORE") == "pg"
+	var hs string
+	if pg {
+		hs = bucket(`to_char(now(), 'YYYY-MM-DD HH24:00:00')`)
+	} else {
+		hs = bucket("strftime('%Y-%m-%d %H:00:00', 'now')")
+	}
+	tsFmt := func(format string) string { // sqlite fmt-строка → pg-формат
+		return strings.NewReplacer(
+			"%Y-%m-%dT%H:00:00Z", `YYYY-MM-DD"T"HH24:00:00"Z"`,
+			"%Y-%m-%dT00:00:00Z", `YYYY-MM-DD"T"00:00:00"Z"`,
+			"%Y-%m-%d %H:%M:%S", "YYYY-MM-DD HH24:MI:SS",
+		).Replace(format)
+	}
 	at := func(mods ...string) string {
+		if pg {
+			expr := `to_char(to_timestamp('` + hs + `', 'YYYY-MM-DD HH24:MI:SS')`
+			for _, m := range mods {
+				expr += ` + interval '` + m + `'`
+			}
+			return expr + `, 'YYYY-MM-DD HH24:MI:SS')`
+		}
 		expr := "datetime('" + hs + "'"
 		for _, m := range mods {
 			expr += ", '" + m + "'"
 		}
 		return expr + ")"
 	}
-	curHour := bucket("strftime('%Y-%m-%dT%H:00:00Z', '" + hs + "')")
-	curDay := bucket("strftime('%Y-%m-%dT00:00:00Z', '" + hs + "')")
-	yestDay := bucket("strftime('%Y-%m-%dT00:00:00Z', '" + hs + "', '-1 day')")
-	lastHour := bucket("strftime('%Y-%m-%dT%H:00:00Z', '" + hs + "', '-1 hour')")
+	bucketOf := func(format string, mods ...string) string {
+		if pg {
+			expr := `to_char(to_timestamp('` + hs + `', 'YYYY-MM-DD HH24:MI:SS')`
+			for _, m := range mods {
+				expr += ` + interval '` + m + `'`
+			}
+			return expr + `, '` + tsFmt(format) + `')`
+		}
+		expr := "strftime('" + format + "', '" + hs + "'"
+		for _, m := range mods {
+			expr += ", '" + m + "'"
+		}
+		return expr + ")"
+	}
+	curHour := bucket(bucketOf("%Y-%m-%dT%H:00:00Z"))
+	curDay := bucket(bucketOf("%Y-%m-%dT00:00:00Z"))
+	yestDay := bucket(bucketOf("%Y-%m-%dT00:00:00Z", "-1 day"))
+	lastHour := bucket(bucketOf("%Y-%m-%dT%H:00:00Z", "-1 hour"))
 
 	rows := []row{
 		// текущий час: 2 запроса от anna, один из них — ошибка
@@ -65,8 +105,12 @@ func TestProxyRequestsActivity(t *testing.T) {
 	// bob — вчера, но строго внутри вчерашнего дня (полночь вчерашнего дня +
 	// 10 часов): привязка «текущий час - 1 день - 3 часа» около полуночи UTC
 	// падала на позавчерашний день (флейк TestProxyRequestsActivity).
+	bobAt := "datetime('" + yestDay[:10] + " 10:00:00')"
+	if pg {
+		bobAt = "to_char(to_timestamp('" + yestDay[:10] + " 10:00:00', 'YYYY-MM-DD HH24:MI:SS'), 'YYYY-MM-DD HH24:MI:SS')"
+	}
 	if _, err := db.Exec(`INSERT INTO users(login, password_hash, role, created_at)
-		VALUES ('bob', 'h', 'user', datetime('` + yestDay[:10] + ` 10:00:00'))`); err != nil {
+		VALUES ('bob', 'h', 'user', ` + bobAt + `)`); err != nil {
 		t.Fatalf("user insert: %v", err)
 	}
 

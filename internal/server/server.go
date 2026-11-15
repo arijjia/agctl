@@ -50,24 +50,24 @@ type Config struct {
 	DevImages   []string // каталог образов лаунчера developer'а (пусто = только cfg.Image)
 	// BaseImage — базовый agctl-dsh под надстройкой профиля (images.dockerfile);
 	// пусто или равен Image = надстройки нет.
-	BaseImage               string
-	BinDir                  string
-	Version                 string // версия agctl (метка контейнеров, диагностика дрейфа сборок)
-	SecureCookies           bool   // true when agctl is served behind a trusted HTTPS terminator
-	PublicURL               string // базовый URL шлюза, видимый песочницам (fetch-at-boot раннера AX); пусто = derive из --addr
-	AutosaveEvery           time.Duration
-	CORSOrigins             []string           // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
-	Tier0                   bool               // корень платформы ведёт в персональный чат (/chat/)
-	EgressAllowlist         bool               // чат-контейнеры на выделенной сети: egress только DNS и хост-шлюз (карточка egress-allowlist)
-	LauncherSlotsMax        int                // максимум живых слотов developer'а (--launcher-slots-max; карточка developer-multi-containers, 0/вне диапазона = дефолт 3)
+	BaseImage        string
+	BinDir           string
+	Version          string // версия agctl (метка контейнеров, диагностика дрейфа сборок)
+	SecureCookies    bool   // true when agctl is served behind a trusted HTTPS terminator
+	PublicURL        string // базовый URL шлюза, видимый песочницам (fetch-at-boot раннера AX); пусто = derive из --addr
+	AutosaveEvery    time.Duration
+	CORSOrigins      []string // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
+	Tier0            bool     // корень платформы ведёт в персональный чат (/chat/)
+	EgressAllowlist  bool     // чат-контейнеры на выделенной сети: egress только DNS и хост-шлюз (карточка egress-allowlist)
+	LauncherSlotsMax int      // максимум живых слотов developer'а (--launcher-slots-max; карточка developer-multi-containers, 0/вне диапазона = дефолт 3)
 	// HALeaderLease — имя coordination.k8s.io Lease для выбора лидера фоновых
 	// циклов при 2+ репликах шлюза (карточка ha-control-plane; --ha-leader-lease).
 	// Пусто = фолбэк single-реплики: циклы в процессе без выборов.
 	HALeaderLease string
 	// HALeaderKubeconfig — kubeconfig для Lease-клиента (пусто = in-cluster);
 	// HALeaderNamespace — namespace Lease (пусто = serviceaccount/env/default).
-	HALeaderKubeconfig string
-	HALeaderNamespace  string
+	HALeaderKubeconfig      string
+	HALeaderNamespace       string
 	ChatTTL                 time.Duration      // idle TTL персонального runtime (по умолчанию 60 мин)
 	ChatPrewarmN            int                // prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл); он же — потолок пула
 	ChatPrewarmEvery        time.Duration      // период цикла подогрева (по умолчанию 15 мин)
@@ -127,13 +127,13 @@ type Server struct {
 	// первом переходе кого-то в лидеры (сигнал стартовому свипу).
 	leader      *leaderelection.Holder
 	leaderReady chan struct{}
-	llmMu         sync.Mutex             // виртуальные ключи LiteLLM по квотам
-	llmKeys       map[int64]*llmKeyState // userID → заминченный ключ (ротация при смене квоты)
-	warmHits      atomic.Int64           // ensureChat из тёплого кэша (hit-rate пула)
-	coldStarts    atomic.Int64           // холодные старты ensureChat: счётчик и суммарное время
-	coldTotalMS   atomic.Int64
-	startedAt     time.Time    // время старта серва (сводка админки)
-	proxyAuditN   atomic.Int64 // счётчик записей журнала шлюза для периодической обрезки
+	llmMu       sync.Mutex             // виртуальные ключи LiteLLM по квотам
+	llmKeys     map[int64]*llmKeyState // userID → заминченный ключ (ротация при смене квоты)
+	warmHits    atomic.Int64           // ensureChat из тёплого кэша (hit-rate пула)
+	coldStarts  atomic.Int64           // холодные старты ensureChat: счётчик и суммарное время
+	coldTotalMS atomic.Int64
+	startedAt   time.Time    // время старта серва (сводка админки)
+	proxyAuditN atomic.Int64 // счётчик записей журнала шлюза для периодической обрезки
 
 }
 
