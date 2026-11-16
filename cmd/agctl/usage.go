@@ -69,7 +69,6 @@ var usageSections = []usageSection{
 		title: "Служебные",
 		rows: []usageRow{
 			{name: "backlog", desc: []string{"карточки задач: new|list|top|check|start|done|cancel|note|migrate"}},
-			{name: "local connect", desc: []string{"experimental: коннектор локального backend к серверу"}},
 			{name: "init-chat-home", desc: []string{"init-контейнер K8s: подготовить DSH_HOME на томе (--home, --refresh-provider)"}},
 			{name: "ax-runner", desc: []string{"PID 1 песочницы Google AX / Agent Substrate (образ agctl-dsh)"}},
 			{name: "version", desc: []string{"версия и сборка"}},

@@ -82,7 +82,7 @@ func prescanFlag(args []string, name, def string) string {
 }
 
 // main — диспетчер подкоманд CLI: serve, migrate, init-chat-home,
-// seed-demo-users, backlog, connect, local, sync, version.
+// seed-demo-users, backlog, connect, sync, version.
 // Неизвестная команда печатает usage и завершает процесс кодом 2.
 func main() {
 	log.SetFlags(log.Ltime)
@@ -109,13 +109,6 @@ func main() {
 		cmdConfig(os.Args[2:])
 	case "connect":
 		cmdConnect(os.Args[2:])
-	case "local":
-		if len(os.Args) >= 3 && os.Args[2] == "connect" {
-			cmdLocalConnect(os.Args[3:])
-		} else {
-			fmt.Fprintln(os.Stderr, "использование: agctl local connect --server URL --grant TOKEN [--launch-dsh] ...")
-			os.Exit(2)
-		}
 	case "sync":
 		cmdSync(os.Args[2:])
 	case "dev": // локальный режим: платформа на машине разработчика
@@ -206,7 +199,6 @@ func cmdServeWith(args []string, local *server.LocalMode, onReady func(context.C
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")
 	secureCookies := fsSet.Bool("secure-cookies", false, "выставлять Secure на cookie (если TLS завершается на доверенном ingress/reverse proxy)")
 	publicURL := fsSet.String("public-url", envOr("AGCTL_PUBLIC_URL", cfg.Serve.PublicURL), "базовый URL шлюза, видимый песочницам (fetch-at-boot раннера AX); пусто = http://<первый не-loopback IP>:<порт --addr>")
-	experimentalLocalBridge := fsSet.Bool("experimental-local-bridge", false, "experimental local connector pairing API (requires trusted TLS ingress and --secure-cookies)")
 	chatTTLMin := fsSet.Int("chat-ttl-min", nonZeroOr(cfg.Serve.ChatTTLMin, 60), "минуты простоя персонального контейнера до сна (том пользователя сохраняется)")
 	registerPerMin := fsSet.Int("register-per-min", nonZeroOr(cfg.Serve.RegisterPerMin, 30), "лимит регистраций с одного IP в минуту; 0 — отключить защиту (нагрузочные прогоны)")
 	corsOrigins := fsSet.String("cors-origin", envOr("AGCTL_CORS_ORIGINS", cfg.Serve.CORSOrigins), "точные origins через запятую, которым разрешён кросс-доменный /api (кабинет-плагин dsh web); пусто = CORS выключен")
@@ -234,9 +226,6 @@ func cmdServeWith(args []string, local *server.LocalMode, onReady func(context.C
 		if r < 0x20 || r == 0x7f {
 			log.Fatal("AGCTL_LLM_API_KEY должен содержать только raw-токен в одну строку (без Bearer, кавычек и переводов строки)")
 		}
-	}
-	if *experimentalLocalBridge && !*secureCookies && !isLoopbackAddr(*addr) {
-		log.Fatal("--experimental-local-bridge requires --secure-cookies behind a trusted TLS ingress (plain loopback --addr is allowed for local development only)")
 	}
 
 	defaultLLM := provision.Provider{
@@ -268,26 +257,25 @@ func cmdServeWith(args []string, local *server.LocalMode, onReady func(context.C
 		log.Fatal(err)
 	}
 	srvCfg := server.Config{
-		Home:                    absHome,
-		Addr:                    *addr,
-		MemoryBytes:             int64(*memGB * 1024 * 1024 * 1024),
-		NanoCPUs:                int64(*cpus * 1e9),
-		Image:                   workImage,
-		BaseImage:               baseImage,
-		DevImages:               splitCSV(*devImages),
-		DevEnv:                  splitCSV(*devEnv),
-		BinDir:                  firstNonEmpty(*binDir, "dist"),
-		Version:                 version,
-		SecureCookies:           *secureCookies,
-		PublicURL:               derivePublicURL(*publicURL, *addr),
-		ExperimentalLocalBridge: *experimentalLocalBridge,
-		CORSOrigins:             splitCSV(*corsOrigins),
-		Tier0:                   *tier0,
-		ChatTTL:                 time.Duration(*chatTTLMin) * time.Minute,
-		RegisterPerMinute:       regLimitValue(*registerPerMin),
-		DefaultLLM:              defaultLLM,
-		Profile:                 prof,
-		Local:                   local,
+		Home:              absHome,
+		Addr:              *addr,
+		MemoryBytes:       int64(*memGB * 1024 * 1024 * 1024),
+		NanoCPUs:          int64(*cpus * 1e9),
+		Image:             workImage,
+		BaseImage:         baseImage,
+		DevImages:         splitCSV(*devImages),
+		DevEnv:            splitCSV(*devEnv),
+		BinDir:            firstNonEmpty(*binDir, "dist"),
+		Version:           version,
+		SecureCookies:     *secureCookies,
+		PublicURL:         derivePublicURL(*publicURL, *addr),
+		CORSOrigins:       splitCSV(*corsOrigins),
+		Tier0:             *tier0,
+		ChatTTL:           time.Duration(*chatTTLMin) * time.Minute,
+		RegisterPerMinute: regLimitValue(*registerPerMin),
+		DefaultLLM:        defaultLLM,
+		Profile:           prof,
+		Local:             local,
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: drop-legacy-local-connector
 title: "Удалить старый WSS-коннектор agctl local connect (internal/bridge)"
-status: open
+status: done
 priority: P2
 size: S
 area: platform
@@ -25,12 +25,13 @@ depends: []
 
 ## Критерии готовности
 
-- [ ] Удалены пакет, ручки, CLI-подкоманда `local`, флаг serve, e2e-скрипт,
+- [x] Удалены пакет, ручки, CLI-подкоманда `local`, флаг serve, e2e-скрипт,
       методы store, автодополнение и справка.
-- [ ] Таблица `local_connectors` удаляется миграцией (008 не трогаем).
-- [ ] `go vet`, `go test ./...` зелёные; документация без упоминаний коннектора
+- [x] Таблица `local_connectors` удаляется миграцией (008 не трогаем).
+- [x] `go vet`, `go test ./...` зелёные; документация без упоминаний коннектора
       кроме истории.
 
 ## Журнал
 
 - 2026-11-16: создано по итогам ревью архитектуры (один бинарь на три режима).
+- 2026-11-16: Сделано: удалены internal/bridge, server/local_bridge.go, cmd/agctl/local.go, маршруты /api/local-backend/*, флаг --experimental-local-bridge, store.LocalConnector*, bin/e2e-local-bridge.sh, справка/автодополнение; миграция 013 удаляет таблицу; go mod tidy убрал websocket-зависимость. go vet/test зелёные.

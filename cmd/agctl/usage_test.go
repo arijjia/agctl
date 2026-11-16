@@ -18,7 +18,7 @@ func TestRenderUsagePlain(t *testing.T) {
 	}
 	for _, name := range []string{
 		"serve", "migrate", "seed-demo-users", "backlog", "connect",
-		"local connect", "sync", "completion fish", "config", "version", "help",
+		"sync", "completion fish", "config", "version", "help",
 		"AGCTL_HOME", "AGCTL_CONFIG",
 	} {
 		if !strings.Contains(out, name) {
