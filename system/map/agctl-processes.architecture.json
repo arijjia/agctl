@@ -9,7 +9,7 @@
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "a873b72d91a84c69dc08066c40d40563c747c103"
+      "revision": "2fd974d961738dc551cba8e84a335eb3903003d0"
     },
     "views": [
       {
@@ -69,7 +69,7 @@
         "note": "Кастомизация — данные профиля (узел-файлы); шлюзы инжектят брендинг; ядро agctl без литералов организаций (guard)"
       }
     ],
-    "subtitle": "agctl serve — один Go-процесс: блоки в его рамке — не отдельные процессы · ноутбук без сервера (agctl dev) и кластер k8s|ax — на соседних вкладках"
+    "subtitle": "agctl-server serve — один Go-процесс: блоки в его рамке — не отдельные процессы · ноутбук без сервера (agctl dev) и кластер k8s|ax — на соседних вкладках"
   },
   "components": [
     {
@@ -94,8 +94,8 @@
         },
         {
           "path": "internal/server/chat.go",
-          "line": 848,
-          "end_line": 876,
+          "line": 842,
+          "end_line": 870,
           "label": "rootEntry: редирект по роли из сессии"
         },
         {
@@ -127,8 +127,8 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 426,
-          "end_line": 434,
+          "line": 408,
+          "end_line": 416,
           "label": "публикация :3080 и :2222 только на 127.0.0.1"
         },
         {
@@ -234,8 +234,8 @@
         },
         {
           "path": "internal/server/chat.go",
-          "line": 714,
-          "end_line": 732,
+          "line": 708,
+          "end_line": 726,
           "label": "reapIdleChats: сон по TTL, том живёт"
         }
       ]
@@ -289,14 +289,14 @@
       "sources": [
         {
           "path": "internal/server/chat.go",
-          "line": 877,
-          "end_line": 942,
+          "line": 871,
+          "end_line": 936,
           "label": "chatProxy: ReverseProxy + mint, dsh-auth cookie"
         },
         {
           "path": "internal/server/chat.go",
-          "line": 837,
-          "end_line": 838,
+          "line": 832,
+          "end_line": 833,
           "label": "HTML прогрева, пока рантайм стартует"
         },
         {
@@ -412,8 +412,8 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 449,
-          "end_line": 450,
+          "line": 431,
+          "end_line": 432,
           "label": "work → /workspace, dsh-home → /home/dsh bind"
         },
         {
@@ -446,7 +446,7 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 449,
+          "line": 431,
           "label": "work → /workspace bind"
         },
         {
@@ -540,8 +540,8 @@
         },
         {
           "path": "internal/server/chat.go",
-          "line": 696,
-          "end_line": 699,
+          "line": 694,
+          "end_line": 697,
           "label": "ключ — только у роли developer/admin"
         }
       ]
@@ -562,7 +562,7 @@
       "sources": [
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 398,
+          "line": 400,
           "label": "host-gateway в ExtraHosts контейнера"
         },
         {
@@ -601,8 +601,8 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 429,
-          "end_line": 434,
+          "line": 411,
+          "end_line": 416,
           "label": "2222 публикуется на loopback"
         }
       ]
@@ -656,8 +656,8 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 463,
-          "end_line": 470,
+          "line": 445,
+          "end_line": 452,
           "label": "Start: сеть и правила при EgressAllowlist"
         },
         {
@@ -689,7 +689,7 @@
     },
     {
       "kind": "region",
-      "label": "agctl serve",
+      "label": "agctl-server serve",
       "wraps": [
         "api",
         "store",
@@ -834,7 +834,7 @@
       "dot": "cyan",
       "title": "Сколько процессов, когда я захожу",
       "items": [
-        "Сервер всегда (режим docker): 2 — agctl serve + dockerd; SQLite и git — файлы и библиотека в процессе, не процессы. В кластере dockerd нет — под agctl-serve + API-сервер",
+        "Сервер всегда (режим docker): 2 — agctl-server serve + dockerd; SQLite и git — файлы и библиотека в процессе, не процессы. В кластере dockerd нет — под agctl-serve + API-сервер",
         "Вход/логин: +0 — экран рисует SPA agctl (go:embed), dsh ещё не существует",
         "Открылся /chat/: +1 — dsh web (bind на eth0); до готовности agctl отдаёт свой HTML прогрева",
         "Prewarm-пул (--chat-prewarm-n N): N последних активных пользователей держатся тёплыми — при логине их контейнер уже есть, +0 на входе",
@@ -864,7 +864,7 @@
       "title": "Персистентность: куда идут записи",
       "items": [
         "Рамка $AGCTL_HOME — файлы, не процесс: внутри agctl.db, secrets.key и данные пользователей u<id>",
-        "dsh web и процессы-дети читают/пишут файлы напрямую через RW bind mount; записи не проксируются через agctl serve",
+        "dsh web и процессы-дети читают/пишут файлы напрямую через RW bind mount; записи не проксируются через agctl-server serve",
         "Сейчас в коде: $AGCTL_HOME/chats/u<id>/{dsh-home,work}; цель v3 — u<id>/{dsh-home,workspace/<project>}, миграции пока нет",
         "Рамка Git: версии — workspace/<project> (go-git autosave: локальный commit, без remote и push); вне Git — dsh-home, agctl.db, secrets.key, контейнеры",
         "Контейнер можно удалить — том остаётся. Бэкап платформы = копия $AGCTL_HOME",
@@ -875,12 +875,12 @@
     },
     {
       "dot": "cyan",
-      "title": "agctl serve — сердце платформы",
+      "title": "agctl-server serve — сердце платформы",
       "items": [
         "Постоянно работающий управляющий процесс платформы на хосте: один Go-процесс, слушает :8929, принимает HTTP/WS/SSE.",
-        "Подрамка «agctl serve» на карте — логические блоки ОДНОГО процесса, не отдельные процессы: шлюз /chat/, шлюз /w/{id}/, менеджер рантаймов, REST API + auth, хранилище+секреты, фоновые горутины.",
+        "Подрамка «agctl-server serve» на карте — логические блоки ОДНОГО процесса, не отдельные процессы: шлюз /chat/, шлюз /w/{id}/, менеджер рантаймов, REST API + auth, хранилище+секреты, фоновые горутины.",
         "Менеджер рантаймов держит карту userID→runtime и лениво запускает рантайм пользователя через выбранный бэкенд (ChatProvider: docker | k8s | ax); TTL/reaper останавливает вычисления, но оставляет том.",
-        "agctl serve не запускает команды агента и не проксирует файловые записи: dsh и дочерние инструменты читают и пишут напрямую через RW bind mount.",
+        "agctl-server serve не запускает команды агента и не проксирует файловые записи: dsh и дочерние инструменты читают и пишут напрямую через RW bind mount.",
         "Фоновые задачи (autosave, reconcile, чистка сессий, prewarm-пул) — горутины в том же Go-процессе; SQLite и секреты — данные платформы в AGCTL_HOME.",
         "Брендинг и LLM-дефолты — из профиля организации (internal/profile: данные, не код; --profile/--profile-dir, make profile-fetch): шлюзы инжектят window.__AGCTL_BRAND__ в <head> до первого кадра; в ядре нет литералов организаций — guard-тест TestCoreIsOrganizationFree",
         "Админ-API: обзор, список/стат контейнеров, стоп/старт/рестарт, запросы шлюза, траектории (чтение sessions/ из томов), квоты — всё под requireAdmin и в audit"
@@ -903,7 +903,7 @@
       "items": [
         "Ядро agctl — универсальное: ни одного литерала организации в коде; проверяет guard-тест TestCoreIsOrganizationFree (internal/profile/guard_test.go)",
         "Кастомизация — данные-профиль: profile.yaml + assets/logo.png в отдельном репо (agctl-profile-utmn), приватность не зависит от ядра",
-        "agctl serve читает профиль при старте (--profile/--profile-dir, make profile-fetch) и инжектит window.__AGCTL_BRAND__ в <head> до первого кадра",
+        "agctl-server serve читает профиль при старте (--profile/--profile-dir, make profile-fetch) и инжектит window.__AGCTL_BRAND__ в <head> до первого кадра",
         "Дефолты чата и подпись LLM на этой карте берутся из профиля; секреты (API-ключи) в профиль не входят — env/SQLite как раньше",
         "Встроенный нейтральный профиль agctl: публичный OpenAI-совместимый провайдер по умолчанию, ключ только в .env хоста; профили организаций — отдельные приватные репо (make profile-fetch, make up PROFILE=<id>)"
       ]

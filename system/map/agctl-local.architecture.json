@@ -10,7 +10,7 @@
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "a873b72d91a84c69dc08066c40d40563c747c103"
+      "revision": "2fd974d961738dc551cba8e84a335eb3903003d0"
     },
     "views": [
       {
@@ -196,7 +196,7 @@
       "sources": [
         {
           "path": "internal/server/chat.go",
-          "line": 877,
+          "line": 871,
           "label": "chatProxy: прокси к dsh :3080"
         },
         {
