@@ -77,6 +77,9 @@ type Config struct {
 	AxProviderConfig func(task string) (json.RawMessage, bool)
 	// Local — однопользовательский локальный режим (agctl dev up); nil = сервер.
 	Local *LocalMode
+	// Modules — подключаемые части сервера (ServerModules() для agctl serve);
+	// локальный режим их не подключает.
+	Modules []Module
 }
 
 // RuntimeIface — то, что серверу нужно от docker-рантайма (мокается в тестах).
@@ -117,6 +120,7 @@ type Server struct {
 	coldStarts    atomic.Int64           // холодные старты ensureChat: счётчик и суммарное время
 	coldTotalMS   atomic.Int64
 	startedAt     time.Time    // время старта серва (сводка админки)
+	webFS         fs.FS        // корень SPA (страницы модулей /admin, /launcher)
 	local         *localState  // локальный режим (agctl dev): владелец и мост; nil — сервер
 	defaultLLMMu  sync.RWMutex // cfg.DefaultLLM меняется на ходу (лаунчер локального режима: ключ модели)
 	proxyAuditN   atomic.Int64 // счётчик записей журнала шлюза для периодической обрезки
@@ -297,20 +301,19 @@ func (s *Server) Close() {
 
 // ── маршруты ────────────────────────────────────────────────────────────────
 
-// Routes — http.Handler со всеми маршрутами (включая статику SPA).
+// Routes — http.Handler с маршрутами ядра, локального режима и подключённых
+// модулей (Config.Modules), включая статику SPA.
 func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux := http.NewServeMux()
+	s.webFS = webFS
 
 	if s.isLocal() {
 		s.registerLocalRoutes(mux)
 	}
-	mux.HandleFunc("POST /api/register", s.handleRegister)
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.handleMe)
-	// Раннер AX при каждом boot забирает конфиг провайдера по токену раннера
-	// (бэкенд ax, ProviderAtBoot): env задачи конфиг не содержит.
-	mux.HandleFunc("GET /ax/provider-config/{task}", s.handleAxProviderConfig)
+	mux.HandleFunc("GET /api/config", s.handleConfig)
 	mux.HandleFunc("GET /api/projects", s.requireUser(s.handleProjectsList))
 	mux.HandleFunc("POST /api/projects", s.requireUser(s.handleProjectCreate))
 	// Удаление воркспейса вместе с каталогом на диске (нативное удаление dsh
@@ -334,79 +337,23 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("PUT /api/projects/{name}/components", s.requireUser(s.handleProjectComponentsPut))
 	mux.HandleFunc("GET /api/projects/{name}/mcp", s.requireUser(s.handleProjectMcpGet))
 	mux.HandleFunc("PUT /api/projects/{name}/mcp", s.requireUser(s.handleProjectMcpPut))
+	mux.HandleFunc("PUT /api/projects/{name}/instructions", s.requireUser(s.handleProjectInstructions))
 	mux.HandleFunc("GET /api/chat/folders", s.requireUser(s.handleChatFoldersGet))
 	mux.HandleFunc("PUT /api/chat/folders", s.requireUser(s.handleChatFoldersPut))
-	mux.HandleFunc("GET /api/templates", s.requireUser(s.handleTemplates)) // legacy
-	mux.HandleFunc("GET /api/kits", s.requireUser(s.handleKits))
-	mux.HandleFunc("GET /api/workspaces", s.requireUser(s.handleWorkspacesList))
-	mux.HandleFunc("POST /api/workspaces", s.requireUser(s.handleWorkspaceCreate))
-	mux.HandleFunc("GET /api/workspaces/{id}", s.requireUser(s.handleWorkspaceGet))
-	mux.HandleFunc("POST /api/workspaces/{id}/start", s.requireUser(s.handleWorkspaceStart))
-	mux.HandleFunc("POST /api/workspaces/{id}/stop", s.requireUser(s.handleWorkspaceStop))
-	mux.HandleFunc("DELETE /api/workspaces/{id}", s.requireUser(s.handleWorkspaceDelete))
-	mux.HandleFunc("GET /api/workspaces/{id}/logs", s.requireUser(s.handleWorkspaceLogs))
 	mux.HandleFunc("PATCH /api/chat/sessions/{sessionID}/folder-instructions", s.requireUser(s.handleChatFolderInstructions)) // legacy session scope / project sync
-	mux.HandleFunc("PUT /api/projects/{name}/instructions", s.requireUser(s.handleProjectInstructions))
-	mux.HandleFunc("PATCH /api/workspaces/{id}/provider", s.requireUser(s.handleWorkspaceProvider))
-	mux.HandleFunc("PATCH /api/workspaces/{id}/ssh", s.requireUser(s.handleWorkspaceSSH))
-	mux.HandleFunc("GET /api/config", s.handleConfig)
-	mux.HandleFunc("POST /api/workspace-requests", s.requireUser(s.handleWorkspaceRequestCreate))
-	mux.HandleFunc("GET /api/workspace-requests", s.requireUser(s.handleWorkspaceRequestsList))
-	mux.HandleFunc("POST /api/workspace-requests/{id}/approve", s.requireAdmin(s.handleWorkspaceRequestDecision(true)))
-	mux.HandleFunc("POST /api/workspace-requests/{id}/reject", s.requireAdmin(s.handleWorkspaceRequestDecision(false)))
-	// v3 unified runtime: роль developer по заявке (привязка к учётке) и её
-	// SSH-ключ для персонального контейнера.
-	mux.HandleFunc("POST /api/role-requests", s.requireUser(s.handleRoleRequestCreate))
-	mux.HandleFunc("GET /api/role-requests", s.requireUser(s.handleRoleRequestsList))
-	mux.HandleFunc("POST /api/role-requests/{id}/approve", s.requireAdmin(s.handleRoleRequestDecision(true)))
-	mux.HandleFunc("POST /api/role-requests/{id}/reject", s.requireAdmin(s.handleRoleRequestDecision(false)))
-	mux.HandleFunc("GET /api/me/ssh", s.requireUser(s.handleMeSSHGet))
-	mux.HandleFunc("PUT /api/me/ssh", s.requireUser(s.handleMeSSHPut))
-	// Developer-настройки личного рантайма: статус/старт/стоп/логи контейнера.
-	mux.HandleFunc("GET /api/me/runtime", s.requireUser(s.handleMyRuntimeGet))
-	// Лаунчер developer'а (карточка developer-launcher-images).
-	mux.HandleFunc("GET /api/launcher/images", s.requireDeveloper(s.handleLauncherImages))
-	mux.HandleFunc("PUT /api/me/image", s.requireDeveloper(s.handleMeImagePut))
-	mux.HandleFunc("POST /api/me/runtime/start", s.requireDeveloper(s.handleMeRuntimeStart))
-	mux.HandleFunc("POST /api/me/runtime/stop", s.requireDeveloper(s.handleMeRuntimeStop))
-	mux.HandleFunc("GET /api/me/containers", s.requireDeveloper(s.handleMeContainers))
-	mux.HandleFunc("GET /api/me/runtime/logs", s.requireDeveloper(s.handleMeRuntimeLogs))
-	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
-	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
-	// Админ-панель супер-админа (карточка admin-panel-super-admin).
-	mux.HandleFunc("GET /api/admin/overview", s.requireAdmin(s.handleAdminOverview))
-	mux.HandleFunc("GET /api/admin/users/details", s.requireAdmin(s.handleAdminUsersDetailed))
-	mux.HandleFunc("PUT /api/admin/users/{id}/limits", s.requireAdmin(s.handleAdminUserLimitsPut))
-	mux.HandleFunc("GET /api/admin/containers", s.requireAdmin(s.handleAdminContainers))
-	mux.HandleFunc("POST /api/admin/containers/{name}/stop", s.requireAdmin(s.handleAdminContainerStop))
-	mux.HandleFunc("POST /api/admin/containers/{name}/start", s.requireAdmin(s.handleAdminContainerStart))
-	mux.HandleFunc("POST /api/admin/containers/{name}/restart", s.requireAdmin(s.handleAdminContainerRestart))
-	mux.HandleFunc("GET /api/admin/containers/{name}/logs", s.requireAdmin(s.handleAdminContainerLogs))
-	mux.HandleFunc("GET /api/admin/requests", s.requireAdmin(s.handleAdminRequests))
-	mux.HandleFunc("GET /api/admin/activity", s.requireAdmin(s.handleAdminActivity))
-	mux.HandleFunc("GET /api/admin/quotas", s.requireAdmin(s.handleAdminQuotasList))
-	mux.HandleFunc("PUT /api/admin/quotas", s.requireAdmin(s.handleAdminQuotaPut))
-	mux.HandleFunc("DELETE /api/admin/quotas/{id}", s.requireAdmin(s.handleAdminQuotaDelete))
-	mux.HandleFunc("GET /api/admin/users/{id}/sessions", s.requireAdmin(s.handleAdminUserSessions))
-	// «Вся траектория» одним списком (без ввода id пользователя).
-	mux.HandleFunc("GET /api/admin/sessions", s.requireAdmin(s.handleAdminSessions))
-	mux.HandleFunc("GET /api/admin/users/{id}/sessions/{workspace}/{session}", s.requireAdmin(s.handleAdminUserSessionTrace))
-	// /map — карта системы за сессией; росток будущей админ-панели (1.md).
+	// /map — карта системы за сессией.
 	mux.HandleFunc("GET /map", s.requireUser(s.handleMapIndex))
 	mux.HandleFunc("GET /map/{name}", s.requireUser(s.handleMapFile))
-	mux.HandleFunc("GET /w/{id}", s.requireUser(s.workspaceProxyEntry))
-	// The browser fetches webmanifest without agctl credentials; expose only
-	// this non-sensitive static document publicly for a known workspace.
-	mux.HandleFunc("GET /w/{id}/manifest.webmanifest", s.workspaceManifest)
-	// DSH Web UI uses GET for documents/assets, WebSocket and SSE, and POST
-	// for typed RPCs (/api/*). Both methods must reach the reverse proxy.
-	// Without POST, ServeMux returns 405 before directoryPicker/list can reach dsh.
-	mux.HandleFunc("GET /w/{id}/", s.requireUser(s.workspaceProxy))
-	mux.HandleFunc("POST /w/{id}/", s.requireUser(s.workspaceProxy))
+
+	for _, m := range s.cfg.Modules {
+		if m.Routes != nil {
+			m.Routes(s, mux)
+		}
+	}
 
 	// статика SPA
 	if s.cfg.Tier0 {
-		// SPA живёт на /app/, корень платформы — общий чат (Tier 0).
+		// Корень платформы — общий чат (Tier 0).
 		s.registerTier0Routes(mux, webFS)
 	}
 	mux.Handle("GET /", http.FileServerFS(webFS))
@@ -418,15 +365,12 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 
 // registerTier0Routes — маршруты режима 1 «Чат». Корень платформы:
 // залогинен → /chat/ (личный dsh), нет → страница входа (единственная
-// страница фронта agctl); отдельного пути /app больше нет.
+// страница фронта agctl); отдельного пути /app больше нет. Страницы
+// /admin и /launcher регистрируют их модули.
 func (s *Server) registerTier0Routes(mux *http.ServeMux, webFS fs.FS) {
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		s.rootEntry(w, r, webFS)
 	})
-	// Админ-панель: тот же SPA-бандл, роль определяет рендер на клиенте.
-	mux.HandleFunc("GET /admin", s.adminPageHandler(webFS))
-	// Лаунчер developer'а: тот же SPA-бандл (карточка developer-launcher-images).
-	mux.HandleFunc("GET /launcher", s.adminPageHandler(webFS))
 	mux.HandleFunc("GET /chat", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/chat/", http.StatusTemporaryRedirect)
 	})
@@ -463,79 +407,19 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 
 // ── фоновые задачи ──────────────────────────────────────────────────────────
 
-// StartBackground запускает autosave, сверку статусов, чистку сессий
-// и jira-поллер (если настроен через AGCTL_JIRA_*).
+// StartBackground запускает фоновые задачи ядра (рипер простаивающих
+// рантаймов, сверка статусов, чистка сессий) и подключённых модулей.
 func (s *Server) StartBackground(ctx context.Context) {
-	s.StartJiraPoller(ctx)
 	// рипер персональных чатов: усыпляем контейнеры по простою (том живёт)
-	go func() {
-		t := time.NewTicker(time.Minute)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				s.reapIdleChats()
-			}
+	go every(ctx, time.Minute, s.reapIdleChats)
+	// сверка: контейнер умер, пока agctl был выключен
+	go every(ctx, 30*time.Second, s.reconcile)
+	go every(ctx, time.Hour, func() { _ = s.db.DeleteExpiredSessions() })
+	for _, m := range s.cfg.Modules {
+		if m.Background != nil {
+			go m.Background(ctx, s)
 		}
-	}()
-	go func() { // autosave: страховочный commit+push по всем running-воркспейсам
-		t := time.NewTicker(s.cfg.AutosaveEvery)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				s.autosaveAll()
-				// Локальный режим: /workspace — настоящие репозитории
-				// разработчика, автокоммиты в них недопустимы.
-				if !s.isLocal() {
-					s.autosaveLocalProjects()
-				}
-			}
-		}
-	}()
-	go func() { // prewarm-пул: тёплая среда к входу (login-хук — отдельно)
-		if !s.prewarmEnabled() {
-			return
-		}
-		t := time.NewTicker(s.cfg.ChatPrewarmEvery)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				s.prewarmOnce(nil)
-			}
-		}
-	}()
-	go func() { // сверка: контейнер умер, пока agctl был выключен
-		t := time.NewTicker(30 * time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				s.reconcile()
-			}
-		}
-	}()
-	go func() {
-		t := time.NewTicker(time.Hour)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				_ = s.db.DeleteExpiredSessions()
-			}
-		}
-	}()
+	}
 }
 
 // autosaveAll выполняет страховочный go-git commit по всем running-воркспейсам

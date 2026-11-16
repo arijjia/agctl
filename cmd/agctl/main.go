@@ -281,6 +281,8 @@ func cmdServeWith(args []string, local *server.LocalMode, onReady func(context.C
 	defer stop()
 	if local != nil {
 		local.Shutdown = stop
+	} else {
+		srvCfg.Modules = server.ServerModules()
 	}
 	srv, err := buildServer(rf, db, sec, srvCfg)
 	if defaultLLM.BaseURL != "" {

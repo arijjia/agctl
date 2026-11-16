@@ -31,9 +31,12 @@
 
 Технически `agctl dev up` ≈ `agctl serve` с заполненным `Config.Local`
 (`internal/server/server.go`, поле `Local *LocalMode`). Всё серверное, что
-локально не нужно (регистрация, заявки на роль, админка, prewarm, квоты
-LiteLLM), либо выключено проверкой `s.isLocal()`, либо просто не
-задействовано, потому что пользователь один и он developer.
+локально не нужно (регистрация, роли и SSH developer'а, лаунчер developer'а,
+админка, prewarm, autosave, legacy workspaces `/w`, Jira, конфиг раннера
+AX), — модули `server.Module` (`internal/server/modules.go`). Их подключает
+только серверная точка входа (`Config.Modules = server.ServerModules()`);
+локальный режим модулей не подключает, и их маршрутов в нём нет. Немногие
+оставшиеся различия внутри ядра — ветки `s.isLocal()` (§2.8).
 
 Решение «контейнер + мост к хосту как основной движок локального режима,
 нативный dsh — запасной» зафиксировано карточкой
@@ -406,12 +409,15 @@ agctl-dsh-<профиль>-<вкус>:0.2.2    вкус профиля — <пр
 
 ### 2.8 Что в локальном режиме выключено или отличается
 
-Все ветки — по `s.isLocal()` (`cfg.Local != nil`):
+Серверные модули (`modules.go`) локально не подключены: нет регистрации
+(`POST /api/register` → 405), ролей, лаунчера developer'а, админки,
+prewarm-пула, autosave (`/workspace` — настоящие репозитории, автокоммиты
+недопустимы), `/w/{id}`, Jira-поллера. Это проверяет
+`TestLocalModeHasNoServerModules`. Остальное — ветки `s.isLocal()`
+(`cfg.Local != nil`) в ядре:
 
 | Где | Что |
 |---|---|
-| `handlers.go` `handleRegister` | `POST /api/register` → 403: регистрации нет |
-| `server.go` фоновый цикл | `autosaveLocalProjects` не вызывается: `/workspace` — настоящие репозитории, автокоммиты недопустимы |
 | `projects.go` `handleProjectDelete` | 409: папки с диска из интерфейса не удаляются (dsh только убирает воркспейс из списка) |
 | `project_mcp.go` | MCP-сервер «Мост к хосту» (`LocalOnly`) виден только локально |
 | `local.go` `localChatExtras` | `/workspace` = папка разработчика, env доступов и мост — только владельцу |
@@ -422,8 +428,8 @@ agctl-dsh-<профиль>-<вкус>:0.2.2    вкус профиля — <пр
 | env `AGCTL_LOCAL_MODE=1` → плагин `chat-session-files` | перед регистрацией папок снимает из реестра dsh воркспейсы под `/workspace`, чьих папок больше нет (`workspaceRegistry.delete` сохраняет сессии): слева только подпапки текущего маунта |
 | `project_files.go`, `/api/me` `localMode` → плагин `workspace-console` | файлы проекта (`/api/projects/{name}/files`, `/file`) → 404; в «Возможностях» нет блока «Файлы», на карточках в чате нет «Скачать» |
 
-Роли, заявки, админка, prewarm-пул, квоты, LiteLLM-ключи, SSH developer'а,
-`/w/{id}` — код тот же, но в локальном режиме не задействован.
+Квоты LiteLLM (`quotaAwareProvider` в `ensureChat`) остаются в ядре, но
+локально выключены: `--litellm-quotas` не задаётся.
 
 ### 2.9 Безопасность локального режима
 
@@ -565,9 +571,14 @@ logs), журнал проксированных запросов `proxy_request
 `provision.go` — legacy-провиженинг seats (bare `repos/` + клон),
 оставлен для старых записей.
 
-**Фон** (`server.go` `StartBackground`): reaper, autosave, reconcile
-unhealthy-рантаймов (Docker `HEALTHCHECK`), чистка сессий, prewarm,
-`jirapoll.go` (скелет поллера Jira).
+**Модули сервера** (`modules.go`, `server.ServerModules()`): регистрация,
+роли и SSH developer'а, лаунчер developer'а, админка, prewarm, autosave,
+legacy workspaces и `/w/{id}`, Jira-поллер, конфиг раннера AX. Каждый модуль —
+свои маршруты и фоновые задачи; подключает их серверная точка входа.
+
+**Фон** (`server.go` `StartBackground`): ядро — reaper, reconcile
+unhealthy-рантаймов (Docker `HEALTHCHECK`), чистка сессий; модули — autosave,
+prewarm, `jirapoll.go` (скелет поллера Jira).
 
 **Образ и сеть** (`internal/runtime/dockerrt`): `docker.go` — клиент,
 `EnsureImage` (`buildBase` / `buildOverlay`), `Start` (маунты, лимиты,
