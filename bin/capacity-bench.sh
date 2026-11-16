@@ -19,7 +19,7 @@ N_MAX="${1:-4}"
 [ -n "${TEST_IMAGE:-}" ] || { echo "TEST_IMAGE не задан" >&2; exit 2; }
 TEST_ADDR="${TEST_ADDR:-127.0.0.1:18929}"
 TEST_PORT="${TEST_ADDR##*:}"
-AGCTL_BIN="${AGCTL_BIN:-$REPO_ROOT/dist/agctl}"
+AGCTL_BIN="${AGCTL_BIN:-$REPO_ROOT/dist/agctl-server}"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
 TEST_HOME="$HOME/.agctl-cap-$RUN_ID"
 COOKIES="$TEST_HOME/qa.cookies"

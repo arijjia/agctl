@@ -9,7 +9,7 @@
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "97cf8af51724e19f0706eb5cafa29a1c6d62eb8d"
+      "revision": "a873b72d91a84c69dc08066c40d40563c747c103"
     },
     "views": [
       {
@@ -193,9 +193,9 @@
           "label": "DSN journal_mode(WAL), busy_timeout"
         },
         {
-          "path": "cmd/agctl/main.go",
-          "line": 258,
-          "end_line": 266,
+          "path": "internal/cli/serve.go",
+          "line": 161,
+          "end_line": 172,
           "label": "EnsureMasterKey + secrets.New + store.Open"
         },
         {
@@ -267,8 +267,8 @@
           "label": "ChatProvider: Ensure/Stop/Logs/HasActiveSSH"
         },
         {
-          "path": "cmd/agctl/runtime_select.go",
-          "line": 120,
+          "path": "cmd/agctl-server/runtime_select.go",
+          "line": 132,
           "label": "buildServer: бэкенд docker|k8s|ax (--runtime)"
         }
       ]
@@ -356,8 +356,8 @@
       ],
       "sources": [
         {
-          "path": "cmd/agctl/main.go",
-          "line": 266,
+          "path": "internal/cli/serve.go",
+          "line": 169,
           "label": "store.Open($AGCTL_HOME/agctl.db)"
         },
         {
@@ -383,9 +383,9 @@
       ],
       "sources": [
         {
-          "path": "cmd/agctl/main.go",
-          "line": 258,
-          "end_line": 262,
+          "path": "internal/cli/serve.go",
+          "line": 161,
+          "end_line": 165,
           "label": "EnsureMasterKey + secrets.New"
         }
       ]
@@ -566,9 +566,9 @@
           "label": "host-gateway в ExtraHosts контейнера"
         },
         {
-          "path": "cmd/agctl/main.go",
-          "line": 218,
-          "end_line": 223,
+          "path": "internal/cli/serve.go",
+          "line": 126,
+          "end_line": 129,
           "label": "дефолты LLM из профиля (--llm-*, AGCTL_LLM_*)"
         },
         {
@@ -594,7 +594,7 @@
       ],
       "sources": [
         {
-          "path": "cmd/agctl/connect.go",
+          "path": "cmd/agctl-server/connect.go",
           "line": 12,
           "end_line": 14,
           "label": "agctl connect"

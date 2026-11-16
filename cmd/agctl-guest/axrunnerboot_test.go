@@ -1,6 +1,6 @@
 package main
 
-// axrunnerboot_test.go — fetch-at-boot конфига провайдера: derivePublicURL
+// axrunnerboot_test.go — fetch-at-boot конфига провайдера: cli.DerivePublicURL
 // и разбор payload шлюза раннером (providerAtBoot).
 
 import (
@@ -8,22 +8,6 @@ import (
 	"net/http/httptest"
 	"testing"
 )
-
-func TestDerivePublicURL(t *testing.T) {
-	cases := []struct {
-		public, addr, want string
-	}{
-		{"https://agctl.corp.invalid/", "127.0.0.1:8929", "https://agctl.corp.invalid"},
-		{"", "10.0.0.5:8929", "http://10.0.0.5:8929"},
-		{"", "[::1]:8929", "http://[::1]:8929"},
-		{"", "no-port", "no-port"},
-	}
-	for _, c := range cases {
-		if got := derivePublicURL(c.public, c.addr); got != c.want {
-			t.Fatalf("derivePublicURL(%q,%q) = %q; want %q", c.public, c.addr, got, c.want)
-		}
-	}
-}
 
 func TestProviderAtBootFromGateway(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

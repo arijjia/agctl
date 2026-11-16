@@ -4,10 +4,11 @@
 #   curl -fsSL https://raw.githubusercontent.com/arijjia/agctl/main/bin/install.sh | sh
 #
 # Два источника:
-#   • публичный релиз agctl (goreleaser): архивы agctl_<os>_<arch>.tar.gz + checksums.txt;
+#   • публичный релиз agctl (goreleaser): архивы agctl_<os>_<arch>.tar.gz,
+#     agctl-guest_linux_<arch>.tar.gz + checksums.txt;
 #   • комплект организации — релиз приватного репозитория профиля
 #     AGCTL_REPO=<org>/agctl-profile-<id>: zip agctl-<id>-<версия>-<os>-<arch>.zip
-#     (agctl + agctl-linux-<arch> + profile/) + checksums-<версия>.txt; нужен
+#     (agctl + agctl-guest-linux-<arch> + profile/) + checksums-<версия>.txt; нужен
 #     авторизованный gh и unzip. Профиль кладётся в
 #     ~/.local/share/agctl/profiles/<id>; в конце скрипт сам подключает
 #     профиль (agctl dev init --profile-dir … --yes; AGCTL_NO_INIT=1 —
@@ -15,21 +16,22 @@
 #
 # Что делает: определяет ОС и архитектуру, скачивает архив и контрольные
 # суммы (через gh, если он есть и авторизован, иначе curl), сверяет SHA-256,
-# кладёт бинарь в ~/.local/bin, снимает карантин macOS, кладёт linux-сборку
-# в ~/.local/lib/agctl (нужна только для самосборки образа рабочего места
-# без реестра), печатает agctl version.
+# кладёт бинарь в ~/.local/bin, снимает карантин macOS, кладёт agctl-guest —
+# linux-бинарь образа рабочего места — в ~/.local/lib/agctl (нужен только для
+# самосборки образа без реестра), печатает agctl version. Сервер организации
+# (agctl-server) этот скрипт не ставит: он в архивах agctl-server_<os>_<arch>.
 #
 # Переменные окружения:
 #   AGCTL_REPO         репозиторий GitHub (по умолчанию arijjia/agctl;
 #                      <org>/agctl-profile-<id> — комплект организации)
 #   AGCTL_VERSION      тег релиза (по умолчанию последний)
 #   AGCTL_INSTALL_DIR  куда ставить бинарь (по умолчанию ~/.local/bin)
-#   AGCTL_LIB_DIR      куда класть linux-сборку (по умолчанию <INSTALL_DIR>/../lib/agctl)
+#   AGCTL_LIB_DIR      куда класть agctl-guest (по умолчанию <INSTALL_DIR>/../lib/agctl)
 #   AGCTL_PROFILE_DIR  куда класть профиль комплекта (по умолчанию
 #                      ${XDG_DATA_HOME:-~/.local/share}/agctl/profiles/<id>)
 #   AGCTL_WORKDIR      папка проектов для авто-init комплекта (по умолчанию ~/src)
 #   AGCTL_RELEASE_DIR  локальная папка с архивами релиза — ничего не скачивать
-#   AGCTL_NO_LINUX=1   не ставить linux-сборку
+#   AGCTL_NO_LINUX=1   не ставить agctl-guest (образы берутся из реестра)
 #   AGCTL_NO_INIT=1    не подключать профиль комплекта самим — напечатать команду
 #
 # Windows — bin/install.ps1.
@@ -134,10 +136,14 @@ if [ -n "$profile_id" ]; then
   top="${bundle%.zip}"
   [ -d "$top" ] || die "в $bundle нет каталога $top"
   install_bin "$top/agctl" "$INSTALL_DIR/agctl"
-  if [ "$os" = darwin ] && [ -z "${AGCTL_NO_LINUX:-}" ]; then
+  if [ -z "${AGCTL_NO_LINUX:-}" ]; then
     mkdir -p "$LIB_DIR" && LIB_DIR=$(cd "$LIB_DIR" && pwd)
-    install_bin "$top/agctl-linux-$arch" "$LIB_DIR/agctl-linux-$arch"
-    say "✓ linux-сборка для самосборки образа: $LIB_DIR/agctl-linux-$arch"
+    # Комплекты до разделения бинарей несут agctl-linux-<arch> (единый бинарь,
+    # те же команды образа); findLinuxBinary понимает оба имени.
+    guest="agctl-guest-linux-$arch"
+    [ -f "$top/$guest" ] || guest="agctl-linux-$arch"
+    install_bin "$top/$guest" "$LIB_DIR/$guest"
+    say "✓ бинарь образа для самосборки: $LIB_DIR/$guest"
   fi
   [ -f "$top/profile/profile.yaml" ] || die "в комплекте нет profile/profile.yaml"
   mkdir -p "$(dirname "$PROFILE_DIR")"
@@ -152,16 +158,16 @@ else
   verify "$main_archive" checksums.txt
   tar xzf "$main_archive" agctl
   install_bin agctl "$INSTALL_DIR/agctl"
-  # На Linux сам бинарь и есть linux-сборка для образа; на macOS она нужна отдельно.
-  if [ "$os" = darwin ] && [ -z "${AGCTL_NO_LINUX:-}" ]; then
-    linux_archive="agctl_linux_${arch}.tar.gz"
-    fetch "$linux_archive"
-    verify "$linux_archive" checksums.txt
-    rm -f agctl
-    tar xzf "$linux_archive" agctl
+  # Бинарь образа рабочего места — отдельный agctl-guest (linux), на любой ОС хоста.
+  if [ -z "${AGCTL_NO_LINUX:-}" ]; then
+    guest_archive="agctl-guest_linux_${arch}.tar.gz"
+    fetch "$guest_archive"
+    verify "$guest_archive" checksums.txt
+    tar xzf "$guest_archive" agctl-guest
     mkdir -p "$LIB_DIR" && LIB_DIR=$(cd "$LIB_DIR" && pwd)
-    install_bin agctl "$LIB_DIR/agctl-linux-$arch"
-    say "✓ linux-сборка для самосборки образа: $LIB_DIR/agctl-linux-$arch"
+    install_bin agctl-guest "$LIB_DIR/agctl-guest-linux-$arch"
+    rm -f "$LIB_DIR/agctl-linux-$arch"
+    say "✓ бинарь образа для самосборки: $LIB_DIR/agctl-guest-linux-$arch"
   fi
 fi
 

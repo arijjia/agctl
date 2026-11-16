@@ -27,15 +27,15 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/term"
-	"gopkg.in/yaml.v3"
-
 	"github.com/arijjia/agctl/internal/assets"
+	"github.com/arijjia/agctl/internal/cli"
 	"github.com/arijjia/agctl/internal/localbridge"
 	"github.com/arijjia/agctl/internal/localmode"
 	"github.com/arijjia/agctl/internal/profile"
 	"github.com/arijjia/agctl/internal/runtime/dockerrt"
 	"github.com/arijjia/agctl/internal/server"
+	"golang.org/x/term"
+	"gopkg.in/yaml.v3"
 )
 
 const devUsage = `agctl dev — локальный режим: платформа на этой машине (один пользователь)
@@ -193,7 +193,7 @@ func devInit(home string, args []string) error {
 		}
 	}
 	if *addr != "" {
-		if !isLoopbackAddr(*addr) {
+		if !cli.IsLoopbackAddr(*addr) {
 			return fmt.Errorf("--addr: только loopback (127.0.0.1:PORT), а не %s", *addr)
 		}
 		cfg.Addr = *addr
@@ -304,10 +304,10 @@ func devResolveProfile(cfg *localmode.Config) (*profile.Data, error) {
 	// Каталог данных пользователя (DataDir) — последний в поиске: туда
 	// кладёт профиль установщик комплекта организации; явный --profile-dir
 	// и дома разработчика сильнее.
-	return profile.Resolve(firstNonEmpty(cfg.Profile, "agctl"), cfg.ProfileDir,
+	return profile.Resolve(cli.FirstNonEmpty(cfg.Profile, "agctl"), cfg.ProfileDir,
 		"profiles",
 		filepath.Join(localmode.Home(), "profiles"),
-		filepath.Join(defaultHome(), "profiles"),
+		filepath.Join(cli.DefaultHome(), "profiles"),
 		profile.DataDir(),
 	)
 }
@@ -614,7 +614,7 @@ func buildID(v, c string) string {
 // devStateBuild — сборка запущенного процесса; у состояний до поля build —
 // только версия.
 func devStateBuild(st *localmode.State) string {
-	return firstNonEmpty(st.Build, st.Version)
+	return cli.FirstNonEmpty(st.Build, st.Version)
 }
 
 // devStale — фоновый процесс запущен другой сборкой, чем этот бинарь.
@@ -639,7 +639,7 @@ func devServe(home string, args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	workdir, err := localmode.ValidateWorkDir(firstNonEmpty(*workdirFlag, cfg.WorkDir))
+	workdir, err := localmode.ValidateWorkDir(cli.FirstNonEmpty(*workdirFlag, cfg.WorkDir))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -649,7 +649,7 @@ func devServe(home string, args []string) {
 		log.Printf("dev: доступы не заданы: %s (agctl dev secrets set …)", strings.Join(missing, ", "))
 	}
 	// Секреты (в т.ч. личные ключи доп. провайдеров) — в env этого процесса:
-	// serve-ребёнок наследует окружение, и profExtraProviders читает ключ
+	// serve-ребёнок наследует окружение, и cli.ProfExtraProviders читает ключ
 	// доп. провайдера через os.Getenv; хранилище ОС хоста он не видит.
 	for _, kv := range env {
 		if k, v, ok := strings.Cut(kv, "="); ok && k != "AGCTL_LLM_API_KEY" {
@@ -671,7 +671,7 @@ func devServe(home string, args []string) {
 	if err != nil {
 		log.Fatalf("dev: addr %q: %v", cfg.Addr, err)
 	}
-	if !isLoopbackAddr(cfg.Addr) {
+	if !cli.IsLoopbackAddr(cfg.Addr) {
 		log.Fatalf("dev: локальный режим слушает только loopback, а не %s", cfg.Addr)
 	}
 	local := &server.LocalMode{
@@ -697,7 +697,7 @@ func devServe(home string, args []string) {
 	if cfg.ProfileDir != "" {
 		serveArgs = append(serveArgs, "--profile-dir", cfg.ProfileDir)
 	} else {
-		serveArgs = append(serveArgs, "--profile", firstNonEmpty(cfg.Profile, "agctl"))
+		serveArgs = append(serveArgs, "--profile", cli.FirstNonEmpty(cfg.Profile, "agctl"))
 	}
 	image := cfg.Image
 	if image != "" {
@@ -707,7 +707,7 @@ func devServe(home string, args []string) {
 		devBridgeListener(ctx, port, h)
 		st := localmode.State{
 			PID: os.Getpid(), Addr: cfg.Addr, ControlToken: local.ControlToken, LoginToken: local.LoginToken,
-			Image: firstNonEmpty(image, "по профилю"), WorkDir: workdir, Started: time.Now(), Version: version, Build: devBuildID(),
+			Image: cli.FirstNonEmpty(image, "по профилю"), WorkDir: workdir, Started: time.Now(), Version: version, Build: devBuildID(),
 		}
 		if err := localmode.WriteState(home, st); err != nil {
 			log.Printf("dev: файл состояния: %v", err)
@@ -717,7 +717,7 @@ func devServe(home string, args []string) {
 			localmode.ClearOwnState(home, os.Getpid())
 		}()
 	}
-	cmdServeWith(serveArgs, local, onReady)
+	cli.Serve(serveArgs, cli.ServeOptions{Local: local, OnReady: onReady})
 	localmode.ClearOwnState(home, os.Getpid())
 }
 
@@ -805,9 +805,9 @@ func devStatus(home string) error {
 		return cfgErr
 	}
 	fmt.Printf("дом:      %s\n", home)
-	fmt.Printf("профиль:  %s\n", firstNonEmpty(cfg.ProfileDir, cfg.Profile))
-	fmt.Printf("образ:    %s\n", firstNonEmpty(cfg.Image, "по профилю"))
-	fmt.Printf("папка:    %s\n", firstNonEmpty(cfg.WorkDir, "(не задана — agctl dev up DIR)"))
+	fmt.Printf("профиль:  %s\n", cli.FirstNonEmpty(cfg.ProfileDir, cfg.Profile))
+	fmt.Printf("образ:    %s\n", cli.FirstNonEmpty(cfg.Image, "по профилю"))
+	fmt.Printf("папка:    %s\n", cli.FirstNonEmpty(cfg.WorkDir, "(не задана — agctl dev up DIR)"))
 	if st == nil || !devAlive(st) {
 		fmt.Println("статус:   остановлено (agctl dev up)")
 		return nil
@@ -1074,8 +1074,8 @@ func devUpdate(home string, args []string) error {
 	if err != nil {
 		return err
 	}
-	current := firstNonEmpty(cfg.Image, devDefaultImage(p, cfg.Flavor))
-	target := firstNonEmpty(*image, current)
+	current := cli.FirstNonEmpty(cfg.Image, devDefaultImage(p, cfg.Flavor))
+	target := cli.FirstNonEmpty(*image, current)
 	ctx := context.Background()
 	oldID, _ := dockerrt.ImageID(ctx, current)
 
@@ -1235,9 +1235,9 @@ func devDoctor(home string) error {
 	api, err := dockerrt.PingDaemon(context.Background())
 	check("docker", err, "API "+api)
 	p, perr := devResolveProfile(cfg)
-	check("профиль", perr, firstNonEmpty(cfg.ProfileDir, cfg.Profile))
+	check("профиль", perr, cli.FirstNonEmpty(cfg.ProfileDir, cfg.Profile))
 	if err == nil && perr == nil {
-		ref := firstNonEmpty(cfg.Image, devDefaultImage(p, cfg.Flavor))
+		ref := cli.FirstNonEmpty(cfg.Image, devDefaultImage(p, cfg.Flavor))
 		_, ierr := dockerrt.ImageID(context.Background(), ref)
 		if ierr != nil {
 			ierr = fmt.Errorf("%s нет локально — agctl dev update (или соберётся при up)", ref)

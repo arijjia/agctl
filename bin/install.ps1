@@ -3,10 +3,11 @@
 #   irm https://raw.githubusercontent.com/arijjia/agctl/main/bin/install.ps1 | iex
 #
 # Два источника:
-#   • публичный релиз agctl (goreleaser): agctl_windows_<arch>.zip + checksums.txt;
+#   • публичный релиз agctl (goreleaser): agctl_windows_<arch>.zip,
+#     agctl-guest_linux_<arch>.tar.gz + checksums.txt;
 #   • комплект организации — релиз приватного репозитория профиля
 #     $env:AGCTL_REPO = '<org>/agctl-profile-<id>': zip agctl-<id>-<версия>-windows-<arch>.zip
-#     (agctl.exe + agctl-linux-<arch> + profile\) + checksums-<версия>.txt; нужен
+#     (agctl.exe + agctl-guest-linux-<arch> + profile\) + checksums-<версия>.txt; нужен
 #     авторизованный gh. Профиль кладётся в %LOCALAPPDATA%\agctl\profiles\<id>;
 #     в конце скрипт сам подключает профиль (agctl dev init --profile-dir …
 #     --yes; AGCTL_NO_INIT=1 — не подключать, напечатать команду).
@@ -14,8 +15,9 @@
 # Что делает: скачивает архив и контрольные суммы (через gh, если он есть и
 # авторизован, иначе Invoke-WebRequest), сверяет SHA-256, кладёт agctl.exe в
 # %LOCALAPPDATA%\agctl, снимает отметку «скачано из интернета», рядом кладёт
-# linux-сборку (нужна только для самосборки образа рабочего места без
-# реестра), добавляет каталог в PATH пользователя, печатает agctl version.
+# agctl-guest — linux-бинарь образа рабочего места (нужен только для
+# самосборки образа без реестра), добавляет каталог в PATH пользователя,
+# печатает agctl version.
 #
 # Переменные окружения:
 #   AGCTL_REPO         репозиторий GitHub (по умолчанию arijjia/agctl;
@@ -25,7 +27,7 @@
 #   AGCTL_PROFILE_DIR  куда класть профиль комплекта (по умолчанию <INSTALL_DIR>\profiles\<id>)
 #   AGCTL_WORKDIR      папка проектов для авто-init комплекта (по умолчанию ~\src)
 #   AGCTL_RELEASE_DIR  локальная папка с архивами релиза — ничего не скачивать
-#   AGCTL_NO_LINUX=1   не ставить linux-сборку
+#   AGCTL_NO_LINUX=1   не ставить agctl-guest (образы берутся из реестра)
 #   AGCTL_NO_INIT=1    не подключать профиль комплекта самим — напечатать команду
 #
 # macOS и Linux — bin/install.sh.
@@ -96,10 +98,10 @@ function Verify([string]$Name, [string]$Sums) {
     if ($want -ne $got) { throw "контрольная сумма $Name не совпала с $Sums" }
 }
 
-function Install-LinuxBuild([string]$Source) {
-    $linux = Join-Path $installDir "agctl-linux-$arch"
+function Install-LinuxBuild([string]$Source, [string]$Name) {
+    $linux = Join-Path $installDir $Name
     Move-Item -Force $Source $linux
-    Write-Host "✓ linux-сборка для самосборки образа: $linux"
+    Write-Host "✓ бинарь образа для самосборки: $linux"
 }
 
 $tmp = Join-Path $env:TEMP ('agctl-install-' + [guid]::NewGuid().ToString('N'))
@@ -126,7 +128,13 @@ try {
         $top = $bundle -replace '\.zip$', ''
         if (-not (Test-Path (Join-Path $top 'agctl.exe'))) { throw "в $bundle нет $top\agctl.exe" }
         Move-Item -Force (Join-Path $top 'agctl.exe') $exe
-        if (-not $env:AGCTL_NO_LINUX) { Install-LinuxBuild (Join-Path $top "agctl-linux-$arch") }
+        if (-not $env:AGCTL_NO_LINUX) {
+            # Комплекты до разделения бинарей несут agctl-linux-<arch> (единый
+            # бинарь, те же команды образа); findLinuxBinary понимает оба имени.
+            $guest = "agctl-guest-linux-$arch"
+            if (-not (Test-Path (Join-Path $top $guest))) { $guest = "agctl-linux-$arch" }
+            Install-LinuxBuild (Join-Path $top $guest) $guest
+        }
         if (-not (Test-Path (Join-Path $top 'profile\profile.yaml'))) { throw 'в комплекте нет profile\profile.yaml' }
         New-Item -ItemType Directory -Force (Split-Path $profileDir -Parent) | Out-Null
         if (Test-Path $profileDir) { Remove-Item -Recurse -Force $profileDir }
@@ -142,13 +150,15 @@ try {
         Move-Item -Force agctl.exe $exe
         if (-not $env:AGCTL_NO_LINUX) {
             if (Get-Command tar -ErrorAction SilentlyContinue) {
-                $linuxArchive = "agctl_linux_$arch.tar.gz"
-                Fetch $linuxArchive
-                Verify $linuxArchive 'checksums.txt'
-                if ((Invoke-Native 'tar' @('xzf', $linuxArchive, 'agctl')) -ne 0) { throw "tar не распаковал $linuxArchive" }
-                Install-LinuxBuild 'agctl'
+                $guestArchive = "agctl-guest_linux_$arch.tar.gz"
+                Fetch $guestArchive
+                Verify $guestArchive 'checksums.txt'
+                if ((Invoke-Native 'tar' @('xzf', $guestArchive, 'agctl-guest')) -ne 0) { throw "tar не распаковал $guestArchive" }
+                Install-LinuxBuild 'agctl-guest' "agctl-guest-linux-$arch"
+                $legacy = Join-Path $installDir "agctl-linux-$arch"
+                if (Test-Path $legacy) { Remove-Item -Force $legacy }
             } else {
-                Write-Warning 'tar не найден (Windows 10 до 1803) — linux-сборка для самосборки образа пропущена'
+                Write-Warning 'tar не найден (Windows 10 до 1803) — бинарь образа для самосборки пропущен'
             }
         }
     }

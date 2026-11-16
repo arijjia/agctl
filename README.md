@@ -8,9 +8,9 @@
 Клонировать репозиторий и что-то собирать для этого не нужно: достаточно
 бинаря `agctl` и Docker.
 
-Тот же бинарь умеет серверный режим (`agctl serve`: много пользователей,
-роли, Kubernetes), но в этом README — только локальный сценарий. Устройство
-обоих режимов и разбор кодовой базы —
+Серверный режим для организации (много пользователей, роли, админка,
+Kubernetes) — отдельный бинарь `agctl-server` из того же ядра; в этом README
+только локальный сценарий. Устройство обоих режимов и разбор кодовой базы —
 [docs/local-mode-architecture.md](docs/local-mode-architecture.md).
 
 ## Что нужно
@@ -129,17 +129,22 @@ $env:AGCTL_REPO = '<org>/agctl-profile-<id>'; irm https://raw.githubusercontent.
 git clone https://github.com/arijjia/agctl && cd agctl
 ```
 
-Собрать SPA, бинарь и linux-сборку и поставить их в `~/.local`:
+Собрать SPA и бинари и поставить их в `~/.local`:
 
 ```bash
 make install
 ```
 
-`make install` собирает SPA, бинарь и linux-сборку и ставит:
+`make install` собирает SPA и бинари и ставит:
 
-- бинарь — `~/.local/bin/agctl`;
-- linux-сборку — `~/.local/lib/agctl/agctl-linux-<arch>`;
-- автодополнение fish — `~/.config/fish/completions/agctl.fish`.
+- `agctl` (локальный режим) — `~/.local/bin/agctl`;
+- `agctl-server` (сервер организации, нужен для `make up` / `corp`) —
+  `~/.local/bin/agctl-server`;
+- `agctl-guest` — linux-бинарь образа рабочего места (в образе он
+  `/usr/local/bin/agctl`: мост к хосту и служебные команды) —
+  `~/.local/lib/agctl/agctl-guest-linux-<arch>`;
+- автодополнение fish — `~/.config/fish/completions/agctl.fish` и
+  `agctl-server.fish`.
 
 `INSTALL_DIR=…` меняет каталог. Повторяйте после каждого `git pull`:
 старый бинарь в `PATH` — самая частая причина ошибки
@@ -147,8 +152,8 @@ make install
 
 Другие цели (полный список — `make help`):
 
-- `make go_build` — только бинарь в `dist/agctl` (Node не нужен:
-  `web/dist` закоммичен);
+- `make go_build` — только бинари `dist/agctl` и `dist/agctl-server`
+  (Node не нужен: `web/dist` закоммичен); `make go_linux` — `agctl-guest`;
 - `make release_local` — матрица darwin / linux / windows × arm64 / amd64
   в `dist/` для другой машины;
 - `make img_build` — собрать образы рабочего места локально
@@ -217,7 +222,7 @@ agctl dev up
 | `agctl dev update [--image REF]` | обновить образ: скачать → бэкап dsh-home → перезапуск → проверка → автооткат при сбое |
 | `agctl dev rollback [--restore-data]` | вернуть предыдущий образ, при необходимости и данные dsh из бэкапа |
 | `agctl dev doctor` | самодиагностика: Docker, образ, профиль, папка, доступы, сеть до модели / GitLab / Jira, мост |
-| `agctl bridge list \| call ИНСТРУМЕНТ k=v … \| mcp` | **внутри контейнера**: вызвать команду хоста из белого списка; `mcp` — stdio-сервер MCP «Мост к хосту» |
+| `agctl bridge list \| call ИНСТРУМЕНТ k=v … \| mcp` | **внутри контейнера** (бинарь образа `agctl-guest`): вызвать команду хоста из белого списка; `mcp` — stdio-сервер MCP «Мост к хосту» |
 | `agctl version` | версия, коммит, дата сборки, ОС и архитектура |
 | `agctl completion fish` | скрипт автодополнения для fish |
 | `agctl help` | справка по всем командам, `agctl dev help` — по локальному режиму |

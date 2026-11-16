@@ -28,7 +28,7 @@ if ! docker image inspect "$IMG" >/dev/null 2>&1; then
 fi
 
 mkdir -p "$TEST_HOME"
-go build -o "$BIN" ./cmd/agctl || exit 2
+go build -o "$BIN" ./cmd/agctl-server || exit 2
 AGCTL_PID=""; FAKE_PID=""; WSID=""
 cleanup() {
   if [ -n "$AGCTL_PID" ]; then

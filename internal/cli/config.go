@@ -1,4 +1,4 @@
-package main
+package cli
 
 // config.go — пользовательские дефолты agctl в стиле webmalex-тулз
 // (gitctl/tunnelctl/dutyctl): ~/.config/agctl/config.yaml. Приоритет источников:
@@ -13,9 +13,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// userConfig — разбираемая часть config.yaml. Поля — только дефолты для
+// UserConfig — разбираемая часть config.yaml. Поля — только дефолты для
 // serve; секреты (LLM-ключи) сюда сознательно не кладём: только env/флаги.
-type userConfig struct {
+type UserConfig struct {
 	Profile    string `yaml:"profile"`
 	ProfileDir string `yaml:"profile_dir"`
 	Serve      struct {
@@ -30,14 +30,14 @@ type userConfig struct {
 		MemGB          float64   `yaml:"mem_gb"`
 		CPUs           float64   `yaml:"cpus"`
 		CORSOrigins    string    `yaml:"cors_origins"`
-		K8s            k8sConfig `yaml:"k8s"`
-		AX             axConfig  `yaml:"ax"`
+		K8s            K8sConfig `yaml:"k8s"`
+		AX             AXConfig  `yaml:"ax"`
 	} `yaml:"serve"`
 }
 
-// configPath — $AGCTL_CONFIG, иначе ~/.config/agctl/config.yaml (конвенция
+// ConfigPath — $AGCTL_CONFIG, иначе ~/.config/agctl/config.yaml (конвенция
 // ~/.config даже на macOS — как у gitctl/tunnelctl/dutyctl).
-func configPath() string {
+func ConfigPath() string {
 	if p := os.Getenv("AGCTL_CONFIG"); p != "" {
 		return p
 	}
@@ -48,12 +48,12 @@ func configPath() string {
 	return filepath.Join(home, ".config", "agctl", "config.yaml")
 }
 
-// loadUserConfig читает конфиг; отсутствующий файл — не ошибка (пустой конфиг),
+// LoadUserConfig читает конфиг; отсутствующий файл — не ошибка (пустой конфиг),
 // битый YAML — ошибка запуска (промолчать значило бы молча игнорировать
 // настроенное владельцем).
-func loadUserConfig() (userConfig, string, error) {
-	var cfg userConfig
-	path := configPath()
+func LoadUserConfig() (UserConfig, string, error) {
+	var cfg UserConfig
+	path := ConfigPath()
 	if path == "" {
 		return cfg, "", nil
 	}
@@ -70,39 +70,9 @@ func loadUserConfig() (userConfig, string, error) {
 	return cfg, path, nil
 }
 
-// cmdConfig — `agctl config`: показать путь и эффективные значения конфига
-// (для проверки, что реально подхватилось перед запуском serve).
-func cmdConfig(args []string) {
-	cfg, path, err := loadUserConfig()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "agctl config: %v\n", err)
-		os.Exit(1)
-	}
-	if path == "" {
-		fmt.Println("конфиг: не определён (нет домашнего каталога)")
-		return
-	}
-	if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
-		fmt.Printf("конфиг: %s (не найден — используются env и встроенные дефолты)\n", path)
-		return
-	}
-	fmt.Printf("конфиг: %s\n", path)
-	fmt.Printf("  profile:     %q\n", cfg.Profile)
-	fmt.Printf("  profile_dir: %q\n", cfg.ProfileDir)
-	fmt.Printf("  serve:\n")
-	fmt.Printf("    runtime:       %q\n", cfg.Serve.Runtime)
-	fmt.Printf("    addr:          %q\n", cfg.Serve.Addr)
-	fmt.Printf("    image:         %q\n", cfg.Serve.Image)
-	fmt.Printf("    chat_ttl_min:  %d\n", cfg.Serve.ChatTTLMin)
-	fmt.Printf("    register_per_min: %d\n", cfg.Serve.RegisterPerMin)
-	fmt.Printf("    mem_gb:        %g\n", cfg.Serve.MemGB)
-	fmt.Printf("    cpus:          %g\n", cfg.Serve.CPUs)
-	fmt.Printf("    cors_origins:  %q\n", cfg.Serve.CORSOrigins)
-}
-
-// k8sConfig — дефолты бэкенда k8s (serve.k8s.*; env AGCTL_K8S_* и флаги
+// K8sConfig — дефолты бэкенда k8s (serve.k8s.*; env AGCTL_K8S_* и флаги
 // --k8s-* перекрывают).
-type k8sConfig struct {
+type K8sConfig struct {
 	Namespace       string `yaml:"namespace"`
 	Kubeconfig      string `yaml:"kubeconfig"`
 	Image           string `yaml:"image"`
@@ -116,9 +86,9 @@ type k8sConfig struct {
 	PullPolicy      string `yaml:"pull_policy"`
 }
 
-// axConfig — дефолты бэкенда ax (serve.ax.*; env AGCTL_AX_* и флаги --ax-*
+// AXConfig — дефолты бэкенда ax (serve.ax.*; env AGCTL_AX_* и флаги --ax-*
 // перекрывают).
-type axConfig struct {
+type AXConfig struct {
 	Server          string `yaml:"server"`
 	Atespace        string `yaml:"atespace"`
 	Image           string `yaml:"image"`

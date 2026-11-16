@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/arijjia/agctl/internal/auth"
+	"github.com/arijjia/agctl/internal/cli"
 	"github.com/arijjia/agctl/internal/store"
 )
 
@@ -31,7 +32,7 @@ var demoAccounts = []demoAccount{
 // seedDemoAccounts создаёт демо-учётки (существующие пропускаются без
 // ротации пароля) после первой admin-учётки; возвращает число созданных.
 func seedDemoAccounts(home string) (int, error) {
-	absHome, err := requireHome(home)
+	absHome, err := cli.RequireHome(home)
 	if err != nil {
 		return 0, err
 	}
@@ -72,7 +73,7 @@ func seedDemoAccounts(home string) (int, error) {
 // демо-учётки в SQLite.
 func cmdSeedDemoUsers(args []string) {
 	fsSet := flag.NewFlagSet("seed-demo-users", flag.ExitOnError)
-	home := fsSet.String("home", defaultHome(), "каталог данных agctl")
+	home := fsSet.String("home", cli.DefaultHome(), "каталог данных agctl")
 	_ = fsSet.Parse(args)
 	created, err := seedDemoAccounts(*home)
 	if err != nil {

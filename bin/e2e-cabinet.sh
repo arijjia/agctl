@@ -30,7 +30,7 @@ pass() { PASS=$((PASS+1)); echo "  ok: $1"; }
 fail() { FAIL=$((FAIL+1)); echo "  FAIL: $1"; }
 
 mkdir -p "$TEST_HOME"
-go build -o "$BIN" ./cmd/agctl || { echo "go build не удался" >&2; exit 2; }
+go build -o "$BIN" ./cmd/agctl-server || { echo "go build не удался" >&2; exit 2; }
 
 AGCTL_PID=""; FAKE_PID=""
 cleanup() {

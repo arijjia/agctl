@@ -1,7 +1,8 @@
 // Package dockerrt — реализация Runtime над Docker Engine API (нативный
 // клиент moby/moby/client: unix socket на mac/linux, named pipe на Windows).
 // Образ agctl-dsh строится самим agctl из встроенного контекста (Dockerfile,
-// relay, скелет DSH_HOME) + linux-сборки агctl (dist/agctl-linux-<arch>).
+// relay, скелет DSH_HOME) + linux-сборки agctl-guest
+// (dist/agctl-guest-linux-<arch>; в образе — /usr/local/bin/agctl).
 package dockerrt
 
 import (
@@ -17,7 +18,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -195,32 +195,35 @@ func (rt *Runtime) buildContext(ctx context.Context, ctxDir, tag, dockerfile str
 	return nil
 }
 
-// findLinuxBinary ищет Linux-сборку agctl под архитектуру демона Docker
-// (arch: arm64|amd64; "" — любая). Где ищем, по порядку:
-//   - binDir (make image кладёт dist/agctl-linux-<arch>);
-//   - рядом с запущенным бинарём (релиз: agctl-darwin-arm64 и
-//     agctl-linux-* в одной папке — образ собирается без исходников);
-//   - <папка бинаря>/../lib/agctl (make install: ~/.local/lib/agctl);
-//   - сам запущенный бинарь, если он linux той же архитектуры.
+// findLinuxBinary ищет linux-сборку agctl-guest — бинарь, который кладётся
+// в образ как /usr/local/bin/agctl (bridge, ax-runner, init-chat-home), — под
+// архитектуру демона Docker (arch: arm64|amd64; "" — любая). Где ищем, по
+// порядку:
+//   - binDir (make go_linux / img_build кладут dist/agctl-guest-linux-<arch>);
+//   - рядом с запущенным бинарём (релиз: agctl и agctl-guest-linux-* в одной
+//     папке — образ собирается без исходников);
+//   - <папка бинаря>/../lib/agctl (make install, install.sh: ~/.local/lib/agctl).
+//
+// Имя agctl-linux-<arch> — сборка единого бинаря до разделения; в ней те же
+// команды образа, поэтому она подходит, пока установка не обновлена.
 func findLinuxBinary(binDir, arch string) (string, error) {
 	archs := []string{"arm64", "amd64"}
 	if arch != "" {
 		archs = []string{arch}
 	}
 	dirs := []string{binDir}
-	self, _ := os.Executable()
-	if self != "" {
+	if self, _ := os.Executable(); self != "" {
 		if r, err := filepath.EvalSymlinks(self); err == nil {
 			self = r
 		}
 		dirs = append(dirs, filepath.Dir(self), filepath.Join(filepath.Dir(self), "..", "lib", "agctl"))
 	}
-	for _, dir := range dirs {
-		if dir == "" {
-			continue
-		}
-		for _, a := range archs {
-			for _, name := range []string{"agctl-linux-" + a, "agctl_linux_" + a} {
+	for _, a := range archs {
+		for _, name := range []string{"agctl-guest-linux-" + a, "agctl-guest_linux_" + a, "agctl-linux-" + a} {
+			for _, dir := range dirs {
+				if dir == "" {
+					continue
+				}
 				p := filepath.Join(dir, name)
 				if st, err := os.Stat(p); err == nil && !st.IsDir() {
 					return p, nil
@@ -228,14 +231,11 @@ func findLinuxBinary(binDir, arch string) (string, error) {
 			}
 		}
 	}
-	if self != "" && runtime.GOOS == "linux" && (arch == "" || arch == runtime.GOARCH) {
-		return self, nil
-	}
-	want := "agctl-linux-<arm64|amd64>"
+	want := "agctl-guest-linux-<arm64|amd64>"
 	if arch != "" {
-		want = "agctl-linux-" + arch
+		want = "agctl-guest-linux-" + arch
 	}
-	return "", fmt.Errorf("нет linux-сборки agctl (%s) ни в %s, ни рядом с бинарём: положите её рядом с agctl (есть в релизе) или выполните `make image`", want, binDir)
+	return "", fmt.Errorf("нет linux-сборки %s ни в %s, ни рядом с бинарём: положите её рядом с agctl или в ../lib/agctl (есть в релизе) или выполните `make go_linux`", want, binDir)
 }
 
 // daemonArch — архитектура демона Docker в терминах Go (arm64|amd64; "" —

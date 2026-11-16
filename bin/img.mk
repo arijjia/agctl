@@ -28,11 +28,11 @@ overlay_tag = $(shell printf '%s' '$1' | sed -E 's|^(.*/)?([^/:]+)(:[^/]*)?$$|\1
 # dsh-skel внутрь, если .build-img/skel уже создан.
 ## img_build: образы рабочего места: agctl-dsh, agctl-dsh-nossh, вкус web (IMG_FLAVORS) и надстройка профиля PROFILE
 img_build:
-	GOOS=linux GOARCH=$(IMG_GOARCH) go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-linux-$(IMG_GOARCH) ./cmd/agctl
+	GOOS=linux GOARCH=$(IMG_GOARCH) go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-linux-$(IMG_GOARCH) ./cmd/agctl-guest
 	rm -rf .build-img && mkdir -p .build-img
 	cp -R internal/assets/image/. .build-img/
 	mkdir -p .build-img/skel && cp -R internal/assets/dsh-skel/. .build-img/skel/
-	cp dist/agctl-linux-$(IMG_GOARCH) .build-img/agctl
+	cp dist/agctl-guest-linux-$(IMG_GOARCH) .build-img/agctl
 	docker build -t $(IMG) .build-img
 	docker build --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
 	@if echo " $(IMG_FLAVORS) " | grep -q ' web '; then \
@@ -65,9 +65,9 @@ img_build_nossh:
 
 ## img_build_amd64: agctl-dsh под linux/amd64 (например, с Apple Silicon для x86-сервера)
 img_build_amd64:
-	GOOS=linux GOARCH=amd64 go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-linux-amd64 ./cmd/agctl
+	GOOS=linux GOARCH=amd64 go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-linux-amd64 ./cmd/agctl-guest
 	rm -rf .build-img && mkdir -p .build-img
 	cp -R internal/assets/image/. .build-img/
 	mkdir -p .build-img/skel && cp -R internal/assets/dsh-skel/. .build-img/skel/
-	cp dist/agctl-linux-amd64 .build-img/agctl
+	cp dist/agctl-guest-linux-amd64 .build-img/agctl
 	docker build --platform linux/amd64 -t $(IMG) .build-img
