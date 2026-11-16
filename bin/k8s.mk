@@ -12,7 +12,7 @@ IMG_SERVE ?= agctl-serve:$(VERSION)
 
 ## img_serve_build: образ шлюза agctl-serve (linux/$(K8S_ARCH), distroless)
 img_serve_build:
-	GOOS=linux GOARCH=$(K8S_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-linux-$(K8S_ARCH) ./cmd/agctl
+	GOOS=linux GOARCH=$(K8S_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-server-linux-$(K8S_ARCH) ./cmd/agctl-server
 	docker build --platform linux/$(K8S_ARCH) --build-arg TARGETARCH=$(K8S_ARCH) -t $(IMG_SERVE) -f deploy/serve.Dockerfile .
 
 ## img_push: тегировать и запушить agctl-serve, agctl-dsh, agctl-dsh-nossh, вкусы (web, вкусы профиля) и надстройки профиля PROFILE в REGISTRY (Nexus и пр.); печатает digest agctl-dsh (для AGCTL_AX_IMAGE)

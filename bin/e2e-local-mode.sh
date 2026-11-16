@@ -66,6 +66,10 @@ bridge:
 EOF
 printf 'e2e-gitlab-token\n' | "$BIN" dev secrets set GITLAB_TOKEN --stdin >/dev/null && pass "secret GITLAB_TOKEN" || fail "secret"
 printf 'https://gitlab.example.org\n' | "$BIN" dev secrets set GITLAB_URL --stdin >/dev/null && pass "GITLAB_URL (несекретная)" || fail "GITLAB_URL"
+# Ключ модели: без него лаунчер не стартует рабочее место после входа
+# (образ и доступы — в браузере). Значение тестовое; в env контейнера его быть
+# не должно (проверка ниже) — его получает сервер как провайдер.
+printf 'e2e-fake-llm-key-not-a-secret\n' | "$BIN" dev secrets set AGCTL_LLM_API_KEY --stdin >/dev/null && pass "ключ модели" || fail "ключ модели"
 grep -q "e2e-gitlab-token" "$AGCTL_DEV_HOME/dev.yaml" && fail "секрет утёк в dev.yaml" || pass "секрета нет в dev.yaml"
 grep -q "e2e-gitlab-token" "$AGCTL_DEV_HOME/secrets.enc" 2>/dev/null && fail "секрет в открытом виде" || pass "secrets.enc зашифрован"
 
@@ -79,7 +83,8 @@ perm=$(stat -f '%Lp' "$STATE" 2>/dev/null || stat -c '%a' "$STATE")
 [ "$perm" = "600" ] && pass "state.json 0600" || fail "state.json права $perm"
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
   -d '{"login":"x","password":"Password-123!"}' "http://$ADDR/api/register")
-[ "$code" = "403" ] && pass "регистрации нет (403)" || fail "register: $code"
+# модуль регистрации локально не подключён: маршрута нет (405 на POST)
+[ "$code" = "405" ] && pass "регистрации нет (405)" || fail "register: $code"
 code=$(curl -s -o /dev/null -w '%{http_code}' "http://$ADDR/api/local/status")
 [ "$code" = "401" ] && pass "status без токена — 401" || fail "status без токена: $code"
 

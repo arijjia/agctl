@@ -4,7 +4,7 @@
 # композер активен, сессия открыта, фатальных ошибок консоли нет».
 #
 #   bin/e2e-first-session.sh
-#   IMG=agctl-dsh:0.2.2 AGCTL_BIN=dist/agctl bin/e2e-first-session.sh
+#   IMG=agctl-dsh:0.2.2 AGCTL_BIN=dist/agctl-server bin/e2e-first-session.sh
 #
 # Переменные:
 #   IMG        образ чат-контейнера (по умолчанию agctl-dsh:0.2.2)
@@ -54,7 +54,7 @@ trap cleanup EXIT INT TERM
 
 if [ ! -x "$BIN" ]; then
   echo "Сборка бинаря"
-  go build -o "$BIN" ./cmd/agctl || exit 2
+  go build -o "$BIN" ./cmd/agctl-server || exit 2
 fi
 
 "$BIN" serve --home "$TEST_HOME/data" --addr "$ADDR" --image "$IMG" \

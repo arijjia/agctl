@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arijjia/agctl/internal/cli"
 	"github.com/arijjia/agctl/internal/runtime/axrt"
 	"github.com/arijjia/agctl/internal/runtime/k8srt"
 	"github.com/arijjia/agctl/internal/secrets"
@@ -79,39 +80,50 @@ type runtimeFlags struct {
 
 // registerRuntimeFlags — флаги с дефолтами из env (AGCTL_RUNTIME, AGCTL_K8S_*,
 // AGCTL_AX_*) и config.yaml (serve.runtime, serve.k8s.*, serve.ax.*).
-func registerRuntimeFlags(fsSet *flag.FlagSet, cfg userConfig) *runtimeFlags {
+func registerRuntimeFlags(fsSet *flag.FlagSet, cfg cli.UserConfig) cli.Runtime {
 	rf := &runtimeFlags{}
-	rf.kind = fsSet.String("runtime", envOr("AGCTL_RUNTIME", firstNonEmpty(cfg.Serve.Runtime, runtimeDocker)), "бэкенд персональных рантаймов: docker | k8s | ax (Google AX + Agent Substrate)")
+	rf.kind = fsSet.String("runtime", cli.EnvOr("AGCTL_RUNTIME", cli.FirstNonEmpty(cfg.Serve.Runtime, runtimeDocker)), "бэкенд персональных рантаймов: docker | k8s | ax (Google AX + Agent Substrate)")
 
 	k := cfg.Serve.K8s
-	rf.k8sNamespace = fsSet.String("k8s-namespace", envOr("AGCTL_K8S_NAMESPACE", k.Namespace), "namespace подов пользователей (пусто = namespace шлюза в кластере)")
-	rf.k8sKubeconfig = fsSet.String("k8s-kubeconfig", envOr("AGCTL_K8S_KUBECONFIG", k.Kubeconfig), "kubeconfig (пусто = in-cluster service account)")
-	rf.k8sImage = fsSet.String("k8s-image", envOr("AGCTL_K8S_IMAGE", k.Image), "образ agctl-dsh в реестре, доступном кластеру (пусто = --image)")
-	rf.k8sStorageClass = fsSet.String("k8s-storage-class", envOr("AGCTL_K8S_STORAGE_CLASS", k.StorageClass), "StorageClass PVC пользователей (пусто = дефолт кластера)")
-	rf.k8sStorageSize = fsSet.String("k8s-storage-size", envOr("AGCTL_K8S_STORAGE_SIZE", firstNonEmpty(k.StorageSize, "5Gi")), "размер PVC пользователя")
-	rf.k8sRuntimeClass = fsSet.String("k8s-runtime-class", envOr("AGCTL_K8S_RUNTIME_CLASS", k.RuntimeClass), "RuntimeClass подов (например gvisor)")
-	rf.k8sSharedClaim = fsSet.String("k8s-shared-claim", envOr("AGCTL_K8S_SHARED_CLAIM", k.SharedClaim), "имя общего RWX PVC (данные пользователей в <StorageID>/; шлюз монтирует его как $AGCTL_HOME/chats); пусто = PVC на пользователя")
-	rf.k8sSSHHost = fsSet.String("k8s-ssh-host", envOr("AGCTL_K8S_SSH_HOST", k.SSHHost), "внешний адрес узлов/балансировщика для SSH developer'а (NodePort); пусто = SSH выключен")
-	rf.k8sReadyTimeout = fsSet.Int("k8s-ready-timeout", nonZeroOr(envInt("AGCTL_K8S_READY_TIMEOUT", 0), nonZeroOr(k.ReadyTimeoutSec, 180)), "секунд ожидания готовности пода при старте рантайма")
-	rf.k8sGatewayLabels = fsSet.String("k8s-gateway-selector", envOr("AGCTL_K8S_GATEWAY_SELECTOR", firstNonEmpty(k.GatewaySelector, "app.kubernetes.io/name=agctl")), "метки подов шлюза (k=v,…) для NetworkPolicy ingress на dsh; пусто = любой под namespace")
-	rf.k8sLiveness = fsSet.Bool("k8s-liveness", envOr("AGCTL_K8S_LIVENESS", "1") != "0", "livenessProbe dsh (agctl-dsh-net health)")
-	rf.k8sPullPolicy = fsSet.String("k8s-pull-policy", envOr("AGCTL_K8S_PULL_POLICY", firstNonEmpty(k.PullPolicy, "IfNotPresent")), "imagePullPolicy подов: IfNotPresent | Always | Never")
+	rf.k8sNamespace = fsSet.String("k8s-namespace", cli.EnvOr("AGCTL_K8S_NAMESPACE", k.Namespace), "namespace подов пользователей (пусто = namespace шлюза в кластере)")
+	rf.k8sKubeconfig = fsSet.String("k8s-kubeconfig", cli.EnvOr("AGCTL_K8S_KUBECONFIG", k.Kubeconfig), "kubeconfig (пусто = in-cluster service account)")
+	rf.k8sImage = fsSet.String("k8s-image", cli.EnvOr("AGCTL_K8S_IMAGE", k.Image), "образ agctl-dsh в реестре, доступном кластеру (пусто = --image)")
+	rf.k8sStorageClass = fsSet.String("k8s-storage-class", cli.EnvOr("AGCTL_K8S_STORAGE_CLASS", k.StorageClass), "StorageClass PVC пользователей (пусто = дефолт кластера)")
+	rf.k8sStorageSize = fsSet.String("k8s-storage-size", cli.EnvOr("AGCTL_K8S_STORAGE_SIZE", cli.FirstNonEmpty(k.StorageSize, "5Gi")), "размер PVC пользователя")
+	rf.k8sRuntimeClass = fsSet.String("k8s-runtime-class", cli.EnvOr("AGCTL_K8S_RUNTIME_CLASS", k.RuntimeClass), "RuntimeClass подов (например gvisor)")
+	rf.k8sSharedClaim = fsSet.String("k8s-shared-claim", cli.EnvOr("AGCTL_K8S_SHARED_CLAIM", k.SharedClaim), "имя общего RWX PVC (данные пользователей в <StorageID>/; шлюз монтирует его как $AGCTL_HOME/chats); пусто = PVC на пользователя")
+	rf.k8sSSHHost = fsSet.String("k8s-ssh-host", cli.EnvOr("AGCTL_K8S_SSH_HOST", k.SSHHost), "внешний адрес узлов/балансировщика для SSH developer'а (NodePort); пусто = SSH выключен")
+	rf.k8sReadyTimeout = fsSet.Int("k8s-ready-timeout", cli.NonZeroOr(cli.EnvInt("AGCTL_K8S_READY_TIMEOUT", 0), cli.NonZeroOr(k.ReadyTimeoutSec, 180)), "секунд ожидания готовности пода при старте рантайма")
+	rf.k8sGatewayLabels = fsSet.String("k8s-gateway-selector", cli.EnvOr("AGCTL_K8S_GATEWAY_SELECTOR", cli.FirstNonEmpty(k.GatewaySelector, "app.kubernetes.io/name=agctl")), "метки подов шлюза (k=v,…) для NetworkPolicy ingress на dsh; пусто = любой под namespace")
+	rf.k8sLiveness = fsSet.Bool("k8s-liveness", cli.EnvOr("AGCTL_K8S_LIVENESS", "1") != "0", "livenessProbe dsh (agctl-dsh-net health)")
+	rf.k8sPullPolicy = fsSet.String("k8s-pull-policy", cli.EnvOr("AGCTL_K8S_PULL_POLICY", cli.FirstNonEmpty(k.PullPolicy, "IfNotPresent")), "imagePullPolicy подов: IfNotPresent | Always | Never")
 
 	a := cfg.Serve.AX
-	rf.axServer = fsSet.String("ax-server", envOr("AGCTL_AX_SERVER", firstNonEmpty(a.Server, "ax-server.ax-system.svc.cluster.local:8080")), "gRPC-адрес ax-server")
-	rf.axAtespace = fsSet.String("ax-atespace", envOr("AGCTL_AX_ATESPACE", firstNonEmpty(a.Atespace, "agctl")), "atespace задач пользователей (одна установка = один atespace)")
-	rf.axImage = fsSet.String("ax-image", envOr("AGCTL_AX_IMAGE", a.Image), "образ песочницы agctl-dsh, pinned by digest (name@sha256:…)")
-	rf.axRouterURL = fsSet.String("ax-router-url", envOr("AGCTL_AX_ROUTER_URL", firstNonEmpty(a.RouterURL, "http://atenet-router.ate-system.svc.cluster.local:80")), "URL маршрутизатора Substrate (atenet-router)")
-	rf.axRouterCA = fsSet.String("ax-router-ca", envOr("AGCTL_AX_ROUTER_CA", a.RouterCA), "PEM CA маршрутизатора (https)")
-	rf.axRouterCert = fsSet.String("ax-router-cert", envOr("AGCTL_AX_ROUTER_CERT", a.RouterCert), "PEM клиентского сертификата mTLS маршрутизатора (PodCertificate)")
-	rf.axRouterKey = fsSet.String("ax-router-key", envOr("AGCTL_AX_ROUTER_KEY", a.RouterKey), "PEM ключа клиентского сертификата mTLS")
-	rf.axReadyTimeout = fsSet.Int("ax-ready-timeout", nonZeroOr(envInt("AGCTL_AX_READY_TIMEOUT", 0), nonZeroOr(a.ReadyTimeoutSec, 180)), "секунд ожидания Ready задачи после resume")
-	rf.axInjectLLMKey = fsSet.Bool("ax-inject-llm-key", envOr("AGCTL_AX_INJECT_LLM_KEY", "1") != "0", "класть ключи LLM в env задачи; 0 = ключи инжектит egress-шлюз Substrate (replaceHeaders)")
-	rf.axRecreateOnDrift = fsSet.Bool("ax-recreate-on-drift", envOr("AGCTL_AX_RECREATE_ON_DRIFT", "0") == "1", "пересоздавать задачу при смене образа/провайдера (данные актора теряются)")
-	rf.axAteAPI = fsSet.String("ax-ate-api", envOr("AGCTL_AX_ATE_API", a.AteAPI), "адрес ate-api-server (Control API Substrate) для авто-egress-инъекции ключей LLM при --ax-inject-llm-key=0; пусто = политику ведёт оператор")
-	rf.axAteCluster = fsSet.String("ax-ate-cluster", envOr("AGCTL_AX_ATE_CLUSTER", firstNonEmpty(a.AteCluster, "cluster.local")), "имя кластера в credentialUri ate-secret://k8s.io/cluster/<cluster>/…")
-	rf.axDebugSSH = fsSet.Bool("ax-debug-ssh", envOr("AGCTL_AX_DEBUG_SSH", a.DebugSSH) == "1", "spec.debug задач ax: guest-сервисы Substrate на :80 раннера (ax ssh = произвольный exec в песочнице); opt-in на установку")
+	rf.axServer = fsSet.String("ax-server", cli.EnvOr("AGCTL_AX_SERVER", cli.FirstNonEmpty(a.Server, "ax-server.ax-system.svc.cluster.local:8080")), "gRPC-адрес ax-server")
+	rf.axAtespace = fsSet.String("ax-atespace", cli.EnvOr("AGCTL_AX_ATESPACE", cli.FirstNonEmpty(a.Atespace, "agctl")), "atespace задач пользователей (одна установка = один atespace)")
+	rf.axImage = fsSet.String("ax-image", cli.EnvOr("AGCTL_AX_IMAGE", a.Image), "образ песочницы agctl-dsh, pinned by digest (name@sha256:…)")
+	rf.axRouterURL = fsSet.String("ax-router-url", cli.EnvOr("AGCTL_AX_ROUTER_URL", cli.FirstNonEmpty(a.RouterURL, "http://atenet-router.ate-system.svc.cluster.local:80")), "URL маршрутизатора Substrate (atenet-router)")
+	rf.axRouterCA = fsSet.String("ax-router-ca", cli.EnvOr("AGCTL_AX_ROUTER_CA", a.RouterCA), "PEM CA маршрутизатора (https)")
+	rf.axRouterCert = fsSet.String("ax-router-cert", cli.EnvOr("AGCTL_AX_ROUTER_CERT", a.RouterCert), "PEM клиентского сертификата mTLS маршрутизатора (PodCertificate)")
+	rf.axRouterKey = fsSet.String("ax-router-key", cli.EnvOr("AGCTL_AX_ROUTER_KEY", a.RouterKey), "PEM ключа клиентского сертификата mTLS")
+	rf.axReadyTimeout = fsSet.Int("ax-ready-timeout", cli.NonZeroOr(cli.EnvInt("AGCTL_AX_READY_TIMEOUT", 0), cli.NonZeroOr(a.ReadyTimeoutSec, 180)), "секунд ожидания Ready задачи после resume")
+	rf.axInjectLLMKey = fsSet.Bool("ax-inject-llm-key", cli.EnvOr("AGCTL_AX_INJECT_LLM_KEY", "1") != "0", "класть ключи LLM в env задачи; 0 = ключи инжектит egress-шлюз Substrate (replaceHeaders)")
+	rf.axRecreateOnDrift = fsSet.Bool("ax-recreate-on-drift", cli.EnvOr("AGCTL_AX_RECREATE_ON_DRIFT", "0") == "1", "пересоздавать задачу при смене образа/провайдера (данные актора теряются)")
+	rf.axAteAPI = fsSet.String("ax-ate-api", cli.EnvOr("AGCTL_AX_ATE_API", a.AteAPI), "адрес ate-api-server (Control API Substrate) для авто-egress-инъекции ключей LLM при --ax-inject-llm-key=0; пусто = политику ведёт оператор")
+	rf.axAteCluster = fsSet.String("ax-ate-cluster", cli.EnvOr("AGCTL_AX_ATE_CLUSTER", cli.FirstNonEmpty(a.AteCluster, "cluster.local")), "имя кластера в credentialUri ate-secret://k8s.io/cluster/<cluster>/…")
+	rf.axDebugSSH = fsSet.Bool("ax-debug-ssh", cli.EnvOr("AGCTL_AX_DEBUG_SSH", a.DebugSSH) == "1", "spec.debug задач ax: guest-сервисы Substrate на :80 раннера (ax ssh = произвольный exec в песочнице); opt-in на установку")
 	return rf
+}
+
+// Build — сервер с выбранным бэкендом (cli.Runtime).
+func (rf *runtimeFlags) Build(db *store.DB, sec *secrets.Manager, cfg server.Config) (*server.Server, error) {
+	return buildServer(rf, db, sec, cfg)
+}
+
+// StatusLine — строка лога старта о бэкенде (cli.Runtime).
+func (rf *runtimeFlags) StatusLine() string {
+	kind, _ := parseRuntimeKind(*rf.kind)
+	return runtimeStatusLine(kind)
 }
 
 // buildServer — сервер с выбранным бэкендом. Docker: server.New (свип дрейфа
@@ -129,7 +141,7 @@ func buildServer(rf *runtimeFlags, db *store.DB, sec *secrets.Manager, cfg serve
 		k8sCfg := k8srt.Config{
 			Namespace:        *rf.k8sNamespace,
 			Kubeconfig:       *rf.k8sKubeconfig,
-			Image:            firstNonEmpty(*rf.k8sImage, cfg.Image),
+			Image:            cli.FirstNonEmpty(*rf.k8sImage, cfg.Image),
 			ImagePullPolicy:  corev1.PullPolicy(*rf.k8sPullPolicy),
 			StorageClassName: *rf.k8sStorageClass,
 			StorageSize:      *rf.k8sStorageSize,
@@ -203,7 +215,7 @@ func buildServer(rf *runtimeFlags, db *store.DB, sec *secrets.Manager, cfg serve
 		// Fetch-at-boot: конфиг провайдера раннер берёт у шлюза по токену
 		// раннера — env/spec задачи его не содержит, дрейфа при смене
 		// профиля/ключа нет (п.4 карточки k8s-substrate-ax-backend).
-		axCfg.ProviderAtBoot = envOr("AGCTL_AX_PROVIDER_AT_BOOT", "1") == "1"
+		axCfg.ProviderAtBoot = cli.EnvOr("AGCTL_AX_PROVIDER_AT_BOOT", "1") == "1"
 		if axCfg.ProviderAtBoot {
 			axCfg.GatewayURL = cfg.PublicURL
 		}
@@ -279,5 +291,5 @@ func runtimeStatusLine(kind string) string {
 	case runtimeAX:
 		return "ax: задачи пользователей через ax-server / Agent Substrate"
 	}
-	return "docker: " + dockerStatus()
+	return "docker: " + cli.DockerStatus()
 }

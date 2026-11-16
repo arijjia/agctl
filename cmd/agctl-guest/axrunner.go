@@ -30,7 +30,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/arijjia/agctl/internal/assets"
+	"github.com/arijjia/agctl/internal/cli"
 	"github.com/arijjia/agctl/internal/provision"
 	"github.com/arijjia/agctl/internal/runtime/axrt"
 	"google.golang.org/grpc"
@@ -74,11 +74,11 @@ func parseRunnerTask(raw string) (runnerTask, error) {
 // cmdAXRunner — подкоманда ax-runner.
 func cmdAXRunner(args []string) {
 	fsSet := flag.NewFlagSet("ax-runner", flag.ExitOnError)
-	port := fsSet.Int("port", envInt("AGCTL_RUNNER_PORT", 80), "порт раннера (probes + прокси на dsh)")
-	targetPort := fsSet.Int("target-port", envInt("DSH_PORT", 3080), "порт dsh web внутри песочницы")
+	port := fsSet.Int("port", cli.EnvInt("AGCTL_RUNNER_PORT", 80), "порт раннера (probes + прокси на dsh)")
+	targetPort := fsSet.Int("target-port", cli.EnvInt("DSH_PORT", 3080), "порт dsh web внутри песочницы")
 	taskFile := fsSet.String("task-file", "", "файл Task вместо AX_TASK_YAML (локальная отладка)")
-	home := fsSet.String("home", envOr("DSH_HOME", "/workspace/dsh-home"), "DSH_HOME на долговечном томе")
-	work := fsSet.String("work", envOr("HOME", "/workspace/work"), "рабочий каталог пользователя (HOME, проекты)")
+	home := fsSet.String("home", cli.EnvOr("DSH_HOME", "/workspace/dsh-home"), "DSH_HOME на долговечном томе")
+	work := fsSet.String("work", cli.EnvOr("HOME", "/workspace/work"), "рабочий каталог пользователя (HOME, проекты)")
 	_ = fsSet.Parse(args)
 
 	raw := os.Getenv("AX_TASK_YAML")
@@ -124,10 +124,10 @@ func cmdAXRunner(args []string) {
 	case gwURL != "":
 		log.Fatalf("ax-runner: конфиг провайдера у шлюза %s недоступен (fetch-at-boot) — проверьте шлюз и токен раннера", gwURL)
 	default:
-		provider = &runnerProvider{Provider: providerFromEnv()}
+		provider = &runnerProvider{Provider: cli.ProviderFromEnv()}
 	}
 	log.Printf("ax-runner: провайдер %s (%s)", provider.Provider.Alias(), source)
-	if err := prepareChatHome(*home, provider.Provider, true, os.Getenv("AGCTL_DEFAULT_FULL_ACCESS") == "1"); err != nil {
+	if err := cli.PrepareChatHome(*home, provider.Provider, true, os.Getenv("AGCTL_DEFAULT_FULL_ACCESS") == "1"); err != nil {
 		log.Fatal(err)
 	}
 	command := task.Spec.Command
@@ -167,14 +167,6 @@ func cmdAXRunner(args []string) {
 		log.Fatal(err)
 	}
 	sup.wait()
-}
-
-// envInt — целое из env или дефолт.
-func envInt(key string, def int) int {
-	if v, err := strconv.Atoi(strings.TrimSpace(os.Getenv(key))); err == nil && v > 0 {
-		return v
-	}
-	return def
 }
 
 // sandboxBindIP — адрес, на котором dsh web слушает в песочнице (как
@@ -486,63 +478,4 @@ func firstString(vals []string) string {
 		}
 	}
 	return ""
-}
-
-// providerFromEnv — платформенный провайдер из AGCTL_LLM_* окружения
-// (K8s init-контейнер, раннер AX): ключи дополнительных провайдеров — из env
-// по именам api_key_env.
-func providerFromEnv() provision.Provider {
-	models := []string{}
-	if raw := os.Getenv("AGCTL_LLM_MODELS"); raw != "" {
-		if err := json.Unmarshal([]byte(raw), &models); err != nil {
-			log.Fatalf("AGCTL_LLM_MODELS: %v", err)
-		}
-	}
-	extras := []provision.ExtraProvider{}
-	if raw := strings.TrimSpace(os.Getenv("AGCTL_LLM_EXTRA_PROVIDERS")); raw != "" {
-		if err := json.Unmarshal([]byte(raw), &extras); err != nil {
-			log.Fatalf("AGCTL_LLM_EXTRA_PROVIDERS: %v", err)
-		}
-	}
-	for i := range extras {
-		env := strings.TrimSpace(extras[i].APIKeyEnv)
-		if env == "" {
-			env = extras[i].KeyEnv()
-		}
-		extras[i].APIKeyEnv = env
-		extras[i].APIKey = strings.TrimSpace(os.Getenv(env))
-	}
-	return provision.Provider{
-		Name:    os.Getenv("AGCTL_LLM_PROVIDER"),
-		BaseURL: os.Getenv("AGCTL_LLM_BASE_URL"),
-		Model:   os.Getenv("AGCTL_LLM_MODEL"),
-		Models:  models,
-		APIKey:  os.Getenv("AGCTL_LLM_API_KEY"),
-		Extras:  extras,
-	}
-}
-
-// prepareChatHome — DSH_HOME готов к старту dsh: скелет (пустой том),
-// провайдер (refresh), плагины платформы, дефолт пресета разрешений — тот же
-// набор шагов, что у Docker-адаптера на каждом ленивом старте.
-func prepareChatHome(home string, provider provision.Provider, refresh, fullAccess bool) error {
-	seeded, refreshed, err := initChatHome(home, provider, refresh, assets.DshSkel)
-	if err != nil {
-		return err
-	}
-	if err := provision.EnsureChatPlugins(home, assets.DshSkel); err != nil {
-		return err
-	}
-	if err := provision.EnsurePermissionDefaults(home, fullAccess); err != nil {
-		return fmt.Errorf("permission defaults: %w", err)
-	}
-	switch {
-	case seeded:
-		log.Printf("chat-home: seeded %s", home)
-	case refreshed:
-		log.Printf("chat-home: provider refreshed in %s", home)
-	default:
-		log.Printf("chat-home: existing home preserved %s", home)
-	}
-	return nil
 }

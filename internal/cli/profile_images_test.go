@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"flag"
@@ -18,7 +18,7 @@ func TestProfileImages(t *testing.T) {
 		if err := fs.Parse(args); err != nil {
 			t.Fatal(err)
 		}
-		return profileImages(fs, prof, *image)
+		return ProfileImages(fs, prof, *image)
 	}
 	if b, w := run(org); b != "agctl-dsh:0.2.2" || w != "agctl-dsh-utmn:0.2.2" {
 		t.Fatalf("надстройка профиля: base=%s work=%s", b, w)

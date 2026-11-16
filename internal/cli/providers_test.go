@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"os"
@@ -34,7 +34,7 @@ llm:
 		t.Fatal(err)
 	}
 	t.Setenv("AGCTL_LLM_CORP_API_KEY", "unit-test-corp-key")
-	extras := profExtraProviders(prof)
+	extras := ProfExtraProviders(prof)
 	if len(extras) != 1 {
 		t.Fatalf("extras = %d, want 1", len(extras))
 	}
@@ -45,11 +45,11 @@ llm:
 	if got.APIKeyEnv != "AGCTL_LLM_CORP_API_KEY" || got.APIKey != "unit-test-corp-key" {
 		t.Fatalf("extra provider key resolution = %+v", got)
 	}
-	if name := llmProviderName(prof); name != "zai-coding-cn" {
+	if name := LLMProviderName(prof); name != "zai-coding-cn" {
 		t.Fatalf("provider name = %q", name)
 	}
 	t.Setenv("AGCTL_LLM_PROVIDER", "env-provider")
-	if name := llmProviderName(prof); name != "env-provider" {
+	if name := LLMProviderName(prof); name != "env-provider" {
 		t.Fatalf("env provider name = %q", name)
 	}
 }

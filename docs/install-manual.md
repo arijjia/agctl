@@ -17,10 +17,10 @@
 New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\agctl" | Out-Null; Set-Location (New-Item -ItemType Directory -Force "$env:TEMP\agctl-dl")
 ```
 
-Скачать архив для Windows, linux-сборку (для самосборки образа) и файл контрольных сумм:
+Скачать архив для Windows, бинарь образа `agctl-guest` (для самосборки образа) и файл контрольных сумм:
 
 ```powershell
-gh release download --repo arijjia/agctl --pattern 'agctl_windows_amd64.zip' --pattern 'agctl_linux_amd64.tar.gz' --pattern checksums.txt
+gh release download --repo arijjia/agctl --pattern 'agctl_windows_amd64.zip' --pattern 'agctl-guest_linux_amd64.tar.gz' --pattern checksums.txt
 ```
 
 Сверить SHA-256 архива с опубликованной (должно напечатать `checksum OK`):
@@ -35,10 +35,10 @@ $h = (Get-FileHash agctl_windows_amd64.zip -Algorithm SHA256).Hash.ToLower(); if
 Expand-Archive -Force agctl_windows_amd64.zip -DestinationPath .; Move-Item -Force agctl.exe "$env:LOCALAPPDATA\agctl\agctl.exe"; Unblock-File "$env:LOCALAPPDATA\agctl\agctl.exe"
 ```
 
-Положить linux-сборку рядом с программой под именем `agctl-linux-amd64` (`tar` есть в Windows 10 с версии 1803):
+Положить бинарь образа рядом с программой под именем `agctl-guest-linux-amd64` (`tar` есть в Windows 10 с версии 1803):
 
 ```powershell
-tar xzf agctl_linux_amd64.tar.gz agctl; Move-Item -Force agctl "$env:LOCALAPPDATA\agctl\agctl-linux-amd64"
+tar xzf agctl-guest_linux_amd64.tar.gz agctl-guest; Move-Item -Force agctl-guest "$env:LOCALAPPDATA\agctl\agctl-guest-linux-amd64"
 ```
 
 Добавить каталог программы в пользовательский `PATH` (навсегда и в текущее окно):
@@ -64,16 +64,16 @@ agctl version
 
 ## macOS (Apple Silicon; для Intel замените `arm64` на `amd64`)
 
-Создать каталоги для программы и linux-сборки, перейти во временную папку для скачивания:
+Создать каталоги для программы и бинаря образа, перейти во временную папку для скачивания:
 
 ```bash
 mkdir -p ~/.local/bin ~/.local/lib/agctl && cd "$(mktemp -d)"
 ```
 
-Скачать архив для macOS, linux-сборку (для самосборки образа) и файл контрольных сумм:
+Скачать архив для macOS, бинарь образа `agctl-guest` (для самосборки образа) и файл контрольных сумм:
 
 ```bash
-gh release download --repo arijjia/agctl --pattern 'agctl_darwin_arm64.tar.gz' --pattern 'agctl_linux_arm64.tar.gz' --pattern checksums.txt
+gh release download --repo arijjia/agctl --pattern 'agctl_darwin_arm64.tar.gz' --pattern 'agctl-guest_linux_arm64.tar.gz' --pattern checksums.txt
 ```
 
 Сверить SHA-256 скачанных архивов с опубликованными (должно быть `OK`):
@@ -88,10 +88,10 @@ shasum -a 256 -c checksums.txt --ignore-missing
 tar xzf agctl_darwin_arm64.tar.gz agctl && mv agctl ~/.local/bin/agctl && xattr -d com.apple.quarantine ~/.local/bin/agctl 2>/dev/null; true
 ```
 
-Положить linux-сборку в `~/.local/lib/agctl` под именем `agctl-linux-arm64`:
+Положить бинарь образа в `~/.local/lib/agctl` под именем `agctl-guest-linux-arm64`:
 
 ```bash
-tar xzf agctl_linux_arm64.tar.gz agctl && mv agctl ~/.local/lib/agctl/agctl-linux-arm64
+tar xzf agctl-guest_linux_arm64.tar.gz agctl-guest && mv agctl-guest ~/.local/lib/agctl/agctl-guest-linux-arm64
 ```
 
 Проверить, что программа запускается и какой версии (`~/.local/bin` должен быть в `PATH`):
@@ -105,16 +105,16 @@ agctl version
 
 ## Linux (Docker Engine; `amd64` или `arm64`)
 
-Создать каталог для программы и перейти во временную папку для скачивания:
+Создать каталоги для программы и бинаря образа и перейти во временную папку для скачивания:
 
 ```bash
-mkdir -p ~/.local/bin && cd "$(mktemp -d)"
+mkdir -p ~/.local/bin ~/.local/lib/agctl && cd "$(mktemp -d)"
 ```
 
-Скачать архив для Linux и файл контрольных сумм:
+Скачать архив для Linux, бинарь образа `agctl-guest` и файл контрольных сумм:
 
 ```bash
-gh release download --repo arijjia/agctl --pattern 'agctl_linux_amd64.tar.gz' --pattern checksums.txt
+gh release download --repo arijjia/agctl --pattern 'agctl_linux_amd64.tar.gz' --pattern 'agctl-guest_linux_amd64.tar.gz' --pattern checksums.txt
 ```
 
 Сверить SHA-256 архива с опубликованной (должно быть `OK`):
@@ -127,6 +127,12 @@ sha256sum -c checksums.txt --ignore-missing
 
 ```bash
 tar xzf agctl_linux_amd64.tar.gz agctl && mv agctl ~/.local/bin/agctl
+```
+
+Положить бинарь образа в `~/.local/lib/agctl` под именем `agctl-guest-linux-amd64`:
+
+```bash
+tar xzf agctl-guest_linux_amd64.tar.gz agctl-guest && mv agctl-guest ~/.local/lib/agctl/agctl-guest-linux-amd64
 ```
 
 Проверить, что программа запускается и какой версии (`~/.local/bin` должен быть в `PATH`):

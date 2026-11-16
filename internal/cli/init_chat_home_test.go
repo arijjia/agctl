@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"os"
@@ -13,7 +13,7 @@ import (
 func TestInitChatHomeSeedsThenPreservesOrRefreshesProvider(t *testing.T) {
 	home := t.TempDir()
 	first := provision.Provider{BaseURL: "https://llm.example.invalid/v1", Model: "model-a"}
-	seeded, refreshed, err := initChatHome(home, first, false, assets.DshSkel)
+	seeded, refreshed, err := InitChatHome(home, first, false, assets.DshSkel)
 	if err != nil || !seeded || refreshed {
 		t.Fatalf("seed result = (%v,%v,%v)", seeded, refreshed, err)
 	}
@@ -24,7 +24,7 @@ func TestInitChatHomeSeedsThenPreservesOrRefreshesProvider(t *testing.T) {
 	}
 
 	second := provision.Provider{BaseURL: "https://llm.example.invalid/v2", Model: "model-b"}
-	seeded, refreshed, err = initChatHome(home, second, false, assets.DshSkel)
+	seeded, refreshed, err = InitChatHome(home, second, false, assets.DshSkel)
 	if err != nil || seeded || refreshed {
 		t.Fatalf("preserve result = (%v,%v,%v)", seeded, refreshed, err)
 	}
@@ -36,7 +36,7 @@ func TestInitChatHomeSeedsThenPreservesOrRefreshesProvider(t *testing.T) {
 		t.Fatal("existing provider configuration changed without refresh")
 	}
 
-	seeded, refreshed, err = initChatHome(home, second, true, assets.DshSkel)
+	seeded, refreshed, err = InitChatHome(home, second, true, assets.DshSkel)
 	if err != nil || seeded || !refreshed {
 		t.Fatalf("refresh result = (%v,%v,%v)", seeded, refreshed, err)
 	}

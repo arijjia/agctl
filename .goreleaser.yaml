@@ -2,6 +2,12 @@ version: 2
 
 project_name: agctl
 
+# Одно ядро — три бинаря:
+#   agctl         — разработчику (локальный режим), все ОС;
+#   agctl-server  — сервер организации (serve, рантаймы docker | k8s | ax);
+#   agctl-guest   — linux-бинарь образа рабочего места (в образе —
+#                   /usr/local/bin/agctl: bridge, ax-runner, init-chat-home);
+#                   install.sh кладёт его в ~/.local/lib/agctl для самосборки образа.
 builds:
   - id: agctl
     main: ./cmd/agctl
@@ -17,14 +23,51 @@ builds:
       - arm64
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.buildDate={{.Now.Format "2006-01-02"}}
+  - id: agctl-server
+    main: ./cmd/agctl-server
+    binary: agctl-server
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.buildDate={{.Now.Format "2006-01-02"}}
+  - id: agctl-guest
+    main: ./cmd/agctl-guest
+    binary: agctl-guest
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.buildDate={{.Now.Format "2006-01-02"}}
 
 archives:
-  - formats: [tar.gz]
+  - id: agctl
+    ids: [agctl]
+    formats: [tar.gz]
     name_template: >-
-      {{ .ProjectName }}_{{ .Os }}_{{ .Arch }}
+      agctl_{{ .Os }}_{{ .Arch }}
     format_overrides:
       - goos: windows
         formats: [zip]
+  - id: agctl-server
+    ids: [agctl-server]
+    formats: [tar.gz]
+    name_template: >-
+      agctl-server_{{ .Os }}_{{ .Arch }}
+  - id: agctl-guest
+    ids: [agctl-guest]
+    formats: [tar.gz]
+    name_template: >-
+      agctl-guest_{{ .Os }}_{{ .Arch }}
 
 checksum:
   name_template: "checksums.txt"

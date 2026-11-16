@@ -13,7 +13,7 @@
 #
 # Переменные:
 #   TEST_IMAGE  (обяз.) тег уже собранного образа
-#   AGCTL_BIN   бинарь (по умолчанию dist/agctl, соберём если нет)
+#   AGCTL_BIN   бинарь (по умолчанию dist/agctl-server, соберём если нет)
 #   TEST_ADDR   адрес UI (по умолчанию 127.0.0.1:18929)
 #   FAKE_LLM    1 = поднять стаб OpenAI-API и проверить живой провод
 #               до модели (контейнер → стаб) curl-пробой с env-токеном
@@ -31,7 +31,7 @@ skip() { printf '  SKIP: %s\n' "$*"; }
 [ -n "${TEST_IMAGE:-}" ] || { echo "TEST_IMAGE не задан" >&2; exit 2; }
 TEST_ADDR="${TEST_ADDR:-127.0.0.1:18929}"
 TEST_PORT="${TEST_ADDR##*:}"
-AGCTL_BIN="${AGCTL_BIN:-$REPO_ROOT/dist/agctl}"
+AGCTL_BIN="${AGCTL_BIN:-$REPO_ROOT/dist/agctl-server}"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
 TEST_HOME="$HOME/.agctl-e2e-$RUN_ID"
 COOKIES_ADMIN="$TEST_HOME/qa-admin.cookies"
@@ -59,7 +59,7 @@ preflight() {
   if [ ! -x "$AGCTL_BIN" ]; then
     say "Сборка бинаря"
     make web_build >/dev/null 2>&1 || { echo "web_build упал" >&2; exit 2; }
-    go build -trimpath -o "$AGCTL_BIN" ./cmd/agctl || { echo "go build упал" >&2; exit 2; }
+    go build -trimpath -o "$AGCTL_BIN" ./cmd/agctl-server || { echo "go build упал" >&2; exit 2; }
   fi
   pass "preflight: инструменты на месте, порт $TEST_PORT свободен, образ есть"
 }

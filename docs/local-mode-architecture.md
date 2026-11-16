@@ -1,6 +1,6 @@
 # Локальный режим agctl: архитектура, реализация и разбор кодовой базы
 
-> Срез `main` на 2026-11-15. Этот документ — единственная актуальная
+> Срез `main` на 2026-11-16. Этот документ — единственная актуальная
 > документация в репозитории: README — онбординг разработчика, здесь —
 > как локальный режим устроен и реализован, какая часть кодовой базы
 > отвечает за локальный режим, какая за удалённый (серверный) и кластерный,
@@ -10,13 +10,24 @@
 > карты — `make map` (три вкладки: сервер, ноутбук, кластер), улики на
 > картах ведут в строки кода.
 
-## 1. Один бинарь, три режима
+## 1. Одно ядро, три бинаря, три режима
 
-`agctl` — один статический Go-бинарь. В нём три способа запустить
-платформу, и все они используют один и тот же HTTP-сервер
-`internal/server` и один и тот же образ рабочего места `agctl-dsh`:
+Платформа — одно ядро (`internal/*`) и три статических Go-бинаря поверх
+него (карточка `split-binaries-local-server`):
 
-| | Локальный режим `agctl dev` | Серверный режим `agctl serve` | Кластер `agctl serve --runtime k8s \| ax` |
+| Бинарь | Кому | Команды | Чего в нём нет |
+|---|---|---|---|
+| `agctl` (`cmd/agctl`) | разработчику | `dev …`, `backlog`, `completion`, `version` | серверных модулей, k8s/AX, gRPC |
+| `agctl-server` (`cmd/agctl-server`) | организации | `serve` (`--runtime docker \| k8s \| ax`), `migrate`, `seed-demo-users`, `connect`, `sync`, `config` | локального режима |
+| `agctl-guest` (`cmd/agctl-guest`) | образу `agctl-dsh` (там он `/usr/local/bin/agctl`) | `bridge`, `ax-runner`, `init-chat-home` | сервера |
+
+Общий `serve` — `internal/cli.Serve`: `agctl dev serve` вызывает его с
+`LocalMode`, `agctl-server serve` — с `server.ServerModules()` и выбором
+бэкенда (`cli.Runtime`, `cmd/agctl-server/runtime_select.go`). Все режимы
+используют один и тот же HTTP-сервер `internal/server` и один и тот же образ
+рабочего места `agctl-dsh`:
+
+| | Локальный режим `agctl dev` | Серверный режим `agctl-server serve` | Кластер `agctl-server serve --runtime k8s \| ax` |
 |---|---|---|---|
 | Для кого | один разработчик на своей машине | организация: много пользователей | организация без Docker-хоста |
 | Вход | одноразовая ссылка из CLI, регистрации нет | логин/пароль, роли `user` / `developer` / `admin` | как на сервере |
@@ -29,7 +40,7 @@
 | Мост к хосту | есть (белый список команд) | нет | нет |
 | Сон по TTL | 12 часов | 60 минут (prewarm-пул, квоты, админка) | удаление пода / `SuspendTask` |
 
-Технически `agctl dev up` ≈ `agctl serve` с заполненным `Config.Local`
+Технически `agctl dev up` ≈ `agctl-server serve` с заполненным `Config.Local`
 (`internal/server/server.go`, поле `Local *LocalMode`). Всё серверное, что
 локально не нужно (регистрация, роли и SSH developer'а, лаунчер developer'а,
 админка, prewarm, autosave, legacy workspaces `/w`, Jira, конфиг раннера
@@ -162,7 +173,7 @@ cookie-сессией владельца плюс проверка same-origin �
 2. `server.LocalMode{OwnerLogin: "owner", WorkDir, LoginToken, ControlToken,
    BridgeToken, BridgeURL: "http://host.docker.internal:<port>", BridgeTools,
    BridgeLog, Env, Hooks: devHooks}`;
-3. вызов общего `cmdServeWith(serveArgs, local, onReady)` с флагами
+3. вызов общего `cli.Serve(serveArgs, cli.ServeOptions{Local, OnReady})` с флагами
    `--home ~/.agctl-dev/data --addr … --mem-gb --cpus --chat-ttl-min 720
    --dev-env= [--profile | --profile-dir] [--image X --dev-images X]`;
 4. `onReady`: на Linux — слушатель моста на IP `docker0`
@@ -301,7 +312,7 @@ WSL, CI) или `AGCTL_DEV_SECRETS=file` — зашифрованный файл
 (`internal/provision/mcp_preset.go`, `PassEnv`).
 
 **Ключ модели**: `devServe` ставит `AGCTL_LLM_API_KEY` в своё окружение →
-`cmdServeWith` собирает `provision.Provider` из профиля (`default_base_url`,
+`cli.Serve` собирает `provision.Provider` из профиля (`default_base_url`,
 `default_models`) и ключа → `resolveDefaultLLM` сохраняет его зашифрованным
 в SQLite → при каждом старте контейнера `RefreshProvider` пишет провайдера
 в dsh-home. Смена ключа из лаунчера — `setDefaultLLMKey` без рестарта
@@ -395,11 +406,13 @@ agctl-dsh-<профиль>-<вкус>:0.2.2    вкус профиля — <пр
 (`internal/runtime/dockerrt/devbuild.go`): сначала `docker pull`, а если
 реестр образа не знает — сборка по плану `DevBuildPlan`, пропуская уже
 готовые ступени; первый раз 10–20 минут (npm, apt, браузеры), дальше из
-кэша Docker. Базовой ступени нужна linux-сборка `agctl` под архитектуру
-демона: `findLinuxBinary` ищет `agctl-linux-<arch>` в `./dist`, в папке
-самого бинаря и в `<папка бинаря>/../lib/agctl` (туда её кладёт
-`make install`; с GitHub это архив `agctl_linux_<arch>`); на Linux подходит
-сам запущенный бинарь, если архитектура совпадает.
+кэша Docker. Базовой ступени нужен `agctl-guest` под архитектуру демона
+(в образе он `/usr/local/bin/agctl`): `findLinuxBinary` ищет
+`agctl-guest-linux-<arch>` в `./dist`, в папке самого бинаря и в
+`<папка бинаря>/../lib/agctl` (туда его кладут `make install` и
+`bin/install.sh`; с GitHub это архив `agctl-guest_linux_<arch>`). Имя
+`agctl-linux-<arch>` — сборка единого бинаря до разделения — тоже
+подходит, пока установка не обновлена.
 
 Выбор образа: `images.dev` профиля (`internal/profile`, поле `Images.Dev`)
 — каталог лаунчера; `images.dockerfile` — надстройка; `image/flavors/*` —
@@ -454,20 +467,29 @@ prewarm-пула, autosave (`/workspace` — настоящие репозито
 
 ## 3. Реализация: файлы локального режима
 
-### 3.1 `cmd/agctl` — CLI
+### 3.1 `cmd/agctl` — бинарь разработчика, и `internal/cli`
 
 | Файл | Что |
 |---|---|
-| `main.go` | диспетчер подкоманд: `dev` → `cmdDev`, `bridge` → `cmdBridge`; `cmdServeWith(args, local, onReady)` — общий `serve` с опциональным `LocalMode` (его вызывает и `serve`, и `dev serve`) |
-| `dev.go` | весь `agctl dev`: `devInit`, `devUp`, `devServe`, `devBridgeListener`, `dockerGatewayIP`, `devDown`, `devStatus`, `devOpen`, `devLogs`, `devSecrets`, `devBridge`, `devUpdate`, `devVerify`, `devAutoRollback`, `devRollback`, `devDoctor`, `devPrepareImage`, `devDefaultImage`, `devFlavorOf`, `profileBridgeTools`, `openBrowser` |
+| `main.go` | диспетчер: `dev` → `cmdDev`, `backlog`, `completion`, `version`, `help` |
+| `dev.go` | весь `agctl dev`: `devInit`, `devUp`, `devServe` (→ `cli.Serve` с `LocalMode`), `devBridgeListener`, `dockerGatewayIP`, `devDown`, `devStatus`, `devOpen`, `devLogs`, `devSecrets`, `devBridge`, `devUpdate`, `devVerify`, `devAutoRollback`, `devRollback`, `devDoctor`, `devPrepareImage`, `devDefaultImage`, `devFlavorOf`, `profileBridgeTools`, `openBrowser` |
 | `dev_hooks.go` | `devHooks` — реализация `server.LocalHooks` для лаунчера: доступы (`Entries`, `SetValue`, `DeleteValue`, `ContainerEnv`, `LLMKey`, `StoreBackend`), образы (`Images`, `CurrentImage`, `SetImage`, `EnsureImage`); `dev.yaml` перечитывается на каждую операцию, потому что его параллельно правит CLI |
-| `bridge.go` | клиент моста внутри контейнера: `agctl bridge list \| call \| mcp`; адрес и токен из env или `$DSH_HOME/.agctl/bridge.json` |
 | `detach_unix.go`, `detach_windows.go` | отвязка фонового `dev serve` от терминала |
-| `usage.go`, `completion.go` | справка (секция «Локальный режим») и fish-автодополнение `dev …` / `bridge …` |
-| `config.go` | `~/.config/agctl/config.yaml` серверного CLI; локальный режим его отключает через `AGCTL_CONFIG` |
+| `usage.go`, `completion.go` | справка (`cli.Usage`) и fish-автодополнение `dev …` |
+
+Клиент моста внутри контейнера — `cmd/agctl-guest/bridge.go`: `agctl bridge
+list \| call \| mcp` в образе; адрес и токен из env или
+`$DSH_HOME/.agctl/bridge.json`.
+
+`internal/cli` — общее для точек входа: `Serve` / `ServeOptions` /
+`Runtime` (`serve.go`), `~/.config/agctl/config.yaml` серверного CLI
+(`config.go`; локальный режим его отключает через `AGCTL_CONFIG`),
+подготовка DSH_HOME вне Docker (`chathome.go`), справка (`usage.go`),
+сведения о сборке (`build.go`), хелперы флагов и env (`util.go`).
 
 Тесты: `dev_test.go` (доступы, белый список моста из профиля, выбор образа
-по вкусу), `usage_test.go`, `completion_test.go`.
+по вкусу), `usage_test.go` и `completion_test.go` (нет серверных команд),
+`internal/cli/*_test.go`.
 
 ### 3.2 `internal/localmode` — состояние режима на хосте
 
@@ -520,7 +542,7 @@ argv, `pattern`, `confirm`/deny/timeout, журнал.
 | `internal/assets/image/`, `internal/assets/dsh-skel/` | контекст образа и скелет DSH_HOME, встроенные в бинарь (`internal/assets/assets.go`) |
 | `profiles/<id>/local/bridge-tools.yaml`, `images.dev`, `images.dockerfile`, `image/flavors/*` | вклад профиля организации в локальный режим |
 | `bin/install.mk` | `make install` / `uninstall` из исходников |
-| `bin/install.sh`, `bin/install.ps1` | установка из GitHub Releases одной командой (`curl \| sh`, `irm \| iex`): ОС и архитектура, скачивание через `gh` или напрямую, SHA-256, бинарь + linux-сборка, карантин / Unblock-File, PATH; `AGCTL_RELEASE_DIR` — прогон на локальных архивах без релиза; `AGCTL_REPO=<org>/agctl-profile-<id>` — комплект организации из приватного репозитория профиля (zip `agctl-<id>-<версия>-<os>-<arch>.zip` + `checksums-<версия>.txt`, собирает `bin/release.sh` репозитория профиля): бинарь, linux-сборка и профиль в `~/.local/share/agctl/profiles/<id>` (Windows: `%LOCALAPPDATA%\agctl\profiles\<id>`), в конце — авто-init профиля (`agctl dev init --profile-dir … --yes`; `AGCTL_NO_INIT=1` — напечатать команду, `AGCTL_WORKDIR` — папка проектов) |
+| `bin/install.sh`, `bin/install.ps1` | установка из GitHub Releases одной командой (`curl \| sh`, `irm \| iex`): ОС и архитектура, скачивание через `gh` или напрямую, SHA-256, `agctl` + `agctl-guest` (бинарь образа), карантин / Unblock-File, PATH; `AGCTL_RELEASE_DIR` — прогон на локальных архивах без релиза; `AGCTL_REPO=<org>/agctl-profile-<id>` — комплект организации из приватного репозитория профиля (zip `agctl-<id>-<версия>-<os>-<arch>.zip` + `checksums-<версия>.txt`, собирает `bin/release.sh` репозитория профиля): `agctl`, `agctl-guest-linux-<arch>` (старые комплекты — `agctl-linux-<arch>`) и профиль в `~/.local/share/agctl/profiles/<id>` (Windows: `%LOCALAPPDATA%\agctl\profiles\<id>`), в конце — авто-init профиля (`agctl dev init --profile-dir … --yes`; `AGCTL_NO_INIT=1` — напечатать команду, `AGCTL_WORKDIR` — папка проектов) |
 | `bin/e2e-local-mode.sh` | живой прогон на изолированном `AGCTL_DEV_HOME`: init → secrets (файловое хранилище) → up → вход по токену → рабочее место с родной папкой и env → мост (вызов, подтверждение, MCP) → update на другой тег с бэкапом → rollback → down |
 
 ## 4. Удалённый (серверный) режим: что там и где в коде
@@ -534,14 +556,14 @@ argv, `pattern`, `confirm`/deny/timeout, журнал.
 — заявка `POST /api/role-requests` → апрув админом → `users.role`.
 Developer получает sshd в том же контейнере (`PUT /api/me/ssh`, порт
 `:2222` публикуется только на loopback хоста; `agctl connect`, `agctl sync`
-с Mutagen — `cmd/agctl/connect.go`, `sync.go`).
+с Mutagen — `cmd/agctl-server/connect.go`, `sync.go`).
 
 **Менеджер рантаймов** (`chat.go`): карта `userID → chatRuntime`, ленивый
 `ensureChat` с per-user lock, TTL-reaper (`reapIdleChats`, 60 минут, per-user
 лимиты из админки), смена образа на живом рантайме, prewarm-пул
 (`chat_prewarm.go`: N последних активных пользователей держатся тёплыми).
 Контракт `runtime.ChatProvider` — один для docker / k8s / ax; выбор —
-`cmd/agctl/runtime_select.go` (`buildServer`).
+`cmd/agctl-server/runtime_select.go` (`buildServer`, реализует `cli.Runtime`).
 
 **Шлюзы**: `/chat/` (`chatProxy` в `chat.go`: reverse proxy, mint
 boot-токена dsh через `mintTransport`, страница прогрева, чат-шелл
@@ -587,12 +609,14 @@ prewarm, `jirapoll.go` (скелет поллера Jira).
 `admin.go` — список контейнеров для админки, свип дрейфа версий.
 
 **Кластер** (`internal/runtime/k8srt`, `internal/runtime/axrt`,
-`cmd/agctl/axrunner*.go`, `axegress.go`, `axguest_*.go`, `deploy/`): под
+`cmd/agctl-guest/axrunner*.go`, `axguest_*.go`, `cmd/agctl-server/axegress.go`, `deploy/`): под
 на пользователя (Pod + Service + NetworkPolicy + Secret + PVC/RWX) или
-актор Agent Substrate под Google AX с `agctl ax-runner` как PID 1
+актор Agent Substrate под Google AX с `agctl ax-runner` (бинарь образа
+`agctl-guest`) как PID 1; init-контейнер пода k8s — `agctl init-chat-home`
+из того же бинаря
 (fetch-at-boot конфига провайдера, egress-инъекция ключей, `ax ssh`
 opt-in). Манифесты `deploy/k8s` (kustomize), `deploy/ax`, образ шлюза
-`deploy/serve.Dockerfile`, смоук `bin/e2e-k8s-kind.sh`, цели `bin/k8s.mk`.
+`deploy/serve.Dockerfile` (`agctl-server`), смоук `bin/e2e-k8s-kind.sh`, цели `bin/k8s.mk`.
 Подробности — архив `agctl-hq/docs/kubernetes.md`.
 
 **Профиль организации** (`internal/profile`): `profile.yaml` + ассеты —
@@ -608,8 +632,12 @@ opt-in). Манифесты `deploy/k8s` (kustomize), `deploy/ax`, образ ш
 
 ```
 agctl/
-├── cmd/agctl/            CLI и точка входа (serve, dev, bridge, connect, sync, ax-runner, backlog…)
+├── cmd/
+│   ├── agctl/            бинарь разработчика: dev, backlog            ← только локальный
+│   ├── agctl-server/     сервер организации: serve, migrate, connect, sync, рантаймы k8s/ax
+│   └── agctl-guest/      бинарь образа agctl-dsh: bridge, ax-runner, init-chat-home
 ├── internal/
+│   ├── cli/              общее точек входа: Serve, config.yaml, справка, DSH_HOME
 │   ├── server/           HTTP-сервер: API, шлюзы, рантаймы, админка, лаунчеры, локальный режим
 │   ├── runtime/          контракт ChatProvider; dockerrt | k8srt | axrt
 │   ├── localmode/        dev.yaml, state.json, секреты, бэкапы            ← только локальный
@@ -637,14 +665,17 @@ agctl/
 
 | Пакет | Режим | ≈ строк | Назначение |
 |---|---|---|---|
-| `cmd/agctl` | все | 4100 | CLI; `dev.go` + `dev_hooks.go` + `bridge.go` ≈ 1400 из них — локальный режим |
-| `internal/server` | все | 7250 | ядро; `local.go` + `local_ui.go` + `agent_creds.go` ≈ 730 — локальный |
+| `cmd/agctl` | локальный | 1710 | бинарь разработчика: `agctl dev` |
+| `cmd/agctl-server` | сервер + кластер | 1010 | `serve` с модулями и выбором рантайма, `connect`, `sync` |
+| `cmd/agctl-guest` | в образе | 730 | мост в контейнере, раннер AX, init-контейнер k8s |
+| `internal/cli` | все | 860 | общий `serve`, конфиг, справка |
+| `internal/server` | все | 7270 | ядро; `local.go` + `local_ui.go` + `agent_creds.go` ≈ 790 — локальный; `modules.go` + админка, роли, лаунчер, prewarm, LiteLLM, `/w` — сервер |
 | `internal/localmode` | локальный | 880 | состояние и секреты на хосте |
 | `internal/localbridge` | локальный | 610 | мост к хосту |
-| `internal/runtime/dockerrt` | локальный + сервер | 1450 | Docker-адаптер; `devbuild.go`, `local.go` — локальный |
+| `internal/runtime/dockerrt` | локальный + сервер | 1460 | Docker-адаптер; `devbuild.go`, `local.go` — локальный |
 | `internal/runtime/k8srt` | кластер | 1120 | под на пользователя |
 | `internal/runtime/axrt` | кластер | 1080 | актор AX / Substrate |
-| `internal/provision` | все | 2470 | dsh-home, проекты, каталог, MCP; `provision.go`, `kits.go` — legacy seats |
+| `internal/provision` | все | 2530 | dsh-home, проекты, каталог, MCP; `provision.go`, `kits.go` — legacy seats |
 | `internal/store` | все | 1240 | SQLite |
 | `internal/profile` | все | 400 | профиль организации |
 | `internal/auth`, `internal/secrets` | все | 330 | пароли, сессии, шифрование |
@@ -663,11 +694,11 @@ sessions, workspaces, secrets, audit_log), `002_template`, `003_models`, `004_ji
 
 | Цель | Что |
 |---|---|
-| `make install` / `uninstall` | SPA + бинарь + linux-сборка → `~/.local/bin`, `~/.local/lib/agctl`, fish (без исходников — `bin/install.sh` / `install.ps1` из релиза) |
-| `make go_build`, `go_linux`, `go_test`, `go_vet`, `go_fmt` | бинарь, linux-сборка, тесты |
+| `make install` / `uninstall` | SPA + `agctl` + `agctl-server` → `~/.local/bin`, `agctl-guest` → `~/.local/lib/agctl`, fish (без исходников — `bin/install.sh` / `install.ps1` из релиза) |
+| `make go_build`, `go_linux`, `go_test`, `go_vet`, `go_fmt` | `agctl` и `agctl-server`, `agctl-guest` под linux, тесты |
 | `make web_build` | Vite → `web/dist` (закоммичен) → `go:embed` |
 | `make img_build [PROFILE=…]`, `img_profile`, `img_push REGISTRY=…` | образы рабочего места и надстройки профиля |
-| `make release_local` | darwin / linux / windows × arm64 / amd64 в `dist/` |
+| `make release_local` | `agctl` — darwin / linux / windows, `agctl-server` — darwin / linux, `agctl-guest` — linux; × arm64 / amd64 в `dist/` |
 | `make up`, `corp`, `stop`, `down`, `logs`, `demo` | серверный режим на ноутбуке (`:8929`; `demo` — `:8930`, конфликтует с `agctl dev`) |
 | `make profile-fetch`, `profiles` | профили организаций |
 | `make k8s_*` | кластер |
@@ -676,7 +707,7 @@ sessions, workspaces, secrets, audit_log), `002_template`, `003_models`, `004_ji
 
 CI (`.github/workflows/ci.yml`): `test` на матрице ОС, `web`, `gitleaks`;
 по тегу `v*` — `release-snapshot` через goreleaser (`.goreleaser.yaml`:
-архивы `agctl_<os>_<arch>.tar.gz` / `.zip`, `checksums.txt`, `CGO_ENABLED=0`,
+архивы `agctl_<os>_<arch>.tar.gz` / `.zip`, `agctl-server_<os>_<arch>.tar.gz`, `agctl-guest_linux_<arch>.tar.gz`, `checksums.txt`, `CGO_ENABLED=0`,
 `-X main.version/commit/buildDate`). `dsh-bump.yml` — еженедельный cron:
 обновление версии dsh в образе с гейтом e2e-smoke (`bin/dsh-bump.sh`).
 

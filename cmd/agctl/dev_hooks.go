@@ -9,6 +9,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/arijjia/agctl/internal/cli"
 	"github.com/arijjia/agctl/internal/localmode"
 	"github.com/arijjia/agctl/internal/profile"
 	"github.com/arijjia/agctl/internal/runtime/dockerrt"
@@ -88,7 +89,7 @@ func (h *devHooks) StoreBackend() string { return h.store.Backend() }
 
 func (h *devHooks) CurrentImage() string {
 	cfg := h.cfg()
-	return firstNonEmpty(cfg.Image, devDefaultImage(h.prof, cfg.Flavor))
+	return cli.FirstNonEmpty(cfg.Image, devDefaultImage(h.prof, cfg.Flavor))
 }
 
 // Images — каталог профиля (images.dev) + текущий образ, если он не оттуда;
