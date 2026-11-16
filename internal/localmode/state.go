@@ -26,6 +26,9 @@ type State struct {
 	WorkDir      string    `json:"workdir"`
 	Started      time.Time `json:"started"`
 	Version      string    `json:"version"`
+	// Build — версия и коммит сборки процесса: CLI сравнивает со своей и
+	// перезапускает фоновый процесс после обновления бинаря.
+	Build string `json:"build,omitempty"`
 }
 
 // StatePath — путь файла состояния.

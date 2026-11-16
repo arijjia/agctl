@@ -153,3 +153,26 @@ func TestDevResolveProfileFindsDataDir(t *testing.T) {
 		t.Fatalf("id = %q, ждём utmn", p.ID)
 	}
 }
+
+// После обновления бинаря `dev up` должен заметить, что фоновый процесс —
+// старой сборки, и перезапустить его.
+func TestDevStale(t *testing.T) {
+	oldV, oldC := version, commit
+	t.Cleanup(func() { version, commit = oldV, oldC })
+	version, commit = "0.1.0-utmn.5", "163b114"
+	for _, c := range []struct {
+		name string
+		st   localmode.State
+		want bool
+	}{
+		{"та же сборка", localmode.State{Version: "0.1.0-utmn.5", Build: "0.1.0-utmn.5 163b114"}, false},
+		{"другой коммит той же версии", localmode.State{Version: "0.1.0-utmn.5", Build: "0.1.0-utmn.5 abc1234"}, true},
+		{"старое состояние без build, другая версия", localmode.State{Version: "0.1.0-utmn.3"}, true},
+		{"старое состояние без build, та же версия", localmode.State{Version: "0.1.0-utmn.5"}, false},
+		{"версия неизвестна", localmode.State{}, false},
+	} {
+		if got := devStale(&c.st); got != c.want {
+			t.Errorf("%s: devStale = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
