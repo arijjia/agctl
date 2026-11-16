@@ -7,6 +7,8 @@ import (
 )
 
 func TestDataDir(t *testing.T) {
+	// dataDir собирает путь хост-ОС (filepath.Join), поэтому ожидания тоже
+	// через filepath.Join: на Windows-раннере разделитель «\\».
 	home := func() (string, error) { return "/home/u", nil }
 	noHome := func() (string, error) { return "", errors.New("нет дома") }
 	getenv := func(env map[string]string) func(string) string {
@@ -20,9 +22,9 @@ func TestDataDir(t *testing.T) {
 		home func() (string, error)
 		want string
 	}{
-		{"unix: XDG сильнее дома", "linux", map[string]string{"XDG_DATA_HOME": "/xdg"}, home, "/xdg/agctl/profiles"},
-		{"unix: дом по умолчанию", "linux", map[string]string{}, home, "/home/u/.local/share/agctl/profiles"},
-		{"macOS: как в install.sh", "darwin", map[string]string{}, home, "/home/u/.local/share/agctl/profiles"},
+		{"unix: XDG сильнее дома", "linux", map[string]string{"XDG_DATA_HOME": "/xdg"}, home, filepath.Join("/xdg", "agctl", "profiles")},
+		{"unix: дом по умолчанию", "linux", map[string]string{}, home, filepath.Join("/home/u", ".local", "share", "agctl", "profiles")},
+		{"macOS: как в install.sh", "darwin", map[string]string{}, home, filepath.Join("/home/u", ".local", "share", "agctl", "profiles")},
 		{"windows: LOCALAPPDATA как в install.ps1", "windows", map[string]string{"LOCALAPPDATA": `C:\u\L`}, home, filepath.Join(`C:\u\L`, "agctl", "profiles")},
 		{"windows: fallback на дом", "windows", map[string]string{}, home, filepath.Join("/home/u", "AppData", "Local", "agctl", "profiles")},
 		{"windows: нет дома — пусто", "windows", map[string]string{}, noHome, ""},

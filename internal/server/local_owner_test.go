@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -43,7 +44,8 @@ func TestLocalOwnerIsNotAnAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("файл сессий: %v", err)
 	}
-	if st.Mode().Perm() != 0o600 {
+	// Unix-права на Windows не выражаются (os.Chmod там меняет лишь read-only).
+	if runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Fatalf("права файла сессий %o", st.Mode().Perm())
 	}
 	raw, _ := os.ReadFile(path)
