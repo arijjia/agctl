@@ -14,7 +14,7 @@ import { chromium } from 'playwright';
 
 const required = [
   'PLATFORM_URL', 'E2E_LOGIN', 'E2E_PASSWORD',
-  'E2E_ADMIN_LOGIN', 'E2E_ADMIN_PASSWORD', 'E2E_LLM_BASE_URL',
+  'E2E_ADMIN_LOGIN', 'E2E_ADMIN_PASSWORD', 'E2E_LLM_BASE_URL', 'E2E_SSH_PUBKEY',
 ];
 for (const name of required) {
   if (!process.env[name]) throw new Error(`missing environment variable ${name}`);
@@ -193,22 +193,59 @@ try {
   await user.locator('button[aria-label="Закрыть"]').first().click();
   console.log('PASS: Профиль overlay shows the developer role badge and usage stats');
 
-  // ── developer: SSH overlay with key field and live port line ──────────────
-  // The runtime is up (the chat booted), so sshd's loopback port must appear.
+  // ── developer: SSH overlay — save key, restart, live port ─────────────────
+  await chip.click();
+  await sshItem.click();
+  await user.getByRole('heading', { name: 'SSH-доступ' }).waitFor({ state: 'visible', timeout: 10000 });
+  const keyArea = user.getByPlaceholder('ssh-ed25519 …');
+  await keyArea.waitFor({ state: 'visible', timeout: 10000 });
+  // The overlay fills the textarea asynchronously from GET /api/me/ssh and
+  // would overwrite the typed value — wait for that fetch to finish (it also
+  // sets the port line below the field) before typing the key.
+  const preFill = user.getByText(/Рантайм спит|Подключение/, { exact: false });
+  await preFill.first().waitFor({ state: 'visible', timeout: 10000 });
+  await keyArea.fill(process.env.E2E_SSH_PUBKEY);
+  await user.waitForFunction(
+    (expected) => document.querySelector('textarea[placeholder^="ssh-ed25519"]')?.value.trim() === expected,
+    process.env.E2E_SSH_PUBKEY.trim(),
+    { timeout: 10000 },
+  );
+  await user.getByRole('button', { name: 'Сохранить ключ' }).click();
+  await user.getByText('вступит в силу при следующем старте контейнера', { exact: false }).waitFor({ state: 'visible', timeout: 10000 });
+  console.log('PASS: SSH overlay saves the pubkey (applies at the next container start)');
+
+  // The saved key boots sshd only at the next container start — the admin
+  // restarts the personal runtime, exactly as the overlay text promises.
+  const users = await api(admin, '/api/admin/users/details');
+  const meRow = (users.users || []).find((u) => u.login === process.env.E2E_LOGIN);
+  if (!meRow) throw new Error('user account not found in admin users list');
+  if (!meRow.container || !meRow.container.name) throw new Error('chat container is not running before restart');
+  await api(admin, `/api/admin/containers/${encodeURIComponent(meRow.container.name)}/restart`, 'POST');
+  console.log('PASS: admin restarts the runtime with the saved key');
+
   let port = 0;
   for (let i = 0; i < 60; i++) {
     const ssh = await api(user, '/api/me/ssh');
     if (ssh.sshPort > 0) { port = ssh.sshPort; break; }
     await user.waitForTimeout(1000);
   }
-  if (!port) throw new Error('sshPort stayed 0 while the runtime is up');
+  if (!port) throw new Error('sshPort stayed 0 after the runtime restart');
+
+  // Fresh load reconnects the page to the restarted runtime; the reopened
+  // overlay must show the saved key and the live connect line with the port.
+  await user.reload({ waitUntil: 'domcontentloaded' });
+  await chip.waitFor({ state: 'visible', timeout: 30000 });
   await chip.click();
   await sshItem.click();
   await user.getByRole('heading', { name: 'SSH-доступ' }).waitFor({ state: 'visible', timeout: 10000 });
-  await user.getByPlaceholder('ssh-ed25519 …').waitFor({ state: 'visible', timeout: 10000 });
+  await user.waitForFunction(
+    (expected) => document.querySelector('textarea[placeholder^="ssh-ed25519"]')?.value.trim() === expected,
+    process.env.E2E_SSH_PUBKEY.trim(),
+    { timeout: 10000 },
+  );
   const portLine = await user.getByText(/ssh root@.*-p \d+/, { exact: false }).first().textContent();
   if (!portLine.includes(`-p ${port}`)) throw new Error(`cabinet SSH line does not advertise live port ${port}: ${portLine}`);
-  console.log(`PASS: SSH overlay shows the key field and live port ${port}`);
+  console.log(`PASS: SSH overlay shows the saved key and live port ${port}`);
 
   if (errors.length) throw new Error(`browser page errors: ${errors.join('; ')}`);
   await screenshot(user);

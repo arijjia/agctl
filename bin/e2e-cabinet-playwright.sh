@@ -26,6 +26,7 @@ if [ ! -d tests/e2e-ui/node_modules/playwright ]; then
   echo "Playwright dependency missing. Run: cd tests/e2e-ui && npm ci && npx playwright install chromium" >&2
   exit 2
 fi
+command -v ssh-keygen >/dev/null || { echo "ssh-keygen не найдена" >&2; exit 2; }
 if ! docker image inspect "$IMG" >/dev/null 2>&1; then
   echo "Docker image $IMG missing. Build it or pass IMG=..." >&2
   exit 2
@@ -33,6 +34,8 @@ fi
 
 mkdir -p "$TEST_HOME"
 go build -o "$BIN" ./cmd/agctl || exit 2
+ssh-keygen -q -t ed25519 -N '' -f "$TEST_HOME/id_ed25519"
+PUBKEY="$(cat "$TEST_HOME/id_ed25519.pub")"
 AGCTL_PID=""; FAKE_PID=""
 cleanup() {
   if [ -n "$AGCTL_PID" ]; then
@@ -47,6 +50,8 @@ cleanup() {
       "$TEST_HOME/"*) docker rm -f "$cid" >/dev/null 2>&1 || true;;
     esac
   done
+  # Ephemeral test key is disposable; logs/DB stay for diagnosis.
+  rm -f "$TEST_HOME/id_ed25519" "$TEST_HOME/id_ed25519.pub"
 }
 trap cleanup EXIT INT TERM
 
@@ -80,6 +85,7 @@ export E2E_PASSWORD="$PASSWORD"
 export E2E_ADMIN_LOGIN="$ADMIN_LOGIN"
 export E2E_ADMIN_PASSWORD="$ADMIN_PASSWORD"
 export E2E_LLM_BASE_URL="$LLM_BASE_URL"
+export E2E_SSH_PUBKEY="$PUBKEY"
 export E2E_SCREENSHOT="$TEST_HOME/result.png"
 if ! node tests/e2e-ui/cabinet-ui.mjs; then
   echo "Playwright flow failed; screenshot/logs: $TEST_HOME" >&2

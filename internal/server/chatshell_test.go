@@ -68,6 +68,13 @@ func TestChatShellRoleSpecificRightPane(t *testing.T) {
 	if !strings.Contains(user, `data-agctl="chat-shell-user"`) || !strings.Contains(user, `aria-label^="Access mode"`) {
 		t.Fatal("ordinary user must get pre-paint dev-surface hiding")
 	}
+	// dsh 0.2.2 локализовал aria-label: RU-префиксы должны скрываться так же,
+	// как английские (иначе user-чат в русской локали показывает «Режим доступа»).
+	for _, ru := range []string{`Режим доступа`, `Новый терминал`, `Файлы воркспейса`} {
+		if !strings.Contains(user, `aria-label^="`+ru+`"`) {
+			t.Fatalf("user style must hide the RU-locale dev control %q", ru)
+		}
+	}
 	// Правая панель превью для user не прячется (dsh-right-panel-for-user-role).
 	if strings.Contains(user, `aria-label="Open right sidebar"`) {
 		t.Fatal("user style must not hide the right sidebar toggle")
