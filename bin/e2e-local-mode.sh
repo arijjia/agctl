@@ -111,6 +111,9 @@ if [ -n "$CID" ]; then
   docker exec "$CID" sh -c 'echo "$GITLAB_TOKEN|$GITLAB_HOST|$GITLAB_API_URL"' | grep -q "e2e-gitlab-token|gitlab.example.org|https://gitlab.example.org/api/v4" \
     && pass "env доступов + производные имена" || fail "env доступов"
   docker exec "$CID" sh -c 'test -z "${AGCTL_LLM_API_KEY:-}"' && pass "ключа LLM нет в env контейнера" || fail "ключ LLM в env"
+  # dsh берёт ключ из $DSH_HOME/.credentials.yaml (0600), не из env
+  docker exec "$CID" sh -c 'grep -q "AGCTL_LLM_API_KEY: \"e2e-fake-llm-key-not-a-secret\"" "$DSH_HOME/.credentials.yaml" && [ "$(stat -c %a "$DSH_HOME/.credentials.yaml")" = 600 ]' \
+    && pass "ключ LLM в .credentials.yaml dsh-home (0600)" || fail "ключа нет в .credentials.yaml"
   docker exec "$CID" sh -c 'glab --version >/dev/null && jira version >/dev/null && uv --version >/dev/null && rg --version >/dev/null && jq --version >/dev/null' \
     && pass "инструменты: glab, jira, uv, rg, jq" || fail "инструменты образа"
 

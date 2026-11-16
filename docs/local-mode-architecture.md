@@ -169,7 +169,8 @@ cookie-сессией владельца плюс проверка same-origin �
 
 1. `dev.yaml`, хранилище секретов (`localmode.OpenStore`), env контейнера
    (`localmode.ContainerEnv`), ключ модели из хранилища → `AGCTL_LLM_API_KEY`
-   процесса (в контейнер он не попадает, его получает сервер как провайдер);
+   процесса (его получает сервер как провайдер; в env контейнера ключа нет,
+   dsh читает его из `.credentials.yaml` dsh-home — см. «Ключ модели» в §2.5);
 2. `server.LocalMode{OwnerLogin: "owner", WorkDir, LoginToken, ControlToken,
    BridgeToken, BridgeURL: "http://host.docker.internal:<port>", BridgeTools,
    BridgeLog, Env, Hooks: devHooks}`;
@@ -315,14 +316,27 @@ WSL, CI) или `AGCTL_DEV_SECRETS=file` — зашифрованный файл
 `cli.Serve` собирает `provision.Provider` из профиля (`default_base_url`,
 `default_models`) и ключа → `resolveDefaultLLM` сохраняет его зашифрованным
 в SQLite → при каждом старте контейнера `RefreshProvider` пишет провайдера
-в dsh-home. Смена ключа из лаунчера — `setDefaultLLMKey` без рестарта
-сервера; контейнер подхватит при следующем старте.
+в dsh-home: `settings.yaml` (`apiKeyEnv: AGCTL_LLM_API_KEY`, Base URL,
+модели) и значение ключа в `/home/dsh/.credentials.yaml` (0600). Этот файл —
+единственное место ключа в контейнере: в env (`dockerrt.containerEnv`) ключей
+LLM нет ни в локальном, ни в серверном Docker-режиме (карточка
+`local-llm-key-container-env`), поэтому их не видно в `docker inspect` и
+`/proc/*/environ`, их не наследуют MCP-серверы, git-хуки и npm-скрипты.
+У `dsh-credentials-local` файл главнее env, env — только запасной источник.
+Смена ключа из лаунчера — `setDefaultLLMKey` без рестарта сервера; файл
+перепишется при следующем старте рабочего места.
+
+Ограничение (так в README `dsh-credentials-local`): процессы агента
+работают тем же пользователем, что и dsh, поэтому `.credentials.yaml` агент
+прочитать может. Полностью скрыть ключ от агента может только прокси модели
+вне контейнера (как egress-инъекция в бэкенде ax) — сейчас не сделан.
 
 Куда секреты **не** попадают: в образ, в `dev.yaml`, в логи
 (`Store` значения не логирует; журнал моста без stdout), в git
-(`/workspace` — папка разработчика, файлы доступов лежат в dsh-home). Env
-контейнера виден через `docker inspect` только тому, у кого есть доступ к
-Docker этой машины, то есть самому разработчику.
+(`/workspace` — папка разработчика, файлы доступов лежат в dsh-home), в env
+контейнера — для ключа модели (доступы GitLab/Jira в env есть, их видно через
+`docker inspect` тому, у кого есть доступ к Docker этой машины, то есть самому
+разработчику).
 
 ### 2.6 Мост к хосту
 
@@ -459,6 +473,9 @@ prewarm-пула, autosave (`/workspace` — настоящие репозито
   таймауты, лимит вывода; инструменты только из белого списка, который
   лежит в файле разработчика.
 - Папка проектов — только явно выбранная, не `$HOME` и не `/`.
+- Ключ модели в контейнере — только файлом `.credentials.yaml` (0600) в
+  dsh-home, не в env; агент его прочитать может (ограничение
+  `dsh-credentials-local`, см. §2.5).
 - Секреты — хранилище ОС или AES-GCM-файл; в образ, `dev.yaml`, логи и git
   не попадают. Кто имеет доступ к Docker машины, тот видит env контейнера —
   это сам разработчик.

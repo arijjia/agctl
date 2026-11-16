@@ -16,7 +16,8 @@
 #   AGCTL_BIN   бинарь (по умолчанию dist/agctl-server, соберём если нет)
 #   TEST_ADDR   адрес UI (по умолчанию 127.0.0.1:18929)
 #   FAKE_LLM    1 = поднять стаб OpenAI-API и проверить живой провод
-#               до модели (контейнер → стаб) curl-пробой с env-токеном
+#               до модели (контейнер → стаб) curl-пробой с ключом из
+#               $DSH_HOME/.credentials.yaml (в env контейнера ключа нет)
 #   CLEANUP     1 = удалить TEST_HOME после успешного прогона
 set -u
 cd "$(dirname "$0")/.."
@@ -75,9 +76,10 @@ start_fake_llm() {
     sleep 0.3
   done
   PROVIDER_URL="http://host.docker.internal:$FAKE_PORT/v1"
-  # host.docker.internal есть на Docker Desktop, но не в colima/Linux-CI:
-  # проверяем изнутри образа и падаем на шлюз docker-bridge.
-  if ! docker run --rm --entrypoint sh "$TEST_IMAGE" -c 'getent hosts host.docker.internal >/dev/null 2>&1'; then
+  # Чат-контейнеры получают host.docker.internal:host-gateway (dockerrt.Start),
+  # поэтому проверяем в тех же условиях; без host-gateway (старый dockerd)
+  # падаем на шлюз docker-bridge.
+  if ! docker run --rm --add-host host.docker.internal:host-gateway --entrypoint sh "$TEST_IMAGE" -c 'getent hosts host.docker.internal >/dev/null 2>&1'; then
     gw=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null)
     [ -n "$gw" ] && PROVIDER_URL="http://$gw:$FAKE_PORT/v1"
     pass "fake-llm: стаб поднят на $FAKE_BIND:$FAKE_PORT (доступ из контейнеров: ${gw:-?})"
@@ -310,14 +312,18 @@ fi
 perms=$(stat -c '%a' "$CRED" 2>/dev/null || stat -f '%Lp' "$CRED" 2>/dev/null)
 [ "$perms" = 600 ] && pass ".credentials.yaml права 600" || fail "creds perms=$perms"
 
-say "Живой провод до модели (через env-токен контейнера)"
+say "Живой провод до модели (ключ из DSH_HOME/.credentials.yaml, не из env)"
 CHAT="NOT RUN"
 if [ "${FAKE_LLM:-0}" = "1" ] && [ -n "${CONTAINER:-}" ]; then
+  # Ключа LLM в env контейнера нет (карточка local-llm-key-container-env):
+  # dsh берёт его из $DSH_HOME/.credentials.yaml — проба делает так же.
+  docker exec "$CONTAINER" sh -c 'test -z "${AGCTL_LLM_API_KEY:-}"' \
+    && pass "ключа LLM нет в env контейнера" || fail "ключ LLM в env контейнера"
   probe=$(docker exec "$CONTAINER" sh -c \
-    'printf "{\"model\":\"stub-model\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}" | curl -sS -m 15 --data-binary @- -H "Content-Type: application/json" -H "Authorization: Bearer $AGCTL_LLM_API_KEY" "'"$PROVIDER_URL"'/chat/completions"' 2>&1)
+    'key=$(sed -n "s/^  AGCTL_LLM_API_KEY: \"\(.*\)\"$/\1/p" "$DSH_HOME/.credentials.yaml"); printf "{\"model\":\"stub-model\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}" | curl -sS -m 15 --data-binary @- -H "Content-Type: application/json" -H "Authorization: Bearer $key" "'"$PROVIDER_URL"'/chat/completions"' 2>&1)
   if printf '%s' "$probe" | grep -q 'FAKE-LLM-REPLY'; then
     CHAT="PASS"
-    pass "контейнер → провайдер: ответ стаба получен (env-токен пробит до стаба)"
+    pass "контейнер → провайдер: ответ стаба получен (ключ из .credentials.yaml)"
   else
     printf '  probe head: %.200s\n' "$probe"
     skip "HTTP-проба из контейнера не прошла; UI-чат не проверялся (см. журнал)"
