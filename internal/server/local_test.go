@@ -57,7 +57,8 @@ func (e *testEnv) bearer(method, path, token string, body string) (int, string) 
 func TestLocalLoginOwnerAndNoRegistration(t *testing.T) {
 	env, _ := newLocalEnv(t)
 	c := env.newClient()
-	if code, _ := env.do(c, "POST", "/api/register", map[string]string{"login": "x", "password": "Password-123!"}); code != http.StatusForbidden {
+	// модуль регистрации локально не подключён: маршрута нет
+	if code, _ := env.do(c, "POST", "/api/register", map[string]string{"login": "x", "password": "Password-123!"}); code != http.StatusMethodNotAllowed {
 		t.Fatalf("регистрация в локальном режиме: %d", code)
 	}
 	if code, _ := env.do(c, "GET", "/local/login?token=wrong", nil); code != http.StatusUnauthorized {
@@ -193,5 +194,28 @@ func TestHostBridgeMcpOnlyInLocalMode(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(env.srv.projectDshHome(env.srv.local.ownerID), ".agent-presets", "agctl-ws-demo", "agent.cordis.yml"))
 	if err != nil || !strings.Contains(string(raw), "AGCTL_BRIDGE_TOKEN: br-tok") {
 		t.Fatalf("пресет моста: %v\n%s", err, raw)
+	}
+}
+
+// Локальный режим не подключает серверные модули: их маршрутов нет даже для
+// вошедшего владельца (404 статики, а не 401/403 проверки роли).
+func TestLocalModeHasNoServerModules(t *testing.T) {
+	env, _ := newLocalEnv(t)
+	c := env.newClient()
+	if code, _ := env.do(c, "GET", "/local/login?token=login-tok", nil); code != http.StatusSeeOther {
+		t.Fatalf("вход владельца: %d", code)
+	}
+	env.waitLocalWarm()
+	for _, path := range []string{
+		"/api/admin/overview", "/api/admin/users", "/api/role-requests", "/api/me/ssh",
+		"/api/launcher/images", "/api/me/runtime", "/api/workspaces", "/api/kits",
+		"/ax/provider-config/x", "/admin", "/launcher", "/w/1/",
+	} {
+		if code, _ := env.do(c, "GET", path, nil); code != http.StatusNotFound {
+			t.Errorf("%s в локальном режиме: %d, ждали 404", path, code)
+		}
+	}
+	if env.srv.prewarmEnabled() {
+		t.Error("prewarm включён в локальном режиме")
 	}
 }

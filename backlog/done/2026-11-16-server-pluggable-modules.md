@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: server-pluggable-modules
 title: "Серверные модули (админка, роли, квоты, prewarm, лаунчер, legacy workspaces) подключаются точкой входа, а не общим Routes()"
-status: open
+status: done
 priority: P2
 size: M
 area: platform
@@ -27,15 +27,16 @@ legacy workspaces `/w/{id}`. Поэтому серверный код линку
 
 ## Критерии готовности
 
-- [ ] `server.Module` и `server.ServerModules()`; `Routes()` и
+- [x] `server.Module` и `server.ServerModules()`; `Routes()` и
       `StartBackground()` вызывают модули из `Config.Modules`.
-- [ ] В модули вынесены: регистрация, роли/SSH developer'а, лаунчер
+- [x] В модули вынесены: регистрация, роли/SSH developer'а, лаунчер
       developer'а, админка, квоты LiteLLM, prewarm, legacy workspaces и `/w`,
       Jira-поллер.
-- [ ] Локальный режим работает без модулей (`agctl dev`); серверный — как
+- [x] Локальный режим работает без модулей (`agctl dev`); серверный — как
       раньше. Тесты сервера проходят, локальные тесты проверяют отсутствие
       серверных маршрутов.
 
 ## Журнал
 
 - 2026-11-16: создано по итогам ревью архитектуры.
+- 2026-11-16: Сделано: internal/server/modules.go — Module{Name, Routes, Background}, ServerModules(): registration, roles, launcher, admin, prewarm, autosave, legacy-workspaces (+/w), jira, ax-provider-config. Routes()/StartBackground() ядра регистрируют только общее; serve подключает ServerModules(), dev — нет. Ушли ветки isLocal() в handleRegister и автосейве. Квоты LiteLLM остались в ensureChat (выключены флагом). Тест TestLocalModeHasNoServerModules. go vet/test зелёные.
