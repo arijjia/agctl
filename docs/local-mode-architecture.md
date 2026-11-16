@@ -67,7 +67,7 @@ AX), — модули `server.Module` (`internal/server/modules.go`). Их по�
 │      │  управляет фоновым процессом по HTTP + Bearer ControlToken
 │      ▼
 ├─ agctl dev serve  (фон, 1 Go-процесс, 127.0.0.1:8930)
-│      ├─ internal/server с Config.Local: учётка owner (developer), /local/login, /launcher
+│      ├─ internal/server с Config.Local: владелец owner (developer, не учётка), /local/login, /launcher
 │      ├─ SQLite + dsh-home владельца:  ~/.agctl-dev/data/{agctl.db, chats/u1/dsh-home}
 │      ├─ мост к хосту: белый список argv, подтверждения, журнал logs/bridge.log
 │      ├─ Linux: второй слушатель на IP docker0, только пути моста
@@ -183,8 +183,16 @@ cookie-сессией владельца плюс проверка same-origin �
 
 **Сервер при старте** (`server.New` → `initLocal` в `internal/server/local.go`):
 
-- учётка `owner` с ролью `developer` создаётся (пароль — случайные 24 байта,
-  никому не известен) или получает роль developer, если была;
+- владелец — не учётная запись (`local_owner.go`, карточка
+  `local-mode-owner-data-model`): строки в `users` и пароля нет, роль
+  `developer` задана конфигурацией (`roleOf`), ID — `localOwnerID` (1), а на
+  установке, поднятой до этой модели, — ID её прежней строки `owner`
+  (`localOwnerIDFor`: тот же `chats/u<ID>`, сессии dsh целы);
+- `authN` переключается на сессии владельца (`useOwnerSessions`): файл
+  `data/local-sessions.json` (0600, sha256 токенов и сроки) вместо таблицы
+  `sessions`; переживает рестарт процесса (`dev update`, `dev up`). После
+  перехода с прежней модели старая cookie недействительна — один раз
+  `agctl dev open`;
 - `localbridge.New(tools, journal)`;
 - `provision.SetLocalWorkRoot(home, ownerID, WorkDir)` — work-корень
   владельца подменяется на его папку (`internal/provision/local_workroot.go`);
@@ -463,9 +471,10 @@ prewarm-пула, autosave (`/workspace` — настоящие репозито
 - Слушает только loopback: `devInit --addr` и `devServe` отвергают любой
   другой адрес (`isLoopbackAddr`); исключение — слушатель моста на `docker0`
   (Linux), и на нём только пути моста.
-- Вход — одноразовый токен из файла 0600; пароля у владельца нет (случайный,
-  никому не известный). Ручки управления и моста — отдельные токены,
-  сравнение константного времени.
+- Вход — одноразовый токен из файла 0600; у владельца нет учётки и пароля,
+  `POST /api/login` его не пускает; сессии браузера — файл 0600 с хешами
+  токенов. Ручки управления и моста — отдельные токены, сравнение
+  константного времени.
 - Ручки лаунчера — cookie-сессия + same-origin на мутации
   (`sameOriginAuthority`); значения секретов в ответах никогда не
   возвращаются.
@@ -533,6 +542,7 @@ argv, `pattern`, `confirm`/deny/timeout, журнал.
 
 | Файл | Что |
 |---|---|
+| `local_owner.go` | владелец без учётки: `localOwnerID`, `localOwnerIDFor` (ID прежней строки), `useOwnerSessions` / `ownerSessions` (файл сессий 0600), `roleOf` |
 | `local.go` | `LocalMode`, `localState`, `isLocal`, `initLocal`, `registerLocalRoutes`, токены (`requireControl`, `requireBridge`), `handleLocalLogin`, `handleLocalStatus`, `handleLocalShutdown`, ручки моста, `localChatExtras`, `writeLocalBridgeSkill` |
 | `local_ui.go` | `LocalHooks` (интерфейс), `LocalImage`, `localTask`, `registerLocalUIRoutes`, `requireLocalOwner`, `handleLocalUI`, `handleLocalSecretPut/Delete`, `afterLocalSecretChange`, `handleLocalImagePut`, `handleLocalStart/Restart`, `startLocalRuntime` |
 | `agent_creds.go` | файлы доступов в dsh-home + скилл `agctl-workspace-access` (работает и на сервере для `DevEnv` developer'а) |
@@ -705,7 +715,10 @@ sessions, workspaces, secrets, audit_log), `002_template`, `003_models`, `004_ji
 `008_local_connectors` (старый коннектор, таблица удалена в `013_drop_local_connectors`), `009_settings` (KV: SSH-ключи,
 желаемый образ, провайдер), `010_workspace_base_urls`, `011_role_requests`,
 `012_admin_panel` (proxy_requests, quotas). В локальном режиме реально
-используются users (один), sessions, audit, settings.
+используются только settings (образ, провайдер модели, MCP и компоненты
+проектов) и audit_log — у них нет внешних ключей на users; users и sessions
+локально пусты (владелец и его сессии — `local_owner.go`), SQLite остаётся
+как хранилище общего кода ядра.
 
 Сборка и проверки (`Makefile` + `bin/*.mk`, полный список — `make help`):
 

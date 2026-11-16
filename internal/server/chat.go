@@ -665,13 +665,7 @@ func (s *Server) userChatTTL(userID int64) time.Duration {
 }
 
 // userRole — роль учётной записи; пустая строка при ошибке чтения.
-func (s *Server) userRole(userID int64) string {
-	u, err := s.db.UserByID(userID)
-	if err != nil {
-		return ""
-	}
-	return u.Role
-}
+func (s *Server) userRole(userID int64) string { return s.roleOf(userID) }
 
 // developerEnv — доменные переменные (Config.DevEnv: имена) с их значениями
 // из окружения процесса serve (в него .env экспортирует make). Незаданные
@@ -698,8 +692,7 @@ func (s *Server) developerEnv(userID int64) []string {
 // хранится в settings KV (`/api/me/ssh`). Пусто = sshd в контейнере не
 // поднимаем (роли user чат-контейнер без ssh).
 func (s *Server) developerSSHPubKey(userID int64) string {
-	u, err := s.db.UserByID(userID)
-	if err != nil || (u.Role != "developer" && u.Role != "admin") {
+	if role := s.roleOf(userID); role != "developer" && role != "admin" {
 		return ""
 	}
 	key, err := s.db.SettingGet(fmt.Sprintf("dev-ssh-pubkey-u%d", userID))

@@ -6,9 +6,7 @@ package server
 // мост к хосту (белый список команд) и ручки управления для CLI на хосте.
 
 import (
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -19,14 +17,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/arijjia/agctl/internal/auth"
 	"github.com/arijjia/agctl/internal/localbridge"
 	"github.com/arijjia/agctl/internal/provision"
 )
 
 // LocalMode — настройки локального режима (Config.Local; nil = серверный режим).
 type LocalMode struct {
-	OwnerLogin   string             // учётка-владелец (developer), создаётся автоматически
+	OwnerLogin   string             // имя владельца (не учётка: строки в users нет, роль developer)
 	WorkDir      string             // абсолютная папка проектов → /workspace
 	LoginToken   string             // токен входа /local/login (живёт до рестарта процесса)
 	ControlToken string             // токен CLI на хосте: status/shutdown/approve
@@ -72,7 +69,7 @@ func (s *Server) setLocalWorkDir(dir string) {
 
 func (s *Server) isLocal() bool { return s.cfg.Local != nil }
 
-// initLocal — учётка-владелец, подмена work-корня, мост.
+// initLocal — владелец (без учётки, local_owner.go), подмена work-корня, мост.
 func (s *Server) initLocal() error {
 	lm := s.cfg.Local
 	if lm.OwnerLogin == "" {
@@ -84,28 +81,8 @@ func (s *Server) initLocal() error {
 	if lm.LoginToken == "" || lm.ControlToken == "" || lm.BridgeToken == "" {
 		return fmt.Errorf("local: токены входа/управления/моста обязательны")
 	}
-	u, err := s.db.UserByLogin(lm.OwnerLogin)
-	var id int64
-	if err != nil {
-		// Пароль владельцу не нужен (вход — токеном из CLI), но поле
-		// обязательное: случайный, никому не известный.
-		pw := make([]byte, 24)
-		_, _ = rand.Read(pw)
-		hash, herr := auth.HashPassword(base64.RawURLEncoding.EncodeToString(pw))
-		if herr != nil {
-			return herr
-		}
-		if id, err = s.db.CreateUser(lm.OwnerLogin, hash, "developer"); err != nil {
-			return fmt.Errorf("local: учётка владельца: %w", err)
-		}
-	} else {
-		id = u.ID
-		if u.Role != "developer" {
-			if err := s.db.UpdateUserRole(id, "developer"); err != nil {
-				return err
-			}
-		}
-	}
+	id := s.localOwnerIDFor(lm.OwnerLogin)
+	s.useOwnerSessions(id, lm.OwnerLogin)
 	b, err := localbridge.New(lm.BridgeTools, lm.BridgeLog)
 	if err != nil {
 		return err
