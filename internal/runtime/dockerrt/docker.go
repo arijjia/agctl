@@ -361,8 +361,10 @@ type StartOpts struct {
 	EgressAllowlist bool
 }
 
-// Start создаёт и запускает контейнер воркспейса с заданными портами/ключом.
-// Монтирует рабочий клон и DSH_HOME; LLM-токен передаётся через env.
+// Start создаёт и запускает контейнер воркспейса с заданными портами.
+// Монтирует рабочий клон и DSH_HOME. Ключи LLM в env контейнера не кладутся:
+// dsh берёт их из DSH_HOME/.credentials.yaml (0600, пишет
+// provision.RefreshProvider; у dsh-credentials-local файл главнее env).
 func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, opts StartOpts, p provision.Provider) (StartResult, error) {
 	if err := rt.EnsureImage(ctx); err != nil {
 		return StartResult{}, err
@@ -401,27 +403,7 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		log.Printf("[dockerrt] %s: %v — для этого LLM endpoint нет DNS-пина (проверьте VPN)", wsID, err)
 	}
 	extraHosts = append(extraHosts, pins...)
-	env := []string{
-		"AGCTL_LLM_API_KEY=" + p.APIKey,
-		"AGCTL_WS_ID=" + wsID,
-		// рабочее место агента — /workspace (репка), а не /root;
-		// кэши npm/xdg уводим в tmp, чтобы не мусорить в репке
-		"HOME=/workspace",
-		"NPM_CONFIG_CACHE=/tmp/npm-cache",
-		"XDG_CACHE_HOME=/tmp/cache",
-	}
-	// Дополнительные провайдеры (например корпоративный LiteLLM) приносят
-	// свой ключ под своим env-именем из .credentials.yaml.
-	seenEnv := map[string]bool{"AGCTL_LLM_API_KEY": true}
-	for _, extra := range p.Extras {
-		if extra.APIKey == "" || seenEnv[extra.KeyEnv()] {
-			continue
-		}
-		seenEnv[extra.KeyEnv()] = true
-		env = append(env, extra.KeyEnv()+"="+extra.APIKey)
-	}
-	// Доменные переменные developer'а (GitLab/Jira/LLM-оверрайды из .env).
-	env = append(env, opts.DevEnv...)
+	env := containerEnv(wsID, opts.DevEnv)
 	portBindings := network.PortMap{
 		network.MustParsePort("3080/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: fmt.Sprint(opts.HostPort)}},
 	}
@@ -869,4 +851,24 @@ func FreePort() (int, error) {
 	}
 	defer l.Close()
 	return l.Addr().(*net.TCPAddr).Port, nil
+}
+
+// containerEnv — env контейнера рабочего места. Ключей провайдеров LLM здесь
+// нет намеренно (карточка local-llm-key-container-env): в env их видно в
+// docker inspect и /proc/*/environ, их наследуют MCP-серверы, git-хуки и
+// npm-скрипты агента. dsh читает ключи из DSH_HOME/.credentials.yaml. Файл
+// агент технически прочитать может (его процессы — тот же пользователь), это
+// задокументированное ограничение dsh-credentials-local.
+func containerEnv(wsID string, devEnv []string) []string {
+	env := []string{
+		"AGCTL_WS_ID=" + wsID,
+		// рабочее место агента — /workspace (репка), а не /root;
+		// кэши npm/xdg уводим в tmp, чтобы не мусорить в репке
+		"HOME=/workspace",
+		"NPM_CONFIG_CACHE=/tmp/npm-cache",
+		"XDG_CACHE_HOME=/tmp/cache",
+	}
+	// Доменные переменные developer'а (GitLab/Jira из .env хоста — серверный
+	// режим; доступы локального режима — localChatExtras).
+	return append(env, devEnv...)
 }

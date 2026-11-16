@@ -92,10 +92,10 @@ ws_ram_cpu() { # <wsID> <mode-label> — docker stats одним сэмплом 
   }'
 }
 
-chat_load() { # <wsID> — 6 последовательных проб к провайдеру через env-токен
+chat_load() { # <wsID> — 6 последовательных проб к провайдеру с ключом из $DSH_HOME/.credentials.yaml
   local cid="agctl-$1"
   for _ in 1 2 3 4 5 6; do
-    docker exec "$cid" sh -c 'printf "{\"model\":\"stub-model\",\"messages\":[{\"role\":\"user\",\"content\":\"load\"}]}" | curl -sS -m 10 --data-binary @- -H "Content-Type: application/json" -H "Authorization: Bearer $AGCTL_LLM_API_KEY" "http://host.docker.internal:'"$FAKE_PORT"'/v1/chat/completions"' >/dev/null 2>&1
+    docker exec "$cid" sh -c 'key=$(sed -n "s/^  AGCTL_LLM_API_KEY: \"\(.*\)\"$/\1/p" "$DSH_HOME/.credentials.yaml"); printf "{\"model\":\"stub-model\",\"messages\":[{\"role\":\"user\",\"content\":\"load\"}]}" | curl -sS -m 10 --data-binary @- -H "Content-Type: application/json" -H "Authorization: Bearer $key" "http://host.docker.internal:'"$FAKE_PORT"'/v1/chat/completions"' >/dev/null 2>&1
   done
 }
 

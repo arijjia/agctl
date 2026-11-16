@@ -25,9 +25,9 @@ depends: ["split-binaries-local-server"]
 
 ## Критерии готовности
 
-- [ ] `bin/release.sh` профилей собирает `./cmd/agctl-guest` под linux и
+- [x] `bin/release.sh` профилей собирает `./cmd/agctl-guest` под linux и
       кладёт его как `agctl-guest-linux-<arch>`.
-- [ ] Установка комплекта через `install.sh` (`AGCTL_RELEASE_DIR`) ставит
+- [x] Установка комплекта через `install.sh` (`AGCTL_RELEASE_DIR`) ставит
       `agctl-guest-linux-<arch>` в `~/.local/lib/agctl`.
 - [ ] После перехода всех комплектов — убрать поддержку имени
       `agctl-linux-<arch>` из `install.sh`, `install.ps1`, `findLinuxBinary`.
@@ -35,3 +35,4 @@ depends: ["split-binaries-local-server"]
 ## Журнал
 
 - 2026-11-16: создано при разделении бинарей.
+- 2026-11-16: agctl-profile-utmn: bin/release.sh кладёт dist/agctl-guest-linux-<arch> (падает с подсказкой, если его нет — agctl до разделения), README комплекта; ветка agent/agctl-guest вмержена в main локально (98501e4), не запушена. Проверено: make release_local → release.sh → install.sh (AGCTL_RELEASE_DIR, AGCTL_VERSION) поставил agctl-guest-linux-arm64 (ELF arm64 с bridge/ax-runner/init-chat-home). У agctl-profile-rshb сборки комплекта нет — менять нечего. Открыто: снять совместимость с agctl-linux-<arch> после перехода установок (выпуска нового комплекта utmn).
