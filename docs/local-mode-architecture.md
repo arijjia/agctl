@@ -494,12 +494,6 @@ argv, `pattern`, `confirm`/deny/timeout, журнал.
 | `chat.go` | общий `ensureChat`; локальные дополнения — вызовы `localChatExtras`, `writeAgentCredentials`, `writeLocalBridgeSkill` |
 | `handlers.go`, `projects.go`, `project_mcp.go`, `server.go` | ветки `isLocal()` из §2.8 |
 
-Не путать с `local_bridge.go` и `internal/bridge`: это **старый
-экспериментальный коннектор** `agctl local connect` (ноутбук сам
-инициирует WSS-туннель к серверу, `--experimental-local-bridge`, миграция
-`008_local_connectors.sql`). Он выключен по умолчанию, в локальный режим
-`agctl dev` не входит и оставлен как код за флагом.
-
 Тесты: `local_test.go` (вход по токену и 403 регистрации, токены управления
 и моста, папка проектов в spec и запрет удаления, отсутствие локальных
 маршрутов на сервере, MCP моста только локально), `local_ui_test.go`
@@ -610,12 +604,11 @@ agctl/
 │   ├── localmode/        dev.yaml, state.json, секреты, бэкапы            ← только локальный
 │   ├── localbridge/      мост к хосту: белый список, вызовы, MCP-клиент   ← только локальный
 │   ├── provision/        dsh-home, проекты, каталог, MCP-пресеты, legacy seats
-│   ├── store/            SQLite (modernc, без cgo) + миграции 001–012
+│   ├── store/            SQLite (modernc, без cgo) + миграции 001–013
 │   ├── auth/             argon2id, cookie-сессии, rate-limit регистраций
 │   ├── secrets/          AES-256-GCM с мастер-ключом
 │   ├── profile/          профиль организации (данные, не код) + guard-тест
 │   ├── assets/           go:embed: контекст образа, скелет DSH_HOME, шаблоны
-│   ├── bridge/           старый экспериментальный WSS-коннектор (за флагом)
 │   └── backlog/          `agctl backlog` — карточки задач
 ├── web/                  React SPA (вход, лаунчеры, админка) → web/dist → go:embed
 ├── dsh-plugins/          плагины dsh: chat-brand, cabinet, chat-session-files, workspace-console
@@ -644,14 +637,13 @@ agctl/
 | `internal/store` | все | 1240 | SQLite |
 | `internal/profile` | все | 400 | профиль организации |
 | `internal/auth`, `internal/secrets` | все | 330 | пароли, сессии, шифрование |
-| `internal/bridge` | legacy (флаг) | 800 | старый коннектор |
 | `internal/backlog` | инструмент | 680 | карточки |
 | `web/src` | все | 1950 | SPA: `LocalLauncher.tsx` — локальный, `Launcher.tsx` / `AdminPanel.tsx` — сервер |
 
 Схема SQLite (миграции `internal/store/migrations`): `001_init` (users,
 sessions, workspaces, secrets, audit_log), `002_template`, `003_models`, `004_jira_runs`,
 `005_workspace_components`, `006_workspace_ssh`, `007_workspace_requests`,
-`008_local_connectors` (старый коннектор), `009_settings` (KV: SSH-ключи,
+`008_local_connectors` (старый коннектор, таблица удалена в `013_drop_local_connectors`), `009_settings` (KV: SSH-ключи,
 желаемый образ, провайдер), `010_workspace_base_urls`, `011_role_requests`,
 `012_admin_panel` (proxy_requests, quotas). В локальном режиме реально
 используются users (один), sessions, audit, settings.

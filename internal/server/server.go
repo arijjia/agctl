@@ -25,7 +25,6 @@ import (
 
 	"github.com/arijjia/agctl/internal/assets"
 	"github.com/arijjia/agctl/internal/auth"
-	"github.com/arijjia/agctl/internal/bridge"
 	"github.com/arijjia/agctl/internal/profile"
 	"github.com/arijjia/agctl/internal/provision"
 	agctlrt "github.com/arijjia/agctl/internal/runtime"
@@ -49,28 +48,27 @@ type Config struct {
 	DevImages   []string // каталог образов лаунчера developer'а (пусто = только cfg.Image)
 	// BaseImage — базовый agctl-dsh под надстройкой профиля (images.dockerfile);
 	// пусто или равен Image = надстройки нет.
-	BaseImage               string
-	BinDir                  string
-	Version                 string // версия agctl (метка контейнеров, диагностика дрейфа сборок)
-	SecureCookies           bool   // true when agctl is served behind a trusted HTTPS terminator
-	PublicURL               string // базовый URL шлюза, видимый песочницам (fetch-at-boot раннера AX); пусто = derive из --addr
-	AutosaveEvery           time.Duration
-	CORSOrigins             []string           // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
-	Tier0                   bool               // корень платформы ведёт в персональный чат (/chat/)
-	EgressAllowlist         bool               // чат-контейнеры на выделенной сети: egress только DNS и хост-шлюз (карточка egress-allowlist)
-	ChatTTL                 time.Duration      // idle TTL персонального runtime (по умолчанию 60 мин)
-	ChatPrewarmN            int                // prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл); он же — потолок пула
-	ChatPrewarmEvery        time.Duration      // период цикла подогрева (по умолчанию 15 мин)
-	VolumeQuotaGB           float64            // квота тома пользователя в ГБ (0 = выкл); per-user — settings KV
-	LiteLLMQuotas           bool               // enforcement квот токенов виртуальными ключами LiteLLM
-	LiteLLMAdminURL         string             // admin-API LiteLLM (env AGCTL_LITELLM_ADMIN_URL / --litellm-admin-url)
-	LiteLLMAdminKey         string             // admin-ключ LiteLLM (только env AGCTL_LITELLM_ADMIN_KEY; не логируется)
-	RegisterPerMinute       int                // лимит регистраций с одного IP за минуту: 0 — дефолт платформы (30), <0 — отключить (нагрузочные прогоны)
-	RequireApproval         bool               // legacy workspace flag; create endpoint is tombstoned in v3
-	ExperimentalLocalBridge bool               // opt-in pairing/status/revoke API for local connector
-	DefaultLLM              provision.Provider // платформенный провайдер чата по умолчанию (из профиля/env); личный секрет пользователя его перекрывает
-	DevEnv                  []string           // имена переменных хоста, пробрасываемые в контейнер developer/admin (значения — из окружения serve: .env экспортируется make)
-	Profile                 *profile.Data      // профиль организации (брендинг/дефолты); nil = нейтральный agctl
+	BaseImage         string
+	BinDir            string
+	Version           string // версия agctl (метка контейнеров, диагностика дрейфа сборок)
+	SecureCookies     bool   // true when agctl is served behind a trusted HTTPS terminator
+	PublicURL         string // базовый URL шлюза, видимый песочницам (fetch-at-boot раннера AX); пусто = derive из --addr
+	AutosaveEvery     time.Duration
+	CORSOrigins       []string           // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
+	Tier0             bool               // корень платформы ведёт в персональный чат (/chat/)
+	EgressAllowlist   bool               // чат-контейнеры на выделенной сети: egress только DNS и хост-шлюз (карточка egress-allowlist)
+	ChatTTL           time.Duration      // idle TTL персонального runtime (по умолчанию 60 мин)
+	ChatPrewarmN      int                // prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл); он же — потолок пула
+	ChatPrewarmEvery  time.Duration      // период цикла подогрева (по умолчанию 15 мин)
+	VolumeQuotaGB     float64            // квота тома пользователя в ГБ (0 = выкл); per-user — settings KV
+	LiteLLMQuotas     bool               // enforcement квот токенов виртуальными ключами LiteLLM
+	LiteLLMAdminURL   string             // admin-API LiteLLM (env AGCTL_LITELLM_ADMIN_URL / --litellm-admin-url)
+	LiteLLMAdminKey   string             // admin-ключ LiteLLM (только env AGCTL_LITELLM_ADMIN_KEY; не логируется)
+	RegisterPerMinute int                // лимит регистраций с одного IP за минуту: 0 — дефолт платформы (30), <0 — отключить (нагрузочные прогоны)
+	RequireApproval   bool               // legacy workspace flag; create endpoint is tombstoned in v3
+	DefaultLLM        provision.Provider // платформенный провайдер чата по умолчанию (из профиля/env); личный секрет пользователя его перекрывает
+	DevEnv            []string           // имена переменных хоста, пробрасываемые в контейнер developer/admin (значения — из окружения serve: .env экспортируется make)
+	Profile           *profile.Data      // профиль организации (брендинг/дефолты); nil = нейтральный agctl
 	// AxRunnerToken — токен раннера AX для GET /ax/provider-config/<task>
 	// (fetch-at-boot конфига провайдера; бэкенд ax). Пусто = endpoint выключен.
 	AxRunnerToken string
@@ -108,7 +106,6 @@ type Server struct {
 	chats         map[int64]*chatRuntime       // userID → живой runtime handle
 	chatLocks     map[int64]*sync.Mutex        // сериализация первого старта per-user
 	chatProvider  agctlrt.ChatProvider         // Docker now; K8s adapter can return a Service DNS endpoint
-	localBridge   *bridge.Manager              // experimental outbound local-backend connector, opt-in routes only
 	requestMu     sync.Mutex                   // не допускать двойной approve одной заявки
 	autosaveMu    sync.Mutex                   // серия неудач autosave: backoff + repair-pass
 	autosaveFails map[string]autosaveFailState // "userID/project" → счётчик/пауза
@@ -189,8 +186,7 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 	}
 	s := &Server{
 		db: db, sec: sec, cfg: cfg, rt: workspaceRuntime, chatProvider: chatProvider, brand: brand,
-		localBridge: bridge.NewManager(),
-		tokens:      map[string]string{}, chats: map[int64]*chatRuntime{}, chatLocks: map[int64]*sync.Mutex{},
+		tokens: map[string]string{}, chats: map[int64]*chatRuntime{}, chatLocks: map[int64]*sync.Mutex{},
 		startedAt: time.Now(),
 	}
 	if s.cfg.AutosaveEvery == 0 {
@@ -279,9 +275,6 @@ func resolveDefaultLLM(db *store.DB, sec *secrets.Manager, cfg *Config) {
 // Close освобождает живые ленивые chat-контейнеры (тома не удаляются), затем
 // закрывает Docker runtime. Dev-workspaces остаются под управлением владельца.
 func (s *Server) Close() {
-	if s.localBridge != nil {
-		s.localBridge.Close()
-	}
 	s.chatMu.Lock()
 	handles := make([]agctlrt.ChatHandle, 0, len(s.chats))
 	for _, chat := range s.chats {
@@ -401,34 +394,6 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	// /map — карта системы за сессией; росток будущей админ-панели (1.md).
 	mux.HandleFunc("GET /map", s.requireUser(s.handleMapIndex))
 	mux.HandleFunc("GET /map/{name}", s.requireUser(s.handleMapFile))
-	// Experimental local-connector control plane. Routes register so the
-	// flag-off answer is an honest 404 (not a confusing 405/SPA page); every
-	// handler re-checks the flag. The UI proxy below forwards to the local DSH
-	// announced by the connector, but real DSH still rejects the first request
-	// until boot-token/cookie mint works over the tunnel.
-	mux.HandleFunc("POST /api/local-backend/grant", s.requireUser(s.handleLocalBackendGrant))
-	mux.HandleFunc("GET /api/local-backend/status", s.requireUser(s.handleLocalBackendStatus))
-	mux.HandleFunc("DELETE /api/local-backend", s.requireUser(s.handleLocalBackendRevoke))
-	mux.Handle("GET /api/local-backend/connect", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.localBridgeEnabled() {
-			http.NotFound(w, r)
-			return
-		}
-		s.handleLocalBackendConnect(w, r)
-	}))
-	localUI := s.requireUser(func(w http.ResponseWriter, r *http.Request, id identity) {
-		if !s.localBridgeEnabled() {
-			writeErr(w, http.StatusNotFound, "локальный connector не включён")
-			return
-		}
-		if origin := r.Header.Get("Origin"); origin != "" && !sameOriginAuthority(origin, r.Host) {
-			writeErr(w, http.StatusForbidden, "cross-origin запрос к локальному бэку запрещён")
-			return
-		}
-		s.localBridge.ProxyHandler(id.ID).ServeHTTP(w, r)
-	})
-	mux.Handle("GET /api/local-backend/ui/", http.StripPrefix("/api/local-backend/ui", localUI))
-	mux.Handle("POST /api/local-backend/ui/", http.StripPrefix("/api/local-backend/ui", localUI))
 	mux.HandleFunc("GET /w/{id}", s.requireUser(s.workspaceProxyEntry))
 	// The browser fetches webmanifest without agctl credentials; expose only
 	// this non-sensitive static document publicly for a known workspace.

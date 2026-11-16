@@ -70,7 +70,6 @@ complete -c agctl -n '__fish_use_subcommand' -x -a migrate -d 'накатить 
 complete -c agctl -n '__fish_use_subcommand' -x -a seed-demo-users -d 'локальные тестовые роли user/developer/admin'
 complete -c agctl -n '__fish_use_subcommand' -x -a backlog -d 'ведение бэклога (файлы-карточки open/done)'
 complete -c agctl -n '__fish_use_subcommand' -x -a connect -d 'SSH в персональный контейнер (роль developer)'
-complete -c agctl -n '__fish_use_subcommand' -x -a local -d 'локальный backend-коннектор (experimental)'
 complete -c agctl -n '__fish_use_subcommand' -x -a sync -d 'Mutagen-синхронизация папки с /workspace'
 complete -c agctl -n '__fish_use_subcommand' -x -a dev -d 'локальный режим: платформа на своей машине'
 complete -c agctl -n '__fish_use_subcommand' -x -a bridge -d 'внутри контейнера: мост к хосту'
@@ -102,7 +101,6 @@ complete -c agctl -n '__fish_seen_subcommand_from serve' -l public-url -x -d 'в
 complete -c agctl -n '__fish_seen_subcommand_from serve' -l register-per-min -x -d 'лимит регистраций в минуту'
 complete -c agctl -n '__fish_seen_subcommand_from serve' -l secure-cookies -d 'Secure cookie (за доверенным TLS-терминатором)'
 complete -c agctl -n '__fish_seen_subcommand_from serve' -l tier0 -d 'общий чат Tier 0 в корне платформы'
-complete -c agctl -n '__fish_seen_subcommand_from serve' -l experimental-local-bridge -d 'experimental local connector API'
 
 # ── migrate / seed-demo-users / init-chat-home ───────────────────────────────
 complete -c agctl -n '__fish_seen_subcommand_from migrate seed-demo-users' -l home -x -a '(__fish_complete_directories)' -d 'каталог данных agctl'
@@ -138,16 +136,6 @@ complete -c agctl -n '__fish_seen_subcommand_from connect' -l host -x -d 'адр
 complete -c agctl -n '__fish_seen_subcommand_from connect' -l user -x -d 'SSH-пользователь внутри контейнера'
 complete -c agctl -n '__fish_seen_subcommand_from connect' -l identity -x -r -d 'путь к приватному ключу'
 complete -c agctl -n '__fish_seen_subcommand_from connect' -l print -d 'только напечатать ssh-команду'
-
-# ── local connect (experimental) ─────────────────────────────────────────────
-complete -c agctl -n '__fish_seen_subcommand_from local; and __fish_seen_subcommand_from connect' -l server -x -d 'адрес платформы agctl'
-complete -c agctl -n '__fish_seen_subcommand_from local; and __fish_seen_subcommand_from connect' -l grant -x -d 'одноразовый pairing grant'
-complete -c agctl -n '__fish_seen_subcommand_from local; and __fish_seen_subcommand_from connect' -l credential-file -x -r -d 'файл durable-credential (0600)'
-complete -c agctl -n '__fish_seen_subcommand_from local; and __fish_seen_subcommand_from connect' -l local -x -d 'loopback-адрес локального dsh web'
-complete -c agctl -n '__fish_seen_subcommand_from local; and __fish_seen_subcommand_from connect' -l launch-dsh -d 'запустить локальный dsh web'
-complete -c agctl -n '__fish_seen_subcommand_from local; and __fish_seen_subcommand_from connect' -l dsh-bin -x -d 'бинарь локального dsh'
-complete -c agctl -n '__fish_seen_subcommand_from local; and __fish_seen_subcommand_from connect' -l dsh-port -x -d 'порт локального dsh web'
-complete -c agctl -n '__fish_seen_subcommand_from local; and __fish_seen_subcommand_from connect' -l dsh-token -x -d 'boot-токен уже запущенного dsh'
 
 # ── sync: подкоманды и флаги ─────────────────────────────────────────────────
 complete -c agctl -n '__agctl_sync_needs_sub' -x -a create -d 'создать Mutagen-сессию'
