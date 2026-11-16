@@ -2,7 +2,7 @@
 schema: 1.1.0
 id: cabinet-ui-rework
 title: "Rework cabinet-ui.mjs: UX кабинета v3 (чип → попап → оверлеи) без демонттированного потока заявок"
-status: in-progress
+status: done
 priority: P2
 size: M
 area: plugin
@@ -25,3 +25,5 @@ sessions:
 - 2026-11-15: создано по итогам карточки v3-product-e2e-playwright (обнаружен стаб против текущего UX; разработчик-flow покрывается новым tests/e2e-ui/developer-flow-ui.mjs).
 - 2026-11-15: создано (`gitctl backlog new`).
 - 2026-11-16: Rework e2e на v3 UX в worktree: cabinet-ui.mjs переписан (регистрация user → чат-брендинг из window.__AGCTL_BRAND__ без литералов «ТюмГУ…» → чип-попап Профиль/Справка/Выйти без SSH у user → апрув developer → попап с SSH-доступом → оверлеи Профиль и SSH с сохранением ключа и живым портом). Попутный дефект: chatShellUserStyle матчил только EN aria-label — в RU-локали dsh 0.2.2 юзер-чат показывал «Режим доступа»; чинится в этом же окне (RU-префиксы + гард в chatshell_test). Обвязка: admin пре-создаётся API, IMG 0.2.2, secret-cleanup ключей. bin/e2e-cabinet-playwright.sh зелёный (полный проход, sshPort живой), go vet+test зелёные.
+- 2026-11-16: refl: refl: стаб против нового UX поймал реальный дефект локали (EN-only селекторы pre-paint CSS) — свежий e2e на актуальном образе окупился; гонку textarea в оверлее SSH (async GET перезатирает ввод) стоит чинить и в самом плагине — кандидат в бэклог.
+- 2026-11-16: done — e2e cabinet-ui переписан на v3 UX (чип → попап → Профиль/SSH-оверлеи), бренд параметризован профилем; попутно чинен RU-гап chatShellUserStyle; полный e2e-проход и go vet/test зелёные
