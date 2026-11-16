@@ -10,7 +10,7 @@
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "97cf8af51724e19f0706eb5cafa29a1c6d62eb8d"
+      "revision": "a873b72d91a84c69dc08066c40d40563c747c103"
     },
     "views": [
       {
@@ -87,7 +87,7 @@
         },
         {
           "path": "cmd/agctl/dev.go",
-          "line": 397,
+          "line": 440,
           "label": "devUp: Docker, порт, фоновый serve, ссылка"
         }
       ]
@@ -139,7 +139,7 @@
         },
         {
           "path": "cmd/agctl/dev.go",
-          "line": 310,
+          "line": 353,
           "label": "devPrepareImage: pull, иначе сборка"
         },
         {
@@ -310,8 +310,8 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 205,
-          "label": "findLinuxBinary: agctl-linux-<arch> рядом"
+          "line": 209,
+          "label": "findLinuxBinary: agctl-guest-linux-<arch> рядом"
         }
       ]
     },
@@ -331,7 +331,7 @@
       "sources": [
         {
           "path": "cmd/agctl/dev_hooks.go",
-          "line": 61,
+          "line": 97,
           "label": "Images: каталог профиля, есть ли локально"
         },
         {
@@ -378,7 +378,7 @@
       "sources": [
         {
           "path": "cmd/agctl/dev.go",
-          "line": 1214,
+          "line": 1303,
           "label": "белый список моста — из профиля"
         }
       ]
@@ -558,7 +558,7 @@
       "items": [
         "Каталог — из профиля: базовый, web (Playwright), вкус профиля (1С: Java + BSL LS)",
         "Нет на машине — сборка base → web → профиль → вкус (pull, если образ есть в реестре)",
-        "Сборке нужен agctl-linux-<arch> рядом с бинарём или в ../lib/agctl"
+        "Сборке нужен agctl-guest-linux-<arch> (бинарь образа) рядом с бинарём или в ../lib/agctl"
       ]
     }
   ]
