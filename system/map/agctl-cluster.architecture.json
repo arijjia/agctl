@@ -9,7 +9,7 @@
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "a873b72d91a84c69dc08066c40d40563c747c103"
+      "revision": "2fd974d961738dc551cba8e84a335eb3903003d0"
     },
     "views": [
       {
@@ -28,7 +28,7 @@
         "note": "тот же serve (образ agctl-serve); вместо dockerd — API k8s или AX; данные — PVC/RWX или том актора; сон = удалить под / Suspend"
       }
     ],
-    "subtitle": "Тот же agctl serve, вместо dockerd — API-сервер Kubernetes или Google AX + Agent Substrate (прототип)"
+    "subtitle": "Тот же agctl-server serve, вместо dockerd — API-сервер Kubernetes или Google AX + Agent Substrate (прототип)"
   },
   "components": [
     {
@@ -53,8 +53,8 @@
         },
         {
           "path": "internal/server/chat.go",
-          "line": 848,
-          "end_line": 876,
+          "line": 842,
+          "end_line": 870,
           "label": "rootEntry: редирект по роли из сессии"
         },
         {
@@ -148,14 +148,14 @@
       "sources": [
         {
           "path": "internal/server/chat.go",
-          "line": 877,
-          "end_line": 942,
+          "line": 871,
+          "end_line": 936,
           "label": "chatProxy: ReverseProxy + mint, dsh-auth cookie"
         },
         {
           "path": "internal/server/chat.go",
-          "line": 837,
-          "end_line": 838,
+          "line": 832,
+          "end_line": 833,
           "label": "HTML прогрева, пока рантайм стартует"
         },
         {
@@ -283,7 +283,7 @@
       "sources": [
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 398,
+          "line": 400,
           "label": "host-gateway в ExtraHosts контейнера"
         },
         {
@@ -366,7 +366,7 @@
     },
     {
       "kind": "region",
-      "label": "agctl serve (образ agctl-serve)",
+      "label": "agctl-server serve (образ agctl-serve)",
       "wraps": [
         "api",
         "chatgw",
