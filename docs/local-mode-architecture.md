@@ -82,7 +82,7 @@ LiteLLM), либо выключено проверкой `s.isLocal()`, либо
 |---|---|---|
 | `dev.yaml` | профиль / `profile_dir`, `image`, `flavor`, `workdir`, `addr`, `mem_gb`, `cpus`, несекретные `env` (адреса, логины), **имена** секретов, `bridge.tools`, `previous_image` | `dev init`, `dev secrets`, лаунчер, `dev update` |
 | `data/` | дом сервера: `agctl.db` (SQLite WAL), `secrets.key`, `chats/u1/dsh-home` (сессии и настройки dsh) | `agctl dev serve` |
-| `run/state.json` (0600) | PID, адрес, `controlToken`, `loginToken`, образ, папка, время старта, версия | `dev serve` при готовности; стирается при выходе |
+| `run/state.json` (0600) | PID, адрес, `controlToken`, `loginToken`, образ, папка, время старта, версия и сборка (`build`: версия + коммит) | `dev serve` при готовности; стирается при выходе |
 | `logs/serve.log` | stdout/stderr фонового процесса | `dev up` открывает, `dev serve` пишет |
 | `logs/bridge.log` | журнал вызовов моста (JSON lines, без вывода команд) | `internal/localbridge` |
 | `backups/` | три последних tar-бэкапа dsh-home, делаются перед `update` | `localmode.Backup` |
@@ -135,8 +135,12 @@ cookie-сессией владельца плюс проверка same-origin �
 
 **`agctl dev up [DIR]`** (`devUp`):
 
-1. `dev.yaml` читается, папка проверяется; если процесс уже жив с той же
-   папкой — просто открыть браузер, с другой — отказ «сначала `dev down`»;
+1. `dev.yaml` читается, папка проверяется; если процесс уже жив, но другой
+   сборки (поле `build` в `run/state.json` — версия и коммит — не совпадает с
+   этим бинарём: например, после `install.sh`), — `dev down` и запуск заново
+   (`devStale`), иначе фиксы новой версии не применились бы; живой процесс той
+   же сборки с той же папкой — просто открыть браузер, с другой — отказ
+   «сначала `dev down`»;
 2. `dockerrt.PingDaemon`, свободен ли `addr`;
 3. запуск самого себя как `agctl dev serve --workdir DIR` в фоне: stdout в
    `logs/serve.log`, процесс отвязан от терминала (`detach_unix.go`:

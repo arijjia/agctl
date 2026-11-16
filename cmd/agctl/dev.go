@@ -454,6 +454,14 @@ func devUp(home string, args []string) error {
 	if err != nil {
 		return err
 	}
+	if st, _ := localmode.ReadState(home); st != nil && devAlive(st) && devStale(st) {
+		// Бинарь обновили (install.sh, release), а фоновый процесс — ещё
+		// старой сборки: без перезапуска фиксы новой версии не применятся.
+		fmt.Printf("… запущена другая сборка agctl (%s, установлена %s) — перезапускаю\n", devStateBuild(st), devBuildID())
+		if err := devDown(home); err != nil {
+			return fmt.Errorf("перезапуск старой сборки: %w", err)
+		}
+	}
 	if st, _ := localmode.ReadState(home); st != nil && devAlive(st) {
 		if st.WorkDir != abs {
 			return fmt.Errorf("уже запущено с папкой %s — сначала agctl dev down", st.WorkDir)
@@ -592,6 +600,31 @@ func devControl(st *localmode.State, method, path string, out any) error {
 	return nil
 }
 
+// devBuildID — сборка этого бинаря: версия и коммит (у локальных сборок
+// версия часто одна — "dev", различает коммит).
+func devBuildID() string { return buildID(version, commit) }
+
+func buildID(v, c string) string {
+	if c == "" {
+		return v
+	}
+	return v + " " + c
+}
+
+// devStateBuild — сборка запущенного процесса; у состояний до поля build —
+// только версия.
+func devStateBuild(st *localmode.State) string {
+	return firstNonEmpty(st.Build, st.Version)
+}
+
+// devStale — фоновый процесс запущен другой сборкой, чем этот бинарь.
+func devStale(st *localmode.State) bool {
+	if st.Build != "" {
+		return st.Build != devBuildID()
+	}
+	return st.Version != "" && st.Version != version
+}
+
 func devAlive(st *localmode.State) bool {
 	return devControl(st, http.MethodGet, "/api/local/status", nil) == nil
 }
@@ -674,7 +707,7 @@ func devServe(home string, args []string) {
 		devBridgeListener(ctx, port, h)
 		st := localmode.State{
 			PID: os.Getpid(), Addr: cfg.Addr, ControlToken: local.ControlToken, LoginToken: local.LoginToken,
-			Image: firstNonEmpty(image, "по профилю"), WorkDir: workdir, Started: time.Now(), Version: version,
+			Image: firstNonEmpty(image, "по профилю"), WorkDir: workdir, Started: time.Now(), Version: version, Build: devBuildID(),
 		}
 		if err := localmode.WriteState(home, st); err != nil {
 			log.Printf("dev: файл состояния: %v", err)
@@ -792,6 +825,11 @@ func devStatus(home string) error {
 		return err
 	}
 	fmt.Printf("статус:   запущено, http://%s (pid %d, с %s)\n", st.Addr, st.PID, st.Started.Format("15:04 02.01"))
+	if devStale(st) {
+		fmt.Printf("сборка:   запущена %s, установлена %s — перезапуск: agctl dev down && agctl dev up\n", devStateBuild(st), devBuildID())
+	} else {
+		fmt.Printf("сборка:   %s\n", devBuildID())
+	}
 	fmt.Printf("рабочее:  %v, папка %s\n", s.Runtime["state"], s.Workdir)
 	fmt.Printf("мост:     инструментов %d, ждут подтверждения %d\n", s.BridgeTools, s.BridgePending)
 	return nil
