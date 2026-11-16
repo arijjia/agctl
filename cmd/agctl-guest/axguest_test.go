@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +35,9 @@ spec:
 }
 
 func TestRunnerHandlerDebugServesGuestGRPC(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("guest-сервисы Substrate только unix (axguest_windows.go — заглушка); раннер AX живёт в linux-песочнице")
+	}
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "dsh:"+r.URL.Path)
 	}))

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -92,8 +93,13 @@ func TestProjectMcpAPI(t *testing.T) {
 	if meta, err := os.ReadFile(filepath.Join(dshHome, ".agent-presets", "agctl-ws-vibe", "preset.yml")); err != nil || !strings.Contains(string(meta), "agctl-ws: vibe") {
 		t.Fatalf("metadata пресета повреждена: %v %s", err, meta)
 	}
-	// Файл с секретом — 0600 (конвенция .credentials.yaml).
-	if fi, err := os.Stat(filepath.Join(dshHome, ".agent-presets", "agctl-ws-vibe", "agent.cordis.yml")); err != nil || fi.Mode().Perm() != 0o600 {
+	// Файл с секретом — 0600 (конвенция .credentials.yaml); unix-права на
+	// Windows не выражаются — там проверяем только наличие файла.
+	fi, err := os.Stat(filepath.Join(dshHome, ".agent-presets", "agctl-ws-vibe", "agent.cordis.yml"))
+	if err != nil {
+		t.Fatalf("композиция: %v", err)
+	}
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("права композиции = %v, want 0600", fi.Mode().Perm())
 	}
 
