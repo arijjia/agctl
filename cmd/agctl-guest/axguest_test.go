@@ -1,3 +1,5 @@
+//go:build server
+
 package main
 
 // axguest_test.go — guest-сервисы Substrate в раннере (spec.debug):

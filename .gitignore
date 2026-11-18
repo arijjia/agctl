@@ -1,5 +1,6 @@
 /dist/
 .build-img/
+.build-img-server/
 web/node_modules/
 *.tsbuildinfo
 .env

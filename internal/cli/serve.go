@@ -107,7 +107,7 @@ func Serve(args []string, opts ServeOptions) {
 	fsSet := flag.NewFlagSet("serve", flag.ExitOnError)
 	home := fsSet.String("home", DefaultHome(), "каталог данных agctl")
 	addr := fsSet.String("addr", EnvOr("AGCTL_ADDR", FirstNonEmpty(cfg.Serve.Addr, "127.0.0.1:8929")), "адрес UI/API")
-	image := fsSet.String("image", FirstNonEmpty(cfg.Serve.Image, "agctl-dsh:0.2.2"), "тег образа agctl-dsh")
+	image := fsSet.String("image", FirstNonEmpty(cfg.Serve.Image, "agctl-dsh-server:0.2.2"), "тег серверного образа рабочего места agctl-dsh-server (guest: ax-runner, init-chat-home; надстройка профиля — agctl-dsh-server-<профиль>)")
 	devImages := fsSet.String("dev-images", EnvOr("AGCTL_DEV_IMAGES", FirstNonEmpty(cfg.Serve.DevImages, strings.Join(prof.Images.Dev, ","))), "каталог образов лаунчера developer'а через запятую (реестр Nexus и пр.; по умолчанию — images.dev профиля); пусто = только --image")
 	devEnv := fsSet.String("dev-env", EnvOr("AGCTL_DEV_ENV", cfg.Serve.DevEnv), "имена переменных окружения хоста, пробрасываемые в контейнер developer'а через запятую (значения из .env); пусто = не пробрасывать")
 	binDir := fsSet.String("bin-dir", "", "каталог linux-сборок agctl для образа (по умолчанию ./dist)")

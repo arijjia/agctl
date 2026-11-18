@@ -83,6 +83,10 @@ ENV DSH_HOME=/home/dsh
 # sshd даже при переданном публичном ключе.
 ARG AGCTL_NO_SSHD=0
 ENV AGCTL_NO_SSHD=${AGCTL_NO_SSHD}
+# Вариант guest-бинаря: local (bridge, по умолчанию — образ agctl-dsh*, локальный
+# режим) | server (ax-runner + init-chat-home — образ agctl-dsh-server*, серверные
+# рантаймы docker|k8s|ax). Бинарь кладёт сборщик: make img_build / img_build_server.
+ARG GUEST_FLAVOR=local
 COPY agctl /usr/local/bin/agctl
 # Скелет DSH_HOME: entrypoint сеет его в пустой том (см. /opt/dsh-skel).
 COPY skel/ /opt/dsh-skel/
@@ -92,9 +96,11 @@ COPY office2pdf /usr/local/bin/office2pdf
 RUN chmod +x /usr/local/bin/agctl /usr/local/bin/agctl-entrypoint /usr/local/bin/agctl-dsh-net /usr/local/bin/office2pdf && mkdir -p /home/dsh /workspace
 # Google AX / Agent Substrate: PID 1 песочницы — /usr/local/bin/ax-task-runner
 # (контракт раннера AX); здесь это обёртка над `agctl ax-runner`: probes на
-# :80, прокси на dsh web :3080, хвост лога запуска для шлюза. В Docker/K8s не
-# используется (ENTRYPOINT ниже).
-RUN printf '#!/bin/sh\nexec /usr/local/bin/agctl ax-runner "$@"\n' > /usr/local/bin/ax-task-runner && chmod +x /usr/local/bin/ax-task-runner
+# :80, прокси на dsh web :3080, хвост лога запуска для шлюза. Только серверный
+# вариант: в Docker/K8s не используется (ENTRYPOINT ниже), в локальном образе
+# раннера нет — обёртку не создаём.
+RUN if [ "$GUEST_FLAVOR" = "server" ]; then \
+      printf '#!/bin/sh\nexec /usr/local/bin/agctl ax-runner "$@"\n' > /usr/local/bin/ax-task-runner && chmod +x /usr/local/bin/ax-task-runner; fi
 WORKDIR /workspace
 EXPOSE 3080 2222
 # Живость dsh: любой HTTP-ответ (в т.ч. 401/303 без cookie) = процесс жив и

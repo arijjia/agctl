@@ -1,8 +1,8 @@
 #!/bin/bash
 # e2e-ssh: real Docker SSH-channel test (container public-key auth on 127.0.0.1).
-# Requires a built agctl-dsh image with openssh-server (make img_build IMG=...).
+# Requires a built server image agctl-dsh-server with openssh-server (make img_build_server IMG_SERVER=...).
 #
-#   IMG=agctl-dsh:0.2.0-ssh-night bin/e2e-ssh.sh
+#   IMG=agctl-dsh-server:0.2.0-ssh-night bin/e2e-ssh.sh
 #
 # The test creates an isolated TEST_HOME + ephemeral SSH key, provisions a
 # workspace with sshPubKey, connects with the system ssh client, and cleans
@@ -14,7 +14,7 @@ RUN_ID="$(date +%Y%m%d-%H%M%S)"
 TEST_HOME="${E2E_SSH_HOME:-/tmp/agctl-ssh-e2e-$RUN_ID}"
 ADDR="127.0.0.1:${E2E_SSH_ADDR_PORT:-18932}"
 B="http://$ADDR"
-IMG="${IMG:-agctl-dsh:0.2.0-ssh-night}"
+IMG="${IMG:-agctl-dsh-server:0.2.0-ssh-night}"
 BIN="$TEST_HOME/agctl"
 FAKE_PORT="${FAKE_PORT:-18770}"
 
@@ -60,7 +60,7 @@ if [ -e "$TEST_HOME/id_ed25519" ] || [ -e "$TEST_HOME/id_ed25519_rotated" ]; the
 fi
 command -v ssh-keygen >/dev/null || { echo "ssh-keygen не найден" >&2; exit 2; }
 command -v ssh >/dev/null || { echo "ssh-клиент не найден" >&2; exit 2; }
-docker image inspect "$IMG" >/dev/null 2>&1 || { echo "image $IMG не найден; сначала make img_build IMG=$IMG" >&2; exit 2; }
+docker image inspect "$IMG" >/dev/null 2>&1 || { echo "server image $IMG не найден; сначала make img_build_server IMG_SERVER=$IMG" >&2; exit 2; }
 
 go build -o "$BIN" ./cmd/agctl-server || exit 2
 ssh-keygen -q -t ed25519 -N '' -f "$TEST_HOME/id_ed25519"

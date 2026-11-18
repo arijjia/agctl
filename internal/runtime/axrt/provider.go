@@ -6,7 +6,8 @@
 // маршрутизатор Substrate (atenet-router) с заголовком ate-target-actor.
 //
 // Контракт образа: PID 1 в песочнице — /usr/local/bin/ax-task-runner, в
-// образе agctl-dsh это обёртка над `agctl ax-runner` (cmd/agctl/axrunner.go):
+// серверном образе agctl-dsh-server это обёртка над `agctl ax-runner`
+// (cmd/agctl-guest/axrunner.go, сборка `-tags server`):
 // /healthz и /readyz на :80, реверс-прокси на dsh web :3080, хвост лога
 // запуска (boot-токен dsh) на /agctl/boot-log по токену раннера.
 package axrt

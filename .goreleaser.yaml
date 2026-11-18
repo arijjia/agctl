@@ -2,12 +2,15 @@ version: 2
 
 project_name: agctl
 
-# Одно ядро — три бинаря:
-#   agctl         — разработчику (локальный режим), все ОС;
-#   agctl-server  — сервер организации (serve, рантаймы docker | k8s | ax);
-#   agctl-guest   — linux-бинарь образа рабочего места (в образе —
-#                   /usr/local/bin/agctl: bridge, ax-runner, init-chat-home);
-#                   install.sh кладёт его в ~/.local/lib/agctl для самосборки образа.
+# Одно ядро — три бинаря, guest в двух вариантах (карточка guest-image-flavours):
+#   agctl               — разработчику (локальный режим), все ОС;
+#   agctl-server        — сервер организации (serve, рантаймы docker | k8s | ax);
+#   agctl-guest         — linux-бинарь образа agctl-dsh* локального режима
+#                         (в образе /usr/local/bin/agctl: только bridge);
+#   agctl-guest-server  — linux-бинарь образа agctl-dsh-server* серверного
+#                         режима (-tags server: ax-runner, init-chat-home);
+#                         install.sh кладёт оба варианта в ~/.local/lib/agctl
+#                         для самосборки образов без реестра.
 builds:
   - id: agctl
     main: ./cmd/agctl
@@ -48,6 +51,20 @@ builds:
       - arm64
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.buildDate={{.Now.Format "2006-01-02"}}
+  - id: agctl-guest-server
+    main: ./cmd/agctl-guest
+    binary: agctl-guest
+    env:
+      - CGO_ENABLED=0
+    tags:
+      - server
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.buildDate={{.Now.Format "2006-01-02"}}
 
 archives:
   - id: agctl
@@ -68,6 +85,11 @@ archives:
     formats: [tar.gz]
     name_template: >-
       agctl-guest_{{ .Os }}_{{ .Arch }}
+  - id: agctl-guest-server
+    ids: [agctl-guest-server]
+    formats: [tar.gz]
+    name_template: >-
+      agctl-guest-server_{{ .Os }}_{{ .Arch }}
 
 checksum:
   name_template: "checksums.txt"

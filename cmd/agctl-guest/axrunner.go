@@ -1,3 +1,5 @@
+//go:build server
+
 package main
 
 // axrunner.go — `agctl ax-runner`: PID 1 песочницы Google AX / Agent Substrate

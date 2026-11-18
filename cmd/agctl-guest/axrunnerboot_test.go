@@ -1,3 +1,5 @@
+//go:build server
+
 package main
 
 // axrunnerboot_test.go — fetch-at-boot конфига провайдера: cli.DerivePublicURL

@@ -4,7 +4,7 @@
 release_clean:
 	rm -rf dist
 
-## release_local: agctl — darwin/linux/windows, agctl-server — darwin/linux, agctl-guest — linux; × arm64/amd64 в dist/
+## release_local: agctl — darwin/linux/windows, agctl-server — darwin/linux, agctl-guest — linux (локальный + серверный варианты); × arm64/amd64 в dist/
 release_local:
 	go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl ./cmd/agctl
 	@set -e; for arch in arm64 amd64; do \
@@ -16,5 +16,6 @@ release_local:
 	    GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-server-$$os-$$arch ./cmd/agctl-server; \
 	  done; \
 	  GOOS=linux GOARCH=$$arch go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-linux-$$arch ./cmd/agctl-guest; \
+	  GOOS=linux GOARCH=$$arch go build -tags server -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-server-linux-$$arch ./cmd/agctl-guest; \
 	done
 	@ls -la dist/
