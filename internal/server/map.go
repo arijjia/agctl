@@ -38,6 +38,7 @@ var mapTabs = []struct{ name, title string }{
 	{"agctl-processes", "Сервер — один хост"},
 	{"agctl-local", "Ноутбук — локальный режим"},
 	{"agctl-cluster", "Кластер: k8s | ax"},
+	{"agctl-code", "Бинари и код"},
 }
 
 // handleMapIndex — корень /map: вкладки по диаграммам (?m=имя), выбранная

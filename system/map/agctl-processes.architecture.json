@@ -39,7 +39,7 @@
           "egress",
           "llm"
         ],
-        "note": "+1 процесс: ensureChat или prewarm-пул; dsh пишет проекты через RW mount; том переживает удаление контейнера"
+        "note": "+1 процесс: ensureChat; dsh пишет проекты через RW mount; том переживает удаление контейнера"
       },
       {
         "id": "v-dev",
@@ -143,7 +143,7 @@
       "id": "api",
       "type": "backend",
       "label": "REST API + auth",
-      "sublabel": "маршруты /api · argon2id · сессии · апрув · /map",
+      "sublabel": "/api ядра и модулей · argon2id",
       "pos": [
         412,
         252
@@ -210,7 +210,7 @@
       "id": "bg",
       "type": "backend",
       "label": "Фоновые горутины",
-      "sublabel": "autosave · reconcile · TTL-reaper · prewarm-пул",
+      "sublabel": "reaper · reconcile · сессии · autosave",
       "pos": [
         412,
         352
@@ -310,8 +310,8 @@
     {
       "id": "wgw",
       "type": "backend",
-      "label": "Шлюз dev-мест /w/{id}/",
-      "sublabel": "owner-check + брендинг + страница «остановлено»",
+      "label": "Legacy-шлюз /w/{id}/",
+      "sublabel": "модуль · места до v3 · 410",
       "pos": [
         412,
         452
@@ -637,8 +637,8 @@
     {
       "id": "egress",
       "type": "security",
-      "label": "Egress-allowlist — opt-in",
-      "sublabel": "agctl-egress-* · DNS + хост",
+      "label": "Egress-allowlist",
+      "sublabel": "не подключён к serve",
       "pos": [
         392,
         140
@@ -837,7 +837,7 @@
         "Сервер всегда (режим docker): 2 — agctl-server serve + dockerd; SQLite и git — файлы и библиотека в процессе, не процессы. В кластере dockerd нет — под agctl-serve + API-сервер",
         "Вход/логин: +0 — экран рисует SPA agctl (go:embed), dsh ещё не существует",
         "Открылся /chat/: +1 — dsh web (bind на eth0); до готовности agctl отдаёт свой HTML прогрева",
-        "Prewarm-пул (--chat-prewarm-n N): N последних активных пользователей держатся тёплыми — при логине их контейнер уже есть, +0 на входе",
+        "Prewarm-пул (модуль prewarm, chat_prewarm.go) реализован, но serve не выставляет Config.ChatPrewarmN — сейчас выключен; контейнер стартует при первом /chat/",
         "Админ (/admin): +0 — панели рисует SPA agctl, данные отдаёт serve; личный контейнер админу не создаётся",
         "Developer в /launcher: +0, пока не нажал «Запустить»; старт → +1 dsh web (+1 sshd при ключе)",
         "Агент работает: + недолговечные дети dsh web (bash, python3, git, npx MCP)",
@@ -854,9 +854,10 @@
         "Путь чата: браузер → :8929 → proxy + mint ?token= → DNAT → dsh :3080 (bind eth0) → LLM :443",
         "Апстрим dsh запрещает только wildcard-бинд — dsh слушает eth0 контейнера напрямую, релея в образе нет",
         "/admin и /launcher — страницы того же SPA на :8929; роль из сессии решает редирект корня",
-        "Egress-allowlist (opt-in): контейнеры на выделенной сети agctl-egress-*, наружу только DNS и хост-шлюз — правило в DOCKER-USER",
+        "Egress-allowlist (egress.go): сеть agctl-egress-*, наружу только DNS и хост-шлюз, правило в DOCKER-USER; код и тест есть, флага в serve нет — сейчас не включается",
         "Кластер: шлюз → Service :80 → под dsh :3080 (k8s) или atenet-router + заголовок ate-target-actor → ax-runner :80 → dsh :3080 (ax)",
-        "/map — эта карта за сессией (requireUser); сборка — system/map/*.html через go:embed"
+        "/map — эта карта за сессией (requireUser); сборка — system/map/*.html через go:embed",
+        "Ключ модели в контейнере — только файлом dsh-home/.credentials.yaml (0600), в env контейнера ключей LLM нет (dockerrt.containerEnv)"
       ]
     },
     {
@@ -877,11 +878,12 @@
       "dot": "cyan",
       "title": "agctl-server serve — сердце платформы",
       "items": [
+        "Бинарь agctl-server (cmd/agctl-server) = общее ядро internal/server + серверные модули (ServerModules: регистрация, роли, лаунчер, админка, autosave, /w) + рантаймы docker|k8s|ax; локальный режим — отдельный бинарь agctl",
         "Постоянно работающий управляющий процесс платформы на хосте: один Go-процесс, слушает :8929, принимает HTTP/WS/SSE.",
-        "Подрамка «agctl-server serve» на карте — логические блоки ОДНОГО процесса, не отдельные процессы: шлюз /chat/, шлюз /w/{id}/, менеджер рантаймов, REST API + auth, хранилище+секреты, фоновые горутины.",
+        "Подрамка «agctl-server serve» — логические блоки ОДНОГО процесса: шлюз /chat/, legacy-шлюз /w/{id}/, менеджер рантаймов, REST API + auth, хранилище+секреты, фоновые горутины.",
         "Менеджер рантаймов держит карту userID→runtime и лениво запускает рантайм пользователя через выбранный бэкенд (ChatProvider: docker | k8s | ax); TTL/reaper останавливает вычисления, но оставляет том.",
         "agctl-server serve не запускает команды агента и не проксирует файловые записи: dsh и дочерние инструменты читают и пишут напрямую через RW bind mount.",
-        "Фоновые задачи (autosave, reconcile, чистка сессий, prewarm-пул) — горутины в том же Go-процессе; SQLite и секреты — данные платформы в AGCTL_HOME.",
+        "Фоновые задачи — горутины того же процесса: ядро — усыпление по TTL, сверка рантаймов, чистка сессий; модули — autosave (prewarm и Jira не подключены к флагам)",
         "Брендинг и LLM-дефолты — из профиля организации (internal/profile: данные, не код; --profile/--profile-dir, make profile-fetch): шлюзы инжектят window.__AGCTL_BRAND__ в <head> до первого кадра; в ядре нет литералов организаций — guard-тест TestCoreIsOrganizationFree",
         "Админ-API: обзор, список/стат контейнеров, стоп/старт/рестарт, запросы шлюза, траектории (чтение sessions/ из томов), квоты — всё под requireAdmin и в audit"
       ]
@@ -925,7 +927,7 @@
       "items": [
         "Ноутбук разработчика без сервера (agctl dev) — вкладка «Ноутбук — локальный режим»",
         "Кластер вместо dockerd (--runtime k8s | ax) — вкладка «Кластер»",
-        "agctl local connect — старый экспериментальный коннектор, только с --experimental-local-bridge"
+        "Старый WSS-коннектор agctl local connect удалён (2026-11-16); локальный режим — бинарь agctl, вкладка «Ноутбук»"
       ]
     }
   ]

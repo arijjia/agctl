@@ -19,7 +19,7 @@ func TestMapPageAuthAndServing(t *testing.T) {
 	if code != 200 || !contains(body, "Карта системы agctl") {
 		t.Fatalf("map index = %d %q", code, firstLine(body))
 	}
-	if !contains(body, "/map/agctl-processes.html") || !contains(body, "/map?m=agctl-local") || !contains(body, "/map?m=agctl-cluster") {
+	if !contains(body, "/map/agctl-processes.html") || !contains(body, "/map?m=agctl-local") || !contains(body, "/map?m=agctl-cluster") || !contains(body, "/map?m=agctl-code") {
 		t.Fatalf("index must show server map and tabs, got %q", body)
 	}
 	if _, body = e.do(e.admin, "GET", "/map?m=agctl-local", nil); !contains(body, `src="/map/agctl-local.html"`) {

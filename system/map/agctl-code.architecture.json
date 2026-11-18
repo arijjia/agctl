@@ -1,0 +1,723 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "agctl — бинари и кодовая база",
+    "output": "system/map/agctl-code.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "git@github.com:arijjia/agctl.git",
+      "provider": "github",
+      "link_mode": "local-only",
+      "revision": "19245197b5411e214546dc3fb941a510eaca26d8"
+    },
+    "views": [
+      {
+        "id": "v-local",
+        "label": "Бинарь agctl — локальный режим",
+        "focus": [
+          "bin_agctl",
+          "localmode",
+          "cli",
+          "srv_core",
+          "srv_local",
+          "localbridge",
+          "dockerrt",
+          "provision"
+        ],
+        "note": "agctl = ядро + локальный режим + Docker; серверных модулей, k8s и AX в нём нет (19 МБ)"
+      },
+      {
+        "id": "v-server",
+        "label": "Бинарь agctl-server — сервер и кластер",
+        "focus": [
+          "bin_server",
+          "cli",
+          "srv_core",
+          "srv_mod",
+          "dockerrt",
+          "k8srt",
+          "axrt",
+          "store"
+        ],
+        "note": "agctl-server = ядро + модули + рантаймы docker|k8s|ax; модули подключает только он"
+      },
+      {
+        "id": "v-guest",
+        "label": "Бинарь образа agctl-guest",
+        "focus": [
+          "bin_guest",
+          "cli",
+          "localbridge",
+          "axrt",
+          "provision"
+        ],
+        "note": "в образе — /usr/local/bin/agctl: клиент моста, раннер AX, init-контейнер k8s; HTTP-сервера платформы нет"
+      }
+    ],
+    "subtitle": "Одно ядро — три бинаря: слева код только локального режима, справа — только сервера и кластера, в центре и внизу — общее"
+  },
+  "components": [
+    {
+      "id": "bin_agctl",
+      "type": "backend",
+      "label": "agctl — бинарь разработчика",
+      "sublabel": "cmd/agctl · dev · backlog",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        260,
+        84
+      ],
+      "sources": [
+        {
+          "path": "cmd/agctl/main.go",
+          "line": 29,
+          "end_line": 52,
+          "label": "диспетчер: dev, backlog, version"
+        },
+        {
+          "path": "cmd/agctl/dev.go",
+          "line": 720,
+          "end_line": 720,
+          "label": "dev serve → cli.Serve с LocalMode"
+        }
+      ]
+    },
+    {
+      "id": "localmode",
+      "type": "backend",
+      "label": "internal/localmode",
+      "sublabel": "dev.yaml · state.json · секреты ОС",
+      "pos": [
+        40,
+        190
+      ],
+      "size": [
+        260,
+        84
+      ],
+      "sources": [
+        {
+          "path": "internal/localmode/config.go",
+          "line": 26,
+          "end_line": 40,
+          "label": "Home: ~/.agctl-dev"
+        },
+        {
+          "path": "internal/localmode/secrets.go",
+          "line": 80,
+          "end_line": 95,
+          "label": "OpenStore: хранилище ОС или файл"
+        },
+        {
+          "path": "internal/localmode/state.go",
+          "line": 108,
+          "end_line": 120,
+          "label": "Backup: архив dsh-home перед update"
+        }
+      ]
+    },
+    {
+      "id": "srv_local",
+      "type": "backend",
+      "label": "server: локальный режим",
+      "sublabel": "local*.go · вход по токену · лаунчер",
+      "pos": [
+        40,
+        340
+      ],
+      "size": [
+        260,
+        84
+      ],
+      "sources": [
+        {
+          "path": "internal/server/local.go",
+          "line": 73,
+          "end_line": 110,
+          "label": "initLocal: владелец, мост, папка"
+        },
+        {
+          "path": "internal/server/local_owner.go",
+          "line": 119,
+          "end_line": 140,
+          "label": "сессии владельца в файле 0600"
+        },
+        {
+          "path": "internal/server/local_ui.go",
+          "line": 280,
+          "end_line": 300,
+          "label": "startLocalRuntime: образ → ensureChat"
+        }
+      ]
+    },
+    {
+      "id": "localbridge",
+      "type": "security",
+      "label": "internal/localbridge",
+      "sublabel": "мост к хосту: белый список argv",
+      "pos": [
+        40,
+        490
+      ],
+      "size": [
+        260,
+        84
+      ],
+      "sources": [
+        {
+          "path": "internal/localbridge/bridge.go",
+          "line": 209,
+          "end_line": 230,
+          "label": "Call: confirm, exec без shell"
+        },
+        {
+          "path": "internal/localbridge/client.go",
+          "line": 117,
+          "end_line": 130,
+          "label": "ServeMCP: клиент в agctl-guest"
+        }
+      ]
+    },
+    {
+      "id": "bin_guest",
+      "type": "backend",
+      "label": "agctl-guest — бинарь образа",
+      "sublabel": "bridge · ax-runner · init-chat-home",
+      "pos": [
+        540,
+        40
+      ],
+      "size": [
+        260,
+        84
+      ],
+      "sources": [
+        {
+          "path": "cmd/agctl-guest/main.go",
+          "line": 43,
+          "end_line": 68,
+          "label": "в образе — /usr/local/bin/agctl"
+        },
+        {
+          "path": "cmd/agctl-guest/axrunner.go",
+          "line": 75,
+          "end_line": 90,
+          "label": "ax-runner: PID 1 песочницы AX"
+        },
+        {
+          "path": "cmd/agctl-guest/main.go",
+          "line": 70,
+          "end_line": 83,
+          "label": "init-chat-home: initContainer k8s"
+        }
+      ]
+    },
+    {
+      "id": "cli",
+      "type": "backend",
+      "label": "internal/cli",
+      "sublabel": "общий Serve · config.yaml · справка",
+      "pos": [
+        540,
+        190
+      ],
+      "size": [
+        260,
+        84
+      ],
+      "sources": [
+        {
+          "path": "internal/cli/serve.go",
+          "line": 52,
+          "end_line": 65,
+          "label": "ServeOptions: Local, Modules, Runtime"
+        },
+        {
+          "path": "internal/cli/serve.go",
+          "line": 79,
+          "end_line": 90,
+          "label": "Serve: одна реализация serve"
+        },
+        {
+          "path": "internal/cli/chathome.go",
+          "line": 81,
+          "end_line": 90,
+          "label": "PrepareChatHome вне Docker"
+        }
+      ]
+    },
+    {
+      "id": "srv_core",
+      "type": "backend",
+      "label": "internal/server — ядро",
+      "sublabel": "API · шлюз /chat/ · ensureChat",
+      "pos": [
+        540,
+        340
+      ],
+      "size": [
+        260,
+        84
+      ],
+      "sources": [
+        {
+          "path": "internal/server/server.go",
+          "line": 306,
+          "end_line": 340,
+          "label": "Routes: маршруты ядра + модули"
+        },
+        {
+          "path": "internal/server/chat.go",
+          "line": 571,
+          "end_line": 590,
+          "label": "ensureChat: рантайм пользователя"
+        },
+        {
+          "path": "internal/server/chat.go",
+          "line": 871,
+          "end_line": 900,
+          "label": "chatProxy: прокси к dsh :3080"
+        }
+      ]
+    },
+    {
+      "id": "dockerrt",
+      "type": "backend",
+      "label": "runtime/dockerrt",
+      "sublabel": "Docker: контейнер · образ · egress",
+      "pos": [
+        540,
+        490
+      ],
+      "size": [
+        260,
+        84
+      ],
+      "sources": [
+        {
+          "path": "internal/runtime/chat.go",
+          "line": 69,
+          "end_line": 80,
+          "label": "контракт ChatProvider"
+        },
+        {
+          "path": "internal/runtime/dockerrt/docker.go",
+          "line": 368,
+          "end_line": 380,
+          "label": "Start: порты, маунты, лимиты"
+        },
+        {
+          "path": "internal/runtime/dockerrt/devbuild.go",
+          "line": 81,
+          "end_line": 90,
+          "label": "BuildDevImage: сборка на машине"
+        }
+      ]
+    },
+    {
+      "id": "bin_server",
+      "type": "backend",
+      "label": "agctl-server — сервер",
+      "sublabel": "cmd/agctl-server · serve · connect · sync",
+      "pos": [
+        1040,
+        40
+      ],
+      "size": [
+        260,
+        84
+      ],
+      "sources": [
+        {
+          "path": "cmd/agctl-server/main.go",
+          "line": 32,
+          "end_line": 62,
+          "label": "диспетчер серверных команд"
+        },
+        {
+          "path": "cmd/agctl-server/main.go",
+          "line": 67,
+          "end_line": 73,
+          "label": "serve: ServerModules + рантайм"
+        },
+        {
+          "path": "cmd/agctl-server/runtime_select.go",
+          "line": 83,
+          "end_line": 90,
+          "label": "флаги --runtime docker|k8s|ax"
+        }
+      ]
+    },
+    {
+      "id": "srv_mod",
+      "type": "backend",
+      "label": "server: модули",
+      "sublabel": "регистрация · роли · админка · /w",
+      "pos": [
+        1040,
+        190
+      ],
+      "size": [
+        260,
+        84
+      ],
+      "sources": [
+        {
+          "path": "internal/server/modules.go",
+          "line": 19,
+          "end_line": 40,
+          "label": "Module и ServerModules()"
+        },
+        {
+          "path": "internal/server/admin.go",
+          "line": 59,
+          "end_line": 70,
+          "label": "админ-панель: обзор"
+        },
+        {
+          "path": "internal/server/roles.go",
+          "line": 23,
+          "end_line": 30,
+          "label": "заявки на роль developer"
+        }
+      ]
+    },
+    {
+      "id": "k8srt",
+      "type": "cloud",
+      "label": "runtime/k8srt",
+      "sublabel": "Pod · Service · NetPol · Secret",
+      "pos": [
+        1040,
+        340
+      ],
+      "size": [
+        260,
+        84
+      ],
+      "sources": [
+        {
+          "path": "internal/runtime/k8srt/provider.go",
+          "line": 217,
+          "end_line": 240,
+          "label": "EnsureChat: объекты на пользователя"
+        }
+      ]
+    },
+    {
+      "id": "axrt",
+      "type": "cloud",
+      "label": "runtime/axrt",
+      "sublabel": "AX Task · маршрутизатор · egress",
+      "pos": [
+        1040,
+        490
+      ],
+      "size": [
+        260,
+        84
+      ],
+      "sources": [
+        {
+          "path": "internal/runtime/axrt/provider.go",
+          "line": 242,
+          "end_line": 260,
+          "label": "EnsureChat: Get/Create/Resume Task"
+        },
+        {
+          "path": "internal/runtime/axrt/bootfetch.go",
+          "line": 101,
+          "end_line": 117,
+          "label": "конфиг провайдера при загрузке"
+        }
+      ]
+    },
+    {
+      "id": "provision",
+      "type": "backend",
+      "label": "internal/provision",
+      "sublabel": "dsh-home · проекты · каталог · MCP",
+      "pos": [
+        40,
+        660
+      ],
+      "size": [
+        240,
+        84
+      ],
+      "sources": [
+        {
+          "path": "internal/provision/provision.go",
+          "line": 904,
+          "end_line": 920,
+          "label": "RefreshProvider: .credentials.yaml"
+        },
+        {
+          "path": "internal/provision/mcp_preset.go",
+          "line": 37,
+          "end_line": 45,
+          "label": "каталог MCP-серверов платформы"
+        }
+      ]
+    },
+    {
+      "id": "store",
+      "type": "database",
+      "label": "store · auth · secrets",
+      "sublabel": "SQLite WAL · argon2id · AES-256-GCM",
+      "pos": [
+        380,
+        660
+      ],
+      "size": [
+        240,
+        84
+      ],
+      "sources": [
+        {
+          "path": "internal/store/store.go",
+          "line": 25,
+          "end_line": 40,
+          "label": "Open: SQLite и миграции"
+        },
+        {
+          "path": "internal/auth/auth.go",
+          "line": 42,
+          "end_line": 55,
+          "label": "HashPassword: argon2id"
+        },
+        {
+          "path": "internal/secrets/secrets.go",
+          "line": 42,
+          "end_line": 55,
+          "label": "мастер-ключ secrets.key"
+        }
+      ]
+    },
+    {
+      "id": "profile",
+      "type": "database",
+      "label": "internal/profile",
+      "sublabel": "бренд · модели · образы — данные",
+      "pos": [
+        720,
+        660
+      ],
+      "size": [
+        240,
+        84
+      ],
+      "sources": [
+        {
+          "path": "internal/profile/profile.go",
+          "line": 173,
+          "end_line": 190,
+          "label": "Resolve: профиль по имени или каталогу"
+        }
+      ]
+    },
+    {
+      "id": "assets",
+      "type": "frontend",
+      "label": "web · assets · dsh-plugins",
+      "sublabel": "SPA · контекст образа · скелет dsh",
+      "pos": [
+        1060,
+        660
+      ],
+      "size": [
+        240,
+        84
+      ],
+      "sources": [
+        {
+          "path": "web/embed.go",
+          "line": 1,
+          "end_line": 9,
+          "label": "SPA web/dist в бинаре"
+        },
+        {
+          "path": "internal/assets/assets.go",
+          "line": 1,
+          "end_line": 20,
+          "label": "образ и скелет DSH_HOME в бинаре"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Только локальный режим — бинарь agctl",
+      "wraps": [
+        "bin_agctl",
+        "localmode",
+        "srv_local",
+        "localbridge"
+      ],
+      "pad": 12
+    },
+    {
+      "kind": "region",
+      "label": "Общее ядро",
+      "wraps": [
+        "cli",
+        "srv_core",
+        "dockerrt"
+      ],
+      "pad": 12
+    },
+    {
+      "kind": "region",
+      "label": "Только сервер и кластер — agctl-server",
+      "wraps": [
+        "bin_server",
+        "srv_mod",
+        "k8srt",
+        "axrt"
+      ],
+      "pad": 12
+    },
+    {
+      "kind": "region",
+      "label": "Общие пакеты — все бинари",
+      "wraps": [
+        "provision",
+        "store",
+        "profile",
+        "assets"
+      ],
+      "pad": 12
+    }
+  ],
+  "connections": [
+    {
+      "id": "e1",
+      "from": "bin_agctl",
+      "to": "localmode",
+      "label": "dev.yaml · секреты"
+    },
+    {
+      "id": "e2",
+      "from": "bin_agctl",
+      "to": "cli",
+      "label": "Serve + LocalMode",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e3",
+      "from": "bin_guest",
+      "to": "cli",
+      "label": "PrepareChatHome"
+    },
+    {
+      "id": "e4",
+      "from": "bin_server",
+      "to": "cli",
+      "label": "Serve + Modules + Runtime",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e5",
+      "from": "bin_server",
+      "to": "srv_mod",
+      "label": "ServerModules()"
+    },
+    {
+      "id": "e6",
+      "from": "cli",
+      "to": "srv_core",
+      "label": "server.New",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e7",
+      "from": "srv_core",
+      "to": "srv_local",
+      "label": "Config.Local"
+    },
+    {
+      "id": "e8",
+      "from": "srv_core",
+      "to": "srv_mod",
+      "label": "Config.Modules"
+    },
+    {
+      "id": "e9",
+      "from": "srv_local",
+      "to": "localbridge",
+      "label": "мост · токены"
+    },
+    {
+      "id": "e10",
+      "from": "srv_core",
+      "to": "dockerrt",
+      "label": "ChatProvider"
+    },
+    {
+      "id": "e11",
+      "from": "srv_core",
+      "to": "k8srt",
+      "label": "ChatProvider",
+      "variant": "dashed"
+    },
+    {
+      "id": "e12",
+      "from": "srv_core",
+      "to": "axrt",
+      "label": "ChatProvider",
+      "variant": "dashed"
+    },
+    {
+      "id": "e13",
+      "from": "dockerrt",
+      "to": "provision",
+      "label": "SeedDshHome · RefreshProvider"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "Три бинаря из одного ядра",
+      "items": [
+        "agctl (cmd/agctl) — разработчику: agctl dev …, backlog; Docker на этой машине, без серверных модулей, клиентов Kubernetes и AX",
+        "agctl-server (cmd/agctl-server) — организации: serve с ServerModules() и бэкендом --runtime docker|k8s|ax, migrate, connect, sync, config",
+        "agctl-guest (cmd/agctl-guest) — внутри образа agctl-dsh как /usr/local/bin/agctl: agctl bridge (клиент моста), ax-runner (PID 1 песочницы AX), init-chat-home (init-контейнер пода k8s)",
+        "Общая реализация serve — internal/cli.Serve: локальный режим передаёт LocalMode, сервер — модули и выбор рантайма",
+        "Размеры (-s -w): agctl 19,4 МБ (единый бинарь до разделения — 62,4 МБ), agctl-guest 21,8 МБ, agctl-server 61,8 МБ"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Где проходит граница режимов",
+      "items": [
+        "Серверные части — модули internal/server/modules.go (регистрация, роли, лаунчер, админка, autosave, /w, Jira, конфиг AX): их регистрирует только agctl-server",
+        "Модули живут в том же пакете internal/server, что и ядро: граница — регистрация, а не пакет; компоновщик отбрасывает недостижимый код",
+        "Локальный режим: internal/localmode, internal/localbridge и local*.go в internal/server; в ядре осталось 10 проверок isLocal() в 6 файлах",
+        "Кластер: internal/runtime/k8srt и axrt подключает только agctl-server; ядро знает их через контракт ChatProvider"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Объём кода (строки Go без тестов)",
+      "items": [
+        "Всего ≈22 100 строк кода и ≈12 400 строк тестов",
+        "internal/server 7 386: ядро ≈4 100, локальный режим ≈920, серверные модули ≈2 350",
+        "Только локальный: cmd/agctl 1 713, localmode 916, localbridge 609; только сервер: cmd/agctl-server 1 006, k8srt 1 119, axrt 1 076",
+        "Общее: provision 2 526 (из них ≈1 200 — рабочие места до v3), dockerrt 1 460, store 1 198, cli 852, profile 435"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Подробнее",
+      "items": [
+        "docs/architecture.md, раздел 10 — ревью кодовой базы: что к какому бинарю относится, сильные стороны, риски",
+        "Соседние вкладки: «Сервер — один хост», «Ноутбук — локальный режим», «Кластер: k8s | ax» — процессы, порты и данные каждого режима"
+      ]
+    }
+  ]
+}

@@ -170,7 +170,7 @@
       "id": "k8spod",
       "type": "cloud",
       "label": "Под пользователя — k8s",
-      "sublabel": "Pod · Service · NetPol · PVC",
+      "sublabel": "Pod · Service · NetPol · Secret · PVC/RWX",
       "pos": [
         800,
         490
@@ -237,7 +237,7 @@
       "id": "axrunner",
       "type": "backend",
       "label": "agctl ax-runner — PID 1",
-      "sublabel": ":80 health · прокси → :3080",
+      "sublabel": ":80 · прокси → :3080 · agctl-guest",
       "pos": [
         800,
         236
@@ -335,6 +335,13 @@
       "from": "axrunner",
       "to": "llm",
       "label": "HTTPS :443"
+    },
+    {
+      "id": "c24",
+      "from": "axrunner",
+      "to": "api",
+      "label": "GET /ax/provider-config",
+      "variant": "dashed"
     }
   ],
   "boundaries": [
@@ -381,12 +388,13 @@
       "title": "Кластер: k8s и ax вместо Docker",
       "items": [
         "--runtime docker|k8s|ax (AGCTL_RUNTIME, serve.runtime): контракт один — ChatProvider (EnsureChat/StopChat/LogsChat/HasActiveSSH); шлюз не знает, что под ним",
-        "k8s: на пользователя Pod agctl-chat-<hash> (init agctl init-chat-home + dsh), Service :80→:3080, NetworkPolicy (ingress только с подов шлюза), Secret ключей LLM; сон = удаление пода, том живёт; SSH developer'а — NodePort + pods/exec для lease",
+        "k8s: на пользователя Pod agctl-chat-<hash> (init agctl init-chat-home из agctl-guest + dsh), Service :80→:3080, NetworkPolicy (к 3080 — только с подов шлюза; к SSH 2222 — без ограничения источника), Secret ключей LLM через secretKeyRef; сон = удаление пода, том живёт",
         "ax: пользователь = AX Task — актор Agent Substrate в gVisor/microVM; ленивый старт GetTask → CreateTask → ResumeTask → Ready; сон = SuspendTask (снимок памяти/ФС); трафик — atenet-router + заголовок ate-target-actor, роутер сам будит спящий актор",
         "agctl ax-runner — PID 1 песочницы: /healthz и /readyz на :80, реверс-прокси на dsh :3080, /agctl/boot-log по токену раннера; конфиг провайдера LLM берёт у шлюза при каждом boot (GET /ax/provider-config/<task>)",
         "Ключи LLM в ax: env задачи (--ax-inject-llm-key=1) или egress-инъекция — dsh шлёт Bearer placeholder, atenet-egress подменяет его из k8s Secret по EgressPolicy, которую ведёт сам agctl; ключ не попадает в песочницу и снимок",
         "ax ssh — opt-in (--ax-debug-ssh): guest-gRPC Substrate на том же :80, платформенного sshd нет, Кабинет видит «спит»",
-        "Манифесты deploy/k8s (kustomize base + overlays) и deploy/ax, образ шлюза deploy/serve.Dockerfile, смоук в kind — bin/e2e-k8s-kind.sh; live-прогон на кластере с Substrate/AX не автоматизирован"
+        "Манифесты deploy/k8s (kustomize base + overlays) и deploy/ax, образ шлюза deploy/serve.Dockerfile, смоук в kind — bin/e2e-k8s-kind.sh; live-прогон на кластере с Substrate/AX не автоматизирован",
+        "Риски до живого развёртывания: прокси чата не предъявляет клиентский сертификат mTLS маршрутизатору AX (сертификат — только для boot-log); под с SSH работает от root; исходящий трафик подов не ограничен"
       ]
     }
   ]

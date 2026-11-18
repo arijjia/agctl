@@ -3,7 +3,8 @@
 # и system/map/index.html (те же вкладки при просмотре с диска):
 #   agctl-processes — сервер — один хост: процессы, порты, протоколы;
 #   agctl-local     — ноутбук: локальный режим разработчика без сервера (agctl dev);
-#   agctl-cluster   — кластер: --runtime k8s | ax.
+#   agctl-cluster   — кластер: --runtime k8s | ax;
+#   agctl-code      — бинари и кодовая база: что в agctl, agctl-server, agctl-guest.
 # Источник — <имя>.architecture.json рядом; HTML собирает archify
 # (finalize architecture … --quality showcase), sha256 спецификации, из
 # которой собран HTML, лежит в <имя>.delivery.json.
@@ -20,7 +21,7 @@
 # устаревшим рендером.
 
 MAP_DIR     := system/map
-MAP_NAMES   := agctl-processes agctl-local agctl-cluster
+MAP_NAMES   := agctl-processes agctl-local agctl-cluster agctl-code
 MAP_NAME    ?= index
 MAP_FILE    := $(MAP_DIR)/$(MAP_NAME).html
 ARCHIFY     ?= archify
