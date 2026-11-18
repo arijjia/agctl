@@ -136,7 +136,7 @@ func (s *Server) quotaAwareProvider(userID int64) provision.Provider {
 	if base.APIKey == "" || base.BaseURL == "" {
 		return base
 	}
-	if base.APIKey != s.cfg.DefaultLLM.APIKey || base.BaseURL != s.cfg.DefaultLLM.BaseURL {
+	if def := s.defaultLLM(); base.APIKey != def.APIKey || base.BaseURL != def.BaseURL {
 		return base // персональный провайдер/секрет пользователя
 	}
 	cli := s.llmClient()

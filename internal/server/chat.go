@@ -561,10 +561,10 @@ func (s *Server) userProvider(userID int64) provision.Provider {
 			if len(models) == 0 {
 				models = []string{sec.Model}
 			}
-			return provision.Provider{BaseURL: sec.BaseURL, Model: sec.Model, Models: models, APIKey: key, Extras: s.cfg.DefaultLLM.Extras}
+			return provision.Provider{BaseURL: sec.BaseURL, Model: sec.Model, Models: models, APIKey: key, Extras: s.defaultLLM().Extras}
 		}
 	}
-	return s.cfg.DefaultLLM
+	return s.defaultLLM()
 }
 
 // ensureChat asks the runtime provider to ensure the user's stable Chat runtime
@@ -656,6 +656,14 @@ func (s *Server) ensureChat(userID int64, slot int) (*chatRuntime, error) {
 		// роли developer/admin (разработка доменных скриптов).
 		DevEnv: s.developerEnv(userID),
 	}
+	if workDir, env := s.localChatExtras(userID); workDir != "" {
+		spec.WorkDir = workDir
+		spec.DevEnv = append(spec.DevEnv, env...)
+		spec.Local = true
+	}
+	// Доступы для команд агента — файлами в dsh-home (bash dsh вычищает
+	// *TOKEN*/*KEY* из env), инструменты находят их по путям из env.
+	spec.DevEnv = append(spec.DevEnv, s.writeAgentCredentials(userID, spec.DevEnv)...)
 	handle, err := s.chatProvider.EnsureChat(ctx, spec)
 	if err != nil {
 		return nil, err
@@ -663,6 +671,7 @@ func (s *Server) ensureChat(userID int64, slot int) (*chatRuntime, error) {
 	if handle.RuntimeID == "" || handle.Endpoint == "" {
 		return nil, fmt.Errorf("chat runtime provider returned an incomplete handle")
 	}
+	s.writeLocalBridgeSkill(userID)
 	rt := &chatRuntime{handle: handle, lastSeen: time.Now(), image: spec.Image}
 	s.chatMu.Lock()
 	s.chats[chatKey{userID, slot}] = rt
@@ -689,13 +698,7 @@ func (s *Server) userChatTTL(userID int64) time.Duration {
 }
 
 // userRole — роль учётной записи; пустая строка при ошибке чтения.
-func (s *Server) userRole(userID int64) string {
-	u, err := s.db.UserByID(userID)
-	if err != nil {
-		return ""
-	}
-	return u.Role
-}
+func (s *Server) userRole(userID int64) string { return s.roleOf(userID) }
 
 // developerEnv — доменные переменные (Config.DevEnv: имена) с их значениями
 // из окружения процесса serve (в него .env экспортирует make). Незаданные
@@ -722,8 +725,7 @@ func (s *Server) developerEnv(userID int64) []string {
 // хранится в settings KV (`/api/me/ssh`). Пусто = sshd в контейнере не
 // поднимаем (роли user чат-контейнер без ssh).
 func (s *Server) developerSSHPubKey(userID int64) string {
-	u, err := s.db.UserByID(userID)
-	if err != nil || (u.Role != "developer" && u.Role != "admin") {
+	if role := s.roleOf(userID); role != "developer" && role != "admin" {
 		return ""
 	}
 	key, err := s.db.SettingGet(fmt.Sprintf("dev-ssh-pubkey-u%d", userID))

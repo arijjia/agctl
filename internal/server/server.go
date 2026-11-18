@@ -25,7 +25,6 @@ import (
 
 	"github.com/arijjia/agctl/internal/assets"
 	"github.com/arijjia/agctl/internal/auth"
-	"github.com/arijjia/agctl/internal/bridge"
 	"github.com/arijjia/agctl/internal/leaderelection"
 	"github.com/arijjia/agctl/internal/profile"
 	"github.com/arijjia/agctl/internal/provision"
@@ -66,27 +65,31 @@ type Config struct {
 	HALeaderLease string
 	// HALeaderKubeconfig — kubeconfig для Lease-клиента (пусто = in-cluster);
 	// HALeaderNamespace — namespace Lease (пусто = serviceaccount/env/default).
-	HALeaderKubeconfig      string
-	HALeaderNamespace       string
-	ChatTTL                 time.Duration      // idle TTL персонального runtime (по умолчанию 60 мин)
-	ChatPrewarmN            int                // prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл); он же — потолок пула
-	ChatPrewarmEvery        time.Duration      // период цикла подогрева (по умолчанию 15 мин)
-	VolumeQuotaGB           float64            // квота тома пользователя в ГБ (0 = выкл); per-user — settings KV
-	LiteLLMQuotas           bool               // enforcement квот токенов виртуальными ключами LiteLLM
-	LiteLLMAdminURL         string             // admin-API LiteLLM (env AGCTL_LITELLM_ADMIN_URL / --litellm-admin-url)
-	LiteLLMAdminKey         string             // admin-ключ LiteLLM (только env AGCTL_LITELLM_ADMIN_KEY; не логируется)
-	RegisterPerMinute       int                // лимит регистраций с одного IP за минуту: 0 — дефолт платформы (30), <0 — отключить (нагрузочные прогоны)
-	RequireApproval         bool               // legacy workspace flag; create endpoint is tombstoned in v3
-	ExperimentalLocalBridge bool               // opt-in pairing/status/revoke API for local connector
-	DefaultLLM              provision.Provider // платформенный провайдер чата по умолчанию (из профиля/env); личный секрет пользователя его перекрывает
-	DevEnv                  []string           // имена переменных хоста, пробрасываемые в контейнер developer/admin (значения — из окружения serve: .env экспортируется make)
-	Profile                 *profile.Data      // профиль организации (брендинг/дефолты); nil = нейтральный agctl
+	HALeaderKubeconfig string
+	HALeaderNamespace  string
+	ChatTTL            time.Duration      // idle TTL персонального runtime (по умолчанию 60 мин)
+	ChatPrewarmN       int                // prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл); он же — потолок пула
+	ChatPrewarmEvery   time.Duration      // период цикла подогрева (по умолчанию 15 мин)
+	VolumeQuotaGB      float64            // квота тома пользователя в ГБ (0 = выкл); per-user — settings KV
+	LiteLLMQuotas      bool               // enforcement квот токенов виртуальными ключами LiteLLM
+	LiteLLMAdminURL    string             // admin-API LiteLLM (env AGCTL_LITELLM_ADMIN_URL / --litellm-admin-url)
+	LiteLLMAdminKey    string             // admin-ключ LiteLLM (только env AGCTL_LITELLM_ADMIN_KEY; не логируется)
+	RegisterPerMinute  int                // лимит регистраций с одного IP за минуту: 0 — дефолт платформы (30), <0 — отключить (нагрузочные прогоны)
+	RequireApproval    bool               // legacy workspace flag; create endpoint is tombstoned in v3
+	DefaultLLM         provision.Provider // платформенный провайдер чата по умолчанию (из профиля/env); личный секрет пользователя его перекрывает
+	DevEnv             []string           // имена переменных хоста, пробрасываемые в контейнер developer/admin (значения — из окружения serve: .env экспортируется make)
+	Profile            *profile.Data      // профиль организации (брендинг/дефолты); nil = нейтральный agctl
 	// AxRunnerToken — токен раннера AX для GET /ax/provider-config/<task>
 	// (fetch-at-boot конфига провайдера; бэкенд ax). Пусто = endpoint выключен.
 	AxRunnerToken string
 	// AxProviderConfig — JSON конфига провайдера по имени задачи AX
 	// (axrt.Provider.ProviderConfigByTask); nil при непустом токене = 503.
 	AxProviderConfig func(task string) (json.RawMessage, bool)
+	// Local — однопользовательский локальный режим (agctl dev up); nil = сервер.
+	Local *LocalMode
+	// Modules — подключаемые части сервера (ServerModules() для agctl serve);
+	// локальный режим их не подключает.
+	Modules []Module
 }
 
 // RuntimeIface — то, что серверу нужно от docker-рантайма (мокается в тестах).
@@ -116,7 +119,6 @@ type Server struct {
 	chats         map[chatKey]*chatRuntime     // (userID, слот) → живой runtime handle
 	chatLocks     map[chatKey]*sync.Mutex      // сериализация первого старта per (user, slot)
 	chatProvider  agctlrt.ChatProvider         // Docker now; K8s adapter can return a Service DNS endpoint
-	localBridge   *bridge.Manager              // experimental outbound local-backend connector, opt-in routes only
 	requestMu     sync.Mutex                   // не допускать двойной approve одной заявки
 	autosaveMu    sync.Mutex                   // серия неудач autosave: backoff + repair-pass
 	autosaveFails map[string]autosaveFailState // "userID/project" → счётчик/пауза
@@ -125,15 +127,18 @@ type Server struct {
 	// leader — holder k8s Lease (карточка ha-control-plane); nil = фолбэк
 	// single-реплики (циклы в процессе, как сейчас). leaderReady — закрыт при
 	// первом переходе кого-то в лидеры (сигнал стартовому свипу).
-	leader      *leaderelection.Holder
-	leaderReady chan struct{}
-	llmMu       sync.Mutex             // виртуальные ключи LiteLLM по квотам
-	llmKeys     map[int64]*llmKeyState // userID → заминченный ключ (ротация при смене квоты)
-	warmHits    atomic.Int64           // ensureChat из тёплого кэша (hit-rate пула)
-	coldStarts  atomic.Int64           // холодные старты ensureChat: счётчик и суммарное время
-	coldTotalMS atomic.Int64
-	startedAt   time.Time    // время старта серва (сводка админки)
-	proxyAuditN atomic.Int64 // счётчик записей журнала шлюза для периодической обрезки
+	leader       *leaderelection.Holder
+	leaderReady  chan struct{}
+	llmMu        sync.Mutex             // виртуальные ключи LiteLLM по квотам
+	llmKeys      map[int64]*llmKeyState // userID → заминченный ключ (ротация при смене квоты)
+	warmHits     atomic.Int64           // ensureChat из тёплого кэша (hit-rate пула)
+	coldStarts   atomic.Int64           // холодные старты ensureChat: счётчик и суммарное время
+	coldTotalMS  atomic.Int64
+	startedAt    time.Time    // время старта серва (сводка админки)
+	webFS        fs.FS        // корень SPA (страницы модулей /admin, /launcher)
+	local        *localState  // локальный режим (agctl dev): владелец и мост; nil — сервер
+	defaultLLMMu sync.RWMutex // cfg.DefaultLLM меняется на ходу (лаунчер локального режима: ключ модели)
+	proxyAuditN  atomic.Int64 // счётчик записей журнала шлюза для периодической обрезки
 
 }
 
@@ -223,8 +228,7 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 	}
 	s := &Server{
 		db: db, sec: sec, cfg: cfg, rt: workspaceRuntime, chatProvider: chatProvider, brand: brand,
-		localBridge: bridge.NewManager(),
-		tokens:      map[string]string{}, chats: map[chatKey]*chatRuntime{}, chatLocks: map[chatKey]*sync.Mutex{},
+		tokens: map[string]string{}, chats: map[chatKey]*chatRuntime{}, chatLocks: map[chatKey]*sync.Mutex{},
 		startedAt: time.Now(),
 	}
 	// Leader-election (карточка ha-control-plane, план п.3): 2+ реплик —
@@ -288,6 +292,11 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 		DeleteSession: db.DeleteSession,
 		CookieSecure:  cfg.SecureCookies,
 	}
+	if cfg.Local != nil {
+		if err := s.initLocal(); err != nil {
+			return nil, err
+		}
+	}
 	return s, nil
 }
 
@@ -334,9 +343,6 @@ func resolveDefaultLLM(db *store.DB, sec *secrets.Manager, cfg *Config) {
 // Close освобождает живые ленивые chat-контейнеры (тома не удаляются), затем
 // закрывает Docker runtime. Dev-workspaces остаются под управлением владельца.
 func (s *Server) Close() {
-	if s.localBridge != nil {
-		s.localBridge.Close()
-	}
 	s.leader.Close() // выйти из выборов (фоновые циклы подхватит фолловер)
 	s.chatMu.Lock()
 	handles := make([]agctlrt.ChatHandle, 0, len(s.chats))
@@ -360,17 +366,19 @@ func (s *Server) Close() {
 
 // ── маршруты ────────────────────────────────────────────────────────────────
 
-// Routes — http.Handler со всеми маршрутами (включая статику SPA).
+// Routes — http.Handler с маршрутами ядра, локального режима и подключённых
+// модулей (Config.Modules), включая статику SPA.
 func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux := http.NewServeMux()
+	s.webFS = webFS
 
-	mux.HandleFunc("POST /api/register", s.handleRegister)
+	if s.isLocal() {
+		s.registerLocalRoutes(mux)
+	}
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.handleMe)
-	// Раннер AX при каждом boot забирает конфиг провайдера по токену раннера
-	// (бэкенд ax, ProviderAtBoot): env задачи конфиг не содержит.
-	mux.HandleFunc("GET /ax/provider-config/{task}", s.handleAxProviderConfig)
+	mux.HandleFunc("GET /api/config", s.handleConfig)
 	mux.HandleFunc("GET /api/projects", s.requireUser(s.handleProjectsList))
 	mux.HandleFunc("POST /api/projects", s.requireUser(s.handleProjectCreate))
 	// Удаление воркспейса вместе с каталогом на диске (нативное удаление dsh
@@ -394,113 +402,23 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("PUT /api/projects/{name}/components", s.requireUser(s.handleProjectComponentsPut))
 	mux.HandleFunc("GET /api/projects/{name}/mcp", s.requireUser(s.handleProjectMcpGet))
 	mux.HandleFunc("PUT /api/projects/{name}/mcp", s.requireUser(s.handleProjectMcpPut))
+	mux.HandleFunc("PUT /api/projects/{name}/instructions", s.requireUser(s.handleProjectInstructions))
 	mux.HandleFunc("GET /api/chat/folders", s.requireUser(s.handleChatFoldersGet))
 	mux.HandleFunc("PUT /api/chat/folders", s.requireUser(s.handleChatFoldersPut))
-	mux.HandleFunc("GET /api/templates", s.requireUser(s.handleTemplates)) // legacy
-	mux.HandleFunc("GET /api/kits", s.requireUser(s.handleKits))
-	mux.HandleFunc("GET /api/workspaces", s.requireUser(s.handleWorkspacesList))
-	mux.HandleFunc("POST /api/workspaces", s.requireUser(s.handleWorkspaceCreate))
-	mux.HandleFunc("GET /api/workspaces/{id}", s.requireUser(s.handleWorkspaceGet))
-	mux.HandleFunc("POST /api/workspaces/{id}/start", s.requireUser(s.handleWorkspaceStart))
-	mux.HandleFunc("POST /api/workspaces/{id}/stop", s.requireUser(s.handleWorkspaceStop))
-	mux.HandleFunc("DELETE /api/workspaces/{id}", s.requireUser(s.handleWorkspaceDelete))
-	mux.HandleFunc("GET /api/workspaces/{id}/logs", s.requireUser(s.handleWorkspaceLogs))
 	mux.HandleFunc("PATCH /api/chat/sessions/{sessionID}/folder-instructions", s.requireUser(s.handleChatFolderInstructions)) // legacy session scope / project sync
-	mux.HandleFunc("PUT /api/projects/{name}/instructions", s.requireUser(s.handleProjectInstructions))
-	mux.HandleFunc("PATCH /api/workspaces/{id}/provider", s.requireUser(s.handleWorkspaceProvider))
-	mux.HandleFunc("PATCH /api/workspaces/{id}/ssh", s.requireUser(s.handleWorkspaceSSH))
-	mux.HandleFunc("GET /api/config", s.handleConfig)
-	mux.HandleFunc("POST /api/workspace-requests", s.requireUser(s.handleWorkspaceRequestCreate))
-	mux.HandleFunc("GET /api/workspace-requests", s.requireUser(s.handleWorkspaceRequestsList))
-	mux.HandleFunc("POST /api/workspace-requests/{id}/approve", s.requireAdmin(s.handleWorkspaceRequestDecision(true)))
-	mux.HandleFunc("POST /api/workspace-requests/{id}/reject", s.requireAdmin(s.handleWorkspaceRequestDecision(false)))
-	// v3 unified runtime: роль developer по заявке (привязка к учётке) и её
-	// SSH-ключ для персонального контейнера.
-	mux.HandleFunc("POST /api/role-requests", s.requireUser(s.handleRoleRequestCreate))
-	mux.HandleFunc("GET /api/role-requests", s.requireUser(s.handleRoleRequestsList))
-	mux.HandleFunc("POST /api/role-requests/{id}/approve", s.requireAdmin(s.handleRoleRequestDecision(true)))
-	mux.HandleFunc("POST /api/role-requests/{id}/reject", s.requireAdmin(s.handleRoleRequestDecision(false)))
-	mux.HandleFunc("GET /api/me/ssh", s.requireUser(s.handleMeSSHGet))
-	mux.HandleFunc("PUT /api/me/ssh", s.requireUser(s.handleMeSSHPut))
-	// Developer-настройки личного рантайма: статус/старт/стоп/логи контейнера.
-	mux.HandleFunc("GET /api/me/runtime", s.requireUser(s.handleMyRuntimeGet))
-	// Лаунчер developer'а (карточка developer-launcher-images).
-	mux.HandleFunc("GET /api/launcher/images", s.requireDeveloper(s.handleLauncherImages))
-	mux.HandleFunc("PUT /api/me/image", s.requireDeveloper(s.handleMeImagePut))
-	mux.HandleFunc("POST /api/me/runtime/start", s.requireDeveloper(s.handleMeRuntimeStart))
-	mux.HandleFunc("POST /api/me/runtime/stop", s.requireDeveloper(s.handleMeRuntimeStop))
-	mux.HandleFunc("GET /api/me/containers", s.requireDeveloper(s.handleMeContainers))
-	mux.HandleFunc("GET /api/me/runtime/logs", s.requireDeveloper(s.handleMeRuntimeLogs))
-	// Слоты мульти-рантайма (карточка developer-multi-containers).
-	mux.HandleFunc("GET /api/me/slots", s.requireDeveloper(s.handleMeSlots))
-	mux.HandleFunc("PUT /api/me/slots/{slot}/image", s.requireDeveloper(s.handleMeSlotImagePut))
-	mux.HandleFunc("POST /api/me/slots/{slot}/start", s.requireDeveloper(s.handleMeSlotStart))
-	mux.HandleFunc("POST /api/me/slots/{slot}/stop", s.requireDeveloper(s.handleMeSlotStop))
-	mux.HandleFunc("POST /api/me/slots/{slot}/activate", s.requireDeveloper(s.handleMeSlotActivate))
-	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsers))
-	mux.HandleFunc("GET /api/admin/audit", s.requireAdmin(s.handleAdminAudit))
-	// Админ-панель супер-админа (карточка admin-panel-super-admin).
-	mux.HandleFunc("GET /api/admin/overview", s.requireAdmin(s.handleAdminOverview))
-	mux.HandleFunc("GET /api/admin/users/details", s.requireAdmin(s.handleAdminUsersDetailed))
-	mux.HandleFunc("PUT /api/admin/users/{id}/limits", s.requireAdmin(s.handleAdminUserLimitsPut))
-	mux.HandleFunc("GET /api/admin/containers", s.requireAdmin(s.handleAdminContainers))
-	mux.HandleFunc("POST /api/admin/containers/{name}/stop", s.requireAdmin(s.handleAdminContainerStop))
-	mux.HandleFunc("POST /api/admin/containers/{name}/start", s.requireAdmin(s.handleAdminContainerStart))
-	mux.HandleFunc("POST /api/admin/containers/{name}/restart", s.requireAdmin(s.handleAdminContainerRestart))
-	mux.HandleFunc("GET /api/admin/containers/{name}/logs", s.requireAdmin(s.handleAdminContainerLogs))
-	mux.HandleFunc("GET /api/admin/requests", s.requireAdmin(s.handleAdminRequests))
-	mux.HandleFunc("GET /api/admin/activity", s.requireAdmin(s.handleAdminActivity))
-	mux.HandleFunc("GET /api/admin/quotas", s.requireAdmin(s.handleAdminQuotasList))
-	mux.HandleFunc("PUT /api/admin/quotas", s.requireAdmin(s.handleAdminQuotaPut))
-	mux.HandleFunc("DELETE /api/admin/quotas/{id}", s.requireAdmin(s.handleAdminQuotaDelete))
-	mux.HandleFunc("GET /api/admin/users/{id}/sessions", s.requireAdmin(s.handleAdminUserSessions))
-	// «Вся траектория» одним списком (без ввода id пользователя).
-	mux.HandleFunc("GET /api/admin/sessions", s.requireAdmin(s.handleAdminSessions))
-	mux.HandleFunc("GET /api/admin/users/{id}/sessions/{workspace}/{session}", s.requireAdmin(s.handleAdminUserSessionTrace))
-	// /map — карта системы за сессией; росток будущей админ-панели (1.md).
+	// /map — карта системы за сессией.
 	mux.HandleFunc("GET /map", s.requireUser(s.handleMapIndex))
 	mux.HandleFunc("GET /map/{name}", s.requireUser(s.handleMapFile))
-	// Experimental local-connector control plane. Routes register so the
-	// flag-off answer is an honest 404 (not a confusing 405/SPA page); every
-	// handler re-checks the flag. The UI proxy below forwards to the local DSH
-	// announced by the connector, but real DSH still rejects the first request
-	// until boot-token/cookie mint works over the tunnel.
-	mux.HandleFunc("POST /api/local-backend/grant", s.requireUser(s.handleLocalBackendGrant))
-	mux.HandleFunc("GET /api/local-backend/status", s.requireUser(s.handleLocalBackendStatus))
-	mux.HandleFunc("DELETE /api/local-backend", s.requireUser(s.handleLocalBackendRevoke))
-	mux.Handle("GET /api/local-backend/connect", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.localBridgeEnabled() {
-			http.NotFound(w, r)
-			return
+
+	for _, m := range s.cfg.Modules {
+		if m.Routes != nil {
+			m.Routes(s, mux)
 		}
-		s.handleLocalBackendConnect(w, r)
-	}))
-	localUI := s.requireUser(func(w http.ResponseWriter, r *http.Request, id identity) {
-		if !s.localBridgeEnabled() {
-			writeErr(w, http.StatusNotFound, "локальный connector не включён")
-			return
-		}
-		if origin := r.Header.Get("Origin"); origin != "" && !sameOriginAuthority(origin, r.Host) {
-			writeErr(w, http.StatusForbidden, "cross-origin запрос к локальному бэку запрещён")
-			return
-		}
-		s.localBridge.ProxyHandler(id.ID).ServeHTTP(w, r)
-	})
-	mux.Handle("GET /api/local-backend/ui/", http.StripPrefix("/api/local-backend/ui", localUI))
-	mux.Handle("POST /api/local-backend/ui/", http.StripPrefix("/api/local-backend/ui", localUI))
-	mux.HandleFunc("GET /w/{id}", s.requireUser(s.workspaceProxyEntry))
-	// The browser fetches webmanifest without agctl credentials; expose only
-	// this non-sensitive static document publicly for a known workspace.
-	mux.HandleFunc("GET /w/{id}/manifest.webmanifest", s.workspaceManifest)
-	// DSH Web UI uses GET for documents/assets, WebSocket and SSE, and POST
-	// for typed RPCs (/api/*). Both methods must reach the reverse proxy.
-	// Without POST, ServeMux returns 405 before directoryPicker/list can reach dsh.
-	mux.HandleFunc("GET /w/{id}/", s.requireUser(s.workspaceProxy))
-	mux.HandleFunc("POST /w/{id}/", s.requireUser(s.workspaceProxy))
+	}
 
 	// статика SPA
 	if s.cfg.Tier0 {
-		// SPA живёт на /app/, корень платформы — общий чат (Tier 0).
+		// Корень платформы — общий чат (Tier 0).
 		s.registerTier0Routes(mux, webFS)
 	}
 	mux.Handle("GET /", http.FileServerFS(webFS))
@@ -512,15 +430,12 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 
 // registerTier0Routes — маршруты режима 1 «Чат». Корень платформы:
 // залогинен → /chat/ (личный dsh), нет → страница входа (единственная
-// страница фронта agctl); отдельного пути /app больше нет.
+// страница фронта agctl); отдельного пути /app больше нет. Страницы
+// /admin и /launcher регистрируют их модули.
 func (s *Server) registerTier0Routes(mux *http.ServeMux, webFS fs.FS) {
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		s.rootEntry(w, r, webFS)
 	})
-	// Админ-панель: тот же SPA-бандл, роль определяет рендер на клиенте.
-	mux.HandleFunc("GET /admin", s.adminPageHandler(webFS))
-	// Лаунчер developer'а: тот же SPA-бандл (карточка developer-launcher-images).
-	mux.HandleFunc("GET /launcher", s.adminPageHandler(webFS))
 	mux.HandleFunc("GET /chat", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/chat/", http.StatusTemporaryRedirect)
 	})
@@ -557,92 +472,21 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 
 // ── фоновые задачи ──────────────────────────────────────────────────────────
 
-// StartBackground запускает autosave, сверку статусов, чистку сессий
-// и jira-поллер (если настроен через AGCTL_JIRA_*).
+// StartBackground запускает фоновые задачи ядра (рипер простаивающих
+// рантаймов, сверка статусов, чистка сессий) и подключённых модулей.
 // При leader-election (карточка ha-control-plane) каждый тик спрашивает
-// isLeader: фоновая работа выполняется только репликой-лидером.
+// isLeader: фоновую работу выполняет только реплика-лидер.
 func (s *Server) StartBackground(ctx context.Context) {
-	s.StartJiraPoller(ctx)
 	// рипер персональных чатов: усыпляем контейнеры по простою (том живёт)
-	go func() {
-		t := time.NewTicker(time.Minute)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				if !s.isLeader() {
-					continue
-				}
-				s.reapIdleChats()
-			}
+	go s.every(ctx, time.Minute, s.reapIdleChats)
+	// сверка: контейнер умер, пока agctl был выключен
+	go s.every(ctx, 30*time.Second, s.reconcile)
+	go s.every(ctx, time.Hour, func() { _ = s.db.DeleteExpiredSessions() })
+	for _, m := range s.cfg.Modules {
+		if m.Background != nil {
+			go m.Background(ctx, s)
 		}
-	}()
-	go func() { // autosave: страховочный commit+push по всем running-воркспейсам
-		t := time.NewTicker(s.cfg.AutosaveEvery)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				if !s.isLeader() {
-					continue
-				}
-				s.autosaveAll()
-				s.autosaveLocalProjects()
-			}
-		}
-	}()
-	go func() { // prewarm-пул: тёплая среда к входу (login-хук — отдельно)
-		if !s.prewarmEnabled() {
-			return
-		}
-		t := time.NewTicker(s.cfg.ChatPrewarmEvery)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				if !s.isLeader() {
-					continue
-				}
-				s.prewarmOnce(nil)
-			}
-		}
-	}()
-	go func() { // сверка: контейнер умер, пока agctl был выключен
-		t := time.NewTicker(30 * time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				if !s.isLeader() {
-					continue
-				}
-				s.reconcile()
-			}
-		}
-	}()
-	go func() {
-		t := time.NewTicker(time.Hour)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				if !s.isLeader() {
-					continue
-				}
-				_ = s.db.DeleteExpiredSessions()
-			}
-		}
-	}()
+	}
 }
 
 // isLeader — гонять ли фоновый тик этой реплике (leader-election or fallback).
@@ -983,7 +827,7 @@ func (s *Server) providerOf(w store.Workspace, ownerID int64, req ProviderReq) (
 			models = requested
 		}
 		base := firstModel(baseURLs)
-		return provision.Provider{BaseURL: base, BaseURLs: baseURLs, Model: firstModel(models), Models: models, APIKey: key, Extras: s.cfg.DefaultLLM.Extras}, nil
+		return provision.Provider{BaseURL: base, BaseURLs: baseURLs, Model: firstModel(models), Models: models, APIKey: key, Extras: s.defaultLLM().Extras}, nil
 	}
 	urls, ms := req.allBaseURLs(), req.allModels()
 	return provision.Provider{BaseURL: firstModel(urls), BaseURLs: urls, Model: firstModel(ms), Models: ms, APIKey: req.APIKey}, nil
@@ -1130,4 +974,34 @@ func (s *Server) handleAxProviderConfig(w http.ResponseWriter, r *http.Request) 
 func bearerTokenMatches(header, token string) bool {
 	got := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
 	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1
+}
+
+// defaultLLM — платформенный провайдер чата (снимок под мьютексом: в
+// локальном режиме ключ модели меняется из лаунчера без рестарта).
+func (s *Server) defaultLLM() provision.Provider {
+	s.defaultLLMMu.RLock()
+	defer s.defaultLLMMu.RUnlock()
+	return s.cfg.DefaultLLM
+}
+
+// setDefaultLLMKey — сменить ключ платформенного провайдера (новый ключ
+// попадёт в dsh-home на следующем старте рабочего места: RefreshProvider).
+func (s *Server) setDefaultLLMKey(key string) {
+	s.defaultLLMMu.Lock()
+	s.cfg.DefaultLLM.APIKey = key
+	s.defaultLLMMu.Unlock()
+}
+
+// setDefaultLLMExtraKey — личный ключ доп. провайдера (подписка «провайдер
+// + ключ») сразу в провайдер сервера; новый ключ попадёт в dsh-home на
+// следующем старте рабочего места (как и ключ основного провайдера).
+// Пустое значение — ключ убрали (Delete в лаунчере).
+func (s *Server) setDefaultLLMExtraKey(envName, key string) {
+	s.defaultLLMMu.Lock()
+	defer s.defaultLLMMu.Unlock()
+	for i := range s.cfg.DefaultLLM.Extras {
+		if s.cfg.DefaultLLM.Extras[i].APIKeyEnv == envName {
+			s.cfg.DefaultLLM.Extras[i].APIKey = key
+		}
+	}
 }

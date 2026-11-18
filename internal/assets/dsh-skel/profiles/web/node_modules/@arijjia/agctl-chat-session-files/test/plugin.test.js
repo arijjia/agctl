@@ -107,3 +107,63 @@ test("plugin no longer wraps sessionController and needs no session root env", a
 
 	assert.equal(controller.create, ctx.sessionController.create, "sessionController must stay untouched");
 });
+
+async function bootWith(root, registry, env) {
+	const logs = [];
+	const saved = { root: process.env.AGCTL_WORKSPACE_ROOT, local: process.env.AGCTL_LOCAL_MODE };
+	process.env.AGCTL_WORKSPACE_ROOT = root;
+	if (env.local) process.env.AGCTL_LOCAL_MODE = "1";
+	else delete process.env.AGCTL_LOCAL_MODE;
+	try {
+		apply({ workspaceRegistry: registry, logger: { info: (line) => logs.push(line) } });
+		await settle();
+	} finally {
+		for (const [key, name] of [["root", "AGCTL_WORKSPACE_ROOT"], ["local", "AGCTL_LOCAL_MODE"]]) {
+			if (saved[key] === undefined) delete process.env[name];
+			else process.env[name] = saved[key];
+		}
+	}
+	return logs;
+}
+
+function registryWith(paths) {
+	const items = new Map(paths.map((dir) => [`ws-${dir}`, { id: `ws-${dir}`, path: dir }]));
+	const deleted = [];
+	return {
+		deleted,
+		items,
+		list: () => [...items.values()],
+		async resolveByPath(dir) {
+			return [...items.values()].find((w) => w.path === dir);
+		},
+		async create(dir) {
+			const workspace = { id: `ws-${dir}`, path: dir };
+			items.set(workspace.id, workspace);
+			return workspace;
+		},
+		async delete(id) {
+			deleted.push(items.get(id).path);
+			return items.delete(id);
+		},
+	};
+}
+
+test("local mode removes registrations whose folder left /workspace", async (t) => {
+	const root = await workspaceRoot(t);
+	const stale = path.join(root, "old-src-project");
+	const registry = registryWith([root, path.join(root, "1"), stale, "/elsewhere/kept"]);
+	await bootWith(root, registry, { local: true });
+	assert.deepEqual(registry.deleted, [stale], "only missing folders under /workspace are unregistered");
+	assert.deepEqual([...registry.items.values()].map((w) => w.path).sort(), [
+		"/elsewhere/kept", root, path.join(root, "1"), path.join(root, "2"),
+	].sort(), "root, outside paths and current folders stay; new folders register");
+});
+
+test("server mode never removes registrations", async (t) => {
+	const root = await workspaceRoot(t);
+	const stale = path.join(root, "gone");
+	const registry = registryWith([stale]);
+	await bootWith(root, registry, { local: false });
+	assert.deepEqual(registry.deleted, []);
+	assert.ok([...registry.items.values()].some((w) => w.path === stale));
+});

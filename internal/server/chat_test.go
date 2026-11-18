@@ -41,6 +41,9 @@ func TestChatDefaultLLMPersistsAcrossRestarts(t *testing.T) {
 		if tune != nil {
 			tune(&cfg)
 		}
+		if cfg.Modules == nil && cfg.Local == nil {
+			cfg.Modules = ServerModules()
+		}
 		s, err := NewWithRuntimeProviders(db, sec, cfg, rt, rt)
 		if err != nil {
 			t.Fatal(err)

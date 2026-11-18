@@ -95,6 +95,13 @@ func (s *Service) Login(w http.ResponseWriter, userID int64, passwordHash, passw
 	if err != nil || !ok {
 		return fmt.Errorf("auth: неверный логин или пароль")
 	}
+	return s.Issue(w, userID)
+}
+
+// Issue создаёт сессию без проверки пароля — только для доверенных путей,
+// где личность уже доказана иначе (локальный режим: одноразовый токен входа,
+// известный лишь владельцу машины).
+func (s *Service) Issue(w http.ResponseWriter, userID int64) error {
 	token, err := newToken()
 	if err != nil {
 		return err

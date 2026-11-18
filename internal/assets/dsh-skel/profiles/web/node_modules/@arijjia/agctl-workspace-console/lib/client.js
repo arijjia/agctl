@@ -1,4 +1,4 @@
-// agctl workspace-console — вкладка «Воркспейсы: возможности».
+// agctl workspace-console — вкладка «Возможности» (воркспейсы + каталог пакетов).
 //
 // Полноценная панель в штатном списке панелей dsh (паттерн Plugins/Automation
 // tasks: слот sidebar.panellist + страница в слоте main). Содержимое — единое
@@ -95,6 +95,20 @@ window.__ModuleLoader__.load({
 				if (!res.ok) throw new Error("HTTP " + res.status + ": " + ((data && data.error) || "Запрос не выполнен"));
 				return data;
 			};
+		}
+
+		// isLocalMode — локальный режим agctl dev (GET /api/me → localMode):
+		// файлы проекта и так лежат на машине разработчика, поэтому блок
+		// «Файлы» и кнопка «Скачать» не показываются. Запрос — один на страницу.
+		let localModePromise = null;
+		function isLocalMode() {
+			if (!localModePromise) {
+				localModePromise = fetch("/api/me", { credentials: "include", headers: { Accept: "application/json" } })
+					.then((res) => (res.ok ? res.json() : null))
+					.then((data) => !!(data && data.localMode))
+					.catch(() => false);
+			}
+			return localModePromise;
 		}
 
 		// ── чистые функции (test seams) ────────────────────────────────────────
@@ -223,7 +237,7 @@ window.__ModuleLoader__.load({
 				const inner = el("div", "max-width:1060px;margin:0 auto", null);
 				page.appendChild(inner);
 
-				inner.appendChild(el("h2", "margin:0 0 2px;font-size:18px;font-weight:650", "Воркспейсы: возможности"));
+				inner.appendChild(el("h2", "margin:0 0 2px;font-size:18px;font-weight:650", "Возможности"));
 				inner.appendChild(el("p", "margin:0 0 16px;font-size:12px;color:var(--dsw-alias-label-tertiary,#888)",
 					"Единое место настройки воркспейсов: возможности из каталога платформы, системный промт и компоненты. «Удалить» стирает воркспейс вместе с каталогом на диске."));
 
@@ -268,6 +282,7 @@ window.__ModuleLoader__.load({
 				};
 
 				const loadDetails = async () => {
+					state.localMode = await isLocalMode();
 					if (!state.sel) { renderDetails(null, null, "", null); return; }
 					setStatus("Читаем настройки воркспейса…");
 					const encName = encodeURIComponent(state.sel);
@@ -432,49 +447,52 @@ window.__ModuleLoader__.load({
 					}
 					right.appendChild(mcpCard);
 
-					// ── Файлы (скачивание артефактов) ──────────────────────────────
-					right.appendChild(el("h3", "margin:14px 0 2px;font-size:12px;font-weight:700", "Файлы"));
-					right.appendChild(el("p", "margin:0 0 6px;font-size:11px;color:var(--dsw-alias-label-tertiary,#888)",
-						"Артефакты агента (презентации, документы): скачать можно напрямую, без превью."));
-					const filesCard = el("div", "wsc-card", null);
-					const filesStatus = el("p", "margin:2px 0;font-size:11px;color:var(--dsw-alias-label-tertiary,#888);min-height:14px", "Читаем файлы…");
-					const filesList = el("div", null, null);
-					const filesRefresh = el("button", "wsc-btn secondary;margin-top:8px", "Обновить файлы");
-					const fmtSize = (n) => !n ? "—" : n < 1024 ? n + " Б" : n < 1048576 ? (n / 1024).toFixed(1) + " КБ" : (n / 1048576).toFixed(1) + " МиБ";
-					const renderFiles = (files) => {
-						filesList.replaceChildren();
-						const entries = (files || []).filter((f) => !f.isDir && f.size > 0);
-						if (!entries.length) {
-							filesList.appendChild(el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888);margin:4px 0",
-								"Файлов пока нет. Попросите агента что-нибудь сделать — результаты появятся здесь."));
-							return;
-						}
-						for (const f of entries) {
-							const row = el("div", "wsc-row");
-							const text = el("div", "min-width:0;flex:1");
-							text.appendChild(el("div", "font-size:12.5px;font-weight:600;overflow-wrap:anywhere", f.path));
-							text.appendChild(el("div", "font-size:11px;color:var(--dsw-alias-label-tertiary,#888)", fmtSize(f.size)));
-							const link = el("a", "wsc-btn secondary;flex:none;text-decoration:none", "Скачать");
-							link.href = "/api/projects/" + encodeURIComponent(state.sel) + "/file?path=" + encodeURIComponent(f.path);
-							link.setAttribute("download", f.path.split("/").pop() || "file");
-							row.append(text, link);
-							filesList.appendChild(row);
-						}
-					};
-					const loadFiles = async () => {
-						filesStatus.textContent = "Читаем файлы…";
-						try {
-							const data = await api("/api/projects/" + encodeURIComponent(state.sel) + "/files");
-							renderFiles(Array.isArray(data.files) ? data.files : []);
-							filesStatus.textContent = "";
-						} catch (err) {
-							filesStatus.textContent = String(err.message || err);
-						}
-					};
-					filesRefresh.addEventListener("click", () => guard(loadFiles()));
-					filesCard.append(filesStatus, filesList, filesRefresh);
-					right.appendChild(filesCard);
-					guard(loadFiles());
+					// ── Файлы (скачивание артефактов) — только на сервере: в локальном
+					// режиме файлы и так в папке проектов на машине разработчика.
+					if (!state.localMode) {
+						right.appendChild(el("h3", "margin:14px 0 2px;font-size:12px;font-weight:700", "Файлы"));
+						right.appendChild(el("p", "margin:0 0 6px;font-size:11px;color:var(--dsw-alias-label-tertiary,#888)",
+							"Артефакты агента (презентации, документы): скачать можно напрямую, без превью."));
+						const filesCard = el("div", "wsc-card", null);
+						const filesStatus = el("p", "margin:2px 0;font-size:11px;color:var(--dsw-alias-label-tertiary,#888);min-height:14px", "Читаем файлы…");
+						const filesList = el("div", null, null);
+						const filesRefresh = el("button", "wsc-btn secondary;margin-top:8px", "Обновить файлы");
+						const fmtSize = (n) => !n ? "—" : n < 1024 ? n + " Б" : n < 1048576 ? (n / 1024).toFixed(1) + " КБ" : (n / 1048576).toFixed(1) + " МиБ";
+						const renderFiles = (files) => {
+							filesList.replaceChildren();
+							const entries = (files || []).filter((f) => !f.isDir && f.size > 0);
+							if (!entries.length) {
+								filesList.appendChild(el("p", "font-size:12px;color:var(--dsw-alias-label-tertiary,#888);margin:4px 0",
+									"Файлов пока нет. Попросите агента что-нибудь сделать — результаты появятся здесь."));
+								return;
+							}
+							for (const f of entries) {
+								const row = el("div", "wsc-row");
+								const text = el("div", "min-width:0;flex:1");
+								text.appendChild(el("div", "font-size:12.5px;font-weight:600;overflow-wrap:anywhere", f.path));
+								text.appendChild(el("div", "font-size:11px;color:var(--dsw-alias-label-tertiary,#888)", fmtSize(f.size)));
+								const link = el("a", "wsc-btn secondary;flex:none;text-decoration:none", "Скачать");
+								link.href = "/api/projects/" + encodeURIComponent(state.sel) + "/file?path=" + encodeURIComponent(f.path);
+								link.setAttribute("download", f.path.split("/").pop() || "file");
+								row.append(text, link);
+								filesList.appendChild(row);
+							}
+						};
+						const loadFiles = async () => {
+							filesStatus.textContent = "Читаем файлы…";
+							try {
+								const data = await api("/api/projects/" + encodeURIComponent(state.sel) + "/files");
+								renderFiles(Array.isArray(data.files) ? data.files : []);
+								filesStatus.textContent = "";
+							} catch (err) {
+								filesStatus.textContent = String(err.message || err);
+							}
+						};
+						filesRefresh.addEventListener("click", () => guard(loadFiles()));
+						filesCard.append(filesStatus, filesList, filesRefresh);
+						right.appendChild(filesCard);
+						guard(loadFiles());
+					}
 
 					// ── Компоненты ─────────────────────────────────────────────────
 					right.appendChild(el("h3", "margin:14px 0 2px;font-size:12px;font-weight:700", "Компоненты"));
@@ -546,6 +564,13 @@ window.__ModuleLoader__.load({
 		// забрать файл напрямую через gateway, без превью в сайдбаре.
 		function DownloadAction() {
 			const ref = React.useRef(null);
+			// null — ещё не знаем; true — локальный режим, кнопку не рисуем.
+			const [local, setLocal] = React.useState(null);
+			React.useEffect(() => {
+				let alive = true;
+				isLocalMode().then((v) => { if (alive) setLocal(v); });
+				return () => { alive = false; };
+			}, []);
 			React.useEffect(() => {
 				const node = ref.current;
 				if (!node) return undefined;
@@ -557,7 +582,8 @@ window.__ModuleLoader__.load({
 				};
 				node.addEventListener("click", onClick);
 				return () => node.removeEventListener("click", onClick);
-			}, []);
+			}, [local]);
+			if (local !== false) return null;
 			return React.createElement("button", {
 				ref,
 				type: "button",
@@ -596,7 +622,7 @@ window.__ModuleLoader__.load({
 				name: "sidebar.panellist",
 				id: PANEL_ID,
 				order: 20,
-				label: () => "Воркспейсы: возможности",
+				label: () => "Возможности",
 			}, PanelIcon));
 			// Полноэкранная вкладка той же панели (ключ = id панели).
 			ctx.slots.inject("main", () => ctx.slots.register({
@@ -620,6 +646,7 @@ window.__ModuleLoader__.load({
 		exports.buildDisabledIDs = buildDisabledIDs;
 		exports.deleteProject = deleteProject;
 		exports.agctlDownloadUrl = agctlDownloadUrl;
+		exports.isLocalMode = isLocalMode;
 		exports.PANEL_ID = PANEL_ID;
 		return exports;
 	},

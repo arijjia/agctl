@@ -1,4 +1,4 @@
-# @arijjia/agctl-workspace-console — вкладка «Воркспейсы: возможности»
+# @arijjia/agctl-workspace-console — вкладка «Возможности»
 
 Клиент-плагин dsh web. Полноценная панель в штатном списке панелей сайдбара
 (паттерн Plugins/Automation tasks): строка в слоте `sidebar.panellist`

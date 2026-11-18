@@ -33,7 +33,7 @@ spec:
             # 1 = ключи LLM в env задачи; 0 = ключи инжектит egress-шлюз
             # Substrate. Раскомментируйте AGCTL_AX_ATE_API — и agctl сам
             # ведёт Secret'ы agctl-llm-* и EgressPolicy акторов
-            # (docs/kubernetes.md «Ключи LLM»).
+            # (agctl-hq/docs/kubernetes.md «Ключи LLM»).
             - name: AGCTL_AX_INJECT_LLM_KEY
               value: "1"
             # - name: AGCTL_AX_ATE_API

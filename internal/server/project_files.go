@@ -90,6 +90,11 @@ func listProjectFiles(dir string) []projectFileEntry {
 // handleProjectFilesList — GET /api/projects/{name}/files: список файлов
 // воркспейса (без .git/.agctl/node_modules и прочих служебных каталогов).
 func (s *Server) handleProjectFilesList(w http.ResponseWriter, r *http.Request, id identity) {
+	if s.isLocal() {
+		// Локальный режим: файлы и так лежат в папке проектов на этой машине.
+		writeErr(w, http.StatusNotFound, "локальный режим: файлы проекта — в папке проектов на вашей машине")
+		return
+	}
 	dir, code, msg := s.resolveProjectDir(id.ID, r.PathValue("name"))
 	if code != 0 {
 		writeErr(w, code, msg)
@@ -103,6 +108,11 @@ func (s *Server) handleProjectFilesList(w http.ResponseWriter, r *http.Request, 
 // Границы: путь строго внутри каталога проекта (Rel-гард), только regular
 // файлы без симлинков, размер ≤ maxFileDownload.
 func (s *Server) handleProjectFileDownload(w http.ResponseWriter, r *http.Request, id identity) {
+	if s.isLocal() {
+		// Локальный режим: файлы и так лежат в папке проектов на этой машине.
+		writeErr(w, http.StatusNotFound, "локальный режим: файлы проекта — в папке проектов на вашей машине")
+		return
+	}
 	dir, code, msg := s.resolveProjectDir(id.ID, r.PathValue("name"))
 	if code != 0 {
 		writeErr(w, code, msg)

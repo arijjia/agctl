@@ -1,14 +1,14 @@
 // Package dockerrt — реализация Runtime над Docker Engine API (нативный
 // клиент moby/moby/client: unix socket на mac/linux, named pipe на Windows).
 // Образ agctl-dsh строится самим agctl из встроенного контекста (Dockerfile,
-// relay, скелет DSH_HOME) + linux-сборки агctl (dist/agctl-linux-<arch>).
+// relay, скелет DSH_HOME) + linux-сборки agctl-guest
+// (dist/agctl-guest-linux-<arch>; в образе — /usr/local/bin/agctl).
 package dockerrt
 
 import (
 	"archive/tar"
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -18,7 +18,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -133,7 +132,7 @@ func (rt *Runtime) buildOverlay(ctx context.Context) error {
 
 // buildBase собирает базовый agctl-dsh из встроенного контекста под тегом tag.
 func (rt *Runtime) buildBase(ctx context.Context, tag string) error {
-	bin, err := findLinuxBinary(rt.cfg.BinDir)
+	bin, err := findLinuxBinary(rt.cfg.BinDir, rt.daemonArch(ctx))
 	if err != nil {
 		return err
 	}
@@ -144,6 +143,16 @@ func (rt *Runtime) buildBase(ctx context.Context, tag string) error {
 	defer os.RemoveAll(ctxDir)
 	if err := extractFS(rt.imageFS, "image", ctxDir); err != nil {
 		return fmt.Errorf("docker: контекст образа: %w", err)
+	}
+	// COPY skel/ в Dockerfile: скелет DSH_HOME (как .build-img/skel в make).
+	skel := filepath.Join(ctxDir, "skel")
+	if err := os.MkdirAll(skel, 0o755); err != nil {
+		return err
+	}
+	if rt.cfg.DshSkel != nil {
+		if err := extractFS(rt.cfg.DshSkel, "dsh-skel", skel); err != nil {
+			return fmt.Errorf("docker: скелет DSH_HOME: %w", err)
+		}
 	}
 	dst := filepath.Join(ctxDir, "agctl")
 	if err := copyFile(bin, dst); err != nil {
@@ -186,21 +195,64 @@ func (rt *Runtime) buildContext(ctx context.Context, ctxDir, tag, dockerfile str
 	return nil
 }
 
-// findLinuxBinary ищет Linux-сборку agctl в binDir (агл-порядок arm64→amd64,
-// fallback — архитектура хоста); нет сборки → ошибка с подсказкой `make image`.
-func findLinuxBinary(binDir string) (string, error) {
-	// при запуске на mac собираем под архитектуру демона docker; на практике
-	// make image кладёт dist/agctl-linux-<arm64|amd64> — берём обе по очереди.
-	for _, arch := range []string{"arm64", "amd64"} {
-		p := filepath.Join(binDir, "agctl-linux-"+arch)
-		if _, err := os.Stat(p); err == nil {
-			return p, nil
+// findLinuxBinary ищет linux-сборку agctl-guest — бинарь, который кладётся
+// в образ как /usr/local/bin/agctl (bridge, ax-runner, init-chat-home), — под
+// архитектуру демона Docker (arch: arm64|amd64; "" — любая). Где ищем, по
+// порядку:
+//   - binDir (make go_linux / img_build кладут dist/agctl-guest-linux-<arch>);
+//   - рядом с запущенным бинарём (релиз: agctl и agctl-guest-linux-* в одной
+//     папке — образ собирается без исходников);
+//   - <папка бинаря>/../lib/agctl (make install, install.sh: ~/.local/lib/agctl).
+//
+// Имя agctl-linux-<arch> — сборка единого бинаря до разделения; в ней те же
+// команды образа, поэтому она подходит, пока установка не обновлена.
+func findLinuxBinary(binDir, arch string) (string, error) {
+	archs := []string{"arm64", "amd64"}
+	if arch != "" {
+		archs = []string{arch}
+	}
+	dirs := []string{binDir}
+	if self, _ := os.Executable(); self != "" {
+		if r, err := filepath.EvalSymlinks(self); err == nil {
+			self = r
+		}
+		dirs = append(dirs, filepath.Dir(self), filepath.Join(filepath.Dir(self), "..", "lib", "agctl"))
+	}
+	for _, a := range archs {
+		for _, name := range []string{"agctl-guest-linux-" + a, "agctl-guest_linux_" + a, "agctl-linux-" + a} {
+			for _, dir := range dirs {
+				if dir == "" {
+					continue
+				}
+				p := filepath.Join(dir, name)
+				if st, err := os.Stat(p); err == nil && !st.IsDir() {
+					return p, nil
+				}
+			}
 		}
 	}
-	if _, err := os.Stat(filepath.Join(binDir, "agctl-linux-"+runtime.GOARCH)); err == nil {
-		return filepath.Join(binDir, "agctl-linux-"+runtime.GOARCH), nil
+	want := "agctl-guest-linux-<arm64|amd64>"
+	if arch != "" {
+		want = "agctl-guest-linux-" + arch
 	}
-	return "", errors.New("нет linux-сборки agctl: выполните `make image` (она собирает dist/agctl-linux-*)")
+	return "", fmt.Errorf("нет linux-сборки %s ни в %s, ни рядом с бинарём: положите её рядом с agctl или в ../lib/agctl (есть в релизе) или выполните `make go_linux`", want, binDir)
+}
+
+// daemonArch — архитектура демона Docker в терминах Go (arm64|amd64; "" —
+// не узнали).
+func (rt *Runtime) daemonArch(ctx context.Context) string {
+	res, err := rt.cli.Info(ctx, client.InfoOptions{})
+	if err != nil {
+		return ""
+	}
+	switch a := strings.ToLower(res.Info.Architecture); a {
+	case "x86_64", "amd64":
+		return "amd64"
+	case "aarch64", "arm64":
+		return "arm64"
+	default:
+		return ""
+	}
 }
 
 // extractFS распаковывает поддерево embed-FS (префикс prefix) в каталог dst:
@@ -309,8 +361,10 @@ type StartOpts struct {
 	EgressAllowlist bool
 }
 
-// Start создаёт и запускает контейнер воркспейса с заданными портами/ключом.
-// Монтирует рабочий клон и DSH_HOME; LLM-токен передаётся через env.
+// Start создаёт и запускает контейнер воркспейса с заданными портами.
+// Монтирует рабочий клон и DSH_HOME. Ключи LLM в env контейнера не кладутся:
+// dsh берёт их из DSH_HOME/.credentials.yaml (0600, пишет
+// provision.RefreshProvider; у dsh-credentials-local файл главнее env).
 func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, opts StartOpts, p provision.Provider) (StartResult, error) {
 	if err := rt.EnsureImage(ctx); err != nil {
 		return StartResult{}, err
@@ -349,27 +403,7 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		log.Printf("[dockerrt] %s: %v — для этого LLM endpoint нет DNS-пина (проверьте VPN)", wsID, err)
 	}
 	extraHosts = append(extraHosts, pins...)
-	env := []string{
-		"AGCTL_LLM_API_KEY=" + p.APIKey,
-		"AGCTL_WS_ID=" + wsID,
-		// рабочее место агента — /workspace (репка), а не /root;
-		// кэши npm/xdg уводим в tmp, чтобы не мусорить в репке
-		"HOME=/workspace",
-		"NPM_CONFIG_CACHE=/tmp/npm-cache",
-		"XDG_CACHE_HOME=/tmp/cache",
-	}
-	// Дополнительные провайдеры (например корпоративный LiteLLM) приносят
-	// свой ключ под своим env-именем из .credentials.yaml.
-	seenEnv := map[string]bool{"AGCTL_LLM_API_KEY": true}
-	for _, extra := range p.Extras {
-		if extra.APIKey == "" || seenEnv[extra.KeyEnv()] {
-			continue
-		}
-		seenEnv[extra.KeyEnv()] = true
-		env = append(env, extra.KeyEnv()+"="+extra.APIKey)
-	}
-	// Доменные переменные developer'а (GitLab/Jira/LLM-оверрайды из .env).
-	env = append(env, opts.DevEnv...)
+	env := containerEnv(wsID, opts.DevEnv)
 	portBindings := network.PortMap{
 		network.MustParsePort("3080/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: fmt.Sprint(opts.HostPort)}},
 	}
@@ -817,4 +851,24 @@ func FreePort() (int, error) {
 	}
 	defer l.Close()
 	return l.Addr().(*net.TCPAddr).Port, nil
+}
+
+// containerEnv — env контейнера рабочего места. Ключей провайдеров LLM здесь
+// нет намеренно (карточка local-llm-key-container-env): в env их видно в
+// docker inspect и /proc/*/environ, их наследуют MCP-серверы, git-хуки и
+// npm-скрипты агента. dsh читает ключи из DSH_HOME/.credentials.yaml. Файл
+// агент технически прочитать может (его процессы — тот же пользователь), это
+// задокументированное ограничение dsh-credentials-local.
+func containerEnv(wsID string, devEnv []string) []string {
+	env := []string{
+		"AGCTL_WS_ID=" + wsID,
+		// рабочее место агента — /workspace (репка), а не /root;
+		// кэши npm/xdg уводим в tmp, чтобы не мусорить в репке
+		"HOME=/workspace",
+		"NPM_CONFIG_CACHE=/tmp/npm-cache",
+		"XDG_CACHE_HOME=/tmp/cache",
+	}
+	// Доменные переменные developer'а (GitLab/Jira из .env хоста — серверный
+	// режим; доступы локального режима — localChatExtras).
+	return append(env, devEnv...)
 }

@@ -175,7 +175,14 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "требуется вход")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": map[string]string{"login": id.Login, "role": id.Role}})
+	// sshEnabled=false — локальный режим: SSH в воркспейсах не публикуется
+	// (ключ не выдаётся, порт 2222 закрыт) — кабинет dsh прячет SSH-вкладку.
+	// localMode — плагины dsh прячут серверное (файлы и «Скачать»).
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user":       map[string]string{"login": id.Login, "role": id.Role},
+		"sshEnabled": s.local == nil,
+		"localMode":  s.local != nil,
+	})
 }
 
 // ── воркспейсы ──────────────────────────────────────────────────────────────

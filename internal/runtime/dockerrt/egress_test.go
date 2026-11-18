@@ -68,6 +68,18 @@ func TestEgressLive(t *testing.T) {
 	defer rt.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
+	// Egress — iptables на Linux-демоне через хелпер из образа рабочего
+	// места: без Linux-демона или без образа проверять нечего.
+	info, err := rt.cli.Info(ctx, client.InfoOptions{})
+	if err != nil {
+		t.Skipf("docker info: %v", err)
+	}
+	if info.Info.OSType != "linux" {
+		t.Skipf("демон Docker не Linux (OSType=%q): bridge-сети и iptables нет", info.Info.OSType)
+	}
+	if _, err := rt.cli.ImageInspect(ctx, rt.cfg.Image); err != nil {
+		t.Skipf("нет образа %s (соберите make img_build): %v", rt.cfg.Image, err)
+	}
 
 	name, subnet, gateway, err := rt.ensureEgressNetwork(ctx)
 	if err != nil {

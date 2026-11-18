@@ -19,7 +19,7 @@ import (
 
 // prewarmEnabled — выключен ли пул (0 = выкл, конфиг не трогаем рантаймом).
 func (s *Server) prewarmEnabled() bool {
-	return s.cfg.ChatPrewarmN > 0
+	return s.cfg.ChatPrewarmN > 0 && s.hasModule("prewarm")
 }
 
 // warmLimit — потолок одновременно тёплых рантаймов для пула.

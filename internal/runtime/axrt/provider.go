@@ -87,7 +87,7 @@ type Config struct {
 	// Secret с ключами (egress.go); nil — политику настраивает оператор.
 	InjectLLMKey bool
 	// Egress — автоматизация egress-инъекции при InjectLLMKey=false; nil =
-	// ручная политика оператора (docs/kubernetes.md).
+	// ручная политика оператора (agctl-hq/docs/kubernetes.md).
 	Egress *EgressAutomation
 	// RecreateOnDrift — задача AX неизменяема; при смене образа/провайдера
 	// пересоздать её (данные /workspace актора теряются!). false = оставить

@@ -98,6 +98,10 @@ func ValidProjectName(name string) bool {
 // ProjectWorkRoot validates every component beneath the trusted AGCTL_HOME.
 // It may provision storage before the first chat container is started.
 func ProjectWorkRoot(home string, userID int64, create bool) (string, error) {
+	// Локальный режим подменяет work-корень владельца целиком (слотов нет).
+	if dir, ok := localWorkRoot(home, userID); ok {
+		return dir, nil
+	}
 	return ProjectWorkRootIn(home, fmt.Sprintf("u%d", userID), create)
 }
 
@@ -150,6 +154,10 @@ func projectDirectory(path string, create bool) error {
 func ProjectDirectory(home string, userID int64, name string) (string, error) {
 	if userID <= 0 {
 		return "", ErrInvalidProject
+	}
+	// Локальный режим: проекты лежат в подменённом work-корне владельца.
+	if dir, ok := localWorkRoot(home, userID); ok {
+		return filepath.Join(dir, name), nil
 	}
 	return ProjectDirectoryIn(home, fmt.Sprintf("u%d", userID), name)
 }

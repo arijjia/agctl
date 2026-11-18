@@ -197,6 +197,9 @@ func newTestEnvWithRuntime(t *testing.T, maxPerUser int, tune func(*Config), rt 
 	if tune != nil {
 		tune(&cfg)
 	}
+	if cfg.Modules == nil && cfg.Local == nil {
+		cfg.Modules = ServerModules()
+	}
 	chatProvider, _ := rt.(agctlrt.ChatProvider)
 	if chatProvider == nil {
 		chatProvider = fake

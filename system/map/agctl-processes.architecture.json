@@ -2,14 +2,14 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "agctl — физика: процессы, порты, протоколы",
+    "title": "agctl — сервер: один хост, процессы и порты",
     "output": "system/map/agctl-processes.html",
     "quality_profile": "showcase",
     "repository": {
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "f0c6c714ca0817d1f330e667659ae1cb43d1f0a6"
+      "revision": "2fd974d961738dc551cba8e84a335eb3903003d0"
     },
     "views": [
       {
@@ -36,9 +36,10 @@
           "runmgr",
           "dshchat",
           "wkspace",
+          "egress",
           "llm"
         ],
-        "note": "+1 процесс; ленивый ensureChat в менеджере рантаймов; dsh пишет файлы проектов через RW mount; том переживает удаление контейнера"
+        "note": "+1 процесс: ensureChat; dsh пишет проекты через RW mount; том переживает удаление контейнера"
       },
       {
         "id": "v-dev",
@@ -53,18 +54,7 @@
           "gitstore",
           "llm"
         ],
-        "note": "SSH к тем же файлам пользователя; версии Git: workspace + history store"
-      },
-      {
-        "id": "v-local",
-        "label": "Local backend (experimental)",
-        "focus": [
-          "browser",
-          "api",
-          "conn",
-          "dshlocal"
-        ],
-        "note": "Ноутбук сам инициирует WSS :443; UI едет по /api/local-backend/ui/*"
+        "note": "SSH к тем же файлам пользователя; Git — локальный go-git autosave в .git проекта (без push); bare repos/ — legacy"
       },
       {
         "id": "v-wl",
@@ -79,7 +69,7 @@
         "note": "Кастомизация — данные профиля (узел-файлы); шлюзы инжектят брендинг; ядро agctl без литералов организаций (guard)"
       }
     ],
-    "subtitle": "Физика процессов · agctl serve — один Go-процесс: блоки внутри его рамки — не отдельные процессы"
+    "subtitle": "agctl-server serve — один Go-процесс: блоки в его рамке — не отдельные процессы · ноутбук без сервера (agctl dev) и кластер k8s|ax — на соседних вкладках"
   },
   "components": [
     {
@@ -88,8 +78,8 @@
       "label": "Вкладка браузера",
       "sublabel": "вход · /admin · /launcher · /chat dsh",
       "pos": [
-        20,
-        320
+        40,
+        246
       ],
       "size": [
         190,
@@ -98,20 +88,20 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 364,
-          "end_line": 368,
+          "line": 462,
+          "end_line": 464,
           "label": "GET /admin и /launcher — страницы SPA"
         },
         {
           "path": "internal/server/chat.go",
-          "line": 785,
-          "end_line": 806,
+          "line": 842,
+          "end_line": 870,
           "label": "rootEntry: редирект по роли из сессии"
         },
         {
           "path": "internal/server/launcher.go",
-          "line": 42,
-          "end_line": 155,
+          "line": 46,
+          "end_line": 150,
           "label": "лаунчер-API: каталог образов, старт/стоп"
         }
       ]
@@ -122,24 +112,24 @@
       "label": "dockerd — 1 процесс",
       "sublabel": "Unix socket /var/run/docker.sock · REST",
       "pos": [
-        550,
-        40
+        672,
+        148
       ],
       "size": [
-        230,
+        200,
         60
       ],
       "sources": [
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 54,
+          "line": 69,
           "label": "docker-клиент (FromEnv)"
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 298,
-          "end_line": 312,
-          "label": "публикация портов на 127.0.0.1"
+          "line": 408,
+          "end_line": 416,
+          "label": "публикация :3080 и :2222 только на 127.0.0.1"
         },
         {
           "path": "internal/runtime/dockerrt/admin.go",
@@ -153,10 +143,10 @@
       "id": "api",
       "type": "backend",
       "label": "REST API + auth",
-      "sublabel": "маршруты /api · argon2id · сессии · апрув",
+      "sublabel": "/api ядра и модулей · argon2id",
       "pos": [
-        310,
-        110
+        412,
+        252
       ],
       "size": [
         200,
@@ -165,19 +155,20 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 279,
-          "end_line": 351,
-          "label": "mux: API, workspaces, admin-API, лаунчер"
+          "line": 308,
+          "end_line": 403,
+          "label": "mux: API, admin-API, лаунчер, /map"
         },
         {
           "path": "internal/server/handlers.go",
-          "line": 77,
+          "line": 78,
+          "end_line": 81,
           "label": "первый пользователь — admin; пароли argon2id"
         },
         {
-          "path": "internal/server/handlers.go",
-          "line": 595,
-          "end_line": 598,
+          "path": "internal/server/server.go",
+          "line": 366,
+          "end_line": 369,
           "label": "апрув/реджект заявок — requireAdmin"
         }
       ]
@@ -188,8 +179,8 @@
       "label": "Хранилище + секреты",
       "sublabel": "SQLite WAL · AES-256-GCM (мастер-ключ)",
       "pos": [
-        550,
-        286
+        672,
+        452
       ],
       "size": [
         200,
@@ -202,14 +193,15 @@
           "label": "DSN journal_mode(WAL), busy_timeout"
         },
         {
-          "path": "cmd/agctl/main.go",
-          "line": 202,
-          "end_line": 213,
+          "path": "internal/cli/serve.go",
+          "line": 161,
+          "end_line": 172,
           "label": "EnsureMasterKey + secrets.New + store.Open"
         },
         {
           "path": "internal/secrets/secrets.go",
           "line": 20,
+          "end_line": 21,
           "label": "Manager — мастер-ключ AES-256-GCM"
         }
       ]
@@ -218,10 +210,10 @@
       "id": "bg",
       "type": "backend",
       "label": "Фоновые горутины",
-      "sublabel": "autosave · reconcile · чистка сессий · TTL-reaper",
+      "sublabel": "reaper · reconcile · сессии · autosave",
       "pos": [
-        310,
-        286
+        412,
+        352
       ],
       "size": [
         200,
@@ -230,20 +222,20 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 461,
-          "end_line": 518,
+          "line": 503,
+          "end_line": 542,
           "label": "StartBackground: рипер, autosave, reconcile"
         },
         {
-          "path": "internal/server/server.go",
-          "line": 532,
-          "end_line": 543,
-          "label": "autosaveAll: commit по running-воркспейсам"
+          "path": "internal/server/projects.go",
+          "line": 165,
+          "end_line": 181,
+          "label": "autosave: локальный go-git commit, без push"
         },
         {
           "path": "internal/server/chat.go",
-          "line": 703,
-          "end_line": 724,
+          "line": 708,
+          "end_line": 726,
           "label": "reapIdleChats: сон по TTL, том живёт"
         }
       ]
@@ -252,10 +244,10 @@
       "id": "runmgr",
       "type": "backend",
       "label": "Менеджер чат-рантаймов",
-      "sublabel": "карта userID→runtime · ensureChat · смена образа",
+      "sublabel": "userID→runtime · ensureChat · docker",
       "pos": [
-        550,
-        110
+        672,
+        252
       ],
       "size": [
         200,
@@ -264,21 +256,20 @@
       "sources": [
         {
           "path": "internal/server/chat.go",
-          "line": 540,
-          "end_line": 571,
-          "label": "ensureChat + быстрый путь живого кэша"
+          "line": 571,
+          "end_line": 613,
+          "label": "ensureChat: lock на пользователя, ChatSpec"
         },
         {
-          "path": "internal/server/chat.go",
-          "line": 546,
-          "end_line": 740,
-          "label": "кэш рантайма, смена образа, TTL"
+          "path": "internal/runtime/chat.go",
+          "line": 66,
+          "end_line": 74,
+          "label": "ChatProvider: Ensure/Stop/Logs/HasActiveSSH"
         },
         {
-          "path": "internal/runtime/dockerrt/chat.go",
-          "line": 17,
-          "end_line": 78,
-          "label": "EnsureChat: seed + Start (+SSH, +образ)"
+          "path": "cmd/agctl-server/runtime_select.go",
+          "line": 132,
+          "label": "buildServer: бэкенд docker|k8s|ax (--runtime)"
         }
       ]
     },
@@ -288,8 +279,8 @@
       "label": "Шлюз чата /chat/",
       "sublabel": "proxy + mint ?token= + чат-шелл + прогрев",
       "pos": [
-        550,
-        198
+        672,
+        352
       ],
       "size": [
         200,
@@ -298,14 +289,15 @@
       "sources": [
         {
           "path": "internal/server/chat.go",
-          "line": 909,
-          "end_line": 981,
-          "label": "ReverseProxy + mintTransport, dsh-auth cookie"
+          "line": 871,
+          "end_line": 936,
+          "label": "chatProxy: ReverseProxy + mint, dsh-auth cookie"
         },
         {
           "path": "internal/server/chat.go",
-          "line": 833,
-          "label": "HTML прогрева, пока контейнер стартует"
+          "line": 832,
+          "end_line": 833,
+          "label": "HTML прогрева, пока рантайм стартует"
         },
         {
           "path": "internal/server/chatshell.go",
@@ -318,11 +310,11 @@
     {
       "id": "wgw",
       "type": "backend",
-      "label": "Шлюз dev-мест /w/{id}/",
-      "sublabel": "owner-check + брендинг + страница «остановлено»",
+      "label": "Legacy-шлюз /w/{id}/",
+      "sublabel": "модуль · места до v3 · 410",
       "pos": [
-        310,
-        198
+        412,
+        452
       ],
       "size": [
         200,
@@ -355,8 +347,8 @@
       "label": "agctl.db — SQLite WAL",
       "sublabel": "users · sessions · audit · квоты · журнал",
       "pos": [
-        790,
-        336
+        687,
+        590
       ],
       "size": [
         170,
@@ -364,9 +356,8 @@
       ],
       "sources": [
         {
-          "path": "cmd/agctl/main.go",
-          "line": 210,
-          "end_line": 213,
+          "path": "internal/cli/serve.go",
+          "line": 169,
           "label": "store.Open($AGCTL_HOME/agctl.db)"
         },
         {
@@ -383,8 +374,8 @@
       "label": "secrets.key — вне Git",
       "sublabel": "мастер-ключ AES-256-GCM · 0600",
       "pos": [
-        1010,
-        336
+        682,
+        700
       ],
       "size": [
         180,
@@ -392,9 +383,9 @@
       ],
       "sources": [
         {
-          "path": "cmd/agctl/main.go",
-          "line": 202,
-          "end_line": 209,
+          "path": "internal/cli/serve.go",
+          "line": 161,
+          "end_line": 165,
           "label": "EnsureMasterKey + secrets.New"
         }
       ]
@@ -405,8 +396,8 @@
       "label": "u<id>/dsh-home — вне Git",
       "sublabel": "сессии · настройки · credentials",
       "pos": [
-        790,
-        452
+        969,
+        590
       ],
       "size": [
         170,
@@ -416,19 +407,19 @@
         {
           "path": "internal/runtime/dockerrt/chat.go",
           "line": 24,
-          "end_line": 27,
+          "end_line": 25,
           "label": "per-user persistent directories"
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 315,
-          "end_line": 320,
-          "label": "dsh-home → /home/dsh bind"
+          "line": 431,
+          "end_line": 432,
+          "label": "work → /workspace, dsh-home → /home/dsh bind"
         },
         {
           "path": "internal/server/admin_sessions.go",
-          "line": 63,
-          "end_line": 119,
+          "line": 67,
+          "end_line": 136,
           "label": "сессии/траектории читает админ-API"
         }
       ]
@@ -437,10 +428,10 @@
       "id": "wkspace",
       "type": "database",
       "label": "u<id>/workspace/<project>",
-      "sublabel": "файлы проектов · .git · под Git",
+      "sublabel": "файлы проектов · .git (autosave)",
       "pos": [
-        1010,
-        452
+        1190,
+        590
       ],
       "size": [
         180,
@@ -450,25 +441,30 @@
         {
           "path": "internal/runtime/dockerrt/chat.go",
           "line": 24,
-          "end_line": 27,
+          "end_line": 25,
           "label": "per-user persistent directories"
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 288,
-          "end_line": 291,
+          "line": 431,
           "label": "work → /workspace bind"
+        },
+        {
+          "path": "internal/provision/projects.go",
+          "line": 445,
+          "end_line": 448,
+          "label": "AutosaveLocalProject: commit без push"
         }
       ]
     },
     {
       "id": "gitstore",
       "type": "database",
-      "label": "Git history store (bare)",
-      "sublabel": "под $AGCTL_HOME · путь target уточнит MVP",
+      "label": "repos/*.git — legacy bare",
+      "sublabel": "legacy origin · v3 — без remote",
       "pos": [
-        1010,
-        552
+        1190,
+        700
       ],
       "size": [
         180,
@@ -479,13 +475,18 @@
           "path": "internal/provision/provision.go",
           "line": 1,
           "end_line": 5,
-          "label": "bare-origin + клон + autosave"
+          "label": "bare-origin + клон + autosave (legacy seats)"
         },
         {
           "path": "internal/provision/provision.go",
-          "line": 508,
-          "end_line": 544,
-          "label": "AutosaveOnce: commit+push"
+          "line": 255,
+          "end_line": 273,
+          "label": "Layout.Repo: $HOME/repos/<owner>/<name>.git"
+        },
+        {
+          "path": "internal/provision/provision.go",
+          "line": 897,
+          "label": "AutosaveOnce: commit+push (legacy)"
         }
       ]
     },
@@ -493,10 +494,10 @@
       "id": "dshchat",
       "type": "backend",
       "label": "dsh web — node",
-      "sublabel": "bind eth0 · :3080 · движок+API · SPA",
+      "sublabel": "eth0 :3080 · dsh 0.2.2 · SPA",
       "pos": [
-        1010,
-        90
+        970,
+        338
       ],
       "size": [
         168,
@@ -505,8 +506,8 @@
       "sources": [
         {
           "path": "internal/assets/image/entrypoint.sh",
-          "line": 49,
-          "end_line": 53,
+          "line": 72,
+          "end_line": 74,
           "label": "выбор eth0-IP + exec dsh web"
         },
         {
@@ -523,8 +524,8 @@
       "label": "sshd — роль developer",
       "sublabel": ":2222 · key-only · порт на loopback",
       "pos": [
-        1010,
-        226
+        1190,
+        358
       ],
       "size": [
         170,
@@ -533,43 +534,48 @@
       "sources": [
         {
           "path": "internal/assets/image/entrypoint.sh",
-          "line": 29,
-          "end_line": 50,
-          "label": "sshd при ключе; AGCTL_NO_SSHD=1 отключает даже с"
+          "line": 28,
+          "end_line": 47,
+          "label": "sshd при ключе; AGCTL_NO_SSHD=1 — выключен"
         },
         {
           "path": "internal/server/chat.go",
-          "line": 608,
-          "end_line": 621,
-          "label": "ключ — только у роли developer"
+          "line": 694,
+          "end_line": 697,
+          "label": "ключ — только у роли developer/admin"
         }
       ]
     },
     {
       "id": "llm",
       "type": "external",
-      "label": "LLM gateway",
-      "sublabel": "api.z.ai · GLM",
+      "label": "LLM gateway (LiteLLM)",
+      "sublabel": "из профиля · :443",
       "pos": [
-        1208,
-        100
+        979,
+        0
       ],
       "size": [
-        120,
+        150,
         72
       ],
       "sources": [
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 251,
-          "end_line": 260,
-          "label": "host-gateway + DNS-пины провайдеров"
+          "line": 400,
+          "label": "host-gateway в ExtraHosts контейнера"
         },
         {
-          "path": "cmd/agctl/main.go",
-          "line": 180,
-          "end_line": 186,
-          "label": "дефолты LLM из профиля utmn"
+          "path": "internal/cli/serve.go",
+          "line": 126,
+          "end_line": 129,
+          "label": "дефолты LLM из профиля (--llm-*, AGCTL_LLM_*)"
+        },
+        {
+          "path": "internal/profile/profiles/agctl/profile.yaml",
+          "line": 17,
+          "end_line": 25,
+          "label": "нейтральный профиль: llm + map.llm_label"
         }
       ]
     },
@@ -579,8 +585,8 @@
       "label": "ssh · Mutagen · VS Code",
       "sublabel": "удалённо — только через туннель/VPN",
       "pos": [
-        20,
-        738
+        40,
+        420
       ],
       "size": [
         190,
@@ -588,66 +594,16 @@
       ],
       "sources": [
         {
-          "path": "cmd/agctl/connect.go",
+          "path": "cmd/agctl-server/connect.go",
           "line": 12,
-          "end_line": 20,
+          "end_line": 14,
           "label": "agctl connect"
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 273,
-          "end_line": 275,
+          "line": 411,
+          "end_line": 416,
           "label": "2222 публикуется на loopback"
-        }
-      ]
-    },
-    {
-      "id": "conn",
-      "type": "backend",
-      "label": "agctl local connect — Go",
-      "sublabel": "исходящий WSS :443 · credential 0600",
-      "pos": [
-        20,
-        640
-      ],
-      "size": [
-        200,
-        76
-      ],
-      "sources": [
-        {
-          "path": "cmd/agctl/local.go",
-          "line": 22,
-          "end_line": 42,
-          "label": "connector: --launch-dsh, WSS"
-        }
-      ]
-    },
-    {
-      "id": "dshlocal",
-      "type": "backend",
-      "label": "dsh web — node (локально)",
-      "sublabel": "127.0.0.1:3080 · HTTP+WS",
-      "pos": [
-        450,
-        640
-      ],
-      "size": [
-        210,
-        76
-      ],
-      "sources": [
-        {
-          "path": "cmd/agctl/local.go",
-          "line": 32,
-          "end_line": 42,
-          "label": "dsh-port 3080, loopback"
-        },
-        {
-          "path": "internal/bridge/bridge.go",
-          "line": 32,
-          "end_line": 43,
-          "label": "authority локального dsh"
         }
       ]
     },
@@ -657,8 +613,8 @@
       "label": "Профиль организации",
       "sublabel": "profile.yaml + logo · репо на GitHub",
       "pos": [
-        560,
-        420
+        432,
+        586
       ],
       "size": [
         160,
@@ -667,15 +623,47 @@
       "sources": [
         {
           "path": "internal/profile/profile.go",
-          "line": 96,
-          "end_line": 130,
+          "line": 140,
+          "end_line": 172,
           "label": "LoadDir/Resolve: embed + дисковые каталоги"
         },
         {
           "path": "internal/profile/guard_test.go",
-          "line": 36,
-          "end_line": 40,
+          "line": 38,
           "label": "ядро без литералов организаций"
+        }
+      ]
+    },
+    {
+      "id": "egress",
+      "type": "security",
+      "label": "Egress-allowlist",
+      "sublabel": "не подключён к serve",
+      "pos": [
+        392,
+        140
+      ],
+      "size": [
+        160,
+        76
+      ],
+      "sources": [
+        {
+          "path": "internal/runtime/dockerrt/egress.go",
+          "line": 3,
+          "end_line": 10,
+          "label": "выделенная сеть + правило DOCKER-USER"
+        },
+        {
+          "path": "internal/runtime/dockerrt/docker.go",
+          "line": 445,
+          "end_line": 452,
+          "label": "Start: сеть и правила при EgressAllowlist"
+        },
+        {
+          "path": "internal/server/server.go",
+          "line": 60,
+          "label": "Config.EgressAllowlist (флаг serve)"
         }
       ]
     }
@@ -685,16 +673,8 @@
       "kind": "region",
       "label": "Рабочая машина пользователя",
       "wraps": [
-        "browser"
-      ],
-      "pad": 12
-    },
-    {
-      "kind": "region",
-      "label": "Ноутбук (experimental local backend)",
-      "wraps": [
-        "conn",
-        "dshlocal"
+        "browser",
+        "sshclient"
       ],
       "pad": 12
     },
@@ -709,7 +689,7 @@
     },
     {
       "kind": "region",
-      "label": "agctl serve",
+      "label": "agctl-server serve",
       "wraps": [
         "api",
         "store",
@@ -759,7 +739,8 @@
         "gitstore",
         "dshchat",
         "sshd",
-        "profile"
+        "profile",
+        "egress"
       ],
       "pad": 36
     },
@@ -778,75 +759,27 @@
       "from": "browser",
       "to": "api",
       "label": "HTTP + WS/SSE · :8929",
-      "variant": "emphasis",
-      "via": [
-        [
-          115,
-          90
-        ],
-        [
-          410,
-          90
-        ]
-      ],
-      "toSide": "top",
-      "fromSide": "top"
+      "variant": "emphasis"
     },
     {
       "id": "c2",
       "from": "runmgr",
       "to": "dockerd",
-      "label": "REST over Unix socket",
-      "labelAt": [
-        820,
-        124
-      ]
+      "label": "REST over Unix socket"
     },
     {
       "id": "c3",
       "from": "store",
       "to": "agdb",
       "label": "SQLite WAL",
-      "variant": "dashed",
-      "fromSide": "bottom",
-      "toSide": "left",
-      "via": [
-        [
-          650,
-          380
-        ],
-        [
-          778,
-          380
-        ]
-      ]
+      "variant": "dashed"
     },
     {
       "id": "c4",
       "from": "chatgw",
       "to": "dshchat",
-      "label": "шлюзы → DNAT :3080",
-      "variant": "emphasis",
-      "fromSide": "right",
-      "toSide": "top",
-      "via": [
-        [
-          900,
-          236
-        ],
-        [
-          900,
-          56
-        ],
-        [
-          1094,
-          56
-        ]
-      ],
-      "labelAt": [
-        820,
-        124
-      ]
+      "label": "DNAT → :3080",
+      "variant": "emphasis"
     },
     {
       "id": "c6",
@@ -859,149 +792,41 @@
       "id": "c10",
       "from": "sshclient",
       "to": "sshd",
-      "label": "SSH-2 → 127.0.0.1:<dyn>",
-      "fromSide": "right",
-      "toSide": "right",
-      "via": [
-        [
-          1258,
-          774
-        ],
-        [
-          1258,
-          258
-        ]
-      ]
-    },
-    {
-      "id": "c11",
-      "from": "conn",
-      "to": "api",
-      "label": "WSS :443 · yamux",
-      "variant": "emphasis",
-      "fromSide": "top",
-      "toSide": "left",
-      "via": [
-        [
-          120,
-          604
-        ],
-        [
-          240,
-          604
-        ],
-        [
-          240,
-          148
-        ]
-      ],
-      "labelAt": [
-        240,
-        560
-      ]
-    },
-    {
-      "id": "c12",
-      "from": "conn",
-      "to": "dshlocal",
-      "label": "HTTP в yamux → :3080",
-      "fromSide": "right",
-      "toSide": "left"
+      "label": "SSH-2 → 127.0.0.1:<dyn>"
     },
     {
       "id": "c13",
       "from": "dshchat",
       "to": "wkspace",
       "label": "bind mount RW · host FS",
-      "variant": "emphasis",
-      "fromSide": "left",
-      "toSide": "left",
-      "via": [
-        [
-          992,
-          142
-        ],
-        [
-          992,
-          496
-        ]
-      ]
+      "variant": "emphasis"
     },
     {
       "id": "c14",
       "from": "dshchat",
       "to": "dshhome",
-      "label": "bind mount RW · DSH_HOME",
-      "fromSide": "left",
-      "toSide": "top",
-      "via": [
-        [
-          978,
-          142
-        ],
-        [
-          978,
-          438
-        ],
-        [
-          875,
-          438
-        ]
-      ]
+      "label": "bind mount RW · DSH_HOME"
     },
     {
       "id": "c15",
       "from": "bg",
       "to": "gitstore",
-      "label": "go-git autosave · push",
-      "variant": "dashed",
-      "fromSide": "bottom",
-      "toSide": "bottom",
-      "via": [
-        [
-          410,
-          398
-        ],
-        [
-          735,
-          398
-        ],
-        [
-          735,
-          744
-        ],
-        [
-          1100,
-          744
-        ]
-      ],
-      "labelAt": [
-        735,
-        660
-      ]
+      "label": "go-git autosave (legacy)",
+      "variant": "dashed"
     },
     {
       "id": "c16",
       "from": "wgw",
       "to": "profile",
       "label": "file read · брендинг шлюзов",
-      "variant": "dashed",
-      "fromSide": "left",
-      "toSide": "left",
-      "via": [
-        [
-          290,
-          236
-        ],
-        [
-          290,
-          468
-        ]
-      ],
-      "labelAt": [
-        345,
-        440
-      ]
+      "variant": "dashed"
+    },
+    {
+      "id": "c17",
+      "from": "dockerd",
+      "to": "egress",
+      "label": "сеть + DOCKER-USER",
+      "variant": "dashed"
     }
   ],
   "cards": [
@@ -1009,9 +834,10 @@
       "dot": "cyan",
       "title": "Сколько процессов, когда я захожу",
       "items": [
-        "Сервер всегда: 2 — agctl serve + dockerd; SQLite и git — файлы и библиотека в процессе, не процессы",
+        "Сервер всегда (режим docker): 2 — agctl-server serve + dockerd; SQLite и git — файлы и библиотека в процессе, не процессы. В кластере dockerd нет — под agctl-serve + API-сервер",
         "Вход/логин: +0 — экран рисует SPA agctl (go:embed), dsh ещё не существует",
         "Открылся /chat/: +1 — dsh web (bind на eth0); до готовности agctl отдаёт свой HTML прогрева",
+        "Prewarm-пул (модуль prewarm, chat_prewarm.go) реализован, но serve не выставляет Config.ChatPrewarmN — сейчас выключен; контейнер стартует при первом /chat/",
         "Админ (/admin): +0 — панели рисует SPA agctl, данные отдаёт serve; личный контейнер админу не создаётся",
         "Developer в /launcher: +0, пока не нажал «Запустить»; старт → +1 dsh web (+1 sshd при ключе)",
         "Агент работает: + недолговечные дети dsh web (bash, python3, git, npx MCP)",
@@ -1027,7 +853,11 @@
         "Хост-порты контейнеров — динамические, только на loopback: web :3080, ssh :2222 (роль developer)",
         "Путь чата: браузер → :8929 → proxy + mint ?token= → DNAT → dsh :3080 (bind eth0) → LLM :443",
         "Апстрим dsh запрещает только wildcard-бинд — dsh слушает eth0 контейнера напрямую, релея в образе нет",
-        "/admin и /launcher — страницы того же SPA на :8929; роль из сессии решает редирект корня"
+        "/admin и /launcher — страницы того же SPA на :8929; роль из сессии решает редирект корня",
+        "Egress-allowlist (egress.go): сеть agctl-egress-*, наружу только DNS и хост-шлюз, правило в DOCKER-USER; код и тест есть, флага в serve нет — сейчас не включается",
+        "Кластер: шлюз → Service :80 → под dsh :3080 (k8s) или atenet-router + заголовок ate-target-actor → ax-runner :80 → dsh :3080 (ax)",
+        "/map — эта карта за сессией (requireUser); сборка — system/map/*.html через go:embed",
+        "Ключ модели в контейнере — только файлом dsh-home/.credentials.yaml (0600), в env контейнера ключей LLM нет (dockerrt.containerEnv)"
       ]
     },
     {
@@ -1035,23 +865,25 @@
       "title": "Персистентность: куда идут записи",
       "items": [
         "Рамка $AGCTL_HOME — файлы, не процесс: внутри agctl.db, secrets.key и данные пользователей u<id>",
-        "dsh web и процессы-дети читают/пишут файлы напрямую через RW bind mount; записи не проксируются через agctl serve",
+        "dsh web и процессы-дети читают/пишут файлы напрямую через RW bind mount; записи не проксируются через agctl-server serve",
         "Сейчас в коде: $AGCTL_HOME/chats/u<id>/{dsh-home,work}; цель v3 — u<id>/{dsh-home,workspace/<project>}, миграции пока нет",
-        "Рамка Git: версии — workspace/<project> и history store; вне Git — dsh-home, agctl.db, secrets.key, контейнеры",
+        "Рамка Git: версии — workspace/<project> (go-git autosave: локальный commit, без remote и push); вне Git — dsh-home, agctl.db, secrets.key, контейнеры",
         "Контейнер можно удалить — том остаётся. Бэкап платформы = копия $AGCTL_HOME",
-        "Git history store (bare) — сейчас repos/; целевой путь модель не зафиксировала, уточнит MVP",
-        "Миграция 012 добавила в agctl.db proxy_requests (журнал запросов шлюза) и quotas (бюджеты токенов на роль/юзера)"
+        "repos/<owner>/*.git — bare origin только legacy workspace-мест (их create-API отвечает 410); проекты v3 туда не пишут",
+        "Миграция 012 добавила в agctl.db proxy_requests (журнал запросов шлюза) и quotas (бюджеты токенов на роль/юзера)",
+        "В кластере: подкаталог общего RWX-тома или PVC на пользователя (k8s) либо долговечный том актора /workspace + снимки Substrate (ax); Secret ключей LLM — в namespace"
       ]
     },
     {
       "dot": "cyan",
-      "title": "agctl serve — сердце платформы",
+      "title": "agctl-server serve — сердце платформы",
       "items": [
+        "Бинарь agctl-server (cmd/agctl-server) = общее ядро internal/server + серверные модули (ServerModules: регистрация, роли, лаунчер, админка, autosave, /w) + рантаймы docker|k8s|ax; локальный режим — отдельный бинарь agctl",
         "Постоянно работающий управляющий процесс платформы на хосте: один Go-процесс, слушает :8929, принимает HTTP/WS/SSE.",
-        "Подрамка «agctl serve» на карте — логические блоки ОДНОГО процесса, не отдельные процессы: шлюз /chat/, шлюз /w/{id}/, менеджер рантаймов, REST API + auth, хранилище+секреты, фоновые горутины.",
-        "Менеджер рантаймов держит карту userID→runtime и лениво запускает контейнер пользователя через Docker; TTL/reaper останавливает вычисления, но оставляет том.",
-        "agctl serve не запускает команды агента и не проксирует файловые записи: dsh и дочерние инструменты читают и пишут напрямую через RW bind mount.",
-        "Фоновые задачи (autosave, reconcile, чистка сессий, prewarm) — горутины в том же Go-процессе; SQLite и секреты — данные платформы в AGCTL_HOME.",
+        "Подрамка «agctl-server serve» — логические блоки ОДНОГО процесса: шлюз /chat/, legacy-шлюз /w/{id}/, менеджер рантаймов, REST API + auth, хранилище+секреты, фоновые горутины.",
+        "Менеджер рантаймов держит карту userID→runtime и лениво запускает рантайм пользователя через выбранный бэкенд (ChatProvider: docker | k8s | ax); TTL/reaper останавливает вычисления, но оставляет том.",
+        "agctl-server serve не запускает команды агента и не проксирует файловые записи: dsh и дочерние инструменты читают и пишут напрямую через RW bind mount.",
+        "Фоновые задачи — горутины того же процесса: ядро — усыпление по TTL, сверка рантаймов, чистка сессий; модули — autosave (prewarm и Jira не подключены к флагам)",
         "Брендинг и LLM-дефолты — из профиля организации (internal/profile: данные, не код; --profile/--profile-dir, make profile-fetch): шлюзы инжектят window.__AGCTL_BRAND__ в <head> до первого кадра; в ядре нет литералов организаций — guard-тест TestCoreIsOrganizationFree",
         "Админ-API: обзор, список/стат контейнеров, стоп/старт/рестарт, запросы шлюза, траектории (чтение sessions/ из томов), квоты — всё под requireAdmin и в audit"
       ]
@@ -1063,7 +895,8 @@
         "Docker подключает маунты до запуска скрипта: user dsh-home → /home/dsh, workspace/ → /workspace.",
         "Entrypoint при пустом DSH_HOME досеивает скелет настроек и плагинов из образа; рабочие файлы проектов остаются на маунте.",
         "Если передан AGCTL_SSH_PUBKEY (роль developer), скрипт готовит key-only конфиг, проверяет его и запускает sshd :2222 в фоне.",
-        "Затем вычисляет eth0-адрес (agctl-dsh-net print) и выполняет exec dsh web --host <ip> --port 3080: shell заменяется главным процессом dsh."
+        "Затем вычисляет eth0-адрес (agctl-dsh-net print) и выполняет exec dsh web --host <ip> --port 3080: shell заменяется главным процессом dsh.",
+        "В k8s скелет DSH_HOME сеет init-контейнер agctl init-chat-home; в ax — agctl ax-runner (PID 1) перед запуском того же entrypoint; образ agctl-dsh один на все бэкенды."
       ]
     },
     {
@@ -1072,9 +905,9 @@
       "items": [
         "Ядро agctl — универсальное: ни одного литерала организации в коде; проверяет guard-тест TestCoreIsOrganizationFree (internal/profile/guard_test.go)",
         "Кастомизация — данные-профиль: profile.yaml + assets/logo.png в отдельном репо (agctl-profile-utmn), приватность не зависит от ядра",
-        "agctl serve читает профиль при старте (--profile/--profile-dir, make profile-fetch) и инжектит window.__AGCTL_BRAND__ в <head> до первого кадра",
+        "agctl-server serve читает профиль при старте (--profile/--profile-dir, make profile-fetch) и инжектит window.__AGCTL_BRAND__ в <head> до первого кадра",
         "Дефолты чата и подпись LLM на этой карте берутся из профиля; секреты (API-ключи) в профиль не входят — env/SQLite как раньше",
-        "Профиль utmn живёт на GitHub (arijjia/agctl-profile-utmn, приватный): клон в profiles/utmn; модели — Z.AI GLM Coding Plan, ключ только в .env хоста"
+        "Встроенный нейтральный профиль agctl: публичный OpenAI-совместимый провайдер по умолчанию, ключ только в .env хоста; профили организаций — отдельные приватные репо (make profile-fetch, make up PROFILE=<id>)"
       ]
     },
     {
@@ -1083,9 +916,18 @@
       "items": [
         "admin — не пользователь платформы: /chat/ отдаёт 403/редирект, контейнер никогда не создаётся",
         "developer после входа попадает в /launcher — контейнер не стартует до выбора образа и «Запустить»",
-        "Каталог образов из --dev-images (Nexus и пр.); желаемый образ — метка agctl.image.desired на контейнере",
+        "Каталог образов — images.dev профиля (agctl-dsh:0.2.2, agctl-dsh-nossh:0.2.2) или --dev-images; желаемый образ — метка agctl.image.desired на контейнере",
         "agctl-dsh-nossh (ENV AGCTL_NO_SSHD=1): sshd не поднимается даже с ключом, порт 2222 не публикуется",
         "Смена образа на живом рантайме: serve усыпляет контейнер и пересоздаёт на желаемом образе (том сохраняется)"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Чего нет на этой карте",
+      "items": [
+        "Ноутбук разработчика без сервера (agctl dev) — вкладка «Ноутбук — локальный режим»",
+        "Кластер вместо dockerd (--runtime k8s | ax) — вкладка «Кластер»",
+        "Старый WSS-коннектор agctl local connect удалён (2026-11-16); локальный режим — бинарь agctl, вкладка «Ноутбук»"
       ]
     }
   ]

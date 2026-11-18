@@ -62,7 +62,7 @@ up: web_build go_build img_build | $(RUNTIME_DIR)
 	@port=$$(printf '%s' "$(RUN_ADDR)" | awk -F: '{print $$NF}'); \
 	if lsof -nP -ti "tcp:$$port" -sTCP:LISTEN >/dev/null 2>&1; then \
 	  echo "✗ порт $(RUN_ADDR) уже занят (инстанс вне make?) — сделай make stop и повтори up"; exit 1; fi
-	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl serve --addr "$(RUN_ADDR)" --profile "$(PROFILE)" $(if $(DEV_IMAGES),--dev-images "$(DEV_IMAGES)") >>"$(RUN_UP_LOG)" 2>&1 & echo $$! > "$(RUN_UP_PID)"
+	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl-server serve --addr "$(RUN_ADDR)" --profile "$(PROFILE)" $(if $(DEV_IMAGES),--dev-images "$(DEV_IMAGES)") >>"$(RUN_UP_LOG)" 2>&1 & echo $$! > "$(RUN_UP_PID)"
 	@sleep 1
 	@if kill -0 "$$(cat $(RUN_UP_PID))" 2>/dev/null; then \
 	  echo "✓ agctl: http://$(RUN_ADDR) (дом: $(RUN_HOME))"; \
@@ -72,7 +72,7 @@ up: web_build go_build img_build | $(RUNTIME_DIR)
 
 ## demo-users: добавить локальные тестовые роли (после первого реального admin)
 demo-users: go_build
-	./dist/agctl seed-demo-users --home "$(RUN_HOME)"
+	./dist/agctl-server seed-demo-users --home "$(RUN_HOME)"
 
 ## corp: то же, что up, но с корпоративным LiteLLM (ключ — в .env)
 corp: web_build go_build img_build | $(RUNTIME_DIR)
@@ -82,7 +82,7 @@ corp: web_build go_build img_build | $(RUNTIME_DIR)
 	@if [ -z "$$(printenv AGCTL_LLM_API_KEY)" ]; then \
 	  echo "⚠ AGCTL_LLM_API_KEY пуст — скопируй .env.example в .env и впиши ключи провайдеров."; \
 	  echo "  Сервер стартует и без него: у пользователей с личным секретом чат работает."; fi
-	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl serve --addr "$(RUN_ADDR)" --profile "$(PROFILE)" $(CORP_LLM_ARGS) \
+	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl-server serve --addr "$(RUN_ADDR)" --profile "$(PROFILE)" $(CORP_LLM_ARGS) \
 	  >>"$(RUN_CORP_LOG)" 2>&1 & echo $$! > "$(RUN_CORP_PID)"
 	@sleep 1
 	@if kill -0 "$$(cat $(RUN_CORP_PID))" 2>/dev/null; then \
@@ -108,14 +108,15 @@ stop:
 	[ "$$found" = 1 ] || echo "инстансов, поднятых make, нет (.runtime/*.pid пусто)"
 	@# Fallback: инстанс на RUN_ADDR вне pidfile (запущен вручную или другой
 	@# сессией) — иначе stop «ничего не сделал», а порт занят. Убиваем только
-	@# процессы, чья командная строка — agctl serve; чужое на порту не трогаем.
+	@# процессы, чья командная строка — agctl-server serve (или agctl serve до
+	@# разделения бинарей); чужое на порту не трогаем.
 	@port=$$(printf '%s' "$(RUN_ADDR)" | awk -F: '{print $$NF}'); \
 	pids=$$(lsof -nP -ti "tcp:$$port" -sTCP:LISTEN 2>/dev/null || true); \
 	[ -n "$$pids" ] || exit 0; \
 	for pid in $$pids; do \
 	  cmd=$$(ps -p "$$pid" -o command= 2>/dev/null || true); \
 	  case "$$cmd" in \
-	    *agctl\ serve*) \
+	    *agctl-server\ serve*|*agctl\ serve*) \
 	      echo "останов вне-pidfile инстанс на $(RUN_ADDR): pid $$pid (SIGTERM, ждём до 45с)"; \
 	      kill -TERM "$$pid"; \
 	      i=0; while kill -0 "$$pid" 2>/dev/null && [ $$i -lt 45 ]; do sleep 1; i=$$((i+1)); done; \

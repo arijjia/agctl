@@ -62,7 +62,7 @@ command -v ssh-keygen >/dev/null || { echo "ssh-keygen не найден" >&2; e
 command -v ssh >/dev/null || { echo "ssh-клиент не найден" >&2; exit 2; }
 docker image inspect "$IMG" >/dev/null 2>&1 || { echo "image $IMG не найден; сначала make img_build IMG=$IMG" >&2; exit 2; }
 
-go build -o "$BIN" ./cmd/agctl || exit 2
+go build -o "$BIN" ./cmd/agctl-server || exit 2
 ssh-keygen -q -t ed25519 -N '' -f "$TEST_HOME/id_ed25519"
 python3 bin/fake-llm.py --port "$FAKE_PORT" >"$TEST_HOME/fake.log" 2>&1 &
 FAKE_PID=$!
