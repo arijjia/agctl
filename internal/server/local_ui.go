@@ -99,6 +99,9 @@ func (s *Server) registerLocalUIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/local/ui/workdir", s.requireLocalOwner(s.handleLocalWorkDirPut))
 	mux.HandleFunc("POST /api/local/ui/start", s.requireLocalOwner(s.handleLocalStart))
 	mux.HandleFunc("POST /api/local/ui/restart", s.requireLocalOwner(s.handleLocalRestart))
+	// Страница лаунчера: серверный модуль launcher в локальном режиме не
+	// подключён, а вход ведёт сюда — отдаём SPA сами.
+	mux.HandleFunc("GET /launcher", s.adminPageHandler(s.webFS))
 }
 
 // requireLocalOwner — сессия владельца локального режима + same-origin для
