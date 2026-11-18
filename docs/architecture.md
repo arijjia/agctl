@@ -69,11 +69,13 @@ agctl решает задачи, которых у самого dsh нет:
 |---|---|---|---|---|
 | `agctl` | `cmd/agctl` | разработчик на своей машине | `dev …` (локальный режим), `backlog`, `completion`, `version` | серверные модули, клиенты Kubernetes и AX, gRPC |
 | `agctl-server` | `cmd/agctl-server` | организация | `serve`, `migrate`, `seed-demo-users`, `connect`, `sync`, `config`, `completion`, `version` | локальный режим, мост к хосту |
-| `agctl-guest` | `cmd/agctl-guest` | образ рабочего места (внутри он лежит как `/usr/local/bin/agctl`) | `bridge`, `ax-runner`, `init-chat-home`, `version` | HTTP-сервер платформы |
+| `agctl-guest` | `cmd/agctl-guest` | образ рабочего места (внутри он лежит как `/usr/local/bin/agctl`); два варианта сборки из одного кода — локальный (только `bridge`, образы `agctl-dsh*`) и серверный (`-tags server`: `ax-runner`, `init-chat-home`, образы `agctl-dsh-server*`) | `bridge` \| `ax-runner`, `init-chat-home` (по варианту), `version` | HTTP-сервер платформы |
 
 Размеры при сборке с `-s -w` (2026-11-16): `agctl` — 19,4 МБ (до
-разделения единый бинарь весил 62,4 МБ), `agctl-guest` под linux — 21,8 МБ,
-`agctl-server` — 61,8 МБ (в нём клиенты Kubernetes и AX).
+разделения единый бинарь весил 62,4 МБ), `agctl-server` — 61,8 МБ (в нём
+клиенты Kubernetes и AX). После разделения guest по режимам (2026-11-18)
+под linux с `-s -w`: локальный вариант — 10,8 МБ (без grpc/AX-зависимостей
+раннера), серверный — 20,8 МБ.
 
 Из этих бинарей складываются три режима работы:
 
@@ -517,8 +519,9 @@ Ingress в репозитории не описан: оператор класт
 | Service SSH | `ssh-agctl-chat-<…>` | NodePort → 2222; создаётся только при ключе разработчика и заданном `--k8s-ssh-host` |
 | NetworkPolicy | `net-agctl-chat-<…>` | вход к 3080 только от подов шлюза (селектор `--k8s-gateway-selector`); при SSH — вход к 2222 без ограничения источника; исходящий трафик не ограничивается |
 
-Init-контейнер выполняет `agctl init-chat-home` (бинарь `agctl-guest` в
-образе): заполняет пустой домашний каталог скелетом, при необходимости
+Init-контейнер выполняет `agctl init-chat-home` (серверный вариант бинаря
+`agctl-guest` в образе `agctl-dsh-server`): заполняет пустой домашний
+каталог скелетом, при необходимости
 обновляет провайдера, ставит плагины и пресет разрешений. Готовность пода
 проверяется TCP-пробой порта 3080; проба живости (флаг `--k8s-liveness`,
 по умолчанию включена) выполняет `agctl-dsh-net health`. Сервер ждёт
@@ -547,8 +550,8 @@ gRPC через `ax-server` (`--ax-server`, по умолчанию
 пользователя (общий RWX-том в overlay `ax` не используется). Образ
 обязан быть закреплён по digest (`…@sha256:…`).
 
-Внутри песочницы PID 1 — раннер `agctl ax-runner` (бинарь `agctl-guest`):
-он готовит домашний каталог dsh, запускает и перезапускает `dsh web`,
+Внутри песочницы PID 1 — раннер `agctl ax-runner` (серверный вариант
+бинаря `agctl-guest`): он готовит домашний каталог dsh, запускает и перезапускает `dsh web`,
 слушает порт 80 (HTTP/1.1 и h2c) и проксирует запросы на dsh
 `<eth0>:3080`. Служебные адреса раннера: `/healthz`, `/readyz` (проверка
 соединения с dsh) и `/agctl/boot-log` (буфер журнала запуска, только с
@@ -945,28 +948,39 @@ git-хуками и npm-скриптами. dsh читает ключ из `.cre
 
 ## 9. Образ рабочего места и домашний каталог dsh
 
-Образ один для всех режимов — `agctl-dsh`. Его контекст
-(`internal/assets/image`) встроен в бинари, поэтому собрать образ можно и
-без исходников:
+Образа два — по одному на режим (карточка `guest-image-flavours`): локальный
+`agctl-dsh*` с guest-бинарём только с мостом (`bridge`) и серверный
+`agctl-dsh-server*` с guest `-tags server` (`ax-runner`, `init-chat-home`).
+Контекст общий (`internal/assets/image`), вариант выбирается build-arg
+`GUEST_FLAVOR=local|server`; контекст встроен в бинари, поэтому собрать
+образ можно и без исходников:
 
 | Стадия | Содержимое |
 |---|---|
 | `base` | `node:22-bookworm-slim`, python3, pip, pytest, make, g++, git, openssh-server, iptables |
 | `dsh` | `@deepseek-ai/dsh` закреплённой версии (сейчас 0.2.2-rc.3, тег образа `0.2.2`), git-идентификатор агента |
 | `mcp-warm` | прогретый кэш npx для MCP-серверов DuckDuckGo, Context7, GitLab, Playwright |
-| `runtime` | кэш MCP, LibreOffice Impress (превью презентаций), ripgrep, fd, jq, sqlite3, клиенты БД, `glab`, `jira-cli`, `uv`/`uvx`, бинарь `agctl-guest` как `/usr/local/bin/agctl`, скелет домашнего каталога, `entrypoint.sh`, обёртка `ax-task-runner`, `HEALTHCHECK` (`agctl-dsh-net health` раз в 30 секунд) |
+| `runtime` | кэш MCP, LibreOffice Impress (превью презентаций), ripgrep, fd, jq, sqlite3, клиенты БД, `glab`, `jira-cli`, `uv`/`uvx`, бинарь `agctl-guest` своего варианта как `/usr/local/bin/agctl` (build-arg `GUEST_FLAVOR`), скелет домашнего каталога, `entrypoint.sh`, обёртка `ax-task-runner` (только серверный вариант), `HEALTHCHECK` (`agctl-dsh-net health` раз в 30 секунд) |
 | `flavors/web` | `FROM agctl-dsh` + Chromium через Playwright |
 
-Цепочка имён: `agctl-dsh:0.2.2` (базовый), `agctl-dsh-nossh:0.2.2` (без
-sshd), `agctl-dsh-web:0.2.2` (вкус web), `agctl-dsh[-web]-<профиль>:0.2.2`
-(надстройка профиля), `agctl-dsh-<профиль>-<вкус>:0.2.2` (вкус профиля).
-В репозитории их собирает `make img_build [PROFILE=<id>]` и публикует
+Цепочка имён локальных образов: `agctl-dsh:0.2.2` (базовый),
+`agctl-dsh-nossh:0.2.2` (без sshd), `agctl-dsh-web:0.2.2` (вкус web),
+`agctl-dsh[-web]-<профиль>:0.2.2` (надстройка профиля),
+`agctl-dsh-<профиль>-<вкус>:0.2.2` (вкус профиля). Серверные:
+`agctl-dsh-server:0.2.2`, `agctl-dsh-server-nossh:0.2.2` и надстройка
+`agctl-dsh-server-<профиль>:0.2.2`; k8s/ax берут образ из реестра
+(`--k8s-image`/`--ax-image`, по умолчанию — `--image`).
+В репозитории их собирает `make img_build [PROFILE=<id>]` (оба семейства)
+или `make img_build_server` (только серверные) и публикует
 `make img_push REGISTRY=…`. На машине без исходников локальный режим
 сначала пробует `docker pull`, а если реестр образа не знает, собирает
 недостающие ступени (`dockerrt.BuildDevImage`); для этого нужен
 `agctl-guest-linux-<arch>` рядом с бинарём или в `../lib/agctl`
-(`findLinuxBinary`). Сервер тем же кодом (`dockerrt.EnsureImage`)
-собирает базовый образ и надстройку профиля.
+(`findLinuxBinary`). Сервер тем же кодом (`dockerrt.EnsureImage`,
+`GuestServer`) собирает базовый образ и надстройку профиля, но ищет
+серверный бинарь `agctl-guest-server-linux-<arch>` — локальный он не
+подставит, чтобы не получить образ без `ax-runner`/`init-chat-home`
+(`findServerLinuxBinary`).
 
 `entrypoint.sh` при старте контейнера заполняет пустой домашний каталог
 скелетом, при наличии ключа разработчика запускает sshd на 2222 и
@@ -981,7 +995,8 @@ agctl/
 ├── cmd/
 │   ├── agctl/            бинарь разработчика: dev, backlog                       ← локальный
 │   ├── agctl-server/     сервер организации: serve, migrate, connect, sync, рантаймы k8s/ax ← серверный
-│   └── agctl-guest/      бинарь образа: bridge, ax-runner, init-chat-home        ← внутри образа
+│   └── agctl-guest/      бинарь образа, два варианта из одного кода:        ← внутри образа
+│                         local (bridge) / server -tags server (ax-runner, init-chat-home)
 ├── internal/
 │   ├── cli/              общий serve, config.yaml, справка, подготовка DSH_HOME  ← общее
 │   ├── server/           HTTP-сервер: ядро + серверные модули + локальный режим  ← общее, с разметкой ниже
@@ -1017,7 +1032,7 @@ agctl/
 |---|---|---|---|
 | `cmd/agctl` | 1 713 | `agctl` | весь `agctl dev` (`dev.go`), обработчики лаунчера (`dev_hooks.go`), справка и автодополнение |
 | `cmd/agctl-server` | 1 006 | `agctl-server` | `serve` с модулями и выбором рантайма, настройка egress AX, `connect`, `sync`, `config`, демо-пользователи |
-| `cmd/agctl-guest` | 733 | `agctl-guest` | клиент моста, раннер AX, init-контейнер k8s |
+| `cmd/agctl-guest` | 733 | `agctl-guest` | клиент моста (вариант local), раннер AX и init-контейнер k8s (вариант server) |
 | `internal/cli` | 852 | все три | общий `serve`, конфигурация, справка, подготовка DSH_HOME |
 | `internal/server` | 7 386 | `agctl`, `agctl-server` | ядро (около 4 100 строк), локальный режим (`local.go`, `local_ui.go`, `local_owner.go`, `agent_creds.go` — около 920), серверные модули и их обработчики (`modules.go`, `admin*.go`, `roles.go`, `launcher.go`, `litellm.go`, `chat_prewarm.go`, `jirapoll.go`, `gateway.go`, `workspace_page.go`, `runtime_api.go` — около 2 350) |
 | `internal/localmode` | 916 | `agctl` | состояние и секреты локального режима |
@@ -1108,12 +1123,12 @@ agctl/
 
 | Цель `make` | Что делает |
 |---|---|
-| `install` / `uninstall` | SPA, `agctl` и `agctl-server` в `~/.local/bin`, `agctl-guest-linux-<arch>` в `~/.local/lib/agctl`, автодополнение fish |
-| `go_build`, `go_linux`, `go_test`, `go_vet`, `go_fmt` | бинари `dist/agctl` и `dist/agctl-server`, `dist/agctl-guest-linux-<arch>`, тесты |
+| `install` / `uninstall` | SPA, `agctl` и `agctl-server` в `~/.local/bin`, оба guest (`agctl-guest-linux-<arch>`, `agctl-guest-server-linux-<arch>`) в `~/.local/lib/agctl`, автодополнение fish |
+| `go_build`, `go_linux`, `go_linux_server`, `go_test[_all]`, `go_vet[_all]`, `go_fmt` | бинари `dist/agctl` и `dist/agctl-server`, `dist/agctl-guest-linux-<arch>` (локальный) и `dist/agctl-guest-server-linux-<arch>` (серверный), тесты и vet в обоих вариантах guest |
 | `web_build` | Vite → `web/dist` (хранится в репозитории) |
-| `img_build [PROFILE=…]`, `img_profile`, `img_push REGISTRY=…` | образы рабочего места и надстройки профиля |
+| `img_build [PROFILE=…]`, `img_build_server`, `img_profile`, `img_push REGISTRY=…` | образы рабочего места (локальные + серверные) и надстройки профиля |
 | `img_serve_build` | образ шлюза `agctl-serve` для кластера |
-| `release_local` | `agctl` для darwin, linux, windows; `agctl-server` для darwin и linux; `agctl-guest` для linux; arm64 и amd64 |
+| `release_local` | `agctl` для darwin, linux, windows; `agctl-server` для darwin и linux; `agctl-guest` (оба варианта) для linux; arm64 и amd64 |
 | `up`, `corp`, `demo`, `stop`, `down`, `logs`, `status` | серверный режим на этой машине |
 | `k8s_render`, `k8s_apply`, `k8s_profile`, `k8s_secret`, `k8s_status`, `k8s_e2e_kind` | кластер |
 | `profile-fetch`, `profiles` | профили организаций |
@@ -1122,11 +1137,12 @@ agctl/
 
 Релизы собирает goreleaser по тегу `v*` (`.goreleaser.yaml`): архивы
 `agctl_<os>_<arch>`, `agctl-server_<os>_<arch>`, `agctl-guest_linux_<arch>`
-и `checksums.txt`; версия, коммит и дата сборки подставляются флагами
+(локальный guest), `agctl-guest-server_linux_<arch>` (серверный guest) и
+`checksums.txt`; версия, коммит и дата сборки подставляются флагами
 компоновщика. Установщики `bin/install.sh` и `bin/install.ps1` ставят
-`agctl` и `agctl-guest`, сверяют SHA-256 и умеют ставить комплект
-организации из приватного репозитория профиля (архив с `agctl`,
-`agctl-guest-linux-<arch>` и профилем; его собирает `bin/release.sh`
+`agctl` и оба `agctl-guest`, сверяют SHA-256 и умеют ставить комплект
+организации из приватного репозитория профиля (архив с `agctl`, обоими
+`agctl-guest` и профилем; его собирает `bin/release.sh`
 репозитория профиля).
 
 CI (`.github/workflows/ci.yml`): `go vet` и `go test` на Linux, macOS и
@@ -1146,7 +1162,10 @@ init, доступы, запуск, вход, папка проектов, мо�
 локальный режим целиком (`bin/e2e-local-mode.sh` — 44 проверки без
 ошибок), ключ модели вне окружения контейнера (`bin/e2e-smoke.sh` — живой
 запрос к модели с ключом из файла), владелец локального режима без
-учётной записи, комплект организации с `agctl-guest`, зелёный CI на трёх ОС.
+учётной записи, комплект организации с `agctl-guest`, зелёный CI на трёх ОС,
+разделение guest и образов по режимам (локальный `agctl-dsh*` с guest
+только с мостом, серверный `agctl-dsh-server*` с `ax-runner` и
+`init-chat-home`; карточка `guest-image-flavours`).
 
 Открыто:
 
