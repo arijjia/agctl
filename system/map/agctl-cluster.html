@@ -5273,12 +5273,16 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <path data-edge-from="runmgr" data-edge-to="axcp" data-edge-label="AX: Create/Resume/Suspend" data-edge-key="2" data-edge-id="c21" data-composition-points="600,397;800,397" data-composition-crossover="halo" data-composition-independent="true" d="M 600 397 L 800 397" class="a-dashed" data-animate="edge" style="--step:2" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:3">
-          <path data-graph-role="automatic-crossover-underlay" d="M 600 284 L 800 284" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="chatgw" data-edge-to="axrunner" data-edge-label="atenet-router → :80" data-edge-key="3" data-edge-id="c22" data-composition-points="600,284;800,284" data-composition-crossover="halo" data-composition-independent="true" d="M 600 284 L 800 284" class="a-emphasis" data-animate="edge" style="--step:3" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 600 292.05 L 800 292.05" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="chatgw" data-edge-to="axrunner" data-edge-label="atenet-router → :80" data-edge-key="3" data-edge-id="c22" data-composition-points="600,292.05;800,292.05" data-composition-crossover="halo" data-composition-independent="true" d="M 600 292.05 L 800 292.05" class="a-emphasis" data-animate="edge" style="--step:3" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:4">
           <path data-graph-role="automatic-crossover-underlay" d="M 1010 284 L 1120 284" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
           <path data-edge-from="axrunner" data-edge-to="llm" data-edge-label="HTTPS :443" data-edge-key="4" data-edge-id="c23" data-composition-points="1010,284;1120,284" data-composition-crossover="halo" data-composition-independent="true" d="M 1010 284 L 1120 284" class="a-default" data-animate="edge" style="--step:4" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        </g>
+        <g data-graph-role="automatic-crossover" style="--step:5">
+          <path data-graph-role="automatic-crossover-underlay" d="M 816 236 L 816 194 Q 816 186 808 186 L 600 186" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="axrunner" data-edge-to="api" data-edge-label="GET /ax/provider-config" data-edge-key="5" data-edge-id="c24" data-composition-points="816,236;816,186;600,186" data-composition-crossover="halo" data-composition-independent="true" d="M 816 236 L 816 194 Q 816 186 808 186 L 600 186" class="a-dashed" data-animate="edge" style="--step:5" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         </g>
 
         <!-- Components -->
@@ -5329,15 +5333,15 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="context" x="500" y="298" class="t-muted" font-size="7.8" text-anchor="middle">proxy + mint ?token= + чат-шелл + прогрев</text>
         </g>
 
-        <g id="node-k8spod" data-node-id="k8spod" data-node-label="Под пользователя — k8s" tabindex="0" role="button" aria-label="Focus Под пользователя — k8s, Pod · Service · NetPol · PVC, Кластер Kubernetes — --runtime k8s | ax (вместо dockerd)" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="Pod · Service · NetPol · PVC" data-node-context="Кластер Kubernetes — --runtime k8s | ax (вместо dockerd)">
-          <title>Под пользователя — k8s · Pod · Service · NetPol · PVC · Кластер Kubernetes — --runtime k8s | ax (вместо dockerd)</title>
+        <g id="node-k8spod" data-node-id="k8spod" data-node-label="Под пользователя — k8s" tabindex="0" role="button" aria-label="Focus Под пользователя — k8s, Pod · Service · NetPol · Secret · PVC/RWX, Кластер Kubernetes — --runtime k8s | ax (вместо dockerd)" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="Pod · Service · NetPol · Secret · PVC/RWX" data-node-context="Кластер Kubernetes — --runtime k8s | ax (вместо dockerd)">
+          <title>Под пользователя — k8s · Pod · Service · NetPol · Secret · PVC/RWX · Кластер Kubernetes — --runtime k8s | ax (вместо dockerd)</title>
           <rect x="800" y="490" width="210" height="96" rx="8" class="c-mask"/>
           <rect x="800" y="490" width="210" height="96" rx="8" class="c-cloud" data-animate="node" style="--step:2" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="cloud" class="semantic-sigil s-cloud" transform="translate(806 496) scale(0.6875)">
             <path d="M4.3 12.5h7.3a2.4 2.4 0 0 0 .2-4.8 4 4 0 0 0-7.5-1.3A3.1 3.1 0 0 0 4.3 12.5Z"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="905" y="536" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Под пользователя — k8s</text>
-        <text data-detail="context" x="905" y="552" class="t-muted" font-size="9" text-anchor="middle">Pod · Service · NetPol · PVC</text>
+        <text data-detail="context" x="905" y="552" class="t-muted" font-size="8.2" text-anchor="middle">Pod · Service · NetPol · Secret · PVC/RWX</text>
         </g>
 
         <g id="node-axcp" data-node-id="axcp" data-node-label="Google AX + Agent Substrate" tabindex="0" role="button" aria-label="Focus Google AX + Agent Substrate, ax-server · ate-api-server · atenet-router, Кластер Kubernetes — --runtime k8s | ax (вместо dockerd)" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="ax-server · ate-api-server · atenet-router" data-node-context="Кластер Kubernetes — --runtime k8s | ax (вместо dockerd)">
@@ -5351,15 +5355,15 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="context" x="905" y="418" class="t-muted" font-size="8" text-anchor="middle">ax-server · ate-api-server · atenet-router</text>
         </g>
 
-        <g id="node-axrunner" data-node-id="axrunner" data-node-label="agctl ax-runner — PID 1" tabindex="0" role="button" aria-label="Focus agctl ax-runner — PID 1, :80 health · прокси → :3080, Кластер Kubernetes — --runtime k8s | ax (вместо dockerd) › Песочница актора — gVisor/microVM (ax)" aria-pressed="false" data-node-kind="backend" data-node-sublabel=":80 health · прокси → :3080" data-node-context="Кластер Kubernetes — --runtime k8s | ax (вместо dockerd) › Песочница актора — gVisor/microVM (ax)">
-          <title>agctl ax-runner — PID 1 · :80 health · прокси → :3080 · Кластер Kubernetes — --runtime k8s | ax (вместо dockerd) › Песочница актора — gVisor/microVM (ax)</title>
+        <g id="node-axrunner" data-node-id="axrunner" data-node-label="agctl ax-runner — PID 1" tabindex="0" role="button" aria-label="Focus agctl ax-runner — PID 1, :80 · прокси → :3080 · agctl-guest, Кластер Kubernetes — --runtime k8s | ax (вместо dockerd) › Песочница актора — gVisor/microVM (ax)" aria-pressed="false" data-node-kind="backend" data-node-sublabel=":80 · прокси → :3080 · agctl-guest" data-node-context="Кластер Kubernetes — --runtime k8s | ax (вместо dockerd) › Песочница актора — gVisor/microVM (ax)">
+          <title>agctl ax-runner — PID 1 · :80 · прокси → :3080 · agctl-guest · Кластер Kubernetes — --runtime k8s | ax (вместо dockerd) › Песочница актора — gVisor/microVM (ax)</title>
           <rect x="800" y="236" width="210" height="96" rx="8" class="c-mask"/>
           <rect x="800" y="236" width="210" height="96" rx="8" class="c-backend" data-animate="node" style="--step:4" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(806 242) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="905" y="282" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">agctl ax-runner — PID 1</text>
-        <text data-detail="context" x="905" y="298" class="t-muted" font-size="9" text-anchor="middle">:80 health · прокси → :3080</text>
+        <text data-detail="context" x="905" y="298" class="t-muted" font-size="9" text-anchor="middle">:80 · прокси → :3080 · agctl-guest</text>
         </g>
 
         <g id="node-llm" data-node-id="llm" data-node-label="LLM gateway" tabindex="0" role="button" aria-label="Focus LLM gateway, из профиля · :443, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="из профиля · :443" data-node-context="Architecture component">
@@ -5388,12 +5392,16 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <text x="700" y="387" class="t-edge-dashed" font-size="8" text-anchor="middle">AX: Create/Resume/Suspend</text>
         </g>
         <g data-detail="context" data-edge-from="chatgw" data-edge-to="axrunner" data-edge-label="atenet-router → :80" data-edge-key="3" data-edge-id="c22">
-          <rect x="649.4" y="264" width="101.2" height="14" rx="3" class="c-mask"/>
-          <text x="700" y="274" class="t-edge-emphasis" font-size="8" text-anchor="middle">atenet-router → :80</text>
+          <rect x="649.4" y="272.05" width="101.2" height="14" rx="3" class="c-mask"/>
+          <text x="700" y="282.05" class="t-edge-emphasis" font-size="8" text-anchor="middle">atenet-router → :80</text>
         </g>
         <g data-detail="context" data-edge-from="axrunner" data-edge-to="llm" data-edge-label="HTTPS :443" data-edge-key="4" data-edge-id="c23">
           <rect x="1036" y="264" width="58" height="14" rx="3" class="c-mask"/>
           <text x="1065" y="274" class="t-edge-default" font-size="8" text-anchor="middle">HTTPS :443</text>
+        </g>
+        <g data-detail="context" data-edge-from="axrunner" data-edge-to="api" data-edge-label="GET /ax/provider-config" data-edge-key="5" data-edge-id="c24">
+          <rect x="647.8" y="166" width="120.39999999999999" height="14" rx="3" class="c-mask"/>
+          <text x="708" y="176" class="t-edge-dashed" font-size="8" text-anchor="middle">GET /ax/provider-config</text>
         </g>
 
         <!-- Boundary labels (foreground masks keep routes out of titles) -->
@@ -5621,12 +5629,13 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         </div>
         <ul>
           <li>--runtime docker|k8s|ax (AGCTL_RUNTIME, serve.runtime): контракт один — ChatProvider (EnsureChat/StopChat/LogsChat/HasActiveSSH); шлюз не знает, что под ним</li>
-          <li>k8s: на пользователя Pod agctl-chat-&lt;hash&gt; (init agctl init-chat-home + dsh), Service :80→:3080, NetworkPolicy (ingress только с подов шлюза), Secret ключей LLM; сон = удаление пода, том живёт; SSH developer&#39;а — NodePort + pods/exec для lease</li>
+          <li>k8s: на пользователя Pod agctl-chat-&lt;hash&gt; (init agctl init-chat-home из agctl-guest + dsh), Service :80→:3080, NetworkPolicy (к 3080 — только с подов шлюза; к SSH 2222 — без ограничения источника), Secret ключей LLM через secretKeyRef; сон = удаление пода, том живёт</li>
           <li>ax: пользователь = AX Task — актор Agent Substrate в gVisor/microVM; ленивый старт GetTask → CreateTask → ResumeTask → Ready; сон = SuspendTask (снимок памяти/ФС); трафик — atenet-router + заголовок ate-target-actor, роутер сам будит спящий актор</li>
           <li>agctl ax-runner — PID 1 песочницы: /healthz и /readyz на :80, реверс-прокси на dsh :3080, /agctl/boot-log по токену раннера; конфиг провайдера LLM берёт у шлюза при каждом boot (GET /ax/provider-config/&lt;task&gt;)</li>
           <li>Ключи LLM в ax: env задачи (--ax-inject-llm-key=1) или egress-инъекция — dsh шлёт Bearer placeholder, atenet-egress подменяет его из k8s Secret по EgressPolicy, которую ведёт сам agctl; ключ не попадает в песочницу и снимок</li>
           <li>ax ssh — opt-in (--ax-debug-ssh): guest-gRPC Substrate на том же :80, платформенного sshd нет, Кабинет видит «спит»</li>
           <li>Манифесты deploy/k8s (kustomize base + overlays) и deploy/ax, образ шлюза deploy/serve.Dockerfile, смоук в kind — bin/e2e-k8s-kind.sh; live-прогон на кластере с Substrate/AX не автоматизирован</li>
+          <li>Риски до живого развёртывания: прокси чата не предъявляет клиентский сертификат mTLS маршрутизатору AX (сертификат — только для boot-log); под с SSH работает от root; исходящий трафик подов не ограничен</li>
         </ul>
       </div>
     </div>
