@@ -101,10 +101,12 @@ type Config struct {
 	// GatewayURL — базовый URL шлюза agctl для fetch-at-boot раннера
 	// (требуется при ProviderAtBoot).
 	GatewayURL string
-	// DebugSSH — spec.debug задачи: guest-сервисы Substrate (process/filesystem
-	// gRPC на :80 раннера), которыми пользуется `ax ssh` апстрима. Доступ =
-	// произвольный exec/файлы в песочнице — opt-in на установку (владелец):
-	// --ax-debug-ssh / AGCTL_AX_DEBUG_SSH=1. По умолчанию выключено.
+	// DebugSSH — guest-сервисы Substrate (process/filesystem gRPC на :80
+	// раннера, `ax ssh`) для задач пользователей с SSH-ключом роли
+	// developer/admin (spec.SSHPubKey ≠ "" — та же семантика, что «поднять
+	// sshd» в docker/k8s). Доступ = произвольный exec/файлы в песочнице —
+	// opt-in на установку: --ax-debug-ssh / AGCTL_AX_DEBUG_SSH=1. По
+	// умолчанию выключено; роли user guest-сервисов не получают.
 	DebugSSH bool
 	// CPU/Memory — лимиты песочницы (quantity: "2", "4Gi").
 	CPU    string
@@ -181,29 +183,42 @@ func NewWithClient(cfg Config, ax v1alpha1.AXClient, router *http.Client) (*Prov
 	return &Provider{cfg: cfg, ax: ax, router: router}, nil
 }
 
+// routerTLSConfig — TLS-конфигурация маршрутизатора (опционально mTLS):
+// общий для routerClient и ChatHandle (чат-прокси шлюза ходит в тот же
+// Endpoint https и должен доверять тем же корням/нести тот же клиентский
+// сертификат).
+func routerTLSConfig(cfg Config) (*tls.Config, error) {
+	if cfg.RouterCA == "" && cfg.RouterClientCert == "" {
+		return nil, nil
+	}
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+	if cfg.RouterCA != "" {
+		pem, err := os.ReadFile(cfg.RouterCA)
+		if err != nil {
+			return nil, fmt.Errorf("axrt: router CA: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("axrt: router CA %s: no certificates", cfg.RouterCA)
+		}
+		tlsCfg.RootCAs = pool
+	}
+	if cfg.RouterClientCert != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.RouterClientCert, cfg.RouterClientKey)
+		if err != nil {
+			return nil, fmt.Errorf("axrt: router client certificate: %w", err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{cert}
+	}
+	return tlsCfg, nil
+}
+
 // routerClient — HTTP-клиент маршрутизатора (опционально mTLS).
 func routerClient(cfg Config) (*http.Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if cfg.RouterCA != "" || cfg.RouterClientCert != "" {
-		tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
-		if cfg.RouterCA != "" {
-			pem, err := os.ReadFile(cfg.RouterCA)
-			if err != nil {
-				return nil, fmt.Errorf("axrt: router CA: %w", err)
-			}
-			pool := x509.NewCertPool()
-			if !pool.AppendCertsFromPEM(pem) {
-				return nil, fmt.Errorf("axrt: router CA %s: no certificates", cfg.RouterCA)
-			}
-			tlsCfg.RootCAs = pool
-		}
-		if cfg.RouterClientCert != "" {
-			cert, err := tls.LoadX509KeyPair(cfg.RouterClientCert, cfg.RouterClientKey)
-			if err != nil {
-				return nil, fmt.Errorf("axrt: router client certificate: %w", err)
-			}
-			tlsCfg.Certificates = []tls.Certificate{cert}
-		}
+	if tlsCfg, err := routerTLSConfig(cfg); err != nil {
+		return nil, err
+	} else if tlsCfg != nil {
 		transport.TLSClientConfig = tlsCfg
 	}
 	return &http.Client{Transport: transport, Timeout: 30 * time.Second}, nil
@@ -289,11 +304,16 @@ func (p *Provider) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	if err != nil {
 		return agctlrt.ChatHandle{}, err
 	}
+	tlsCfg, err := routerTLSConfig(p.cfg)
+	if err != nil {
+		return agctlrt.ChatHandle{}, err
+	}
 	return agctlrt.ChatHandle{
 		RuntimeID:  spec.RuntimeID,
 		InstanceID: instanceID(task),
 		Endpoint:   p.cfg.RouterURL,
 		Headers:    map[string]string{HeaderTargetActor: p.cfg.Atespace + "/" + name},
+		TLSConfig:  tlsCfg,
 	}, nil
 }
 
@@ -392,6 +412,10 @@ func (p *Provider) buildTask(name string, spec agctlrt.ChatSpec) *v1alpha1.Task 
 		image = spec.Image
 	}
 	hasher.Write([]byte(image + "\n"))
+	// debug входит в specHash: загрузка SSH-ключа разработчиком позже —
+	// видимый дрейф (пересоздание по --ax-recreate-on-drift или руками)
+	debug := p.cfg.DebugSSH && spec.SSHPubKey != ""
+	hasher.Write([]byte(fmt.Sprintf("debug=%v\n", debug)))
 	for _, k := range keys {
 		envList = append(envList, &v1alpha1.EnvVar{Name: k, Value: env[k]})
 		hasher.Write([]byte(k + "=" + env[k] + "\n"))
@@ -413,7 +437,9 @@ func (p *Provider) buildTask(name string, spec agctlrt.ChatSpec) *v1alpha1.Task 
 			Resources: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{
 				Cpu: p.cfg.CPU, Memory: p.cfg.Memory,
 			}},
-			Debug:  p.cfg.DebugSSH,
+			// guest-сервисы (ax ssh) — только пользователям с SSH-ключом
+			// роли developer/admin; роли user — никогда
+			Debug:  debug,
 			Config: config,
 		},
 	}

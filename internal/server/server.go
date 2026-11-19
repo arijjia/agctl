@@ -25,6 +25,7 @@ import (
 
 	"github.com/arijjia/agctl/internal/assets"
 	"github.com/arijjia/agctl/internal/auth"
+	"github.com/arijjia/agctl/internal/leaderelection"
 	"github.com/arijjia/agctl/internal/profile"
 	"github.com/arijjia/agctl/internal/provision"
 	agctlrt "github.com/arijjia/agctl/internal/runtime"
@@ -48,27 +49,36 @@ type Config struct {
 	DevImages   []string // каталог образов лаунчера developer'а (пусто = только cfg.Image)
 	// BaseImage — базовый agctl-dsh под надстройкой профиля (images.dockerfile);
 	// пусто или равен Image = надстройки нет.
-	BaseImage         string
-	BinDir            string
-	Version           string // версия agctl (метка контейнеров, диагностика дрейфа сборок)
-	SecureCookies     bool   // true when agctl is served behind a trusted HTTPS terminator
-	PublicURL         string // базовый URL шлюза, видимый песочницам (fetch-at-boot раннера AX); пусто = derive из --addr
-	AutosaveEvery     time.Duration
-	CORSOrigins       []string           // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
-	Tier0             bool               // корень платформы ведёт в персональный чат (/chat/)
-	EgressAllowlist   bool               // чат-контейнеры на выделенной сети: egress только DNS и хост-шлюз (карточка egress-allowlist)
-	ChatTTL           time.Duration      // idle TTL персонального runtime (по умолчанию 60 мин)
-	ChatPrewarmN      int                // prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл); он же — потолок пула
-	ChatPrewarmEvery  time.Duration      // период цикла подогрева (по умолчанию 15 мин)
-	VolumeQuotaGB     float64            // квота тома пользователя в ГБ (0 = выкл); per-user — settings KV
-	LiteLLMQuotas     bool               // enforcement квот токенов виртуальными ключами LiteLLM
-	LiteLLMAdminURL   string             // admin-API LiteLLM (env AGCTL_LITELLM_ADMIN_URL / --litellm-admin-url)
-	LiteLLMAdminKey   string             // admin-ключ LiteLLM (только env AGCTL_LITELLM_ADMIN_KEY; не логируется)
-	RegisterPerMinute int                // лимит регистраций с одного IP за минуту: 0 — дефолт платформы (30), <0 — отключить (нагрузочные прогоны)
-	RequireApproval   bool               // legacy workspace flag; create endpoint is tombstoned in v3
-	DefaultLLM        provision.Provider // платформенный провайдер чата по умолчанию (из профиля/env); личный секрет пользователя его перекрывает
-	DevEnv            []string           // имена переменных хоста, пробрасываемые в контейнер developer/admin (значения — из окружения serve: .env экспортируется make)
-	Profile           *profile.Data      // профиль организации (брендинг/дефолты); nil = нейтральный agctl
+	BaseImage        string
+	BinDir           string
+	Version          string // версия agctl (метка контейнеров, диагностика дрейфа сборок)
+	SecureCookies    bool   // true when agctl is served behind a trusted HTTPS terminator
+	PublicURL        string // базовый URL шлюза, видимый песочницам (fetch-at-boot раннера AX); пусто = derive из --addr
+	AutosaveEvery    time.Duration
+	CORSOrigins      []string // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
+	Tier0            bool     // корень платформы ведёт в персональный чат (/chat/)
+	EgressAllowlist  bool     // чат-контейнеры на выделенной сети: egress только DNS и хост-шлюз (карточка egress-allowlist)
+	LauncherSlotsMax int      // максимум живых слотов developer'а (--launcher-slots-max; карточка developer-multi-containers, 0/вне диапазона = дефолт 3)
+	// HALeaderLease — имя coordination.k8s.io Lease для выбора лидера фоновых
+	// циклов при 2+ репликах шлюза (карточка ha-control-plane; --ha-leader-lease).
+	// Пусто = фолбэк single-реплики: циклы в процессе без выборов.
+	HALeaderLease string
+	// HALeaderKubeconfig — kubeconfig для Lease-клиента (пусто = in-cluster);
+	// HALeaderNamespace — namespace Lease (пусто = serviceaccount/env/default).
+	HALeaderKubeconfig string
+	HALeaderNamespace  string
+	ChatTTL            time.Duration      // idle TTL персонального runtime (по умолчанию 60 мин)
+	ChatPrewarmN       int                // prewarm-пул: держать тёплыми N последних активных пользователей (0 = выкл); он же — потолок пула
+	ChatPrewarmEvery   time.Duration      // период цикла подогрева (по умолчанию 15 мин)
+	VolumeQuotaGB      float64            // квота тома пользователя в ГБ (0 = выкл); per-user — settings KV
+	LiteLLMQuotas      bool               // enforcement квот токенов виртуальными ключами LiteLLM
+	LiteLLMAdminURL    string             // admin-API LiteLLM (env AGCTL_LITELLM_ADMIN_URL / --litellm-admin-url)
+	LiteLLMAdminKey    string             // admin-ключ LiteLLM (только env AGCTL_LITELLM_ADMIN_KEY; не логируется)
+	RegisterPerMinute  int                // лимит регистраций с одного IP за минуту: 0 — дефолт платформы (30), <0 — отключить (нагрузочные прогоны)
+	RequireApproval    bool               // legacy workspace flag; create endpoint is tombstoned in v3
+	DefaultLLM         provision.Provider // платформенный провайдер чата по умолчанию (из профиля/env); личный секрет пользователя его перекрывает
+	DevEnv             []string           // имена переменных хоста, пробрасываемые в контейнер developer/admin (значения — из окружения serve: .env экспортируется make)
+	Profile            *profile.Data      // профиль организации (брендинг/дефолты); nil = нейтральный agctl
 	// AxRunnerToken — токен раннера AX для GET /ax/provider-config/<task>
 	// (fetch-at-boot конфига провайдера; бэкенд ax). Пусто = endpoint выключен.
 	AxRunnerToken string
@@ -106,24 +116,29 @@ type Server struct {
 	tokens map[string]string
 
 	chatMu        sync.Mutex                   // персональные per-user runtime: ленивое создание и TTL
-	chats         map[int64]*chatRuntime       // userID → живой runtime handle
-	chatLocks     map[int64]*sync.Mutex        // сериализация первого старта per-user
+	chats         map[chatKey]*chatRuntime     // (userID, слот) → живой runtime handle
+	chatLocks     map[chatKey]*sync.Mutex      // сериализация первого старта per (user, slot)
 	chatProvider  agctlrt.ChatProvider         // Docker now; K8s adapter can return a Service DNS endpoint
 	requestMu     sync.Mutex                   // не допускать двойной approve одной заявки
 	autosaveMu    sync.Mutex                   // серия неудач autosave: backoff + repair-pass
 	autosaveFails map[string]autosaveFailState // "userID/project" → счётчик/пауза
 	prewarmMu     sync.Mutex                   // не перекрывать циклы prewarm-пула
 	prewarmActive bool
-	llmMu         sync.Mutex             // виртуальные ключи LiteLLM по квотам
-	llmKeys       map[int64]*llmKeyState // userID → заминченный ключ (ротация при смене квоты)
-	warmHits      atomic.Int64           // ensureChat из тёплого кэша (hit-rate пула)
-	coldStarts    atomic.Int64           // холодные старты ensureChat: счётчик и суммарное время
-	coldTotalMS   atomic.Int64
-	startedAt     time.Time    // время старта серва (сводка админки)
-	webFS         fs.FS        // корень SPA (страницы модулей /admin, /launcher)
-	local         *localState  // локальный режим (agctl dev): владелец и мост; nil — сервер
-	defaultLLMMu  sync.RWMutex // cfg.DefaultLLM меняется на ходу (лаунчер локального режима: ключ модели)
-	proxyAuditN   atomic.Int64 // счётчик записей журнала шлюза для периодической обрезки
+	// leader — holder k8s Lease (карточка ha-control-plane); nil = фолбэк
+	// single-реплики (циклы в процессе, как сейчас). leaderReady — закрыт при
+	// первом переходе кого-то в лидеры (сигнал стартовому свипу).
+	leader       *leaderelection.Holder
+	leaderReady  chan struct{}
+	llmMu        sync.Mutex             // виртуальные ключи LiteLLM по квотам
+	llmKeys      map[int64]*llmKeyState // userID → заминченный ключ (ротация при смене квоты)
+	warmHits     atomic.Int64           // ensureChat из тёплого кэша (hit-rate пула)
+	coldStarts   atomic.Int64           // холодные старты ensureChat: счётчик и суммарное время
+	coldTotalMS  atomic.Int64
+	startedAt    time.Time    // время старта серва (сводка админки)
+	webFS        fs.FS        // корень SPA (страницы модулей /admin, /launcher)
+	local        *localState  // локальный режим (agctl dev): владелец и мост; nil — сервер
+	defaultLLMMu sync.RWMutex // cfg.DefaultLLM меняется на ходу (лаунчер локального режима: ключ модели)
+	proxyAuditN  atomic.Int64 // счётчик записей журнала шлюза для периодической обрезки
 
 }
 
@@ -168,12 +183,35 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 	// (новый серв про них не знает, TTL-рипер их не усыплёт) и продолжают
 	// раздавать старый dsh web. Сносим заранее; /chat/ пересоздаёт среды
 	// лениво — данные пользователей живут на маунтах, не в контейнере.
+	// При leader-election (2+ реплики, карточка ha-control-plane) свип делает
+	// только лидер — на OnAcquired, иначе реплики гоняются по чужим подам.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if n := rt.SweepVersionDrift(ctx, chatContainerNamePrefix(cfg.Home)); n > 0 {
-		log.Printf("[chat] свип дрейфа: удалены контейнеры прошлой сборки: %d", n)
+	if s.cfg.HALeaderLease != "" && s.leader != nil {
+		go func() { <-s.leaderReady; s.sweepDrift(ctx) }()
+	} else {
+		s.sweepDrift(ctx)
 	}
 	return s, nil
+}
+
+// sweepDrift — одноразовый стартовый свип чат-контейнеров прошлой сборки
+// (делает только лидер, когда включён leader-election). Свип — свойство
+// docker-рантайма (k8s/ax свипают в runtime_select); для остальных
+// реализаций тихо no-op.
+func (s *Server) sweepDrift(ctx context.Context) {
+	if !s.isLeader() {
+		return
+	}
+	sw, ok := any(s.rt).(interface {
+		SweepVersionDrift(ctx context.Context, namePrefix string) int
+	})
+	if !ok {
+		return
+	}
+	if n := sw.SweepVersionDrift(ctx, chatContainerNamePrefix(s.cfg.Home)); n > 0 {
+		log.Printf("[chat] свип дрейфа: удалены контейнеры прошлой сборки: %d", n)
+	}
 }
 
 // NewWithRuntimeProviders is the injection point for orchestrated deployments.
@@ -190,8 +228,34 @@ func NewWithRuntimeProviders(db *store.DB, sec *secrets.Manager, cfg Config, wor
 	}
 	s := &Server{
 		db: db, sec: sec, cfg: cfg, rt: workspaceRuntime, chatProvider: chatProvider, brand: brand,
-		tokens: map[string]string{}, chats: map[int64]*chatRuntime{}, chatLocks: map[int64]*sync.Mutex{},
+		tokens: map[string]string{}, chats: map[chatKey]*chatRuntime{}, chatLocks: map[chatKey]*sync.Mutex{},
 		startedAt: time.Now(),
+	}
+	// Leader-election (карточка ha-control-plane, план п.3): 2+ реплик —
+	// фоновые циклы (рипер, prewarm, autosave, reconcile, jira, сессии) гоняет
+	// только лидер; фолбэк single-реплики — lease не задан, циклы как раньше.
+	if s.cfg.HALeaderLease != "" {
+		client, err := leaderelection.ClientFromKubeconfig(s.cfg.HALeaderKubeconfig)
+		if err != nil {
+			return nil, err
+		}
+		s.leaderReady = make(chan struct{})
+		s.leader = leaderelection.New(context.Background(), leaderelection.Options{
+			Client:    client,
+			Namespace: s.cfg.HALeaderNamespace,
+			Name:      s.cfg.HALeaderLease,
+			OnAcquired: func(ctx context.Context) {
+				// Свип дрейфа делает только лидер (см. комментарий в New).
+				select {
+				case <-s.leaderReady:
+				default:
+					close(s.leaderReady)
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				s.sweepDrift(ctx)
+			},
+		})
 	}
 	if s.cfg.AutosaveEvery == 0 {
 		s.cfg.AutosaveEvery = 2 * time.Minute
@@ -279,12 +343,13 @@ func resolveDefaultLLM(db *store.DB, sec *secrets.Manager, cfg *Config) {
 // Close освобождает живые ленивые chat-контейнеры (тома не удаляются), затем
 // закрывает Docker runtime. Dev-workspaces остаются под управлением владельца.
 func (s *Server) Close() {
+	s.leader.Close() // выйти из выборов (фоновые циклы подхватит фолловер)
 	s.chatMu.Lock()
 	handles := make([]agctlrt.ChatHandle, 0, len(s.chats))
 	for _, chat := range s.chats {
 		handles = append(handles, chat.handle)
 	}
-	s.chats = map[int64]*chatRuntime{}
+	s.chats = map[chatKey]*chatRuntime{}
 	s.chatMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -409,17 +474,24 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 
 // StartBackground запускает фоновые задачи ядра (рипер простаивающих
 // рантаймов, сверка статусов, чистка сессий) и подключённых модулей.
+// При leader-election (карточка ha-control-plane) каждый тик спрашивает
+// isLeader: фоновую работу выполняет только реплика-лидер.
 func (s *Server) StartBackground(ctx context.Context) {
 	// рипер персональных чатов: усыпляем контейнеры по простою (том живёт)
-	go every(ctx, time.Minute, s.reapIdleChats)
+	go s.every(ctx, time.Minute, s.reapIdleChats)
 	// сверка: контейнер умер, пока agctl был выключен
-	go every(ctx, 30*time.Second, s.reconcile)
-	go every(ctx, time.Hour, func() { _ = s.db.DeleteExpiredSessions() })
+	go s.every(ctx, 30*time.Second, s.reconcile)
+	go s.every(ctx, time.Hour, func() { _ = s.db.DeleteExpiredSessions() })
 	for _, m := range s.cfg.Modules {
 		if m.Background != nil {
 			go m.Background(ctx, s)
 		}
 	}
+}
+
+// isLeader — гонять ли фоновый тик этой реплике (leader-election or fallback).
+func (s *Server) isLeader() bool {
+	return s.leader.IsLeader()
 }
 
 // autosaveAll выполняет страховочный go-git commit по всем running-воркспейсам
@@ -484,17 +556,17 @@ func (s *Server) reconcile() {
 		return
 	}
 	type deadChat struct {
-		userID int64
-		rt     *chatRuntime
+		key chatKey
+		rt  *chatRuntime
 	}
 	var dead []deadChat
 	s.chatMu.Lock()
-	for uid, rt := range s.chats {
+	for k, rt := range s.chats {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		st, err := hr.HealthStatus(ctx, rt.handle.InstanceID)
 		cancel()
 		if err == nil && st == "unhealthy" {
-			dead = append(dead, deadChat{userID: uid, rt: rt})
+			dead = append(dead, deadChat{key: k, rt: rt})
 		}
 	}
 	s.chatMu.Unlock()
@@ -503,11 +575,11 @@ func (s *Server) reconcile() {
 		s.forgetToken(chatTokenCacheKey(d.rt.handle))
 		err := s.chatProvider.StopChat(ctx, d.rt.handle)
 		cancel()
-		s.evictChat(d.userID, d.rt)
+		s.evictChat(d.key.uid, d.key.slot, d.rt)
 		if err != nil {
-			log.Printf("[chat] reconcile: останов unhealthy-рантайма пользователя %d: %v", d.userID, err)
+			log.Printf("[chat] reconcile: останов unhealthy-рантайма пользователя %d слот %d: %v", d.key.uid, d.key.slot, err)
 		} else {
-			log.Printf("[chat] reconcile: пользователь %d — контейнер unhealthy (dsh не отвечает), среда пересоздастся при следующем открытии", d.userID)
+			log.Printf("[chat] reconcile: пользователь %d слот %d — контейнер unhealthy (dsh не отвечает), среда пересоздастся при следующем открытии", d.key.uid, d.key.slot)
 		}
 	}
 }

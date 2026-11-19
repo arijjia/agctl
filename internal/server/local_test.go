@@ -74,7 +74,7 @@ func TestLocalLoginOwnerAndNoRegistration(t *testing.T) {
 	}
 	// вход прогревает рабочее место владельца с родной папкой и env
 	env.waitLocalWarm()
-	var spec = env.rt.chatSpecs[env.srv.chatRuntimeID(env.srv.local.ownerID)]
+	var spec = env.rt.chatSpecs[env.srv.chatRuntimeID(env.srv.local.ownerID, 0)]
 	if spec.WorkDir == "" || !strings.Contains(strings.Join(spec.DevEnv, ","), "GITLAB_TOKEN=gl-tok") ||
 		!strings.Contains(strings.Join(spec.DevEnv, ","), "AGCTL_BRIDGE_TOKEN=br-tok") {
 		t.Fatalf("spec рабочего места: workdir=%q env=%v", spec.WorkDir, spec.DevEnv)
@@ -152,7 +152,7 @@ func (e *testEnv) waitLocalWarm() {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		e.srv.chatMu.Lock()
-		rt := e.srv.chats[e.srv.local.ownerID]
+		rt := e.srv.chats[chatKey{uid: e.srv.local.ownerID, slot: 0}]
 		e.srv.chatMu.Unlock()
 		if rt != nil {
 			if _, err := os.Stat(skill); err == nil {

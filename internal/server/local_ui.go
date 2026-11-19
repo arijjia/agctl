@@ -125,7 +125,7 @@ func (s *Server) requireLocalOwner(next func(http.ResponseWriter, *http.Request,
 func (s *Server) handleLocalUI(w http.ResponseWriter, r *http.Request, id identity) {
 	h := s.localHooks()
 	s.chatMu.Lock()
-	rt := s.chats[id.ID]
+	rt := s.chats[chatKey{uid: id.ID, slot: 0}]
 	s.chatMu.Unlock()
 	runtime := map[string]any{"state": "sleeping"}
 	if rt != nil {
@@ -186,7 +186,7 @@ func (s *Server) afterLocalSecretChange(name, value string) {
 		s.setDefaultLLMExtraKey(name, value)
 	}
 	s.chatMu.Lock()
-	running := s.chats[s.local.ownerID] != nil
+	running := s.chats[chatKey{uid: s.local.ownerID, slot: 0}] != nil
 	s.chatMu.Unlock()
 	if running {
 		s.local.task.markPending()
@@ -216,12 +216,12 @@ func (s *Server) handleLocalImagePut(w http.ResponseWriter, r *http.Request, id 
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := s.db.SettingSet(chatImageSettingKey(id.ID), ref); err != nil {
+	if err := s.db.SettingSet(chatImageSettingKey(id.ID, 0), ref); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	s.chatMu.Lock()
-	rt := s.chats[id.ID]
+	rt := s.chats[chatKey{uid: id.ID, slot: 0}]
 	s.chatMu.Unlock()
 	if rt != nil && rt.image != ref {
 		s.local.task.markPending()
@@ -252,7 +252,7 @@ func (s *Server) handleLocalWorkDirPut(w http.ResponseWriter, r *http.Request, i
 	s.setLocalWorkDir(abs)
 	if abs != prev {
 		s.chatMu.Lock()
-		running := s.chats[id.ID] != nil
+		running := s.chats[chatKey{uid: id.ID, slot: 0}] != nil
 		s.chatMu.Unlock()
 		if running {
 			s.local.task.markPending()
@@ -300,7 +300,7 @@ func (s *Server) startLocalRuntime(restart bool) bool {
 		}
 		if restart {
 			s.chatMu.Lock()
-			rt := s.chats[owner]
+			rt := s.chats[chatKey{uid: owner, slot: 0}]
 			s.chatMu.Unlock()
 			if rt != nil {
 				t.logf("останавливаю рабочее место")
@@ -311,7 +311,7 @@ func (s *Server) startLocalRuntime(restart bool) bool {
 					fail(err)
 					return
 				}
-				s.evictChatByUser(owner)
+				s.evictChatByUser(owner, 0)
 			}
 		}
 		present := false
@@ -334,7 +334,7 @@ func (s *Server) startLocalRuntime(restart bool) bool {
 			t.mu.Unlock()
 		}
 		t.logf("запускаю рабочее место на " + ref)
-		if _, err := s.ensureChat(owner); err != nil {
+		if _, err := s.ensureChat(owner, 0); err != nil {
 			fail(err)
 			return
 		}

@@ -20,6 +20,7 @@ type ChatContainerInfo struct {
 	Name      string `json:"name"`
 	Workspace string `json:"workspace"` // RuntimeID чата (метка agctl.workspace)
 	UserID    int64  `json:"userId"`    // из суффикса RuntimeID "-u<N>"
+	Slot      int    `json:"slot"`      // слот мульти-рантайма: 0 = основной, N из "-s<N>"
 	Image     string `json:"image"`
 	ImageID   string `json:"imageId"`
 	State     string `json:"state"`  // running | exited | paused | ...
@@ -53,11 +54,18 @@ func (rt *Runtime) ChatContainers(ctx context.Context) ([]ChatContainerInfo, err
 		if len(c.Names) > 0 {
 			info.Name = strings.TrimPrefix(c.Names[0], "/")
 		}
-		// RuntimeID чата всегда "chat-<hash>-u<N>" (см. server.chatRuntimeID).
+		// RuntimeID чата — "chat-<hash>-u<N>" (слот 0) или "chat-<hash>-u<N>-s<S>"
+		// (карточка developer-multi-containers).
 		if i := strings.LastIndex(ws, "-u"); i >= 0 {
 			var uid int64
 			if _, err := fmt.Sscanf(ws[i+2:], "%d", &uid); err == nil {
 				info.UserID = uid
+			}
+			if s := strings.LastIndex(ws, "-s"); s > i && s+2 < len(ws) {
+				var slot int
+				if _, err := fmt.Sscanf(ws[s+2:], "%d", &slot); err == nil && slot > 0 {
+					info.Slot = slot
+				}
 			}
 		}
 		for _, p := range c.Ports {

@@ -19,19 +19,26 @@ type UserConfig struct {
 	Profile    string `yaml:"profile"`
 	ProfileDir string `yaml:"profile_dir"`
 	Serve      struct {
-		Runtime        string    `yaml:"runtime"` // docker | k8s | ax
-		Addr           string    `yaml:"addr"`
-		PublicURL      string    `yaml:"public_url"`
-		Image          string    `yaml:"image"`
-		DevImages      string    `yaml:"dev_images"`
-		DevEnv         string    `yaml:"dev_env"`
-		ChatTTLMin     int       `yaml:"chat_ttl_min"`
-		RegisterPerMin int       `yaml:"register_per_min"`
-		MemGB          float64   `yaml:"mem_gb"`
-		CPUs           float64   `yaml:"cpus"`
-		CORSOrigins    string    `yaml:"cors_origins"`
-		K8s            K8sConfig `yaml:"k8s"`
-		AX             AXConfig  `yaml:"ax"`
+		Runtime          string `yaml:"runtime"` // docker | k8s | ax
+		Addr             string `yaml:"addr"`
+		PublicURL        string `yaml:"public_url"`
+		Image            string `yaml:"image"`
+		DevImages        string `yaml:"dev_images"`
+		DevEnv           string `yaml:"dev_env"`
+		LauncherSlotsMax int    `yaml:"launcher_slots_max"` // 0 = дефолт 3 (карточка developer-multi-containers)
+		// HA leader-election (карточка ha-control-plane): Lease для выбора
+		// лидера фоновых циклов при 2+ репликах шлюза.
+		HALeaderLease      string    `yaml:"ha_leader_lease"`
+		HALeaderKubeconfig string    `yaml:"ha_leader_kubeconfig"`
+		HALeaderNamespace  string    `yaml:"ha_leader_namespace"`
+		StoreDSN           string    `yaml:"store_dsn"` // postgres://… — PG-бэкенд store (карточка ha-control-plane); пусто = SQLite-файл
+		ChatTTLMin         int       `yaml:"chat_ttl_min"`
+		RegisterPerMin     int       `yaml:"register_per_min"`
+		MemGB              float64   `yaml:"mem_gb"`
+		CPUs               float64   `yaml:"cpus"`
+		CORSOrigins        string    `yaml:"cors_origins"`
+		K8s                K8sConfig `yaml:"k8s"`
+		AX                 AXConfig  `yaml:"ax"`
 	} `yaml:"serve"`
 }
 
@@ -84,6 +91,10 @@ type K8sConfig struct {
 	ReadyTimeoutSec int    `yaml:"ready_timeout_sec"`
 	GatewaySelector string `yaml:"gateway_selector"`
 	PullPolicy      string `yaml:"pull_policy"`
+	// EgressPolicy — "1" = egress-политика чат-подов (DNS + ipBlock
+	// LLM-хостов; карточка k8s-pod-egress-policy). Строка для согласованности
+	// с булевыми полями других секций serve.
+	EgressPolicy string `yaml:"egress_policy"`
 }
 
 // AXConfig — дефолты бэкенда ax (serve.ax.*; env AGCTL_AX_* и флаги --ax-*

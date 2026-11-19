@@ -78,6 +78,12 @@ func LauncherModule() Module {
 		mux.HandleFunc("POST /api/me/runtime/stop", s.requireDeveloper(s.handleMeRuntimeStop))
 		mux.HandleFunc("GET /api/me/containers", s.requireDeveloper(s.handleMeContainers))
 		mux.HandleFunc("GET /api/me/runtime/logs", s.requireDeveloper(s.handleMeRuntimeLogs))
+		// Слоты мульти-рантайма (карточка developer-multi-containers).
+		mux.HandleFunc("GET /api/me/slots", s.requireDeveloper(s.handleMeSlots))
+		mux.HandleFunc("PUT /api/me/slots/{slot}/image", s.requireDeveloper(s.handleMeSlotImagePut))
+		mux.HandleFunc("POST /api/me/slots/{slot}/start", s.requireDeveloper(s.handleMeSlotStart))
+		mux.HandleFunc("POST /api/me/slots/{slot}/stop", s.requireDeveloper(s.handleMeSlotStop))
+		mux.HandleFunc("POST /api/me/slots/{slot}/activate", s.requireDeveloper(s.handleMeSlotActivate))
 		if s.cfg.Tier0 && s.webFS != nil {
 			mux.HandleFunc("GET /launcher", s.adminPageHandler(s.webFS))
 		}
@@ -121,7 +127,7 @@ func PrewarmModule() Module {
 		if !s.prewarmEnabled() {
 			return
 		}
-		every(ctx, s.cfg.ChatPrewarmEvery, func() { s.prewarmOnce(nil) })
+		s.every(ctx, s.cfg.ChatPrewarmEvery, func() { s.prewarmOnce(nil) })
 	}}
 }
 
@@ -130,7 +136,7 @@ func PrewarmModule() Module {
 // настоящие репозитории разработчика.
 func AutosaveModule() Module {
 	return Module{Name: "autosave", Background: func(ctx context.Context, s *Server) {
-		every(ctx, s.cfg.AutosaveEvery, func() {
+		s.every(ctx, s.cfg.AutosaveEvery, func() {
 			s.autosaveAll()
 			s.autosaveLocalProjects()
 		})
@@ -195,4 +201,14 @@ func every(ctx context.Context, d time.Duration, fn func()) {
 			fn()
 		}
 	}
+}
+
+// every — лидер-гейтованный вариант every: тик выполняется только репликой-
+// лидером (карточка ha-control-plane); без lease (single-реплика) — всегда.
+func (s *Server) every(ctx context.Context, d time.Duration, fn func()) {
+	every(ctx, d, func() {
+		if s.isLeader() {
+			fn()
+		}
+	})
 }

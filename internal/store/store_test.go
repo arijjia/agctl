@@ -1,13 +1,46 @@
 package store
 
 import (
+	"database/sql"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
+// openTest — тестовая БД: sqlite по умолчанию; PostgreSQL при
+// AGCTL_TEST_STORE=pg + AGCTL_TEST_PG_DSN (crosstest диалектов, карточка
+// ha-control-plane п.2: PG перед телом теста получает чистую схему).
 func openTest(t *testing.T) *DB {
 	t.Helper()
+	if os.Getenv("AGCTL_TEST_STORE") == "pg" {
+		dsn := os.Getenv("AGCTL_TEST_PG_DSN")
+		if dsn == "" {
+			t.Skip("AGCTL_TEST_STORE=pg, но AGCTL_TEST_PG_DSN не задан")
+		}
+		raw, err := sql.Open("pgx", dsn)
+		if err != nil {
+			t.Fatalf("pg raw open: %v", err)
+		}
+		defer raw.Close()
+		for _, stmt := range []string{
+			`DROP SCHEMA public CASCADE`,
+			`CREATE SCHEMA public`,
+		} {
+			if _, err := raw.Exec(stmt); err != nil {
+				t.Fatalf("pg reset %q: %v", stmt, err)
+			}
+		}
+		raw.Close()
+		db, err := Open(dsn)
+		if err != nil {
+			t.Fatalf("open pg: %v", err)
+		}
+		t.Cleanup(func() { db.Close() })
+		return db
+	}
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

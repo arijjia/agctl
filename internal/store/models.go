@@ -167,15 +167,15 @@ func wrap(op string, err error) error {
 // CreateUser добавляет учётную запись и возвращает её ID; занятый логин
 // распознаётся по UNIQUE-ошибке и оборачивается человекочитаемой ошибкой.
 func (d *DB) CreateUser(login, passwordHash, role string) (int64, error) {
-	res, err := d.Exec(`INSERT INTO users(login, password_hash, role) VALUES(?,?,?)`,
+	id, err := d.insertID(`INSERT INTO users(login, password_hash, role) VALUES(?,?,?)`,
 		login, passwordHash, role)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
+		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "duplicate key") {
 			return 0, fmt.Errorf("store: login занят: %w", err)
 		}
 		return 0, wrap("create user", err)
 	}
-	return res.LastInsertId()
+	return id, nil
 }
 
 // CountUsers возвращает число учётных записей (нулевое = первый станет admin).
@@ -474,7 +474,7 @@ func (d *DB) AuditList(limit int) ([]AuditEvent, error) {
 
 // JiraRunInsert — зафиксировать новую задачу-запуск. Повтор ключа — no-op.
 func (d *DB) JiraRunInsert(jiraKey, workspaceID string) error {
-	_, err := d.Exec(`INSERT OR IGNORE INTO jira_runs(jira_key, workspace_id) VALUES (?, ?)`,
+	_, err := d.execIgnore(`INSERT INTO jira_runs(jira_key, workspace_id) VALUES (?, ?)`,
 		jiraKey, workspaceID)
 	return wrap("jira run insert", err)
 }

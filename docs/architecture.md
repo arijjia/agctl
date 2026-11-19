@@ -515,7 +515,7 @@ Ingress в репозитории не описан: оператор класт
 | Secret | `llm-agctl-storage-<16 hex>` | значения ключей модели; в спецификацию пода ключ попадает ссылкой `secretKeyRef`, а не строкой |
 | Service | `chat-agctl-chat-<…>` | ClusterIP, порт 80 → 3080 |
 | Service SSH | `ssh-agctl-chat-<…>` | NodePort → 2222; создаётся только при ключе разработчика и заданном `--k8s-ssh-host` |
-| NetworkPolicy | `net-agctl-chat-<…>` | вход к 3080 только от подов шлюза (селектор `--k8s-gateway-selector`); при SSH — вход к 2222 без ограничения источника; исходящий трафик не ограничивается |
+| NetworkPolicy | `net-agctl-chat-<…>` | вход к 3080 только от подов шлюза (селектор `--k8s-gateway-selector`); при SSH — вход к 2222 без ограничения источника; исходящий трафик по умолчанию не ограничивается — см. opt-in egress-политику ниже |
 
 Init-контейнер выполняет `agctl init-chat-home` (бинарь `agctl-guest` в
 образе): заполняет пустой домашний каталог скелетом, при необходимости
@@ -534,6 +534,46 @@ Secret. Под с другим образом или версией сборки
 необходимыми sshd (CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID,
 SYS_CHROOT, KILL, AUDIT_WRITE); это осознанная уступка, о которой стоит
 помнить при выборе Pod Security.
+
+#### Opt-in egress-политика чат-подов (карточка k8s-pod-egress-policy)
+
+`--k8s-egress-policy` (env `AGCTL_K8S_EGRESS_POLICY`, config
+`serve.k8s.egress_policy`, off по умолчанию) — отдельная политика
+`netegress-<…>` на чат-под: DNS (udp/tcp 53) к kube-dns + ipBlock /32
+CIDR'ы resolved-хостов провайдеров (`AllProviderURLs`: базовый + Extras).
+Шлюз ресолвит при старте чата и обновляет политики живых чатов каждые
+10 минут (динамические IP LLM-хостов), при StopChat политика удаляется.
+Полный провал ресолва — громкий отказ EnsureChat (чат без хода к LLM
+неработоспособен). Ограничение v1: ipBlock видит только IP, порты
+LLM-хостов не фильтруются; L7/FQDN (Cilium NetworkPolicy) — отдельная
+волна при потребности эксплуатации. Требует CNI с поддержкой
+NetworkPolicy (kindnet в kind не энфорсит; смоук `EGRESS=1
+make k8s_e2e_kind` ставит Calico и проверяет блокировки).
+
+#### HA control plane (карточка ha-control-plane)
+
+При 2+ репликах шлюза: `--ha-leader-lease=agctl-leader` (env
+`AGCTL_HA_LEADER_LEASE`, config `serve.ha_leader_lease`) — фоновые циклы
+(рипер TTL, prewarm, autosave, reconcile, jira, чистка сессий, свип
+дрейфа) выполняет только реплика-лидер через coordination.k8s.io Lease
+(`internal/leaderelection`, LeaseDuration 15 c / renew 5 c, фолловер
+берёт лидерство после истечения). Фолбэк single-реплики — флаг не задан,
+циклы в процессе как раньше. Хранилище: `--store-dsn` — файл SQLite
+(дефолт `$AGCTL_HOME/agctl.db`) или DSN `postgres://…` (PG-бэкенд для
+2+ реплик; `internal/store`, диалектный слой + crosstest-матрица).
+Overlay двух реплик с PDB — `deploy/k8s/overlays/ha`; kill-под-смоук —
+`bin/e2e-ha-kind.sh`.
+
+#### Смоук kind
+
+`make k8s_e2e_kind` (docker, kind, kubectl): образ через `kind load`,
+overlay `deploy/k8s/overlays/kind` (PVC на пользователя, NodePort 30929),
+регистрация admin+user, `/chat/` от user → под dsh поднят и отдаёт
+чат-шелл → `POST /api/me/runtime/stop` → под удалён, PVC цел. Если
+NodePort с хостом не доносится (Docker Desktop, colima, nested docker) —
+скрипт сам падает на `kubectl port-forward` (BASE_URL задаёт адрес
+явно). Пилот ax на kind — `deploy/k8s/overlays/ax-kind`, порт-forward на
+service port 80; mTLS-роутер Substrate — `ChatHandle.TLSConfig`.
 
 ### 5.4 Бэкенд Google AX и Agent Substrate (`internal/runtime/axrt`)
 

@@ -43,7 +43,7 @@ func TestDevEnvInjectedForDeveloperOnly(t *testing.T) {
 		// user-роль стартует лениво через chatProxy; прямого lifecycle у неё нет
 		_ = code
 	}
-	if _, err := env.srv.ensureChat(2); err != nil {
+	if _, err := env.srv.ensureChat(2, 0); err != nil {
 		t.Fatalf("ensureChat user: %v", err)
 	}
 	specUser, okUser := devSpecFor(env, "-u2")

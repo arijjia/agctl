@@ -176,10 +176,13 @@ func (s *Server) handleMeSSHGet(w http.ResponseWriter, r *http.Request, id ident
 }
 
 // chatSSHPort — SSH-порт живого персонального контейнера (0 = спит/нет).
+// Панель SSH developer'а ведёт в активный слот лаунчера (карточка
+// developer-multi-containers); роль user — основной слот.
 func (s *Server) chatSSHPort(userID int64) int {
+	slot := s.activeChatSlot(userID, s.userRole(userID))
 	s.chatMu.Lock()
 	defer s.chatMu.Unlock()
-	if rt, ok := s.chats[userID]; ok {
+	if rt, ok := s.chats[chatKey{userID, slot}]; ok {
 		return rt.handle.SSHPort
 	}
 	return 0
@@ -188,9 +191,10 @@ func (s *Server) chatSSHPort(userID int64) int {
 // chatSSHHost — адрес SSH-канала живого рантайма: пусто = loopback хоста
 // (Docker), иначе внешний адрес, который отдал адаптер (Kubernetes NodePort).
 func (s *Server) chatSSHHost(userID int64) string {
+	slot := s.activeChatSlot(userID, s.userRole(userID))
 	s.chatMu.Lock()
 	defer s.chatMu.Unlock()
-	if rt, ok := s.chats[userID]; ok {
+	if rt, ok := s.chats[chatKey{userID, slot}]; ok {
 		return rt.handle.SSHHost
 	}
 	return ""

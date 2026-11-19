@@ -368,11 +368,13 @@ func TestDebugSSHPropagatesToTaskSpec(t *testing.T) {
 	cfg := testConfig(router.URL)
 	cfg.DebugSSH = true
 	provider, _ := NewWithClient(cfg, client, router.Client())
-	if _, err := provider.EnsureChat(context.Background(), spec()); err != nil {
+	dev := spec()
+	dev.SSHPubKey = "ssh-ed25519 AAAA dev@test"
+	if _, err := provider.EnsureChat(context.Background(), dev); err != nil {
 		t.Fatal(err)
 	}
 	if !fake.task("agctl", TaskName("chat-abcd1234-u17")).GetSpec().GetDebug() {
-		t.Fatal("--ax-debug-ssh must set spec.debug so ax ssh can reach the sandbox")
+		t.Fatal("--ax-debug-ssh + SSH key must set spec.debug so ax ssh can reach the sandbox")
 	}
 }
 
@@ -384,5 +386,36 @@ func TestDebugSSHOffByDefault(t *testing.T) {
 	}
 	if fake.task("agctl", TaskName("chat-abcd1234-u17")).GetSpec().GetDebug() {
 		t.Fatal("spec.debug must default to off (guest services = arbitrary exec)")
+	}
+}
+
+func TestDebugSSHOnlyForDeveloperKey(t *testing.T) {
+	_, client, router, _ := startFixture(t)
+	cfg := testConfig(router.URL)
+	cfg.DebugSSH = true
+	provider, _ := NewWithClient(cfg, client, router.Client())
+	ctx := context.Background()
+	// Пользователь без ключа (роль user) — guest-сервисов нет.
+	if _, err := provider.EnsureChat(ctx, spec()); err != nil {
+		t.Fatal(err)
+	}
+	if fake0 := provider.buildTask("x", spec()); fake0.Spec.Debug {
+		t.Fatal("user without SSH key must not get spec.debug")
+	}
+	// Developer/admin с ключом — есть.
+	dev := spec()
+	dev.SSHPubKey = "ssh-ed25519 AAAA dev@test"
+	if task := provider.buildTask("x", dev); !task.Spec.Debug {
+		t.Fatal("developer with SSH key must get spec.debug")
+	}
+	// Загрузка ключа позже — дрейф specHash (виден пересозданием/предупреждением).
+	if specHash(provider.buildTask("x", spec())) == specHash(provider.buildTask("x", dev)) {
+		t.Fatal("debug flip must change specHash (late key upload = visible drift)")
+	}
+	// Выключенный флаг — нет даже с ключом.
+	cfgOff := testConfig(router.URL)
+	offProvider, _ := NewWithClient(cfgOff, client, router.Client())
+	if task := offProvider.buildTask("x", dev); task.Spec.Debug {
+		t.Fatal("--ax-debug-ssh=0 must keep spec.debug off")
 	}
 }

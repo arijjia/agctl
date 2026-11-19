@@ -19,12 +19,8 @@ type RoleRequest struct {
 // CreateRoleRequest сохраняет заявку пользователя на роль developer и
 // возвращает её ID.
 func (d *DB) CreateRoleRequest(userID int64, motivation string) (int64, error) {
-	res, err := d.Exec(`INSERT INTO role_requests(user_id, motivation) VALUES(?,?)`,
+	return d.insertID(`INSERT INTO role_requests(user_id, motivation) VALUES(?,?)`,
 		userID, motivation)
-	if err != nil {
-		return 0, wrap("create role request", err)
-	}
-	return res.LastInsertId()
 }
 
 // RoleRequestByID выбирает заявку по идентификатору; нет записи → ErrNotFound.

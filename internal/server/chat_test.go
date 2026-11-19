@@ -60,10 +60,10 @@ func TestChatDefaultLLMPersistsAcrossRestarts(t *testing.T) {
 
 	s2, rt2, close2 := build(nil)
 	defer close2()
-	if _, err := s2.ensureChat(505); err != nil {
+	if _, err := s2.ensureChat(505, 0); err != nil {
 		t.Fatal(err)
 	}
-	got := rt2.chatSpecs[s2.chatRuntimeID(505)].Provider
+	got := rt2.chatSpecs[s2.chatRuntimeID(505, 0)].Provider
 	if got.BaseURL != "https://corp.example.invalid/v1" || got.Model != "qwen-3.8-fast" || got.APIKey != "persist-key-1" {
 		t.Fatalf("restored provider = %+v; want persisted corporate provider", got)
 	}
@@ -71,15 +71,15 @@ func TestChatDefaultLLMPersistsAcrossRestarts(t *testing.T) {
 
 func TestEnsureChatIsPerUserAndReusesRuntime(t *testing.T) {
 	e := newTestEnv(t, 3)
-	one, err := e.srv.ensureChat(101)
+	one, err := e.srv.ensureChat(101, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := e.srv.ensureChat(101)
+	again, err := e.srv.ensureChat(101, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	two, err := e.srv.ensureChat(202)
+	two, err := e.srv.ensureChat(202, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,13 +95,13 @@ func TestEnsureChatIsPerUserAndReusesRuntime(t *testing.T) {
 		t.Fatalf("users share persistent DSH_HOME: %s", home1)
 	}
 	otherDeployment := &Server{cfg: Config{Home: t.TempDir()}}
-	if e.srv.chatRuntimeID(101) == otherDeployment.chatRuntimeID(101) {
+	if e.srv.chatRuntimeID(101, 0) == otherDeployment.chatRuntimeID(101, 0) {
 		t.Fatal("separate agctl homes must not collide in runtime ids")
 	}
 	if _, err := os.Stat(filepath.Join(home1, "profiles", "web", "package.json")); err != nil {
 		t.Fatalf("user volume not seeded: %v", err)
 	}
-	if e.rt.chatStarts[e.srv.chatRuntimeID(101)] != 1 || e.rt.chatStarts[e.srv.chatRuntimeID(202)] != 1 {
+	if e.rt.chatStarts[e.srv.chatRuntimeID(101, 0)] != 1 || e.rt.chatStarts[e.srv.chatRuntimeID(202, 0)] != 1 {
 		t.Fatalf("chat start counts: %+v", e.rt.chatStarts)
 	}
 }
@@ -109,7 +109,7 @@ func TestEnsureChatIsPerUserAndReusesRuntime(t *testing.T) {
 func TestReaperStopsIdleChatButKeepsPersistentVolume(t *testing.T) {
 	e := newTestEnv(t, 3)
 	e.srv.cfg.ChatTTL = time.Second
-	chat, err := e.srv.ensureChat(303)
+	chat, err := e.srv.ensureChat(303, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestReaperStopsIdleChatButKeepsPersistentVolume(t *testing.T) {
 	home, work := filepath.Join(base, "dsh-home"), filepath.Join(base, "work")
 	chat.lastSeen = time.Now().Add(-2 * time.Second)
 	e.srv.reapIdleChats()
-	if e.srv.chats[303] != nil {
+	if e.srv.chats[chatKey{303, 0}] != nil {
 		t.Fatal("idle runtime remains registered")
 	}
 	if e.rt.chatStops[chat.handle.RuntimeID] != 1 {
@@ -137,7 +137,7 @@ func TestReaperExtendsLeaseForActiveSSHSession(t *testing.T) {
 	if err := e.db.SettingSet("dev-ssh-pubkey-u1", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfDB4Nvu/3y+9tkkL4Z76eLpfEL65KBaWrWtApCmP21 test@host"); err != nil {
 		t.Fatal(err)
 	}
-	chat, err := e.srv.ensureChat(1)
+	chat, err := e.srv.ensureChat(1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestReaperExtendsLeaseForActiveSSHSession(t *testing.T) {
 	e.rt.sshActive[chat.handle.RuntimeID] = true
 	chat.lastSeen = time.Now().Add(-2 * time.Second)
 	e.srv.reapIdleChats()
-	if e.srv.chats[1] != chat {
+	if e.srv.chats[chatKey{1, 0}] != chat {
 		t.Fatal("runtime with active SSH session was evicted")
 	}
 	if got := e.rt.chatStops[chat.handle.RuntimeID]; got != 0 {
@@ -161,7 +161,7 @@ func TestReaperExtendsLeaseForActiveSSHSession(t *testing.T) {
 	e.rt.sshActive[chat.handle.RuntimeID] = false
 	chat.lastSeen = time.Now().Add(-2 * time.Second)
 	e.srv.reapIdleChats()
-	if e.srv.chats[1] != nil || e.rt.chatStops[chat.handle.RuntimeID] != 1 {
+	if e.srv.chats[chatKey{1, 0}] != nil || e.rt.chatStops[chat.handle.RuntimeID] != 1 {
 		t.Fatal("runtime without SSH activity should sleep after TTL")
 	}
 }
@@ -172,10 +172,10 @@ func TestChatUsesPlatformDefaultProviderWhenNoPersonalSecret(t *testing.T) {
 		BaseURL: "https://llm.example.invalid/v1", Model: "qwen-3.8-fast",
 		Models: []string{"qwen-3.8-fast", "qwen-3.8-27b"}, APIKey: "platform-key-xyz",
 	}
-	if _, err := e.srv.ensureChat(606); err != nil {
+	if _, err := e.srv.ensureChat(606, 0); err != nil {
 		t.Fatal(err)
 	}
-	got := e.rt.chatSpecs[e.srv.chatRuntimeID(606)].Provider
+	got := e.rt.chatSpecs[e.srv.chatRuntimeID(606, 0)].Provider
 	if got.BaseURL != e.srv.cfg.DefaultLLM.BaseURL || got.APIKey != "platform-key-xyz" || len(got.Models) != 2 {
 		t.Fatalf("chat provider = %+v, want platform default", got)
 	}
@@ -198,10 +198,10 @@ func TestPersonalSecretOverridesPlatformDefault(t *testing.T) {
 	if err := e.srv.db.SecretUpsert(uid, "https://personal.example.invalid/v1", "my-model", []string{"my-model"}, cipher); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.srv.ensureChat(uid); err != nil {
+	if _, err := e.srv.ensureChat(uid, 0); err != nil {
 		t.Fatal(err)
 	}
-	got := e.rt.chatSpecs[e.srv.chatRuntimeID(uid)].Provider
+	got := e.rt.chatSpecs[e.srv.chatRuntimeID(uid, 0)].Provider
 	if got.BaseURL != "https://personal.example.invalid/v1" || got.APIKey != "personal-key" || got.Model != "my-model" {
 		t.Fatalf("chat provider = %+v, want personal secret to win", got)
 	}
@@ -217,7 +217,7 @@ func TestChatEnsureRefreshesProviderOnRestartedRuntimeHome(t *testing.T) {
 	e.srv.cfg.DefaultLLM = provision.Provider{
 		BaseURL: "https://corp.example.invalid/v1", Model: "qwen-3.8-fast", APIKey: "corp-key",
 	}
-	if _, err := e.srv.ensureChat(707); err != nil {
+	if _, err := e.srv.ensureChat(707, 0); err != nil {
 		t.Fatal(err)
 	}
 	creds, err := os.ReadFile(filepath.Join(home, ".credentials.yaml"))
@@ -231,7 +231,7 @@ func TestChatEnsureRefreshesProviderOnRestartedRuntimeHome(t *testing.T) {
 
 func TestChatTokenRefreshesAfterPodOrContainerRestart(t *testing.T) {
 	e := newTestEnv(t, 3)
-	chat, err := e.srv.ensureChat(505)
+	chat, err := e.srv.ensureChat(505, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,14 +247,14 @@ func TestChatTokenRefreshesAfterPodOrContainerRestart(t *testing.T) {
 func TestReaperDoesNotStopActiveChat(t *testing.T) {
 	e := newTestEnv(t, 3)
 	e.srv.cfg.ChatTTL = time.Second
-	chat, err := e.srv.ensureChat(404)
+	chat, err := e.srv.ensureChat(404, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	chat.lastSeen = time.Now().Add(-time.Hour)
 	chat.active = 1
 	e.srv.reapIdleChats()
-	if e.srv.chats[404] == nil || e.rt.chatStops[chat.handle.RuntimeID] != 0 {
+	if e.srv.chats[chatKey{404, 0}] == nil || e.rt.chatStops[chat.handle.RuntimeID] != 0 {
 		t.Fatal("reaper stopped an active chat request")
 	}
 }
@@ -293,7 +293,7 @@ func TestChatProxyRecreatesRuntimeAfterDowntime(t *testing.T) {
 	e.register(user, "bob", "secret2")
 	uid := int64(2) // второй зарегистрированный пользователь в чистой test-db
 
-	chat, err := e.srv.ensureChat(uid)
+	chat, err := e.srv.ensureChat(uid, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestChatProxyRecreatesRuntimeAfterDowntime(t *testing.T) {
 		t.Fatalf("grace period must not recreate runtime, starts = %d", e.rt.chatStarts[chat.handle.RuntimeID])
 	}
 	e.srv.chatMu.Lock()
-	marked := !e.srv.chats[uid].downSince.IsZero()
+	marked := !e.srv.chats[chatKey{uid, 0}].downSince.IsZero()
 	e.srv.chatMu.Unlock()
 	if !marked {
 		t.Fatal("first dial failure did not mark runtime down")
@@ -322,7 +322,7 @@ func TestChatProxyRecreatesRuntimeAfterDowntime(t *testing.T) {
 	// страницу прогрева — как браузер по мета-refresh), а запрос после
 	// вытеснения пересоздаёт рантайм на живом endpoint.
 	e.srv.chatMu.Lock()
-	e.srv.chats[uid].downSince = time.Now().Add(-2 * chatDownGrace)
+	e.srv.chats[chatKey{uid, 0}].downSince = time.Now().Add(-2 * chatDownGrace)
 	e.srv.chatMu.Unlock()
 	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, "chat-is-alive")
@@ -335,7 +335,7 @@ func TestChatProxyRecreatesRuntimeAfterDowntime(t *testing.T) {
 		t.Fatalf("eviction request: code=%d body=%q", code, body)
 	}
 	e.srv.chatMu.Lock()
-	evicted := e.srv.chats[uid] == nil
+	evicted := e.srv.chats[chatKey{uid, 0}] == nil
 	e.srv.chatMu.Unlock()
 	if !evicted {
 		t.Fatal("runtime older than grace was not evicted")
@@ -350,7 +350,7 @@ func TestChatProxyRecreatesRuntimeAfterDowntime(t *testing.T) {
 		t.Fatalf("runtime must be recreated exactly once more, starts = %d", e.rt.chatStarts[chat.handle.RuntimeID])
 	}
 	e.srv.chatMu.Lock()
-	healthy := e.srv.chats[uid] != nil && e.srv.chats[uid].downSince.IsZero()
+	healthy := e.srv.chats[chatKey{uid, 0}] != nil && e.srv.chats[chatKey{uid, 0}].downSince.IsZero()
 	e.srv.chatMu.Unlock()
 	if !healthy {
 		t.Fatal("recreated runtime must be cached and healthy")
@@ -363,12 +363,12 @@ func TestChatProxyRecreatesRuntimeAfterDowntime(t *testing.T) {
 func TestChatContainerNamePrefix(t *testing.T) {
 	srv := &Server{cfg: Config{Home: t.TempDir()}}
 	prefix := chatContainerNamePrefix(srv.cfg.Home)
-	name := "agctl-" + srv.chatRuntimeID(7)
+	name := "agctl-" + srv.chatRuntimeID(7, 0)
 	if !strings.HasPrefix(name, prefix) {
 		t.Fatalf("container name %q does not carry sweep prefix %q", name, prefix)
 	}
 	other := &Server{cfg: Config{Home: t.TempDir()}}
-	if other.chatRuntimeID(7) == srv.chatRuntimeID(7) {
+	if other.chatRuntimeID(7, 0) == srv.chatRuntimeID(7, 0) {
 		t.Fatal("separate homes must not share runtime ids")
 	}
 	if chatContainerNamePrefix(other.cfg.Home) == prefix {

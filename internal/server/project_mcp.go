@@ -32,8 +32,9 @@ func mcpSecretSettingKey(userID int64, project string) string {
 }
 
 // projectDshHome — DSH_HOME владельца воркспейса (персональный том контейнера).
+// Дев-воркспейсы не слотируются — основной том (слот 0).
 func (s *Server) projectDshHome(userID int64) string {
-	return filepath.Join(s.cfg.Home, "chats", chatStorageID(userID), "dsh-home")
+	return filepath.Join(s.cfg.Home, "chats", chatStorageID(userID, 0), "dsh-home")
 }
 
 // handleProjectMcpGet — GET /api/projects/{name}/mcp: каталог платформы +

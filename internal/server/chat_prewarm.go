@@ -81,13 +81,13 @@ func (s *Server) prewarmOnce(extra []int64) {
 			return
 		}
 		s.chatMu.Lock()
-		_, warm := s.chats[uid]
+		_, warm := s.chats[chatKey{uid, 0}] // prewarm греет только основной слот
 		s.chatMu.Unlock()
 		if warm {
 			continue
 		}
 		started := time.Now()
-		if _, err := s.ensureChat(uid); err != nil {
+		if _, err := s.ensureChat(uid, 0); err != nil {
 			log.Printf("[chat-prewarm] пользователь %d: подогрев не удался: %v", uid, err)
 			continue
 		}

@@ -91,7 +91,7 @@ func (s *Server) initLocal() error {
 	provision.SetLocalWorkRoot(s.cfg.Home, id, lm.WorkDir)
 	// Источник правды об образе — dev.yaml (его меняют и лаунчер, и CLI).
 	if lm.Hooks != nil {
-		if err := s.db.SettingSet(chatImageSettingKey(id), lm.Hooks.CurrentImage()); err != nil {
+		if err := s.db.SettingSet(chatImageSettingKey(id, 0), lm.Hooks.CurrentImage()); err != nil {
 			return err
 		}
 	}
@@ -168,7 +168,7 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	go func() {
-		if _, err := s.ensureChat(s.local.ownerID); err != nil {
+		if _, err := s.ensureChat(s.local.ownerID, 0); err != nil {
 			log.Printf("[local] старт рабочего места: %v", err)
 		}
 	}()
@@ -177,7 +177,7 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLocalStatus(w http.ResponseWriter, r *http.Request) {
 	s.chatMu.Lock()
-	rt := s.chats[s.local.ownerID]
+	rt := s.chats[chatKey{uid: s.local.ownerID, slot: 0}]
 	s.chatMu.Unlock()
 	runtime := map[string]any{"state": "sleeping"}
 	if rt != nil {

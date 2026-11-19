@@ -114,7 +114,7 @@ func newLocalUIEnv(t *testing.T) (*testEnv, *fakeHooks) {
 	env, lm := newLocalEnv(t)
 	lm.Hooks = h
 	// initLocal уже отработал без хуков — образ-источник правды задаём как при старте
-	if err := env.srv.db.SettingSet(chatImageSettingKey(env.srv.local.ownerID), h.CurrentImage()); err != nil {
+	if err := env.srv.db.SettingSet(chatImageSettingKey(env.srv.local.ownerID, 0), h.CurrentImage()); err != nil {
 		t.Fatal(err)
 	}
 	return env, h
@@ -219,7 +219,7 @@ func TestLocalLauncherBuildsMissingImageThenStarts(t *testing.T) {
 	if !strings.Contains(strings.Join(snap["log"].([]string), "\n"), "рабочее место запущено") {
 		t.Fatalf("лог задачи: %v", snap["log"])
 	}
-	spec := env.rt.chatSpecs[env.srv.chatRuntimeID(env.srv.local.ownerID)]
+	spec := env.rt.chatSpecs[env.srv.chatRuntimeID(env.srv.local.ownerID, 0)]
 	if spec.Image != "agctl-dsh-org-1c:0.2.2" {
 		t.Fatalf("рабочее место не на выбранном образе: %q", spec.Image)
 	}
@@ -235,7 +235,7 @@ func TestLocalLauncherBuildsMissingImageThenStarts(t *testing.T) {
 	if snap := env.srv.local.task.snapshot(); snap["restartNeeded"] != false {
 		t.Fatalf("restartNeeded не снят: %v", snap)
 	}
-	spec = env.rt.chatSpecs[env.srv.chatRuntimeID(env.srv.local.ownerID)]
+	spec = env.rt.chatSpecs[env.srv.chatRuntimeID(env.srv.local.ownerID, 0)]
 	if !strings.Contains(strings.Join(spec.DevEnv, ","), "JIRA_API_TOKEN=jira-tok") {
 		t.Fatalf("новый доступ не попал в контейнер: %v", spec.DevEnv)
 	}
