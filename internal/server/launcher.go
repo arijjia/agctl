@@ -58,9 +58,14 @@ func (s *Server) activeChatSlot(userID int64, role string) int {
 }
 
 // slotLimit — лимит слотов developer'а на установку (--launcher-slots-max).
+// Локальный режим по умолчанию — потолок maxChatSlots: машина владельца, все
+// слоты — его рабочие места (основное + дополнительные лаунчера v2).
 func (s *Server) slotLimit() int {
 	if s.cfg.LauncherSlotsMax > 0 && s.cfg.LauncherSlotsMax <= maxChatSlots {
 		return s.cfg.LauncherSlotsMax
+	}
+	if s.isLocal() {
+		return maxChatSlots
 	}
 	return 3
 }

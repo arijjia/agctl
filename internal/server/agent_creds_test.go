@@ -10,7 +10,7 @@ import (
 func TestAgentCredentialsFiles(t *testing.T) {
 	env := newTestEnv(t, 1)
 	s := env.srv
-	extra := s.writeAgentCredentials(7, []string{
+	extra := s.writeAgentCredentials(userKey(7), []string{
 		"GITLAB_URL=https://gitlab.example.org", "GITLAB_TOKEN=glpat-x'y",
 		"JIRA_URL=https://jira.example.org", "AGCTL_BRIDGE_URL=http://host.docker.internal:8930", "AGCTL_BRIDGE_TOKEN=br",
 	})
@@ -59,7 +59,7 @@ func TestAgentCredentialsFiles(t *testing.T) {
 		t.Fatalf("скилл называет доступы, но не содержит значений: %s", skill)
 	}
 	// доступ отозван — файлы убираются
-	if extra := s.writeAgentCredentials(7, nil); extra != nil {
+	if extra := s.writeAgentCredentials(userKey(7), nil); extra != nil {
 		t.Fatal("без env — без указателей")
 	}
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {

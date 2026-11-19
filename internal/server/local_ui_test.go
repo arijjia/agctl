@@ -256,11 +256,12 @@ func TestLocalLauncherWorkDir(t *testing.T) {
 	if got := env.srv.localWorkDir(); got != want {
 		t.Fatalf("папка проектов: %q, ждали %q", got, want)
 	}
-	if _, extras := env.srv.localChatExtras(env.srv.local.ownerID); !containsStr(extras, "AGCTL_LOCAL_MODE=1") {
-		t.Fatalf("в env рабочего места нет AGCTL_LOCAL_MODE=1: %v", extras)
+	ex, _, _ := env.srv.localChatExtras(userKey(env.srv.local.ownerID))
+	if !containsStr(ex.Env, "AGCTL_LOCAL_MODE=1") {
+		t.Fatalf("в env рабочего места нет AGCTL_LOCAL_MODE=1: %v", ex.Env)
 	}
-	if wd, _ := env.srv.localChatExtras(env.srv.local.ownerID); wd != want {
-		t.Fatalf("маунт /workspace: %q, ждали %q", wd, want)
+	if ex.WorkDir != want {
+		t.Fatalf("маунт /workspace: %q, ждали %q", ex.WorkDir, want)
 	}
 	// несуществующая папка и корень — отказ, текущая не меняется
 	for _, bad := range []string{filepath.Join(dir, "нет"), "/"} {

@@ -33,8 +33,12 @@ func mcpSecretSettingKey(userID int64, project string) string {
 
 // projectDshHome — DSH_HOME владельца воркспейса (персональный том контейнера).
 // Дев-воркспейсы не слотируются — основной том (слот 0).
-func (s *Server) projectDshHome(userID int64) string {
-	return filepath.Join(s.cfg.Home, "chats", chatStorageID(userID, 0), "dsh-home")
+func (s *Server) projectDshHome(userID int64) string { return s.dshHomeFor(userKey(userID)) }
+
+// dshHomeFor — DSH_HOME слота: у каждого рабочего места свой (сессии,
+// скиллы и настройки dsh разных мест не смешиваются).
+func (s *Server) dshHomeFor(key chatKey) string {
+	return filepath.Join(s.cfg.Home, "chats", chatStorageID(key.uid, key.slot), "dsh-home")
 }
 
 // handleProjectMcpGet — GET /api/projects/{name}/mcp: каталог платформы +
@@ -179,8 +183,8 @@ func joinIDs(ids []string) string {
 func (s *Server) containerEnvMap(userID int64) map[string]string {
 	out := map[string]string{}
 	pairs := append([]string(nil), s.developerEnv(userID)...)
-	if _, env := s.localChatExtras(userID); len(env) > 0 {
-		pairs = append(pairs, env...)
+	if ex, ok, _ := s.localChatExtras(userKey(userID)); ok {
+		pairs = append(pairs, ex.Env...)
 	}
 	for _, kv := range pairs {
 		if k, v, ok := strings.Cut(kv, "="); ok {

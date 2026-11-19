@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type User } from "./api";
 import AdminPanel from "./AdminPanel";
 import Launcher from "./Launcher";
-import LocalLauncher from "./LocalLauncher";
+import LocalLauncher, { embedTarget } from "./LocalLauncher";
 import { local, type LocalUI } from "./api";
 
 // Фронт agctl — только страница входа/регистрации. Всё остальное (чат,
@@ -18,6 +18,10 @@ const brandName = brand.name || "agctl";
 const brandSubtitle = brand.subtitle
   ? `${brandName}: ${brand.subtitle}`
   : "вход в личное рабочее место";
+
+// Локальный режим (agctl dev): сервер помечает страницу флагом
+// __AGCTL_LOCAL__ (internal/server/htmlscan.go, injectLocalModeBoot).
+const isLocal = Boolean((window as any).__AGCTL_LOCAL__);
 
 function Login({ onDone }: { onDone: () => void }) {
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -72,6 +76,26 @@ function Login({ onDone }: { onDone: () => void }) {
   );
 }
 
+// Локальный режим: логина и регистраций нет — владелец входит по ссылке из
+// CLI. Серверную форму логина здесь показывать нельзя: учётных паролей в
+// локальном режиме не существует, и поле ввода вводит в заблуждение.
+function LocalGate() {
+  return (
+    <div className="center-wrap">
+      <div className="card login-card">
+        <h1>{brandName}</h1>
+        <p className="muted">Локальный режим на этой машине. Вход — по ссылке из CLI:</p>
+        <pre className="mono small">agctl dev open</pre>
+        <p className="muted small">
+          Если дом нестандартный, задайте AGCTL_DEV_HOME. Ссылка живёт до
+          перезапуска <span className="mono">agctl dev</span>; команда сама
+          откроет браузер.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [checking, setChecking] = useState(true);
   const [me, setMe] = useState<User | null>(null);
@@ -116,7 +140,7 @@ export default function App() {
   }
   if (me) {
     if (me.role === "admin") return <AdminPanel user={me} />;
-    return localUI ? <LocalLauncher user={me} initial={localUI} /> : <Launcher user={me} />;
+    return localUI ? <LocalLauncher user={me} initial={localUI} embed={embedTarget()} /> : <Launcher user={me} />;
   }
-  return <Login onDone={() => window.location.replace("/")} />;
+  return isLocal ? <LocalGate /> : <Login onDone={() => window.location.replace("/")} />;
 }
