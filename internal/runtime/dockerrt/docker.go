@@ -351,6 +351,9 @@ type StartResult struct {
 // StartOpts — параметры публикации контейнера: порт dsh web и, опционально,
 // SSH-канал (ключ передаётся env в контейнер, порт 2222 публикуется на loopback).
 type StartOpts struct {
+	// ExtraBinds — доп. bind-маунты "host:/workspace/<имя>" (несколько папок
+	// рабочего места локального режима).
+	ExtraBinds  []string
 	HostPort    int
 	SSHPubKey   string   // пусто = sshd не поднимаем
 	SSHHostPort int      // 0 = не публиковать (осмысленно только с SSHPubKey)
@@ -427,10 +430,10 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 			},
 		},
 		HostConfig: &container.HostConfig{
-			Binds: []string{
+			Binds: append([]string{
 				ws.Work + ":/workspace",
 				ws.DshHome + ":/home/dsh",
-			},
+			}, opts.ExtraBinds...),
 			// host-gateway: из контейнера должен резолвиться
 			// host.docker.internal (корпоративный LLM-шлюз на хосте).
 			ExtraHosts:   extraHosts,

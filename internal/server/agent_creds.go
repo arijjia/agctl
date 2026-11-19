@@ -43,8 +43,8 @@ func agentCredsEnv(hasGit bool) []string {
 // writeAgentCredentials пишет файлы доступов в dsh-home пользователя по env
 // рабочего места (KEY=VALUE). Возвращает доп. переменные контейнера.
 // Пустой env — файлов нет, старые удаляются (доступ отозван).
-func (s *Server) writeAgentCredentials(userID int64, env []string) []string {
-	dir := filepath.Join(s.projectDshHome(userID), agentCredsDir)
+func (s *Server) writeAgentCredentials(key chatKey, env []string) []string {
+	dir := filepath.Join(s.dshHomeFor(key), agentCredsDir)
 	vals := map[string]string{}
 	for _, kv := range env {
 		if k, v, ok := strings.Cut(kv, "="); ok && v != "" {
@@ -56,13 +56,13 @@ func (s *Server) writeAgentCredentials(userID int64, env []string) []string {
 		return nil
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		log.Printf("[creds] u%d: %v", userID, err)
+		log.Printf("[creds] %s: %v", key, err)
 		return nil
 	}
 	_ = os.Chmod(dir, 0o700)
 	write := func(name, body string) {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
-			log.Printf("[creds] u%d %s: %v", userID, name, err)
+			log.Printf("[creds] %s %s: %v", key, name, err)
 		}
 	}
 	names := make([]string, 0, len(vals))
@@ -94,18 +94,18 @@ func (s *Server) writeAgentCredentials(userID int64, env []string) []string {
 		if err := os.MkdirAll(filepath.Join(dir, "glab"), 0o700); err == nil {
 			glab := fmt.Sprintf("hosts:\n    %s:\n        token: %s\n        api_host: %s\n        git_protocol: %s\n        api_protocol: %s\n", host, yamlQuote(tok), host, scheme, scheme)
 			if err := os.WriteFile(filepath.Join(dir, "glab", "config.yml"), []byte(glab), 0o600); err != nil {
-				log.Printf("[creds] u%d glab: %v", userID, err)
+				log.Printf("[creds] %s glab: %v", key, err)
 			}
 		}
 	}
-	s.writeAccessSkill(userID, vals, hasGit)
+	s.writeAccessSkill(key, vals, hasGit)
 	return agentCredsEnv(hasGit)
 }
 
 // writeAccessSkill — скилл агента: какие доступы настроены и как ими
 // пользоваться (значения в скилл не попадают — только имена).
-func (s *Server) writeAccessSkill(userID int64, vals map[string]string, hasGit bool) {
-	dir := filepath.Join(s.projectDshHome(userID), "skills", "agctl-workspace-access")
+func (s *Server) writeAccessSkill(key chatKey, vals map[string]string, hasGit bool) {
+	dir := filepath.Join(s.dshHomeFor(key), "skills", "agctl-workspace-access")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return
 	}

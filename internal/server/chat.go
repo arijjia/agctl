@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -93,10 +95,19 @@ func chatStorageID(userID int64, slot int) string {
 	return "u" + strconv.FormatInt(userID, 10) + "s" + strconv.Itoa(slot)
 }
 
-// chatKey — ключ рантайма в кэше шлюза: пользователь + слот.
+// chatKey — ключ рантайма в кэше шлюза: пользователь + слот. Слот — это и
+// есть рабочее место: на сервере — слот лаунчера developer'а, в локальном
+// режиме — рабочее место лаунчера v2 (имя и папки хоста — в таблице places).
 type chatKey struct {
 	uid  int64
 	slot int
+}
+
+// userKey — ключ основного рабочего места (слот 0) пользователя.
+func userKey(userID int64) chatKey { return chatKey{uid: userID} }
+
+func (k chatKey) String() string {
+	return fmt.Sprintf("пользователь %d слот %d", k.uid, k.slot)
 }
 
 // maxChatSlots — жёсткий потолок слотов (санитизация UI-ввода); рабочий
@@ -656,14 +667,17 @@ func (s *Server) ensureChat(userID int64, slot int) (*chatRuntime, error) {
 		// роли developer/admin (разработка доменных скриптов).
 		DevEnv: s.developerEnv(userID),
 	}
-	if workDir, env := s.localChatExtras(userID); workDir != "" {
-		spec.WorkDir = workDir
-		spec.DevEnv = append(spec.DevEnv, env...)
+	if ex, ok, err := s.localChatExtras(key); err != nil {
+		return nil, err
+	} else if ok {
+		spec.WorkDir = ex.WorkDir
+		spec.Mounts = ex.Mounts
+		spec.DevEnv = append(spec.DevEnv, ex.Env...)
 		spec.Local = true
 	}
 	// Доступы для команд агента — файлами в dsh-home (bash dsh вычищает
 	// *TOKEN*/*KEY* из env), инструменты находят их по путям из env.
-	spec.DevEnv = append(spec.DevEnv, s.writeAgentCredentials(userID, spec.DevEnv)...)
+	spec.DevEnv = append(spec.DevEnv, s.writeAgentCredentials(key, spec.DevEnv)...)
 	handle, err := s.chatProvider.EnsureChat(ctx, spec)
 	if err != nil {
 		return nil, err
@@ -671,7 +685,7 @@ func (s *Server) ensureChat(userID int64, slot int) (*chatRuntime, error) {
 	if handle.RuntimeID == "" || handle.Endpoint == "" {
 		return nil, fmt.Errorf("chat runtime provider returned an incomplete handle")
 	}
-	s.writeLocalBridgeSkill(userID)
+	s.writeLocalBridgeSkill(key)
 	rt := &chatRuntime{handle: handle, lastSeen: time.Now(), image: spec.Image}
 	s.chatMu.Lock()
 	s.chats[chatKey{userID, slot}] = rt
@@ -872,10 +886,13 @@ func (s *Server) evictChat(userID int64, slot int, rt *chatRuntime) {
 }
 
 // writeWarmChatPage — страница авто-повтора, пока личный чат прогревается.
-func writeWarmChatPage(w http.ResponseWriter) {
+func writeWarmChatPage(w http.ResponseWriter) { writeWarmChatPageAt(w, "/chat") }
+
+// writeWarmChatPageAt — страница ожидания рабочего места под префиксом.
+func writeWarmChatPageAt(w http.ResponseWriter, prefix string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusServiceUnavailable)
-	_, _ = fmt.Fprintf(w, `<!doctype html><meta charset="utf-8"><title>agctl: прогрев</title><meta http-equiv="refresh" content="2"><p style="font-family:system-ui;padding:2rem">Личный чат запускается… <a href="/chat/">Повторить сейчас</a></p>`)
+	_, _ = io.WriteString(w, `<!doctype html><meta charset="utf-8"><title>agctl: прогрев</title><meta http-equiv="refresh" content="2"><p style="font-family:system-ui;padding:2rem">Личный чат запускается… <a href="`+html.EscapeString(prefix)+`/">Повторить сейчас</a></p>`)
 }
 
 // rootEntry — корень платформы: залогинен → по роли (admin → админ-панель,
@@ -904,6 +921,10 @@ func (s *Server) rootEntry(w http.ResponseWriter, r *http.Request, webFS fs.FS) 
 	}
 	// Бренд до загрузки SPA: window.__AGCTL_BRAND__ + <title> профиля.
 	index = injectBrandBoot(index, s.brand)
+	// Локальный режим: вместо серверной формы логина — вход по ссылке CLI.
+	if s.isLocal() {
+		index = injectLocalModeBoot(index)
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write(index)
@@ -914,12 +935,17 @@ func (s *Server) rootEntry(w http.ResponseWriter, r *http.Request, webFS fs.FS) 
 // Слот: роль user — всегда основной (0), developer — активный слот лаунчера
 // (карточка developer-multi-containers).
 func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) {
-	slot := s.activeChatSlot(id.ID, id.Role)
+	s.chatProxyAt(w, r, id, s.activeChatSlot(id.ID, id.Role), "/chat")
+}
+
+// chatProxyAt — шлюз к слоту slot под префиксом prefix: "/chat" — активный
+// слот, "/p/<место>" — рабочие места лаунчера в локальном режиме.
+func (s *Server) chatProxyAt(w http.ResponseWriter, r *http.Request, id identity, slot int, prefix string) {
 	rt, err := s.ensureChat(id.ID, slot)
 	if err != nil {
 		log.Printf("[chat] ensure user %d slot %d: %v", id.ID, slot, err)
 		if strings.Contains(r.Header.Get("Accept"), "text/html") {
-			writeWarmChatPage(w)
+			writeWarmChatPageAt(w, prefix)
 			return
 		}
 		writeErr(w, http.StatusServiceUnavailable, "чат ещё прогревается, обнови страницу через пару секунд")
@@ -961,7 +987,6 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 		transport = proxyTransport.Clone()
 		transport.TLSClientConfig = rt.handle.TLSConfig.Clone()
 	}
-	const prefix = "/chat"
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
@@ -1033,7 +1058,7 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 				s.evictChat(id.ID, slot, rt)
 			}
 			if strings.Contains(r.Header.Get("Accept"), "text/html") {
-				writeWarmChatPage(w)
+				writeWarmChatPageAt(w, prefix)
 				return
 			}
 			writeErr(w, http.StatusBadGateway, "чат недоступен")

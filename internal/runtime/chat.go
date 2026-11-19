@@ -42,6 +42,17 @@ type ChatSpec struct {
 	// Local — локальный режим agctl dev: без плагина «Кабинет», реестр
 	// воркспейсов dsh сверяется с содержимым /workspace. Только Docker-бэкенд.
 	Local bool
+	// Mounts — несколько папок хоста рабочего места: каждая монтируется как
+	// /workspace/<Name>, а сам /workspace — служебный каталог agctl (в папках
+	// пользователя точки монтирования не создаются). Взаимоисключимо с
+	// WorkDir. Только Docker-бэкенд.
+	Mounts []Mount
+}
+
+// Mount — папка хоста, подключаемая в /workspace/<Name> рабочего места.
+type Mount struct {
+	Host string // абсолютный путь на хосте
+	Name string // имя подкаталога в /workspace: [a-z0-9][a-z0-9._-]{0,63}
 }
 
 // ChatHandle describes one running runtime generation. Endpoint is private to

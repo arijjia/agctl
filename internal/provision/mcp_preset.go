@@ -87,7 +87,19 @@ type mcpCordisRow struct {
 // (истина — файл, повторный вызов идемпотентен). secretEnv несёт значения
 // секретных env-переменных выбранного состава. Пустой выбор снимает пресет.
 func EnsureWorkspaceMcpPreset(dshHome, project string, specs []McpServerSpec, secretEnv map[string]string) error {
-	dir := WorkspaceMcpPresetDir(dshHome, project)
+	return EnsureMcpPreset(dshHome, WorkspaceMcpPresetID(project), "agctl-ws: "+project,
+		fmt.Sprintf("MCP-набор воркспейса %q из консоли agctl — не редактируйте вручную, выбор в консоли перезаписывает файл.", project),
+		specs, secretEnv)
+}
+
+// EnsureMcpPreset — общий писатель agctl-пресетов dsh (managed): пресет
+// .agent-presets/<presetID>/agent.cordis.yml с выбранными MCP-рядами.
+// metaName — метка источника в preset.yml (история: «agctl-ws: <проект>» у
+// консоли воркспейса, «agctl: <id>» у пресетов лаунчера). Префикс «agctl-»
+// в presetID — марка управляемого пресета: ручные пресеты dsh agctl не
+// трогает никогда. Идемпотентно; пустой выбор снимает пресет.
+func EnsureMcpPreset(dshHome, presetID, metaName, description string, specs []McpServerSpec, secretEnv map[string]string) error {
+	dir := filepath.Join(dshHome, ".agent-presets", presetID)
 	if len(specs) == 0 {
 		// Снятие пресета: при повторном PUT с пустым выбором сессии воркспейса
 		// больше не должны видеть MCP-ряды. Ошибки отсутствия каталога — норма.
@@ -137,9 +149,18 @@ func EnsureWorkspaceMcpPreset(dshHome, project string, specs []McpServerSpec, se
 	if err := os.WriteFile(filepath.Join(dir, "agent.cordis.yml"), composition, 0o600); err != nil {
 		return fmt.Errorf("mcp preset write: %w", err)
 	}
-	meta := fmt.Sprintf("name: agctl-ws: %s\ndescription: MCP-набор воркспейса %q из консоли agctl — не редактируйте вручную, выбор в консоли перезаписывает файл.\n", project, project)
+	meta := fmt.Sprintf("name: %s\ndescription: %s\n", metaName, description)
 	if err := os.WriteFile(filepath.Join(dir, "preset.yml"), []byte(meta), 0o644); err != nil {
 		return fmt.Errorf("mcp preset metadata: %w", err)
+	}
+	return nil
+}
+
+// RemoveMcpPreset — снять agctl-пресет из dsh-home (удаление пресета в
+// лаунчере). Отсутствие каталога — норма (идемпотентно).
+func RemoveMcpPreset(dshHome, presetID string) error {
+	if err := os.RemoveAll(filepath.Join(dshHome, ".agent-presets", presetID)); err != nil {
+		return fmt.Errorf("mcp preset remove: %w", err)
 	}
 	return nil
 }

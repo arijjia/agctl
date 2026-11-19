@@ -21,3 +21,17 @@ func TestContainerEnvHasNoLLMKeys(t *testing.T) {
 		}
 	}
 }
+
+// Имя подкаталога /workspace для папки хоста: без путей и ведущих точек.
+func TestValidMountName(t *testing.T) {
+	for _, ok := range []string{"app", "lib-2", "a.b_c"} {
+		if !validMountName(ok) {
+			t.Errorf("%q должно быть допустимо", ok)
+		}
+	}
+	for _, bad := range []string{"", ".", "..", "../x", "a/b", "-x", ".hidden", "Upper", strings.Repeat("a", 65)} {
+		if validMountName(bad) {
+			t.Errorf("%q должно быть отклонено", bad)
+		}
+	}
+}
