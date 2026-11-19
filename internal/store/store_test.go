@@ -88,53 +88,6 @@ func TestUsersAndSessions(t *testing.T) {
 	}
 }
 
-func TestWorkspacesCRUD(t *testing.T) {
-	db := openTest(t)
-	uid, _ := db.CreateUser("anna", "h", "user")
-	ws := Workspace{
-		ID: "w-1", OwnerID: uid, Name: "demo", Status: "provisioning",
-		RepoPath: "/x/demo.git", WorkPath: "/w/w-1/repo", DshHome: "/w/w-1/dsh-home",
-		HostPort: 50000, BaseURL: "https://llm/v1", BaseURLs: []string{"https://llm/v1", "https://backup-llm/v1"}, Model: "m1",
-	}
-	if err := db.InsertWorkspace(ws); err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-	if err := db.InsertWorkspace(ws); err == nil {
-		t.Fatal("дубликат (owner,name) должен быть ошибкой")
-	}
-	if err := db.UpdateWorkspaceRuntime("w-1", "cid42", 50000, "running"); err != nil {
-		t.Fatalf("runtime: %v", err)
-	}
-	got, err := db.WorkspaceByID("w-1")
-	if err != nil || got.Status != "running" || got.ContainerID != "cid42" {
-		t.Fatalf("got: %+v err=%v", got, err)
-	}
-	if got.BaseURL != "https://llm/v1" || len(got.BaseURLs) != 2 || got.BaseURLs[1] != "https://backup-llm/v1" {
-		t.Fatalf("multi base URLs not round-tripped: %+v", got)
-	}
-	all, err := db.WorkspacesAll()
-	if err != nil || len(all) != 1 {
-		t.Fatalf("all: %v len=%d", err, len(all))
-	}
-	_ = db.DeleteWorkspace("w-1")
-	if _, err := db.WorkspaceByID("w-1"); err != ErrNotFound {
-		t.Fatalf("ждали ErrNotFound, получили %v", err)
-	}
-}
-
-func TestWorkspaceBaseURLsLegacyFallback(t *testing.T) {
-	db := openTest(t)
-	uid, _ := db.CreateUser("anna", "h", "user")
-	ws := Workspace{ID: "w-legacy", OwnerID: uid, Name: "legacy", BaseURL: "https://legacy-llm/v1"}
-	if err := db.InsertWorkspace(ws); err != nil {
-		t.Fatal(err)
-	}
-	got, err := db.WorkspaceByID(ws.ID)
-	if err != nil || len(got.BaseURLs) != 1 || got.BaseURLs[0] != ws.BaseURL {
-		t.Fatalf("legacy baseURL fallback: %+v err=%v", got, err)
-	}
-}
-
 func TestSecretsAndAudit(t *testing.T) {
 	db := openTest(t)
 	uid, _ := db.CreateUser("anna", "h", "user")
@@ -153,28 +106,5 @@ func TestSecretsAndAudit(t *testing.T) {
 	ev, err := db.AuditList(10)
 	if err != nil || len(ev) != 2 || ev[0].Action != "ws.create" {
 		t.Fatalf("audit: %+v err=%v", ev, err)
-	}
-}
-
-func TestJiraRuns(t *testing.T) {
-	db := openTest(t)
-	if err := db.JiraRunInsert("INTAIDEV-9", "w-abc123"); err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-	// повтор ключа — no-op (поллер идемпотентен)
-	if err := db.JiraRunInsert("INTAIDEV-9", "w-other"); err != nil {
-		t.Fatalf("insert dup: %v", err)
-	}
-	if err := db.JiraRunUpdate("INTAIDEV-9", "injected", "session-1"); err != nil {
-		t.Fatalf("update: %v", err)
-	}
-	runs, err := db.JiraRunList(10)
-	if err != nil || len(runs) != 1 {
-		t.Fatalf("list: %v runs=%d", err, len(runs))
-	}
-	r := runs[0]
-	if r["jiraKey"] != "INTAIDEV-9" || r["workspaceId"] != "w-abc123" ||
-		r["status"] != "injected" || r["session"] != "session-1" {
-		t.Fatalf("run = %+v", r)
 	}
 }

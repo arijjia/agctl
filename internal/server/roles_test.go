@@ -18,11 +18,12 @@ func TestRoleRequestFlow(t *testing.T) {
 	e.register(env2, "bob", "secret2")
 
 	// обычный пользователь не может создать dev-место — нужна роль
+	// v2-эндпоинт воркспейсов удалён (legacy-workspace-code-cleanup)
 	code, body := e.do(env2, "POST", "/api/workspaces", map[string]any{
 		"name": "bob-seat", "baseURL": "https://llm.example/v1", "model": "m1", "apiKey": "sk-test",
 	})
-	if code != http.StatusGone {
-		t.Fatalf("legacy create = %d (%s), want 410", code, body)
+	if code != http.StatusNotFound && code != http.StatusMethodNotAllowed {
+		t.Fatalf("legacy create = %d (%s), want 404/405", code, body)
 	}
 
 	// заявка на роль
@@ -53,8 +54,8 @@ func TestRoleRequestFlow(t *testing.T) {
 
 	// Developer расширяет возможности того же контейнера, но не выдаёт
 	// разрешения создавать дополнительные legacy-контейнеры.
-	if code, _ = e.do(env2, "POST", "/api/workspaces", nil); code != http.StatusGone {
-		t.Fatalf("developer legacy create = %d, want 410", code)
+	if code, _ = e.do(env2, "POST", "/api/workspaces", nil); code != http.StatusNotFound && code != http.StatusMethodNotAllowed {
+		t.Fatalf("developer legacy create = %d, want 404/405", code)
 	}
 
 	// повторное решение по закрытой заявке — конфликт

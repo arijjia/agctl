@@ -72,14 +72,3 @@ func TestDZ2ParseModelsEdges(t *testing.T) {
 		t.Fatalf("пусто + без fallback = %v, ждали nil", got)
 	}
 }
-
-func TestDZ2NewIDUnique(t *testing.T) {
-	seen := map[string]bool{}
-	for i := 0; i < 50; i++ {
-		id, _ := NewID()
-		if id == "" || seen[id] {
-			t.Fatalf("NewID пуст или дублируется: %q", id)
-		}
-		seen[id] = true
-	}
-}

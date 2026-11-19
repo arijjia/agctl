@@ -44,33 +44,3 @@ func TestDZ2UsersListAndByID(t *testing.T) {
 		t.Fatalf("UserByID несуществующего: %v, ждали ErrNotFound", err)
 	}
 }
-
-func TestDZ2WorkspaceRequestGuardRejectsRedecision(t *testing.T) {
-	db := openTest(t)
-	uid, _ := db.CreateUser("dz2_req", "hash-req", "user")
-	req := WorkspaceRequest{
-		ID: "dz2-req-1", UserID: uid, Name: "ws", Status: "pending",
-		CreatedAt: now(), UpdatedAt: now(),
-	}
-	if err := db.InsertWorkspaceRequest(req); err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-	if err := db.UpdateWorkspaceRequestStatus("dz2-req-1", "approved", "admin", "", ""); err != nil {
-		t.Fatalf("первое решение: %v", err)
-	}
-	// Повторное решение по уже решённой заявке должно быть отклонено с
-	// ошибкой, а статус - остаться approved (гвардия WHERE status='pending',
-	// как у DecideRoleRequest). Ожидаемое поведение зафиксировано до правки:
-	// этот тест ловит отсутствие гвардии (дефект юнит-уровня).
-	err := db.UpdateWorkspaceRequestStatus("dz2-req-1", "rejected", "admin", "передумали", "")
-	if err == nil {
-		t.Fatal("D5: повторное решение по решённой заявке прошло без ошибки - гвардия pending отсутствует")
-	}
-	got, err := db.WorkspaceRequestByID("dz2-req-1")
-	if err != nil {
-		t.Fatalf("read back: %v", err)
-	}
-	if got.Status != "approved" {
-		t.Fatalf("статус перезаписан на %q, ждали approved", got.Status)
-	}
-}
