@@ -1131,8 +1131,11 @@ agctl/
 
 CI (`.github/workflows/ci.yml`): `go vet` и `go test` на Linux, macOS и
 Windows, сборка SPA, gitleaks; по тегу — пробная сборка релиза.
-`dsh-bump.yml` еженедельно проверяет новую версию dsh и пропускает её через
-`bin/e2e-smoke.sh`.
+`dsh-bump.yml` еженедельно проверяет новую версию dsh: PR с подъёмом пина
+по `latest` (rc/stable) пропускается через `bin/e2e-smoke.sh`; вторым
+конвейером собирается образ на свежем dist-tag `next` (`--build-arg
+DSH_VERSION`, пин не двигается) и гоняются тесты плагинов и
+`bin/e2e-first-session.sh` — при провале заводится issue, автомержа нет.
 
 Живые сценарии (`bin/`): `e2e-local-mode.sh` (локальный режим целиком:
 init, доступы, запуск, вход, папка проектов, мост, обновление и откат),

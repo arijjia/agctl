@@ -344,6 +344,22 @@ make install
 - `make img_build [PROFILE=<id>]` — образы рабочего места;
 - `make uninstall` — убрать то, что поставил `install`.
 
+### Обновление dsh
+
+Пин dsh — `ARG DSH_VERSION` в `internal/assets/image/Dockerfile`; свежие
+версии npm выходят под dist-tag `next` раньше, чем `latest`. Сверка и
+подъём пина — `bin/dsh-bump.sh`: без аргументов показывает пин и оба
+канала, `--check` (exit 1 при дрейфе, ворота по умолчанию по `next`),
+`--update [--channel latest|next]` двигает пин в рамках rc-политики
+(alpha/beta/dev не ставятся в любом канале). После `--update` — собрать
+образ и прогнать e2e (`make img_build && FAKE_LLM=1 bin/e2e-smoke.sh`).
+Воркфлоу `dsh-bump` делает это еженедельно сам: PR с подъёмом пина по
+`latest` (полный конвейер: go/SPA, образ, e2e-smoke) и отдельная проверка
+`next` — образ собирается на её версии без изменения пина
+(`make img_build IMG_BUILD_ARGS="--build-arg DSH_VERSION=<next>"`) и
+проходит тесты плагинов и `bin/e2e-first-session.sh`; при провале
+заводится issue, пин не двигается.
+
 ## Карта системы
 
 ```bash

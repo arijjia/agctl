@@ -9,6 +9,10 @@ IMG_WEB ?= agctl-dsh-web:0.2.2
 IMG_FLAVORS ?= web
 IMG_ARCH := $(shell docker version --format '{{.Server.Arch}}' 2>/dev/null || echo aarch64)
 IMG_GOARCH := $(subst aarch64,arm64,$(subst x86_64,amd64,$(IMG_ARCH)))
+# Доп. аргументы docker build базовых образов — например
+# IMG_BUILD_ARGS="--build-arg DSH_VERSION=0.2.2-rc.6": собрать образ на
+# версии канала next, не двигая пин в Dockerfile (воркфлоу dsh-bump).
+IMG_BUILD_ARGS ?=
 
 # Надстройка образа профиля организации (images.dockerfile в profile.yaml):
 # собирается поверх обоих базовых вариантов как agctl-dsh-<id>:<тег> и
@@ -33,8 +37,8 @@ img_build:
 	cp -R internal/assets/image/. .build-img/
 	mkdir -p .build-img/skel && cp -R internal/assets/dsh-skel/. .build-img/skel/
 	cp dist/agctl-guest-linux-$(IMG_GOARCH) .build-img/agctl
-	docker build -t $(IMG) .build-img
-	docker build --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
+	docker build $(IMG_BUILD_ARGS) -t $(IMG) .build-img
+	docker build $(IMG_BUILD_ARGS) --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
 	@if echo " $(IMG_FLAVORS) " | grep -q ' web '; then \
 	  docker build --build-arg BASE=$(IMG) -t $(IMG_WEB) .build-img/flavors/web; fi
 	@$(MAKE) --no-print-directory img_profile
@@ -61,7 +65,7 @@ img_profile:
 # img_build; бинарь берём из dist).
 ## img_build_nossh: пересобрать только agctl-dsh-nossh из уже готового .build-img
 img_build_nossh:
-	docker build --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
+	docker build $(IMG_BUILD_ARGS) --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
 
 ## img_build_amd64: agctl-dsh под linux/amd64 (например, с Apple Silicon для x86-сервера)
 img_build_amd64:
