@@ -10,7 +10,8 @@ cd tests/e2e-ui && npm ci && npx playwright install chromium
 
 | Скрипт | Обвязка | Что проверяет |
 |---|---|---|
-| `cabinet-ui.mjs` | `bin/e2e-cabinet-playwright.sh` | домен → auth → дефолтный чат → Кабинет → заявка → approve → dev-workspace |
+| `developer-flow-ui.mjs` | `bin/e2e-developer-flow.sh` | v3-поток developer: регистрация → заявка роли → approve админом → SSH-ключ → admin-рестарт рантайма (ключ применяется при следующем старте) → cabinet SSH-оверлей с живым портом → проект-папка через штатный диалог «Новый воркспейс» (регрессия-гард перехвата RU-кнопки) → сессия в проектном cwd; wrapper довалидирует настоящий SSH key-only вход, `/workspace/<проект>` и локальный `.git` |
+| `cabinet-ui.mjs` | `bin/e2e-cabinet-playwright.sh` | ⚠️ устарел: кабинетная половина ждёт демонттированный поток заявок и старый UX панели (см. карточку cabinet-ui-rework); первая половина (регистрация, брендинг Chat-режима) всё ещё актуальна |
 | `first-session-ui.mjs` | `bin/e2e-first-session.sh` | D6-регрессия (кейс Б7): чистый браузер → первый запуск → композер активен, сессия открыта, перезагрузка не оставляет в hero, нет фатальных ошибок консоли (`found is not defined`, `setEnabled is not a function`) |
 
 Оба скрипта поднимают собственный `agctl-server serve` в уникальном TEST_HOME со

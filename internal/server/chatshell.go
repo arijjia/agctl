@@ -34,9 +34,13 @@ svg[viewBox="0 0 23.16 17.04"]{visibility:hidden}
 // подтверждения роли делает общий chatShellDeveloperStyle: плагин chat-brand
 // ставит data-agctl-developer-tools-ready для любой известной роли, а гайд
 // терминала/файлов для user прячет плагин (ensureRoleSurfaceStyles).
+// Селекторы — префиксы обоих языков: dsh 0.2.2 локализовал aria-label
+// («Режим доступа…»), английский матч перестал покрывать RU-интерфейс
+// (поймано e2e cabinet-ui на agctl-dsh:0.2.2).
 const chatShellUserStyle = `<style data-agctl="chat-shell-user">
-button[aria-label^="Access mode"],button[aria-label^="New terminal"],
-button[aria-label^="Workspace files"]{display:none!important}
+button[aria-label^="Access mode"],button[aria-label^="Режим доступа"],
+button[aria-label^="New terminal"],button[aria-label^="Новый терминал"],
+button[aria-label^="Workspace files"],button[aria-label^="Файлы воркспейса"]{display:none!important}
 </style>`
 
 // chatShellDeveloperStyle — developer/admin: правая колонка схлопнута до
