@@ -7,12 +7,17 @@
 #
 #   IMG=agctl-dsh:0.2.2 bin/e2e-local-mode.sh
 #
-# Переменные: IMG (образ), AGCTL_BIN (бинарь, по умолчанию dist/agctl),
+# Переменные: IMG (образ), AGCTL_BIN (готовый бинарь; по умолчанию свежая
+# сборка ./cmd/agctl во временный каталог — устаревший dist/ гонял бы старый код),
 # E2E_ADDR (адрес UI, по умолчанию 127.0.0.1:18940), KEEP=1 — не чистить дом.
 set -u
 cd "$(dirname "$0")/.."
 IMG="${IMG:-agctl-dsh:0.2.2}"
-BIN="${AGCTL_BIN:-dist/agctl}"
+BIN="${AGCTL_BIN:-}"
+if [ -z "$BIN" ]; then
+  BIN="$(mktemp -d)/agctl"
+  go build -trimpath -o "$BIN" ./cmd/agctl || { echo "go build ./cmd/agctl упал"; exit 2; }
+fi
 ADDR="${E2E_ADDR:-127.0.0.1:18940}"
 PASS=0; FAIL=0
 pass() { PASS=$((PASS + 1)); printf '  PASS: %s\n' "$*"; }

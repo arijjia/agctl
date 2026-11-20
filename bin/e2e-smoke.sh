@@ -14,7 +14,8 @@
 # Переменные:
 #   TEST_IMAGE  (обяз.) тег уже собранного серверного образа (agctl-dsh-server,
 #               make img_build_server)
-#   AGCTL_BIN   бинарь (по умолчанию dist/agctl-server, соберём если нет)
+#   AGCTL_BIN   готовый бинарь agctl-server; по умолчанию собираем свежий из
+#               дерева в TEST_HOME (устаревший dist/ тихо гонял бы старый код)
 #   TEST_ADDR   адрес UI (по умолчанию 127.0.0.1:18929)
 #   FAKE_LLM    1 = поднять стаб OpenAI-API и проверить живой провод
 #               до модели (контейнер → стаб) curl-пробой с ключом из
@@ -33,7 +34,7 @@ skip() { printf '  SKIP: %s\n' "$*"; }
 [ -n "${TEST_IMAGE:-}" ] || { echo "TEST_IMAGE не задан" >&2; exit 2; }
 TEST_ADDR="${TEST_ADDR:-127.0.0.1:18929}"
 TEST_PORT="${TEST_ADDR##*:}"
-AGCTL_BIN="${AGCTL_BIN:-$REPO_ROOT/dist/agctl-server}"
+AGCTL_BIN="${AGCTL_BIN:-}"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
 TEST_HOME="$HOME/.agctl-e2e-$RUN_ID"
 COOKIES_ADMIN="$TEST_HOME/qa-admin.cookies"
@@ -58,8 +59,10 @@ preflight() {
   if nc -z 127.0.0.1 "$TEST_PORT" 2>/dev/null; then
     echo "порт $TEST_PORT занят — выбери другой TEST_ADDR" >&2; exit 2
   fi
-  if [ ! -x "$AGCTL_BIN" ]; then
-    say "Сборка бинаря"
+  if [ -z "$AGCTL_BIN" ]; then
+    AGCTL_BIN="$TEST_HOME/agctl-server"
+    mkdir -p "$TEST_HOME"
+    say "Сборка бинаря из текущего дерева"
     make web_build >/dev/null 2>&1 || { echo "web_build упал" >&2; exit 2; }
     go build -trimpath -o "$AGCTL_BIN" ./cmd/agctl-server || { echo "go build упал" >&2; exit 2; }
   fi
