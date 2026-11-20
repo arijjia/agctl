@@ -7,8 +7,6 @@ package provision
 
 import (
 	"bytes"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,7 +19,6 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"gopkg.in/yaml.v3"
 )
@@ -222,172 +219,14 @@ type Template struct {
 	Description string `json:"description"`
 }
 
-// Templates — реестр шаблонов (ID = подкаталог в assets templates/<id>).
-var Templates = []Template{
-	{
-		ID:    "base",
-		Title: "Базовое рабочее место",
-		Description: "Агент с правилом частых коммитов, скиллом ведения бэклогов " +
-			"и саморедактируемыми процедурами. Универсальный старт.",
-	},
-}
-
-// ValidTemplate — legacy-совместимая проверка ID стартового комплекта.
-func ValidTemplate(id string) bool {
-	if id == "" {
-		return true // пусто = base
-	}
-	_, ok := FindKit(id)
-	return ok
-}
-
-// Provision сохраняет старый API и разворачивает default-компоненты комплекта.
-func Provision(l Layout, p Provider, templateName string, templateFS, skelFS fs.FS) error {
-	kitID, components, err := NormalizeComponents(templateName, nil)
-	if err != nil {
-		return err
-	}
-	return ProvisionWithComponents(l, p, kitID, components, templateFS, skelFS)
-}
-
-// Layout — пути воркспейса на диске хоста.
+// Layout — пути рантайма на диске хоста (v3: только чат-контейнер).
 type Layout struct {
-	Repo    string // $HOME/repos/<owner>/<name>.git — bare origin
-	Work    string // $HOME/work/<id>/repo — рабочий клон (монтируется)
-	DshHome string // $HOME/work/<id>/dsh-home — DSH_HOME (переживает рестарт)
+	Repo    string // $HOME/repos/<owner>/<name>.git — bare origin (v2-наследие, v3 не использует)
+	Work    string // рабочий клон/каталог (монтируется в /workspace)
+	DshHome string // DSH_HOME (переживает рестарт)
 }
 
-// NewID — короткий id воркспейса: w-<12 hex>.
-func NewID() (string, error) {
-	b := make([]byte, 6)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return "w-" + hex.EncodeToString(b), nil
-}
-
-// Paths — раскладка путей для нового воркспейса.
-func Paths(home, ownerLogin, wsID, name string) Layout {
-	safe := sanitize(name)
-	return Layout{
-		Repo:    filepath.Join(home, "repos", sanitize(ownerLogin), safe+".git"),
-		Work:    filepath.Join(home, "work", wsID, "repo"),
-		DshHome: filepath.Join(home, "work", wsID, "dsh-home"),
-	}
-}
-
-// sanitize приводит имя к допустимому для каталогов/git: нижний регистр,
-// [a-z0-9-_], пробелы и точки → дефис.
-func sanitize(s string) string {
-	s = strings.TrimSpace(strings.ToLower(s))
-	var b strings.Builder
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_':
-			b.WriteRune(r)
-		case r == ' ' || r == '.':
-			b.WriteRune('-')
-		}
-	}
-	out := strings.Trim(b.String(), "-")
-	if out == "" {
-		out = "workspace"
-	}
-	if len(out) > 48 {
-		out = out[:48]
-	}
-	return out
-}
-
-// ProvisionWithComponents создаёт git-пару и DSH_HOME из выбранного состава.
-func ProvisionWithComponents(l Layout, p Provider, kitID string, components []string, templateFS, skelFS fs.FS) error {
-	if p.BaseURL == "" || p.DefaultModel() == "" || p.APIKey == "" {
-		return errors.New("provision: не заданы провайдер или токен")
-	}
-	if len(p.AllModels()) == 0 {
-		p.Models = []string{p.Model}
-	}
-	if !ValidTemplate(kitID) {
-		return fmt.Errorf("provision: неизвестный комплект %q", kitID)
-	}
-	_, normalizedComponents, err := NormalizeComponents(kitID, components)
-	if err != nil {
-		return fmt.Errorf("provision: %w", err)
-	}
-	for _, d := range []string{l.Repo, filepath.Dir(l.Work), l.DshHome} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			return fmt.Errorf("provision: mkdir: %w", err)
-		}
-	}
-
-	// 1. bare-origin («эмуляция GitLab»)
-	bare, err := git.PlainInitWithOptions(l.Repo, &git.PlainInitOptions{
-		InitOptions: git.InitOptions{DefaultBranch: plumbing.NewBranchReferenceName("main")},
-		Bare:        true,
-	})
-	if err != nil {
-		return fmt.Errorf("provision: bare init: %w", err)
-	}
-
-	// 2. рабочий клон: init + шаблон + первый коммит + push в origin
-	repo, err := git.PlainInitWithOptions(l.Work, &git.PlainInitOptions{
-		InitOptions: git.InitOptions{DefaultBranch: plumbing.NewBranchReferenceName("main")},
-		Bare:        false,
-	})
-	if err != nil {
-		return fmt.Errorf("provision: work init: %w", err)
-	}
-	if err := CopySelectedComponents(templateFS, kitID, normalizedComponents, l.Work); err != nil {
-		return fmt.Errorf("provision: компоненты комплекта: %w", err)
-	}
-	if err := WriteKitManifest(l.Work, kitID, normalizedComponents); err != nil {
-		return fmt.Errorf("provision: манифест комплекта: %w", err)
-	}
-	wt, err := repo.Worktree()
-	if err != nil {
-		return err
-	}
-	if err := wt.AddWithOptions(&git.AddOptions{All: true}); err != nil {
-		return fmt.Errorf("provision: git add: %w", err)
-	}
-	// идентичность коммитов агента (иначе git внутри контейнера откажет)
-	if cfg, err := repo.Config(); err == nil {
-		cfg.User.Name = "agent"
-		cfg.User.Email = "agent@workspace.local"
-		if err := repo.Storer.SetConfig(cfg); err != nil {
-			return fmt.Errorf("provision: git config: %w", err)
-		}
-	}
-	sig := signature()
-	if _, err := wt.Commit("init: шаблон рабочего места (AGENTS.md, skills, backlog)",
-		&git.CommitOptions{Author: sig, Committer: sig, AllowEmptyCommits: false}); err != nil {
-		return fmt.Errorf("provision: первый коммит: %w", err)
-	}
-	if _, err := repo.CreateRemote(&config.RemoteConfig{
-		Name: "origin", URLs: []string{l.Repo},
-	}); err != nil {
-		return fmt.Errorf("provision: remote origin: %w", err)
-	}
-	if err := repo.Push(&git.PushOptions{
-		RemoteName: "origin",
-		RefSpecs:   []config.RefSpec{"refs/heads/main:refs/heads/main"},
-	}); err != nil {
-		return fmt.Errorf("provision: push в bare: %w", err)
-	}
-	// HEAD bare → main, чтобы clone из origin сразу попадал на main.
-	if err := bare.Storer.SetReference(plumbing.NewSymbolicReference(
-		plumbing.HEAD, plumbing.NewBranchReferenceName("main"))); err != nil {
-		return fmt.Errorf("provision: bare HEAD: %w", err)
-	}
-
-	// 3. DSH_HOME: скелет + настройки провайдера + токен (chmod 600)
-	if err := SeedDshHome(l.DshHome, p, skelFS); err != nil {
-		return err
-	}
-	return nil
-}
-
-// signature — автор коммитов go-git autosave.
+// signature — авторство автоматических коммитов (autosave, seed).
 func signature() *object.Signature {
 	return &object.Signature{Name: "agctl", Email: "agctl@localhost", When: time.Now()}
 }

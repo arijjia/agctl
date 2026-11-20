@@ -1,14 +1,9 @@
-// Package assets — встроенные в бинарь артефакты: шаблон создаваемой репы,
-// скелет DSH_HOME и контекст docker-образа agctl-dsh. Каталог пакетов
-// возможностей — содержимое организации и живёт в её профиле (catalog/).
+// Package assets — встроенные в бинарь артефакты: скелет DSH_HOME
+// и контекст docker-образа agctl-dsh. Каталог пакетов возможностей —
+// содержимое организации и живёт в её профиле (catalog/).
 package assets
 
 import "embed"
-
-// RepoTemplate — шаблон репки воркспейса (префикс "templates/repo").
-//
-//go:embed all:templates
-var RepoTemplate embed.FS
 
 // DshSkel — скелет DSH_HOME (префикс "dsh-skel").
 //

@@ -75,7 +75,6 @@ type Config struct {
 	LiteLLMAdminURL    string             // admin-API LiteLLM (env AGCTL_LITELLM_ADMIN_URL / --litellm-admin-url)
 	LiteLLMAdminKey    string             // admin-ключ LiteLLM (только env AGCTL_LITELLM_ADMIN_KEY; не логируется)
 	RegisterPerMinute  int                // лимит регистраций с одного IP за минуту: 0 — дефолт платформы (30), <0 — отключить (нагрузочные прогоны)
-	RequireApproval    bool               // legacy workspace flag; create endpoint is tombstoned in v3
 	DefaultLLM         provision.Provider // платформенный провайдер чата по умолчанию (из профиля/env); личный секрет пользователя его перекрывает
 	DevEnv             []string           // имена переменных хоста, пробрасываемые в контейнер developer/admin (значения — из окружения serve: .env экспортируется make)
 	Profile            *profile.Data      // профиль организации (брендинг/дефолты); nil = нейтральный agctl
@@ -143,10 +142,7 @@ type Server struct {
 }
 
 // встроенные ассеты для provision (сырые FS; префиксы знает provision).
-var (
-	assetsRepo = assets.RepoTemplate
-	assetsSkel = assets.DshSkel
-)
+var assetsSkel = assets.DshSkel
 
 // New builds the development default (Docker for the unified per-user runtime).
 // Kubernetes deployments should inject their runtime providers.
@@ -673,27 +669,7 @@ func (s *Server) logMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// workspaceURL — канонический путь UI воркспейса: тот же origin, что и
-// кабинет (шлюз /w/{id}/ с сессией agctl). Boot-токен dsh в ссылку не
-// попадает: gateway подставляет его серверно при upstream-401 (см. gateway.go).
-func workspaceURL(w store.Workspace) string {
-	if w.Status != "running" {
-		return ""
-	}
-	return "/w/" + w.ID + "/"
-}
-
 var dshTokenRe = regexp.MustCompile(`[?&]token=([A-Za-z0-9_\-]+)`)
-
-// wsToken — boot-токен dev-workspace: из кэша или из runtime-логов.
-func (s *Server) wsToken(ctx context.Context, w store.Workspace) string {
-	return s.cachedBootToken(ctx, w.ID, func(cctx context.Context) (string, error) {
-		if w.ContainerID == "" {
-			return "", nil
-		}
-		return s.rt.Logs(cctx, w.ContainerID, "80")
-	})
-}
 
 // chatToken uses the same DSH boot-token exchange for any runtime provider;
 // the per-instance key prevents a slept/recreated pod/container from reusing
@@ -746,92 +722,7 @@ func (s *Server) forgetToken(wsID string) {
 	s.tokMu.Unlock()
 }
 
-// wsJSON приводит workspace к форме ответа API: URL работает только у
-// running, списки нормализуются (nil → пустой список, scalar-алиасы).
-func (s *Server) wsJSON(ctx context.Context, w store.Workspace, owner string) map[string]any {
-	components := w.Components
-	if components == nil {
-		components = []string{}
-	}
-	baseURLs := w.BaseURLs
-	if len(baseURLs) == 0 && w.BaseURL != "" {
-		baseURLs = []string{w.BaseURL}
-	}
-	return map[string]any{
-		"id": w.ID, "name": w.Name, "status": w.Status,
-		"owner": owner, "createdAt": w.CreatedAt, "updatedAt": w.UpdatedAt,
-		"url": workspaceURL(w), "port": w.HostPort, "error": w.Error,
-		"model": w.Model, "models": w.Models, "baseURL": w.BaseURL, "baseURLs": baseURLs,
-		"kit": w.Template, "template": w.Template, "components": components,
-		"repoPath": w.RepoPath, "sshEnabled": w.SSHPubKey != "", "sshPort": w.SSHPort,
-	}
-}
-
-// visibleTo — владелец или админ.
-func visibleTo(w store.Workspace, id identity) bool {
-	return w.OwnerID == id.ID || id.Role == "admin"
-}
-
-// paths для воркспейса от имени владельца.
-func (s *Server) pathsFor(w store.Workspace, ownerLogin string) provision.Layout {
-	return provision.Paths(s.cfg.Home, ownerLogin, w.ID, w.Name)
-}
-
 var errForbidden = errors.New("forbidden")
-
-// loadWS — доступная текущему пользователю запись воркспейса.
-func (s *Server) loadWS(r *http.Request, id identity) (store.Workspace, error) {
-	wsID := r.PathValue("id")
-	w, err := s.db.WorkspaceByID(wsID)
-	if err != nil {
-		return w, err
-	}
-	if !visibleTo(w, id) {
-		return w, errForbidden
-	}
-	return w, nil
-}
-
-// providerOf — при создании берёт defaults пользователя, при restart —
-// настройки конкретного воркспейса; Secret остаётся источником ключа и fallback.
-func (s *Server) providerOf(w store.Workspace, ownerID int64, req ProviderReq) (provision.Provider, error) {
-	if req.APIKey == "" {
-		sec, err := s.db.SecretByUser(ownerID)
-		if err != nil {
-			return provision.Provider{}, errors.New("нет сохранённого токена — укажите API-токен")
-		}
-		key, err := s.sec.Decrypt(sec.Ciphertext)
-		if err != nil {
-			return provision.Provider{}, fmt.Errorf("токен не расшифровывается: %w", err)
-		}
-		baseURLs, models := w.BaseURLs, w.Models
-		if len(baseURLs) == 0 && strings.TrimSpace(w.BaseURL) != "" {
-			baseURLs = []string{strings.TrimSpace(w.BaseURL)}
-		}
-		if len(models) == 0 && w.Model != "" {
-			models = []string{w.Model}
-		}
-		if len(baseURLs) == 0 && strings.TrimSpace(sec.BaseURL) != "" {
-			baseURLs = []string{strings.TrimSpace(sec.BaseURL)}
-		}
-		if len(models) == 0 {
-			models = sec.Models
-			if len(models) == 0 && sec.Model != "" {
-				models = []string{sec.Model}
-			}
-		}
-		if requested := req.allBaseURLs(); len(requested) > 0 {
-			baseURLs = requested
-		}
-		if requested := req.allModels(); len(requested) > 0 {
-			models = requested
-		}
-		base := firstModel(baseURLs)
-		return provision.Provider{BaseURL: base, BaseURLs: baseURLs, Model: firstModel(models), Models: models, APIKey: key, Extras: s.defaultLLM().Extras}, nil
-	}
-	urls, ms := req.allBaseURLs(), req.allModels()
-	return provision.Provider{BaseURL: firstModel(urls), BaseURLs: urls, Model: firstModel(ms), Models: ms, APIKey: req.APIKey}, nil
-}
 
 // firstModel — первая модель списка или пустая строка (scalar-алиас legacy).
 func firstModel(models []string) string {

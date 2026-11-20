@@ -1,8 +1,8 @@
 package server
 
-// Тесты шлюза /w/{id}/ (gateway.go): проверка сессии, mint-цепочка
-// 401 → 303+Set-Cookie → 200 и изоляция пользователей. Upstream — httptest
-// сервер с той же схемой авторизации, что у dsh web 0.2.0+.
+// Тесты прокси чата /chat/ (chat.go + транспорт gateway.go): mint-цепочка
+// 401 → 303+Set-Cookie → 200, SSE/WebSocket, combo-query и изоляция.
+// Upstream — httptest сервер с той же схемой авторизации, что у dsh web 0.2.0+.
 
 import (
 	"bufio"
@@ -15,12 +15,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
-	"github.com/arijjia/agctl/internal/store"
+	agctlrt "github.com/arijjia/agctl/internal/runtime"
 )
 
 // newFakeDsh — upstream, повторяющий контракт dsh web: без cookie — 401;
@@ -101,37 +101,30 @@ func newFakeDsh(t *testing.T, token string) (*httptest.Server, *http.ServeMux) {
 	return srv, mux
 }
 
-// pointUpstream — переключает running-воркспейс на порт фейкового upstream.
-func pointUpstream(t *testing.T, e *testEnv, wsID, upstreamURL string) {
+// plantChat — живой чат-рантайм пользователя uid (роль user, слот 0),
+// указывающий на фейковый upstream: фикстура не вызывает provision,
+// boot-токен dsh появляется в «логах контейнера» как у реального рантайма.
+func plantChat(t *testing.T, e *testEnv, uid int64, upstreamURL, token string) {
 	t.Helper()
-	u, err := url.Parse(upstreamURL)
-	if err != nil {
-		t.Fatal(err)
+	handle := agctlrt.ChatHandle{
+		RuntimeID:  e.srv.chatRuntimeID(uid, 0),
+		InstanceID: "gw-" + token,
+		Endpoint:   upstreamURL,
 	}
-	port, err := strconv.Atoi(u.Port())
-	if err != nil {
-		t.Fatal(err)
-	}
-	ws, err := e.db.WorkspaceByID(wsID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := e.db.UpdateWorkspaceRuntime(wsID, ws.ContainerID, port, "running"); err != nil {
-		t.Fatal(err)
-	}
+	e.rt.logs[handle.InstanceID] = "dsh web: http://0.0.0.0:3080/?token=" + token
+	e.srv.forgetToken(chatTokenCacheKey(handle))
+	e.srv.chatMu.Lock()
+	e.srv.chats[chatKey{uid, 0}] = &chatRuntime{handle: handle, lastSeen: time.Now()}
+	e.srv.chatMu.Unlock()
 }
 
-// runningWorkspace — историческая запись для регрессий шлюза. HTTP API v3
-// больше не создаёт отдельные контейнеры; фикстура не вызывает provision.
-func runningWorkspace(t *testing.T, e *testEnv, name string) string {
+// ownerClient — непривилегированный пользователь чата (admin в v3 получает
+// 307 в /admin, личный чат ему не выдаётся).
+func ownerClient(t *testing.T, e *testEnv) (*http.Client, int64) {
 	t.Helper()
-	id := "fixture-" + name
-	if err := e.db.InsertWorkspace(store.Workspace{ID: id, OwnerID: 1, Name: name,
-		Status: "running", ContainerID: "ctr-" + id, HostPort: 40001,
-		BaseURL: "https://llm.example/v1", Model: "m1"}); err != nil {
-		t.Fatal(err)
-	}
-	return id
+	c := e.newClient()
+	e.register(c, "chat-owner", "secret9")
+	return c, 2 // второй зарегистрированный: uid=1 — admin
 }
 
 // TestGatewayMintChain — первый вход без dsh-cookie: upstream 401 → прокси
@@ -139,16 +132,14 @@ func runningWorkspace(t *testing.T, e *testEnv, name string) string {
 // Location /w/{id}/; повторный запрос с cookie — 200 от upstream.
 func TestGatewayMintChain(t *testing.T) {
 	upstream, _ := newFakeDsh(t, "boot-tok-1")
-	e := newTestEnv(t, 3)
+	e := newTestEnvWith(t, 3, func(c *Config) { c.Tier0 = true })
 	e.register(e.admin, "anna", "secret1")
-	wsID := runningWorkspace(t, e, "gw-mint")
-	pointUpstream(t, e, wsID, upstream.URL)
-	e.rt.logs[wsID] = "dsh web: http://0.0.0.0:3080/?token=boot-tok-1"
-	e.srv.forgetToken(wsID)
+	owner, ownerUID := ownerClient(t, e)
+	plantChat(t, e, ownerUID, upstream.URL, "boot-tok-1")
 
 	// 1) вход без cookie: ждём 303 с переписанным Location и cookie
-	req, _ := http.NewRequest("GET", e.api.URL+"/w/"+wsID+"/", nil)
-	resp, err := e.admin.Do(req)
+	req, _ := http.NewRequest("GET", e.api.URL+"/chat/", nil)
+	resp, err := owner.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,8 +147,8 @@ func TestGatewayMintChain(t *testing.T) {
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("первый вход: %d, ждали 303 (mint)", resp.StatusCode)
 	}
-	if loc := resp.Header.Get("Location"); loc != "/w/"+wsID+"/" {
-		t.Fatalf("Location %q, ждали /w/%s/", loc, wsID)
+	if loc := resp.Header.Get("Location"); loc != "/chat/" {
+		t.Fatalf("Location %q, ждали /chat/", loc)
 	}
 	var dshCookie *http.Cookie
 	for _, c := range resp.Cookies() {
@@ -168,13 +159,13 @@ func TestGatewayMintChain(t *testing.T) {
 	if dshCookie == nil {
 		t.Fatal("mint-ответ без Set-Cookie dsh-auth-*")
 	}
-	if want := "/w/" + wsID + "/"; dshCookie.Path != want {
+	if want := "/chat/"; dshCookie.Path != want {
 		t.Fatalf("dsh cookie Path=%q, ждали ограничение workspace %q", dshCookie.Path, want)
 	}
 
 	// 2) повторный запрос: cookie из jar (testJar хранит по хосту) → 200 upstream
-	req, _ = http.NewRequest("GET", e.api.URL+"/w/"+wsID+"/", nil)
-	resp2, err := e.admin.Do(req)
+	req, _ = http.NewRequest("GET", e.api.URL+"/chat/", nil)
+	resp2, err := owner.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,28 +182,17 @@ func TestGatewayMintChain(t *testing.T) {
 	}
 }
 
-// TestGatewayIsolation — чужой пользователь и аноним не проходят в воркспейс.
+// TestGatewayIsolation — аноним не проходит в /chat/; чужой пользователь
+// получает свой чат, а не чужой upstream.
 func TestGatewayIsolation(t *testing.T) {
 	upstream, _ := newFakeDsh(t, "boot-tok-2")
-	e := newTestEnv(t, 3)
+	e := newTestEnvWith(t, 3, func(c *Config) { c.Tier0 = true })
 	e.register(e.admin, "anna", "secret1")
-	other := e.newClient()
-	e.register(other, "bob", "secret2")
-	wsID := runningWorkspace(t, e, "gw-iso")
-	pointUpstream(t, e, wsID, upstream.URL)
+	owner, ownerUID := ownerClient(t, e)
+	plantChat(t, e, ownerUID, upstream.URL, "boot-tok-2")
 
-	req, _ := http.NewRequest("GET", e.api.URL+"/w/"+wsID+"/", nil)
-	resp, err := other.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("чужой: %d, ждали 403", resp.StatusCode)
-	}
-
-	req, _ = http.NewRequest("GET", e.api.URL+"/w/"+wsID+"/", nil)
-	resp, err = (&http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Do(req)
+	req, _ := http.NewRequest("GET", e.api.URL+"/chat/", nil)
+	resp, err := (&http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,21 +200,32 @@ func TestGatewayIsolation(t *testing.T) {
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("аноним: %d, ждали 401", resp.StatusCode)
 	}
+
+	// другой пользователь: свой пустой рантайм, чужой upstream недоступен
+	other := e.newClient()
+	e.register(other, "bob", "secret2")
+	resp2, err := other.Get(e.api.URL + "/chat/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode == http.StatusOK {
+		t.Fatalf("чужой пользователь получил чужой upstream: %d", resp2.StatusCode)
+	}
+	_ = owner
 }
 
 // TestGatewayPathRewrite — префикс /w/{id}/ срезается, upstream видит /.
 func TestGatewayPathRewrite(t *testing.T) {
 	upstream, _ := newFakeDsh(t, "boot-tok-3")
-	e := newTestEnv(t, 3)
+	e := newTestEnvWith(t, 3, func(c *Config) { c.Tier0 = true })
 	e.register(e.admin, "anna", "secret1")
-	wsID := runningWorkspace(t, e, "gw-path")
-	pointUpstream(t, e, wsID, upstream.URL)
-	e.rt.logs[wsID] = "dsh web: http://0.0.0.0:3080/?token=boot-tok-3"
-	e.srv.forgetToken(wsID)
+	owner, ownerUID := ownerClient(t, e)
+	plantChat(t, e, ownerUID, upstream.URL, "boot-tok-3")
 
 	// mint-вход, затем запрос под-пути с cookie напрямую через upstream-клиент
-	req, _ := http.NewRequest("GET", e.api.URL+"/w/"+wsID+"/", nil)
-	resp, err := e.admin.Do(req)
+	req, _ := http.NewRequest("GET", e.api.URL+"/chat/", nil)
+	resp, err := owner.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,8 +234,8 @@ func TestGatewayPathRewrite(t *testing.T) {
 		t.Fatalf("mint: %d", resp.StatusCode)
 	}
 	// повторный запрос с jar-ом cookie: клиент шлёт dsh-auth-* → upstream 200
-	req, _ = http.NewRequest("GET", e.api.URL+"/w/"+wsID+"/some/deep/path", nil)
-	resp2, err := e.admin.Do(req)
+	req, _ = http.NewRequest("GET", e.api.URL+"/chat/some/deep/path", nil)
+	resp2, err := owner.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,14 +295,12 @@ func TestGatewayComboQuery(t *testing.T) {
 	upstream := httptest.NewServer(mux)
 	t.Cleanup(upstream.Close)
 
-	e := newTestEnv(t, 3)
+	e := newTestEnvWith(t, 3, func(c *Config) { c.Tier0 = true })
 	e.register(e.admin, "anna", "secret1")
-	wsID := runningWorkspace(t, e, "gw-combo")
-	pointUpstream(t, e, wsID, upstream.URL)
-	e.rt.logs[wsID] = "dsh web: http://0.0.0.0:3080/?token=boot-combo"
-	e.srv.forgetToken(wsID)
+	owner, ownerUID := ownerClient(t, e)
+	plantChat(t, e, ownerUID, upstream.URL, "boot-combo")
 
-	resp, err := e.admin.Get(e.api.URL + "/w/" + wsID + "/")
+	resp, err := owner.Get(e.api.URL + "/chat/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +309,7 @@ func TestGatewayComboQuery(t *testing.T) {
 		t.Fatalf("mint: %d, ждали 303", resp.StatusCode)
 	}
 
-	resp2, err := e.admin.Get(e.api.URL + "/w/" + wsID + "/plugins/??@deepseek-ai/dsh-client-modules/client.js&rev=efd1797d4790")
+	resp2, err := owner.Get(e.api.URL + "/chat/plugins/??@deepseek-ai/dsh-client-modules/client.js&rev=efd1797d4790")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +322,7 @@ func TestGatewayComboQuery(t *testing.T) {
 	}
 
 	// ?token= от браузера вырезается, остальное — без изменений
-	resp3, err := e.admin.Get(e.api.URL + "/w/" + wsID + "/plugins/??x/y&rev=1&token=evil")
+	resp3, err := owner.Get(e.api.URL + "/chat/plugins/??x/y&rev=1&token=evil")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,15 +341,13 @@ func TestGatewayComboQuery(t *testing.T) {
 // перечислить каталоги.
 func TestGatewayProxyMethods(t *testing.T) {
 	upstream, _ := newFakeDsh(t, "boot-methods")
-	e := newTestEnv(t, 3)
+	e := newTestEnvWith(t, 3, func(c *Config) { c.Tier0 = true })
 	e.register(e.admin, "anna", "secret1")
-	wsID := runningWorkspace(t, e, "gw-methods")
-	pointUpstream(t, e, wsID, upstream.URL)
-	e.rt.logs[wsID] = "dsh web: http://0.0.0.0:3080/?token=boot-methods"
-	e.srv.forgetToken(wsID)
+	owner, ownerUID := ownerClient(t, e)
+	plantChat(t, e, ownerUID, upstream.URL, "boot-methods")
 
 	// Первый GET минтит DSH-cookie для workspace-префикса.
-	resp, err := e.admin.Get(e.api.URL + "/w/" + wsID + "/")
+	resp, err := owner.Get(e.api.URL + "/chat/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +357,7 @@ func TestGatewayProxyMethods(t *testing.T) {
 	}
 
 	// Typed RPC dsh-client-connection отправляет POST на этот endpoint.
-	req, err := http.NewRequest(http.MethodPost, e.api.URL+"/w/"+wsID+"/api/directoryPicker/list", strings.NewReader(`{"type":"client-request"}`))
+	req, err := http.NewRequest(http.MethodPost, e.api.URL+"/chat/api/directoryPicker/list", strings.NewReader(`{"type":"client-request"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +367,7 @@ func TestGatewayProxyMethods(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Header.Set("Origin", apiOrigin.Scheme+"://"+apiOrigin.Host)
-	resp, err = e.admin.Do(req)
+	resp, err = owner.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,13 +379,13 @@ func TestGatewayProxyMethods(t *testing.T) {
 
 	// Переписывание внутреннего Origin не должно превращать чужой Origin в
 	// same-origin: gateway обязан отклонить его до upstream.
-	req, err = http.NewRequest(http.MethodPost, e.api.URL+"/w/"+wsID+"/api/directoryPicker/list", strings.NewReader(`{"type":"client-request"}`))
+	req, err = http.NewRequest(http.MethodPost, e.api.URL+"/chat/api/directoryPicker/list", strings.NewReader(`{"type":"client-request"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "https://attacker.example")
-	resp, err = e.admin.Do(req)
+	resp, err = owner.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +395,7 @@ func TestGatewayProxyMethods(t *testing.T) {
 	}
 
 	// При этом API не становится публичным: без agctl-сессии — 401.
-	anonReq, err := http.NewRequest(http.MethodPost, e.api.URL+"/w/"+wsID+"/api/directoryPicker/list", strings.NewReader(`{"type":"client-request"}`))
+	anonReq, err := http.NewRequest(http.MethodPost, e.api.URL+"/chat/api/directoryPicker/list", strings.NewReader(`{"type":"client-request"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -423,35 +410,6 @@ func TestGatewayProxyMethods(t *testing.T) {
 	}
 }
 
-// TestGatewayManifestPublic — browser manifest fetch may omit auth cookies;
-// only the workspace's public webmanifest bypasses agctl session auth.
-func TestGatewayManifestPublic(t *testing.T) {
-	e := newTestEnv(t, 3)
-	e.register(e.admin, "anna", "secret1")
-	wsID := runningWorkspace(t, e, "gw-manifest")
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/manifest.webmanifest" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/manifest+json")
-		_, _ = io.WriteString(w, `{"name":"DeepSeek Harness"}`)
-	}))
-	t.Cleanup(upstream.Close)
-	pointUpstream(t, e, wsID, upstream.URL)
-
-	// No agctl cookie: this is how browsers fetch the linked manifest.
-	resp, err := e.newClient().Get(e.api.URL + "/w/" + wsID + "/manifest.webmanifest")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	manifest := readAll(t, resp)
-	if resp.StatusCode != http.StatusOK || !strings.Contains(manifest, "DeepSeek Harness") {
-		t.Fatalf("public manifest: %d %q", resp.StatusCode, manifest)
-	}
-}
-
 func websocketAccept(key string) string {
 	sum := sha1.Sum([]byte(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
 	return base64.StdEncoding.EncodeToString(sum[:])
@@ -460,15 +418,13 @@ func websocketAccept(key string) string {
 // TestGatewaySecureCookie — TLS-режим помечает DSH-cookie Secure до браузера.
 func TestGatewaySecureCookie(t *testing.T) {
 	upstream, _ := newFakeDsh(t, "boot-secure")
-	e := newTestEnv(t, 3)
+	e := newTestEnvWith(t, 3, func(c *Config) { c.Tier0 = true })
 	e.register(e.admin, "anna", "secret1")
-	wsID := runningWorkspace(t, e, "gw-secure")
-	pointUpstream(t, e, wsID, upstream.URL)
-	e.rt.logs[wsID] = "dsh web: http://0.0.0.0:3080/?token=boot-secure"
-	e.srv.forgetToken(wsID)
+	owner, ownerUID := ownerClient(t, e)
+	plantChat(t, e, ownerUID, upstream.URL, "boot-secure")
 	e.srv.cfg.SecureCookies = true
 
-	resp, err := e.admin.Get(e.api.URL + "/w/" + wsID + "/")
+	resp, err := owner.Get(e.api.URL + "/chat/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -478,7 +434,7 @@ func TestGatewaySecureCookie(t *testing.T) {
 	}
 	for _, c := range resp.Cookies() {
 		if strings.HasPrefix(c.Name, "dsh-auth-") {
-			if !c.Secure || c.Path != "/w/"+wsID+"/" {
+			if !c.Secure || c.Path != "/chat/" {
 				t.Fatalf("secure DSH cookie flags: %+v", c)
 			}
 			return
@@ -488,19 +444,16 @@ func TestGatewaySecureCookie(t *testing.T) {
 }
 
 // TestGatewayWarmupPage — браузер получает авто-ретраящую страницу вместо
-// JSON-ошибки, если контейнер ещё греется (upstream недоступен).
+// JSON-ошибки, если контейнер ещё греется (провайдер недоступен).
 func TestGatewayWarmupPage(t *testing.T) {
-	e := newTestEnv(t, 3)
+	e := newTestEnvWith(t, 3, func(c *Config) { c.Tier0 = true })
 	e.register(e.admin, "anna", "secret1")
-	wsID := runningWorkspace(t, e, "gw-warm")
-	// указываем порт, где никто не слушает — имитация прогрева
-	if err := e.db.UpdateWorkspaceRuntime(wsID, "ctr-"+wsID, 1, "running"); err != nil {
-		t.Fatal(err)
-	}
+	owner, _ := ownerClient(t, e)
+	e.srv.chatProvider = nil // рантайм не может подняться — «прогрев»
 
-	req, _ := http.NewRequest("GET", e.api.URL+"/w/"+wsID+"/", nil)
+	req, _ := http.NewRequest("GET", e.api.URL+"/chat/", nil)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml")
-	resp, err := e.admin.Do(req)
+	resp, err := owner.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -508,19 +461,19 @@ func TestGatewayWarmupPage(t *testing.T) {
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("warmup: %d, ждали 503", resp.StatusCode)
 	}
-	if !strings.Contains(body, `http-equiv="refresh"`) || !strings.Contains(body, "/w/"+wsID+"/") {
+	if !strings.Contains(body, `http-equiv="refresh"`) || !strings.Contains(body, "/chat/") {
 		t.Fatalf("warmup page without meta refresh: %q", body)
 	}
 
 	// не-браузерный клиент получает JSON-ошибку как раньше
-	req, _ = http.NewRequest("GET", e.api.URL+"/w/"+wsID+"/", nil)
-	resp2, err := e.admin.Do(req)
+	req, _ = http.NewRequest("GET", e.api.URL+"/chat/", nil)
+	resp2, err := owner.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp2.Body.Close()
 	jsonBody := readAll(t, resp2)
-	if resp2.StatusCode != http.StatusBadGateway || !strings.Contains(jsonBody, "недоступен") {
+	if resp2.StatusCode != http.StatusServiceUnavailable || !strings.Contains(jsonBody, "прогревается") {
 		t.Fatalf("api client: %d %q", resp2.StatusCode, jsonBody)
 	}
 }
@@ -528,20 +481,18 @@ func TestGatewayWarmupPage(t *testing.T) {
 // TestGatewaySSE — поток событий проходит через gateway без потери чанков.
 func TestGatewaySSE(t *testing.T) {
 	upstream, _ := newFakeDsh(t, "boot-sse")
-	e := newTestEnv(t, 3)
+	e := newTestEnvWith(t, 3, func(c *Config) { c.Tier0 = true })
 	e.register(e.admin, "anna", "secret1")
-	wsID := runningWorkspace(t, e, "gw-sse")
-	pointUpstream(t, e, wsID, upstream.URL)
-	e.rt.logs[wsID] = "dsh web: http://0.0.0.0:3080/?token=boot-sse"
-	e.srv.forgetToken(wsID)
+	owner, ownerUID := ownerClient(t, e)
+	plantChat(t, e, ownerUID, upstream.URL, "boot-sse")
 	for i := 0; i < 2; i++ {
-		resp, err := e.admin.Get(e.api.URL + "/w/" + wsID + "/")
+		resp, err := owner.Get(e.api.URL + "/chat/")
 		if err != nil {
 			t.Fatal(err)
 		}
 		resp.Body.Close()
 	}
-	resp, err := e.admin.Get(e.api.URL + "/w/" + wsID + "/events")
+	resp, err := owner.Get(e.api.URL + "/chat/events")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -559,15 +510,13 @@ func TestGatewaySSE(t *testing.T) {
 // ReverseProxy после dsh cookie-mint, а не только обычные GET-запросы.
 func TestGatewayWebSocketUpgrade(t *testing.T) {
 	upstream, _ := newFakeDsh(t, "boot-ws")
-	e := newTestEnv(t, 3)
+	e := newTestEnvWith(t, 3, func(c *Config) { c.Tier0 = true })
 	e.register(e.admin, "anna", "secret1")
-	wsID := runningWorkspace(t, e, "gw-ws")
-	pointUpstream(t, e, wsID, upstream.URL)
-	e.rt.logs[wsID] = "dsh web: http://0.0.0.0:3080/?token=boot-ws"
-	e.srv.forgetToken(wsID)
+	owner, ownerUID := ownerClient(t, e)
+	plantChat(t, e, ownerUID, upstream.URL, "boot-ws")
 
 	for i := 0; i < 2; i++ {
-		resp, err := e.admin.Get(e.api.URL + "/w/" + wsID + "/")
+		resp, err := owner.Get(e.api.URL + "/chat/")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -588,12 +537,12 @@ func TestGatewayWebSocketUpgrade(t *testing.T) {
 	}
 	defer conn.Close()
 	var cookies []string
-	for _, c := range e.admin.Jar.Cookies(apiURL) {
+	for _, c := range owner.Jar.Cookies(apiURL) {
 		cookies = append(cookies, c.Name+"="+c.Value)
 	}
 	cookieHeader := strings.Join(cookies, "; ")
 	key := "dGhlIHNhbXBsZSBub25jZQ=="
-	_, _ = fmt.Fprintf(conn, "GET /w/%s/socket HTTP/1.1\r\nHost: %s\r\nOrigin: http://%s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\nCookie: %s\r\n\r\n", wsID, apiURL.Host, apiURL.Host, key, cookieHeader)
+	_, _ = fmt.Fprintf(conn, "GET /chat/socket HTTP/1.1\r\nHost: %s\r\nOrigin: http://%s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\nCookie: %s\r\n\r\n", apiURL.Host, apiURL.Host, key, cookieHeader)
 	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: http.MethodGet})
 	if err != nil {
 		t.Fatalf("read upgrade response: %v", err)
@@ -629,15 +578,14 @@ func TestRewriteLocation(t *testing.T) {
 // как есть (браузер получает честный отказ), а не зависает.
 func TestGatewayNoToken(t *testing.T) {
 	upstream, _ := newFakeDsh(t, "unreachable")
-	e := newTestEnv(t, 3)
+	e := newTestEnvWith(t, 3, func(c *Config) { c.Tier0 = true })
 	e.register(e.admin, "anna", "secret1")
-	wsID := runningWorkspace(t, e, "gw-notok")
-	pointUpstream(t, e, wsID, upstream.URL)
-	e.rt.logs[wsID] = "" // токена нет
-	e.srv.forgetToken(wsID)
+	owner, ownerUID := ownerClient(t, e)
+	plantChat(t, e, ownerUID, upstream.URL, "unreachable")
+	e.rt.logs["gw-unreachable"] = "" // токена нет
 
-	req, _ := http.NewRequest("GET", e.api.URL+"/w/"+wsID+"/", nil)
-	resp, err := e.admin.Do(req)
+	req, _ := http.NewRequest("GET", e.api.URL+"/chat/", nil)
+	resp, err := owner.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,8 +5,8 @@
 #
 #   TEST_IMAGE=agctl-dsh:0.2.0-rc2-e2e-n1 bin/e2e-smoke.sh
 #
-# Сценарий v3 (v2-воркспейсы удалены, POST /api/workspaces → 410):
-#   регистрация/роли → tombstone v2 → проект (создание/листинг/git-репо) →
+# Сценарий v3 (v2-воркспейсы удалены вместе с маршрутами):
+#   регистрация/роли → маршрутов v2 нет → проект (создание/листинг/git-репо) →
 #   личный чат /chat/ (подъём контейнера, шлюз, asset) → docker-инспекты →
 #   сон/пробуждение контейнера с сохранением тома → autosave проекта →
 #   dsh-home/креды → живой провод до стаба LLM.
@@ -182,7 +182,7 @@ code=$(curl -sS -o /dev/null -w '%{http_code}' -b "$COOKIES_USER" "$BASE_URL/api
 
 say "Tombstone v2: воркспейсы удалены в v3"
 code=$(api "$COOKIES_ADMIN" POST /api/workspaces '{"name":"legacy"}')
-[ "$code" = 410 ] && pass "POST /api/workspaces → 410 (v2 удалены)" || fail "workspaces: $code"
+{ [ "$code" = 404 ] || [ "$code" = 405 ]; } && pass "POST /api/workspaces → 404/405 (v2 удалены)" || fail "workspaces: $code"
 
 say "Проекты: создание, листинг, git-репозиторий"
 code=$(api "$COOKIES_ADMIN" POST /api/projects '{"name":"e2e-proj"}')

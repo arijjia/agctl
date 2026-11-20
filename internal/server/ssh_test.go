@@ -4,7 +4,6 @@ import (
 	"crypto/ed25519"
 	"testing"
 
-	"github.com/arijjia/agctl/internal/store"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -27,14 +26,5 @@ func TestParseSSHPublicKey(t *testing.T) {
 	}
 	if got, err := parseSSHPublicKey("  \n"); err != nil || got != "" {
 		t.Fatalf("empty key: got=%q err=%v", got, err)
-	}
-}
-
-func TestSSHHostPortFor(t *testing.T) {
-	if got := sshHostPortFor(store.Workspace{SSHPort: 23000}); got != 0 {
-		t.Fatalf("port without key = %d, want 0", got)
-	}
-	if got := sshHostPortFor(store.Workspace{SSHPubKey: "ssh-ed25519 ...", SSHPort: 23000}); got != 23000 {
-		t.Fatalf("port with key = %d, want 23000", got)
 	}
 }

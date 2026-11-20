@@ -31,8 +31,6 @@ func ServerModules() []Module {
 		AdminModule(),
 		PrewarmModule(),
 		AutosaveModule(),
-		LegacyWorkspacesModule(),
-		JiraModule(),
 		AxProviderConfigModule(),
 	}
 }
@@ -131,53 +129,14 @@ func PrewarmModule() Module {
 	}}
 }
 
-// AutosaveModule — go-git autosave проектов пользователей локальным
-// коммитом без push. Локальному режиму не подходит: /workspace там —
-// настоящие репозитории разработчика.
+// AutosaveModule — go-git autosave проектов пользователей (v3, персональные
+// тома) локальным коммитом без push. Локальному режиму не подходит:
+// /workspace там — настоящие репозитории разработчика.
 func AutosaveModule() Module {
 	return Module{Name: "autosave", Background: func(ctx context.Context, s *Server) {
 		s.every(ctx, s.cfg.AutosaveEvery, func() {
-			s.autosaveAll()
 			s.autosaveLocalProjects()
 		})
-	}}
-}
-
-// LegacyWorkspacesModule — workspace-места до v3: API /api/workspaces,
-// заявки, шаблоны и комплекты, шлюз /w/{id}/ (создание отвечает 410).
-// Удаление — карточка legacy-workspace-code-cleanup.
-func LegacyWorkspacesModule() Module {
-	return Module{Name: "legacy-workspaces", Routes: func(s *Server, mux *http.ServeMux) {
-		mux.HandleFunc("GET /api/templates", s.requireUser(s.handleTemplates))
-		mux.HandleFunc("GET /api/kits", s.requireUser(s.handleKits))
-		mux.HandleFunc("GET /api/workspaces", s.requireUser(s.handleWorkspacesList))
-		mux.HandleFunc("POST /api/workspaces", s.requireUser(s.handleWorkspaceCreate))
-		mux.HandleFunc("GET /api/workspaces/{id}", s.requireUser(s.handleWorkspaceGet))
-		mux.HandleFunc("POST /api/workspaces/{id}/start", s.requireUser(s.handleWorkspaceStart))
-		mux.HandleFunc("POST /api/workspaces/{id}/stop", s.requireUser(s.handleWorkspaceStop))
-		mux.HandleFunc("DELETE /api/workspaces/{id}", s.requireUser(s.handleWorkspaceDelete))
-		mux.HandleFunc("GET /api/workspaces/{id}/logs", s.requireUser(s.handleWorkspaceLogs))
-		mux.HandleFunc("PATCH /api/workspaces/{id}/provider", s.requireUser(s.handleWorkspaceProvider))
-		mux.HandleFunc("PATCH /api/workspaces/{id}/ssh", s.requireUser(s.handleWorkspaceSSH))
-		mux.HandleFunc("POST /api/workspace-requests", s.requireUser(s.handleWorkspaceRequestCreate))
-		mux.HandleFunc("GET /api/workspace-requests", s.requireUser(s.handleWorkspaceRequestsList))
-		mux.HandleFunc("POST /api/workspace-requests/{id}/approve", s.requireAdmin(s.handleWorkspaceRequestDecision(true)))
-		mux.HandleFunc("POST /api/workspace-requests/{id}/reject", s.requireAdmin(s.handleWorkspaceRequestDecision(false)))
-		mux.HandleFunc("GET /w/{id}", s.requireUser(s.workspaceProxyEntry))
-		// webmanifest браузер забирает без учётных данных agctl — публично
-		// только этот нечувствительный статический документ.
-		mux.HandleFunc("GET /w/{id}/manifest.webmanifest", s.workspaceManifest)
-		// DSH Web UI: GET — документы/ассеты, WebSocket и SSE; POST — RPC
-		// (/api/*). Оба метода должны доходить до обратного прокси.
-		mux.HandleFunc("GET /w/{id}/", s.requireUser(s.workspaceProxy))
-		mux.HandleFunc("POST /w/{id}/", s.requireUser(s.workspaceProxy))
-	}}
-}
-
-// JiraModule — поллер Jira (скелет, включается env AGCTL_JIRA_*).
-func JiraModule() Module {
-	return Module{Name: "jira", Background: func(ctx context.Context, s *Server) {
-		s.StartJiraPoller(ctx)
 	}}
 }
 
