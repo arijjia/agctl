@@ -8,7 +8,7 @@ size: L
 area: platform
 repo: arijjia/agctl
 created: 2026-10-25
-updated: 2026-11-19
+updated: 2026-11-20
 tags: ["v3", "cleanup"]
 depends: []
 ---
@@ -56,3 +56,6 @@ store-модели и v2-провижининг. Миграции схемы п�
 - 2026-10-25: создано (`gitctl backlog new`).
 - 2026-11-19: выполнено в ветке agent/legacy-workspace-cleanup после
   merge origin/main (раздельные бинари) — минус ~2000 строк.
+- 2026-11-20: перебазировано на main e284157 (лаунчер v2 + кабинет v3),
+  конфликт только в docs/architecture.md; vet+test, web_build, e2e-smoke
+  FAKE_LLM=1 (39 PASS/0 FAIL, v2-маршруты 404/405) — влито в main.
