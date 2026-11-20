@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # e2e-k8s-kind.sh — смоук бэкенда k8s в одноразовом kind-кластере:
-# собирает образы agctl-serve/agctl-dsh, грузит их в узел kind, применяет
+# собирает образы agctl-serve/agctl-dsh-server, грузит их в узел kind, применяет
 # deploy/k8s/overlays/kind, регистрирует первого пользователя (admin) и
 # второго (user), открывает /chat/ от user'а и ждёт, пока шлюз поднимет под
 # dsh и ответит чат-шеллом; затем проверяет сон рантайма (POST
@@ -65,9 +65,9 @@ kubectl config use-context "kind-${KIND_CLUSTER}" >/dev/null
 
 echo "▶ образы"
 ARCH=$(docker version --format '{{.Server.Arch}}' | sed -e 's/aarch64/arm64/' -e 's/x86_64/amd64/')
-make img_build IMG="agctl-dsh:${TAG}" IMG_NOSSH="agctl-dsh-nossh:${TAG}" >/dev/null
+make img_build IMG="agctl-dsh:${TAG}" IMG_NOSSH="agctl-dsh-nossh:${TAG}" IMG_SERVER="agctl-dsh-server:${TAG}" IMG_SERVER_NOSSH="agctl-dsh-server-nossh:${TAG}" IMG_FLAVORS= >/dev/null
 make img_serve_build K8S_ARCH="$ARCH" IMG_SERVE=agctl-serve:dev >/dev/null
-kind load docker-image --name "$KIND_CLUSTER" agctl-serve:dev "agctl-dsh:${TAG}"
+kind load docker-image --name "$KIND_CLUSTER" agctl-serve:dev "agctl-dsh-server:${TAG}"
 
 echo "▶ деплой"
 kubectl apply -k deploy/k8s/overlays/kind
