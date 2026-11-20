@@ -247,6 +247,11 @@ if [ -n "${CONTAINER:-}" ]; then
   mounts=$(docker inspect --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}; {{end}}' "$CONTAINER" 2>/dev/null)
   echo "$mounts" | grep -q '/workspace' && echo "$mounts" | grep -q '/home/dsh' \
     && pass "монтирования /workspace и /home/dsh" || fail "mounts: $mounts"
+  hard=$(docker inspect --format '{{json .HostConfig.CapDrop}}|{{json .HostConfig.SecurityOpt}}|{{.HostConfig.PidsLimit}}' "$CONTAINER" 2>/dev/null)
+  case "$hard" in
+    '["ALL"]|'*'no-new-privileges'*'|'[1-9]*) pass "упрочнение: CapDrop ALL, no-new-privileges, PidsLimit (${hard##*|})" ;;
+    *) fail "упрочнение не применено: $hard" ;;
+  esac
   srcok=$(printf '%s' "$mounts" | grep -c "$TEST_HOME/chats/u2")
   [ "$srcok" -ge 1 ] && pass "тома живут в TEST_HOME (изоляция прогона)" || fail "чужие источники монтирований"
 else
