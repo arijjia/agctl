@@ -1,12 +1,18 @@
 #!/bin/bash
-# e2e-ssh: real Docker SSH-channel test (container public-key auth on 127.0.0.1).
-# Requires a built server image agctl-dsh-server with openssh-server (make img_build_server IMG_SERVER=...).
+# e2e-ssh (v3): реальный SSH-канал developer'а в персональный контейнер
+# (вход только по ключу, порт на 127.0.0.1). Нужен серверный образ
+# agctl-dsh-server с openssh-server (make img_build_server IMG_SERVER=...).
 #
-#   IMG=agctl-dsh-server:0.2.0-ssh-night bin/e2e-ssh.sh
+#   IMG=agctl-dsh-server:0.2.2 bin/e2e-ssh.sh
 #
-# The test creates an isolated TEST_HOME + ephemeral SSH key, provisions a
-# workspace with sshPubKey, connects with the system ssh client, and cleans
-# up the workspace/server. It never prints private-key material.
+# Поток v3 (v2-воркспейсы и /api/workspaces удалены):
+#   admin (первая учётка) + пользователь → роль user: PUT /api/me/ssh → 403 →
+#   заявка на developer → апрув админом → PUT /api/me/ssh (ключ) →
+#   POST /api/me/runtime/start (ensureChat) → sshPort, bind только loopback →
+#   ssh по ключу → ротация (новый ключ вступает при следующем старте: stop →
+#   start; старый ключ отвергается) → снятие ключа (sshd не публикуется) →
+#   опционально Mutagen туда-обратно. Изолированный TEST_HOME, свои порты,
+#   одноразовые ключи; приватные ключи не печатаются и удаляются в конце.
 set -u
 cd "$(dirname "$0")/.."
 REPO_ROOT="$PWD"
@@ -14,27 +20,17 @@ RUN_ID="$(date +%Y%m%d-%H%M%S)"
 TEST_HOME="${E2E_SSH_HOME:-/tmp/agctl-ssh-e2e-$RUN_ID}"
 ADDR="127.0.0.1:${E2E_SSH_ADDR_PORT:-18932}"
 B="http://$ADDR"
-IMG="${IMG:-agctl-dsh-server:0.2.0-ssh-night}"
-BIN="$TEST_HOME/agctl"
+IMG="${IMG:-agctl-dsh-server:0.2.2}"
+BIN="$TEST_HOME/agctl-server"
 FAKE_PORT="${FAKE_PORT:-18770}"
+ORIG_HOME="$HOME"
+DEV_LOGIN="ssh-dev"; DEV_PASSWORD="ssh-e2e-pass-1"
+ADMIN_LOGIN="ssh-admin"; ADMIN_PASSWORD="ssh-e2e-admin-1"
 
-PASS=0; FAIL=0; AGCTL_PID=""; FAKE_PID=""; WSID=""; MUTAGEN_NAME=""; MUTAGEN_HOME=""; MUTAGEN_DAEMON_PID=""
+PASS=0; FAIL=0; AGCTL_PID=""; FAKE_PID=""; MUTAGEN_NAME=""; MUTAGEN_HOME=""; MUTAGEN_DAEMON_PID=""
 pass() { PASS=$((PASS+1)); echo "  ok: $1"; }
 fail() { FAIL=$((FAIL+1)); echo "  FAIL: $1"; }
 cleanup() {
-  if [ -n "$WSID" ] && [ -f "$TEST_HOME/jar" ]; then
-    curl -s -b "$TEST_HOME/jar" -X DELETE "$B/api/workspaces/$WSID" -o /dev/null 2>/dev/null || true
-    # DELETE is async; wait for agctl to remove our labeled container before
-    # stopping the server, so repeated tests don't leak Docker resources.
-    for i in $(seq 1 30); do
-      [ -z "$(docker ps -aq --filter "label=agctl.workspace=$WSID" 2>/dev/null)" ] && break
-      sleep 1
-    done
-    if [ -n "$(docker ps -aq --filter "label=agctl.workspace=$WSID" 2>/dev/null)" ]; then
-      echo "cleanup: fallback remove own container agctl-$WSID" >&2
-      docker rm -f "agctl-$WSID" >/dev/null 2>&1 || true
-    fi
-  fi
   if [ -n "$MUTAGEN_NAME" ] && [ -n "$MUTAGEN_HOME" ] && command -v mutagen >/dev/null 2>&1; then
     HOME="$MUTAGEN_HOME" MUTAGEN_DATA_DIRECTORY="$MUTAGEN_HOME/data" MUTAGEN_SSH_PATH="$MUTAGEN_HOME/bin" MUTAGEN_E2E_KEY="$MUTAGEN_HOME/.ssh/id_ed25519" mutagen sync terminate "$MUTAGEN_NAME" >/dev/null 2>&1 || true
   fi
@@ -42,9 +38,20 @@ cleanup() {
     HOME="$MUTAGEN_HOME" MUTAGEN_DATA_DIRECTORY="$MUTAGEN_HOME/data" MUTAGEN_SSH_PATH="$MUTAGEN_HOME/bin" MUTAGEN_E2E_KEY="$MUTAGEN_HOME/.ssh/id_ed25519" mutagen daemon stop >/dev/null 2>&1 || true
   fi
   [ -n "$MUTAGEN_DAEMON_PID" ] && kill "$MUTAGEN_DAEMON_PID" >/dev/null 2>&1 || true
+  if [ -n "$AGCTL_PID" ] && [ -f "$TEST_HOME/dev.jar" ]; then
+    curl -s -b "$TEST_HOME/dev.jar" -X POST "$B/api/me/runtime/stop" -o /dev/null 2>/dev/null || true
+  fi
   [ -n "$AGCTL_PID" ] && kill "$AGCTL_PID" >/dev/null 2>&1 || true
   [ -n "$FAKE_PID" ] && kill "$FAKE_PID" >/dev/null 2>&1 || true
-  # Test private keys are disposable; keep logs/DB, remove only generated keys.
+  # Контейнеры прогона (тома смонтированы из TEST_HOME) — убрать за собой:
+  # reaper умирает вместе с serve; чужие контейнеры не трогаем.
+  for cid in $(docker ps -aq --filter name=agctl-chat- 2>/dev/null); do
+    mounts=$(docker inspect --format '{{range .Mounts}}{{.Source}};{{end}}' "$cid" 2>/dev/null || true)
+    case "$mounts" in
+      *"$TEST_HOME"/*) docker rm -f "$cid" >/dev/null 2>&1 || true ;;
+    esac
+  done
+  # Тестовые приватные ключи одноразовые: логи и БД оставляем, ключи удаляем.
   rm -f "$TEST_HOME/id_ed25519" "$TEST_HOME/id_ed25519.pub" \
     "$TEST_HOME/id_ed25519_rotated" "$TEST_HOME/id_ed25519_rotated.pub"
   if [ -n "$MUTAGEN_HOME" ]; then
@@ -64,135 +71,121 @@ docker image inspect "$IMG" >/dev/null 2>&1 || { echo "server image $IMG не н
 
 go build -o "$BIN" ./cmd/agctl-server || exit 2
 ssh-keygen -q -t ed25519 -N '' -f "$TEST_HOME/id_ed25519"
-python3 bin/fake-llm.py --port "$FAKE_PORT" >"$TEST_HOME/fake.log" 2>&1 &
+python3 bin/fake-llm.py --port "$FAKE_PORT" --bind 0.0.0.0 >"$TEST_HOME/fake.log" 2>&1 &
 FAKE_PID=$!
-"$BIN" serve --home "$TEST_HOME/data" --addr "$ADDR" --image "$IMG" >"$TEST_HOME/serve.log" 2>&1 &
+AGCTL_LLM_API_KEY=e2e-fake-key-not-a-secret "$BIN" serve --home "$TEST_HOME/data" --addr "$ADDR" --image "$IMG" \
+  --llm-base-url "http://host.docker.internal:$FAKE_PORT/v1" \
+  --llm-model stub-model --llm-models stub-model >"$TEST_HOME/serve.log" 2>&1 &
 AGCTL_PID=$!
-for i in $(seq 1 20); do
+READY=""
+for i in $(seq 1 30); do
   sleep 1
   code=$(curl -s -o /dev/null -w '%{http_code}' "$B/api/me" || true)
-  [ "$code" = "401" ] && break
+  [ "$code" = "401" ] && READY=1 && break
 done
+[ -n "$READY" ] || { echo "agctl-server не стартовал; лог: $TEST_HOME/serve.log" >&2; tail -25 "$TEST_HOME/serve.log" >&2; exit 1; }
 
-curl -s -c "$TEST_HOME/jar" -H 'Content-Type: application/json' \
-  -d '{"login":"ssh-e2e","password":"ssh-e2e-pass-1"}' "$B/api/register" -o /dev/null
-PUB=$(cat "$TEST_HOME/id_ed25519.pub")
-python3 - "$PUB" "$FAKE_PORT" <<'PY' >"$TEST_HOME/create.json"
-import json, sys
-pub, port = sys.argv[1:]
-print(json.dumps({
-  "name":"ssh-e2e", "kit":"base", "components":["core-workspace"],
-  "baseURL":f"http://host.docker.internal:{port}/v1", "models":["stub-model"],
-  "apiKey":"sk-e2e-fake-not-a-secret", "sshPubKey":pub
-}))
-PY
-curl -s -b "$TEST_HOME/jar" -H 'Content-Type: application/json' \
-  --data-binary @"$TEST_HOME/create.json" "$B/api/workspaces" -o "$TEST_HOME/create.out" -w '%{http_code}' | grep -q '^202$' \
-  && pass "workspace provisioning accepted with sshPubKey" \
-  || { fail "workspace create failed: $(cat "$TEST_HOME/create.out")"; exit 1; }
-
-for i in $(seq 1 45); do
-  sleep 2
-  curl -s -b "$TEST_HOME/jar" "$B/api/workspaces" >"$TEST_HOME/list.json"
-  STATE=$(python3 - "$TEST_HOME/list.json" <<'PY'
-import json, sys
-ws = json.load(open(sys.argv[1])).get('workspaces') or []
-if ws:
-  print(ws[0].get('id',''), ws[0].get('status',''), ws[0].get('sshPort',0))
-PY
-)
-  case "$STATE" in
-    *" running "*) break;;
-  esac
-done
-WSID=$(printf '%s' "$STATE" | awk '{print $1}')
-SSHPORT=$(printf '%s' "$STATE" | awk '{print $3}')
-if [ -z "$WSID" ] || [ "$SSHPORT" -le 0 ]; then
-  fail "workspace did not start / sshPort missing: '$STATE'"
-  tail -30 "$TEST_HOME/serve.log" >&2
-  exit 1
-fi
-pass "workspace running; sshPort=$SSHPORT"
-BOUND=$(docker port "agctl-$WSID" 2222/tcp 2>/dev/null || true)
-case "$BOUND" in
-  127.0.0.1:*) pass "Docker SSH bind loopback-only ($BOUND)";;
-  *) fail "SSH host binding is not loopback-only: '$BOUND'";;
-esac
-
-OUT=$(ssh -i "$TEST_HOME/id_ed25519" -p "$SSHPORT" \
-  -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-  -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 \
-  root@127.0.0.1 'printf SSH_OK' 2>"$TEST_HOME/ssh.log" || true)
-[ "$OUT" = "SSH_OK" ] && pass "public-key SSH command executed in container" \
-  || { fail "ssh output='$OUT'; $(tail -5 "$TEST_HOME/ssh.log" | tr '\n' ' ')"; }
-
-PRINTED=$("$BIN" connect --host 127.0.0.1 --port "$SSHPORT" --identity "$TEST_HOME/id_ed25519" --print)
-echo "$PRINTED" | grep -q "root@127.0.0.1" && pass "agctl connect renders ssh command" || fail "agctl connect output: $PRINTED"
-
-# Rotate -> remove -> re-enable key on a running workspace; each PATCH must
-# recreate the container and update the loopback port/key pair.
-patch_ssh() {
-  curl -s -b "$TEST_HOME/jar" -X PATCH -H 'Content-Type: application/json' \
-    -d "$1" "$B/api/workspaces/$WSID/ssh" -o "$TEST_HOME/ssh-patch.json" -w '%{http_code}'
+# api <jar> <METHOD> <path> [json] — тело ответа в $TEST_HOME/last.json, печатает HTTP-код.
+api() {
+  local jar="$1" m="$2" p="$3" d="${4:-}"
+  local args=(-s -b "$jar" -c "$jar" -X "$m" -o "$TEST_HOME/last.json" -w '%{http_code}')
+  [ -n "$d" ] && args+=(-H 'Content-Type: application/json' --data-binary "$d")
+  curl "${args[@]}" "$B$p"
 }
-wait_ssh_state() {
-  local want="$1" state=""
-  for i in $(seq 1 45); do
+jlast() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print('"$1"')' "$TEST_HOME/last.json" 2>/dev/null; }
+put_key() { # <файл .pub или пусто> — PUT /api/me/ssh от developer'а
+  local body
+  body=$(python3 -c 'import json,sys; print(json.dumps({"pubKey": open(sys.argv[1]).read().strip() if sys.argv[1] else ""}))' "${1:-}")
+  api "$TEST_HOME/dev.jar" PUT /api/me/ssh "$body"
+}
+start_runtime() { # печатает sshPort живого контейнера
+  local code
+  code=$(api "$TEST_HOME/dev.jar" POST /api/me/runtime/start)
+  [ "$code" = 200 ] || { echo "start:$code:$(head -c 300 "$TEST_HOME/last.json")"; return 1; }
+  jlast 'd.get("sshPort",0)'
+}
+stop_runtime() { api "$TEST_HOME/dev.jar" POST /api/me/runtime/stop; }
+ssh_run() { # <ключ> <порт> <команда>
+  ssh -i "$1" -p "$2" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 root@127.0.0.1 "$3"
+}
+wait_gone() { # <имя контейнера> — StopChat удаляет compute асинхронно
+  for i in $(seq 1 60); do
+    [ -z "$(docker ps -aq --filter name="^/$1$")" ] && return 0
     sleep 1
-    curl -s -b "$TEST_HOME/jar" "$B/api/workspaces/$WSID" >"$TEST_HOME/ws.json"
-    state=$(python3 - "$TEST_HOME/ws.json" <<'PY'
-import json, sys
-w = json.load(open(sys.argv[1])).get('workspace', {})
-print(w.get('status',''), w.get('sshEnabled',False), w.get('sshPort',0))
-PY
-)
-    case "$state" in
-      "running $want "*) echo "$state"; return 0;;
-    esac
   done
-  echo "$state"
   return 1
 }
+dev_container() {
+  api "$TEST_HOME/dev.jar" GET /api/me/containers >/dev/null
+  jlast '(d.get("containers") or [{}])[0].get("name","")'
+}
 
-# Removing the key disables sshd after the async container replacement.
-CODE=$(patch_ssh '{"pubKey":""}')
-if [ "$CODE" = "202" ]; then
-  STATE=$(wait_ssh_state False) || true
-  case "$STATE" in
-    "running False 0") pass "SSH key removal recreated container and disabled port";;
-    *) fail "SSH removal state: '$STATE'";;
-  esac
-else
-  fail "SSH key removal PATCH: HTTP $CODE"
-fi
+echo "== Роли: admin + developer по заявке =="
+code=$(api "$TEST_HOME/admin.jar" POST /api/register "{\"login\":\"$ADMIN_LOGIN\",\"password\":\"$ADMIN_PASSWORD\"}")
+[ "$code" = 200 ] || [ "$code" = 201 ] || { fail "register admin: $code"; exit 1; }
+code=$(api "$TEST_HOME/dev.jar" POST /api/register "{\"login\":\"$DEV_LOGIN\",\"password\":\"$DEV_PASSWORD\"}")
+[ "$code" = 200 ] || [ "$code" = 201 ] || { fail "register dev: $code"; exit 1; }
+code=$(put_key "$TEST_HOME/id_ed25519.pub")
+[ "$code" = 403 ] && pass "роль user: PUT /api/me/ssh → 403 (SSH только developer)" || fail "роль user PUT /api/me/ssh: $code"
+code=$(api "$TEST_HOME/dev.jar" POST /api/role-requests '{"motivation":"e2e-ssh"}')
+[ "$code" = 200 ] || { fail "заявка на developer: $code $(cat "$TEST_HOME/last.json")"; exit 1; }
+RID=$(jlast 'd["request"]["id"]')
+code=$(api "$TEST_HOME/admin.jar" POST "/api/role-requests/$RID/approve")
+[ "$code" = 200 ] && pass "заявка $RID одобрена админом" || { fail "approve: $code $(cat "$TEST_HOME/last.json")"; exit 1; }
+api "$TEST_HOME/dev.jar" GET /api/me >/dev/null
+[ "$(jlast 'd["user"]["role"]')" = developer ] && pass "роль developer привязана" || fail "роль после апрува: $(jlast 'd["user"]["role"]')"
 
-# Enable a second key and verify it authenticates after runtime restart.
+echo "== Ключ → старт контейнера → SSH =="
+code=$(put_key "$TEST_HOME/id_ed25519.pub")
+[ "$code" = 200 ] && pass "PUT /api/me/ssh: ключ сохранён" || fail "PUT /api/me/ssh: $code $(cat "$TEST_HOME/last.json")"
+api "$TEST_HOME/dev.jar" GET /api/me/ssh >/dev/null
+case "$(jlast 'd.get("pubKey","")')" in
+  ssh-ed25519\ *) pass "GET /api/me/ssh отдаёт сохранённый ключ";;
+  *) fail "GET /api/me/ssh: pubKey не сохранён";;
+esac
+SSHPORT=$(start_runtime) || true
+case "$SSHPORT" in
+  ''|0|start:*) fail "контейнер без sshPort: '$SSHPORT'"; tail -30 "$TEST_HOME/serve.log" >&2; exit 1;;
+esac
+pass "POST /api/me/runtime/start: running, sshPort=$SSHPORT"
+api "$TEST_HOME/dev.jar" GET /api/me/ssh >/dev/null
+[ "$(jlast 'd.get("sshPort",0)')" = "$SSHPORT" ] && pass "GET /api/me/ssh: живой порт совпадает" || fail "GET /api/me/ssh sshPort=$(jlast 'd.get("sshPort",0)')"
+CONTAINER=$(dev_container)
+BOUND=$(docker port "$CONTAINER" 2222/tcp 2>/dev/null || true)
+case "$BOUND" in
+  127.0.0.1:*) pass "SSH опубликован только на loopback ($BOUND)";;
+  *) fail "SSH-порт не только на loopback: '$BOUND' (контейнер '$CONTAINER')";;
+esac
+OUT=$(ssh_run "$TEST_HOME/id_ed25519" "$SSHPORT" 'printf SSH_OK' 2>"$TEST_HOME/ssh.log" || true)
+[ "$OUT" = "SSH_OK" ] && pass "вход по ключу, команда выполнена в контейнере" \
+  || fail "ssh output='$OUT'; $(tail -5 "$TEST_HOME/ssh.log" | tr '\n' ' ')"
+PRINTED=$("$BIN" connect --host 127.0.0.1 --port "$SSHPORT" --identity "$TEST_HOME/id_ed25519" --print)
+echo "$PRINTED" | grep -q "root@127.0.0.1" && pass "agctl-server connect --print рисует ssh-команду" || fail "connect --print: $PRINTED"
+
+echo "== Ротация ключа (вступает при следующем старте) =="
 ssh-keygen -q -t ed25519 -N '' -f "$TEST_HOME/id_ed25519_rotated"
-PUB2=$(cat "$TEST_HOME/id_ed25519_rotated.pub")
-python3 - "$PUB2" <<'PY' >"$TEST_HOME/ssh-patch.json"
-import json, sys
-print(json.dumps({"pubKey": sys.argv[1]}))
-PY
-CODE=$(curl -s -b "$TEST_HOME/jar" -X PATCH -H 'Content-Type: application/json' \
-  --data-binary @"$TEST_HOME/ssh-patch.json" "$B/api/workspaces/$WSID/ssh" \
-  -o "$TEST_HOME/ssh-patch-result.json" -w '%{http_code}')
-if [ "$CODE" = "202" ]; then
-  STATE=$(wait_ssh_state True) || true
-  SSHPORT2=$(printf '%s' "$STATE" | awk '{print $3}')
-  OUT2=$(ssh -i "$TEST_HOME/id_ed25519_rotated" -p "$SSHPORT2" \
-    -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-    -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 \
-    root@127.0.0.1 'printf SSH_ROTATED' 2>"$TEST_HOME/ssh-rotated.log" || true)
-  [ "$OUT2" = "SSH_ROTATED" ] && pass "key rotation recreated container and authenticates new key" \
-    || fail "rotated-key SSH output='$OUT2'; $(tail -5 "$TEST_HOME/ssh-rotated.log" | tr '\\n' ' ')"
-else
-  fail "SSH key rotation PATCH: HTTP $CODE"
-fi
+code=$(put_key "$TEST_HOME/id_ed25519_rotated.pub")
+[ "$code" = 200 ] && pass "PUT /api/me/ssh: новый ключ сохранён" || fail "ротация PUT: $code"
+code=$(stop_runtime)
+[ "$code" = 200 ] && wait_gone "$CONTAINER" && pass "stop: compute удалён, том сохранён" || fail "stop runtime: $code / контейнер не удалён"
+SSHPORT2=$(start_runtime) || true
+case "$SSHPORT2" in
+  ''|0|start:*) fail "после ротации контейнер без sshPort: '$SSHPORT2'"; SSHPORT2=0;;
+  *)
+    OUT2=$(ssh_run "$TEST_HOME/id_ed25519_rotated" "$SSHPORT2" 'printf SSH_ROTATED' 2>"$TEST_HOME/ssh-rotated.log" || true)
+    [ "$OUT2" = "SSH_ROTATED" ] && pass "новый ключ проходит после рестарта" \
+      || fail "rotated-key ssh output='$OUT2'; $(tail -5 "$TEST_HOME/ssh-rotated.log" | tr '\n' ' ')"
+    OLD=$(ssh_run "$TEST_HOME/id_ed25519" "$SSHPORT2" 'printf OLD_KEY_IN' 2>/dev/null || true)
+    [ -z "$OLD" ] && pass "старый ключ отвергнут" || fail "старый ключ всё ещё пускает"
+    ;;
+esac
 
+echo "== Mutagen (опционально) =="
 # Optional real Mutagen round-trip. If mutagen is absent, earlier SSH checks
 # still pass and this phase is reported as SKIP. Set MUTAGEN_HOME so the
 # temporary test daemon/config/identity never touch the user's real profile.
-if command -v mutagen >/dev/null 2>&1; then
+if [ "$SSHPORT2" -gt 0 ] && command -v mutagen >/dev/null 2>&1; then
   MUTAGEN_HOME="$TEST_HOME/mutagen-home"
   MUTAGEN_NAME="agctl-e2e-$RUN_ID"
   LOCAL_SYNC="$TEST_HOME/local-sync"
@@ -263,9 +256,25 @@ SCPWRAP
   HOME="$MUTAGEN_HOME" MUTAGEN_DATA_DIRECTORY="$MUTAGEN_HOME/data" MUTAGEN_SSH_PATH="$MUTAGEN_HOME/bin" MUTAGEN_E2E_KEY="$MUTAGEN_HOME/.ssh/id_ed25519" mutagen sync terminate "$MUTAGEN_NAME" >/dev/null 2>&1 || true
   HOME="$MUTAGEN_HOME" MUTAGEN_DATA_DIRECTORY="$MUTAGEN_HOME/data" MUTAGEN_SSH_PATH="$MUTAGEN_HOME/bin" MUTAGEN_E2E_KEY="$MUTAGEN_HOME/.ssh/id_ed25519" mutagen daemon stop >/dev/null 2>&1 || true
   MUTAGEN_NAME=""
+  # Дальше снова docker/ssh пользователя: вернуть HOME (контекст Docker в ~/.docker).
+  export HOME="$ORIG_HOME"
+  unset MUTAGEN_DATA_DIRECTORY MUTAGEN_SSH_PATH MUTAGEN_E2E_KEY
 else
-  echo "  SKIP: Mutagen CLI not installed; command rendering/missing-binary guard are tested"
+  echo "  SKIP: Mutagen CLI не установлен (или нет живого SSH после ротации)"
 fi
+
+
+echo "== Снятие ключа: sshd не публикуется =="
+code=$(put_key "")
+[ "$code" = 200 ] && pass "PUT /api/me/ssh с пустым ключом: снят" || fail "снятие ключа: $code"
+CONTAINER=$(dev_container)
+code=$(stop_runtime)
+[ "$code" = 200 ] && wait_gone "$CONTAINER" || fail "stop перед снятием: $code"
+SSHPORT3=$(start_runtime) || true
+case "$SSHPORT3" in
+  0) pass "без ключа контейнер стартует без SSH-порта";;
+  *) fail "после снятия ключа sshPort='$SSHPORT3'";;
+esac
 
 echo "== e2e-ssh result: PASS=$PASS FAIL=$FAIL (home=$TEST_HOME) =="
 [ "$FAIL" -eq 0 ]
