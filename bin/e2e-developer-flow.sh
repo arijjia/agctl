@@ -109,7 +109,7 @@ if [ -z "$PORT" ] || [ "$PORT" = "0" ]; then
 fi
 pass "live sshPort=$PORT"
 
-SSHOPTS="-i $TEST_HOME/id_ed25519 -p $PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o BatchMode=yes"
+SSHOPTS="-i $TEST_HOME/id_ed25519 -p $PORT -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o BatchMode=yes"
 WHO=$(ssh $SSHOPTS root@127.0.0.1 'whoami' 2>>"$TEST_HOME/ssh.log")
 [ "$WHO" = "root" ] && pass "SSH key-only вход (whoami=$WHO)" || fail "SSH whoami='$WHO' (лог: $TEST_HOME/ssh.log)"
 
