@@ -209,7 +209,7 @@ func TestLocalModeHasNoServerModules(t *testing.T) {
 	for _, path := range []string{
 		"/api/admin/overview", "/api/admin/users", "/api/role-requests", "/api/me/ssh",
 		"/api/launcher/images", "/api/me/runtime", "/api/workspaces", "/api/kits",
-		"/ax/provider-config/x", "/admin", "/launcher", "/w/1/",
+		"/ax/provider-config/x", "/admin", "/w/1/",
 	} {
 		if code, _ := env.do(c, "GET", path, nil); code != http.StatusNotFound {
 			t.Errorf("%s в локальном режиме: %d, ждали 404", path, code)
@@ -217,5 +217,19 @@ func TestLocalModeHasNoServerModules(t *testing.T) {
 	}
 	if env.srv.prewarmEnabled() {
 		t.Error("prewarm включён в локальном режиме")
+	}
+}
+
+// Вход локального режима ведёт на /launcher — страница отдаётся SPA, хотя
+// серверный модуль launcher не подключён (регрессия 2026-11-16).
+func TestLocalLauncherPageServed(t *testing.T) {
+	env, _ := newLocalEnv(t)
+	c := env.newClient()
+	if code, _ := env.do(c, "GET", "/local/login?token=login-tok", nil); code != http.StatusSeeOther {
+		t.Fatalf("вход: %d", code)
+	}
+	env.waitLocalWarm()
+	if code, body := env.do(c, "GET", "/launcher", nil); code != 200 || !strings.Contains(body, "<title>") {
+		t.Fatalf("/launcher: %d %.80s", code, body)
 	}
 }

@@ -19,6 +19,7 @@ import (
 
 	"github.com/arijjia/agctl/internal/localbridge"
 	"github.com/arijjia/agctl/internal/provision"
+	agctlrt "github.com/arijjia/agctl/internal/runtime"
 )
 
 // LocalMode — настройки локального режима (Config.Local; nil = серверный режим).
@@ -46,6 +47,28 @@ type localState struct {
 
 	workMu  sync.Mutex
 	workDir string // папка проектов на хосте → /workspace (меняется из лаунчера)
+
+	// Лаунчер v2: задачи подготовки рабочих мест (по слотам; слот 0 —
+	// task выше), поток событий для открытых копий интерфейса, ревизия
+	// основного места.
+	placeMu    sync.Mutex
+	placeTasks map[int]*localTask
+	events     *localEvents
+	mainRev    int64
+}
+
+// mainRevision — ревизия основного рабочего места (папка и образ из dev.yaml).
+func (l *localState) mainRevision() int64 {
+	l.placeMu.Lock()
+	defer l.placeMu.Unlock()
+	return l.mainRev
+}
+
+// bumpMain — основное место изменилось (папка или образ).
+func (l *localState) bumpMain() {
+	l.placeMu.Lock()
+	l.mainRev++
+	l.placeMu.Unlock()
 }
 
 // localWorkDir — текущая папка проектов владельца.
@@ -87,7 +110,8 @@ func (s *Server) initLocal() error {
 	if err != nil {
 		return err
 	}
-	s.local = &localState{ownerID: id, bridge: b, task: &localTask{state: "idle"}, workDir: lm.WorkDir}
+	s.local = &localState{ownerID: id, bridge: b, task: &localTask{state: "idle"}, workDir: lm.WorkDir,
+		events: &localEvents{}, mainRev: 1}
 	provision.SetLocalWorkRoot(s.cfg.Home, id, lm.WorkDir)
 	// Источник правды об образе — dev.yaml (его меняют и лаунчер, и CLI).
 	if lm.Hooks != nil {
@@ -107,6 +131,8 @@ func (s *Server) registerLocalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+localbridge.PathTools, s.requireBridge(s.handleBridgeTools))
 	mux.HandleFunc("POST "+localbridge.PathCall, s.requireBridge(s.handleBridgeCall))
 	s.registerLocalUIRoutes(mux)
+	s.registerLocalPlaceRoutes(mux)
+	s.registerLocalPresetRoutes(mux)
 }
 
 func bearer(r *http.Request) string {
@@ -241,12 +267,32 @@ func (s *Server) handleBridgeDecide(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"id": r.PathValue("id"), "approved": approve})
 }
 
-// localChatSpec дополняет спецификацию рабочего места владельца в локальном
-// режиме: родная папка проектов, секреты из хранилища ОС, адрес моста.
-func (s *Server) localChatExtras(userID int64) (workDir string, env []string) {
-	if !s.isLocal() || s.local == nil || userID != s.local.ownerID {
-		return "", nil
+// localExtras — дополнения спецификации рабочего места в локальном режиме.
+type localExtras struct {
+	WorkDir string          // одна папка → /workspace
+	Mounts  []agctlrt.Mount // несколько папок → /workspace/<имя>
+	Env     []string        // доступы из хранилища ОС, адрес и токен моста
+}
+
+// localChatExtras дополняет спецификацию рабочего места владельца в локальном
+// режиме: папки хоста (слот 0 — папка проектов из dev.yaml, остальные —
+// из таблицы places), секреты из хранилища ОС, адрес моста. ok=false — не
+// локальный режим или не владелец; ошибка — у слота нет рабочего места.
+func (s *Server) localChatExtras(key chatKey) (localExtras, bool, error) {
+	if !s.isLocal() || s.local == nil || key.uid != s.local.ownerID {
+		return localExtras{}, false, nil
 	}
+	var ex localExtras
+	if key.slot == 0 {
+		ex.WorkDir = s.localWorkDir()
+	} else {
+		p, err := s.localPlaceBySlot(key)
+		if err != nil {
+			return localExtras{}, false, err
+		}
+		ex.WorkDir, ex.Mounts = placeBinds(p)
+	}
+	var env []string
 	if h := s.cfg.Local.Hooks; h != nil {
 		env = append(env, h.ContainerEnv()...)
 	} else {
@@ -259,16 +305,17 @@ func (s *Server) localChatExtras(userID int64) (workDir string, env []string) {
 		// с содержимым /workspace (папка проектов могла смениться).
 		"AGCTL_LOCAL_MODE=1",
 	)
-	return s.localWorkDir(), env
+	ex.Env = env
+	return ex, true, nil
 }
 
 // writeLocalBridgeSkill кладёт скилл моста в dsh-home владельца (dsh
 // подхватывает <dshHome>/skills без рестарта).
-func (s *Server) writeLocalBridgeSkill(userID int64) {
-	if !s.isLocal() || s.local == nil || userID != s.local.ownerID {
+func (s *Server) writeLocalBridgeSkill(key chatKey) {
+	if !s.isLocal() || s.local == nil || key.uid != s.local.ownerID {
 		return
 	}
-	dir := filepath.Join(s.projectDshHome(userID), "skills", "agctl-host-bridge")
+	dir := filepath.Join(s.dshHomeFor(key), "skills", "agctl-host-bridge")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		log.Printf("[local] скилл моста: %v", err)
 		return

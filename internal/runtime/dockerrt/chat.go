@@ -33,6 +33,26 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 		}
 		work = spec.WorkDir
 	}
+	var extraBinds []string
+	if len(spec.Mounts) > 0 {
+		if spec.WorkDir != "" {
+			return agctlrt.ChatHandle{}, fmt.Errorf("dockerrt: WorkDir and Mounts are mutually exclusive")
+		}
+		seen := map[string]bool{}
+		for _, m := range spec.Mounts {
+			if !filepath.IsAbs(m.Host) {
+				return agctlrt.ChatHandle{}, fmt.Errorf("dockerrt: mount host path must be absolute: %q", m.Host)
+			}
+			if info, err := os.Stat(m.Host); err != nil || !info.IsDir() {
+				return agctlrt.ChatHandle{}, fmt.Errorf("dockerrt: mount %q is not a directory", m.Host)
+			}
+			if !validMountName(m.Name) || seen[m.Name] {
+				return agctlrt.ChatHandle{}, fmt.Errorf("dockerrt: invalid or duplicate mount name %q", m.Name)
+			}
+			seen[m.Name] = true
+			extraBinds = append(extraBinds, m.Host+":/workspace/"+m.Name)
+		}
+	}
 	for _, dir := range []string{dshHome, work} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return agctlrt.ChatHandle{}, err
@@ -81,6 +101,7 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	}
 	layout := provision.Layout{Work: work, DshHome: dshHome}
 	opts.DevEnv = spec.DevEnv // доменные креды developer'а из .env хоста
+	opts.ExtraBinds = extraBinds
 	res, err := rt.Start(ctx, layout, spec.RuntimeID, opts, spec.Provider)
 	if err != nil {
 		return agctlrt.ChatHandle{}, err
@@ -101,4 +122,18 @@ func (rt *Runtime) StopChat(ctx context.Context, handle agctlrt.ChatHandle) erro
 // LogsChat returns Docker startup logs used to mint the private DSH auth cookie.
 func (rt *Runtime) LogsChat(ctx context.Context, handle agctlrt.ChatHandle, tail string) (string, error) {
 	return rt.Logs(ctx, handle.InstanceID, tail)
+}
+
+// validMountName — имя подкаталога /workspace для папки хоста.
+func validMountName(name string) bool {
+	if name == "" || len(name) > 64 || name == "." || name == ".." {
+		return false
+	}
+	for i, r := range name {
+		ok := r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || (i > 0 && (r == '.' || r == '_' || r == '-'))
+		if !ok {
+			return false
+		}
+	}
+	return true
 }

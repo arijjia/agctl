@@ -182,12 +182,20 @@ func (s *Server) afterLocalSecretChange(name, value string) {
 	} else {
 		s.setDefaultLLMExtraKey(name, value)
 	}
+	// Доступы общие для всех рабочих мест: каждое работающее — на старых.
 	s.chatMu.Lock()
-	running := s.chats[chatKey{uid: s.local.ownerID, slot: 0}] != nil
-	s.chatMu.Unlock()
-	if running {
-		s.local.task.markPending()
+	var running []int
+	for k := range s.chats {
+		if k.uid == s.local.ownerID {
+			running = append(running, k.slot)
+		}
 	}
+	s.chatMu.Unlock()
+	for _, slot := range running {
+		s.placeTask(slot).markPending()
+	}
+	s.local.events.publish("secrets")
+	s.local.events.publish("places")
 }
 
 type localImageReq struct {
@@ -223,6 +231,8 @@ func (s *Server) handleLocalImagePut(w http.ResponseWriter, r *http.Request, id 
 	if rt != nil && rt.image != ref {
 		s.local.task.markPending()
 	}
+	s.local.bumpMain()
+	s.local.events.publish("places")
 	_ = s.db.Audit(id.Login, "local.image.set", ref, "")
 	writeJSON(w, http.StatusOK, map[string]any{"image": ref})
 }
@@ -255,6 +265,8 @@ func (s *Server) handleLocalWorkDirPut(w http.ResponseWriter, r *http.Request, i
 			s.local.task.markPending()
 		}
 	}
+	s.local.bumpMain()
+	s.local.events.publish("places")
 	_ = s.db.Audit(id.Login, "local.workdir.set", abs, "")
 	writeJSON(w, http.StatusOK, map[string]any{"workdir": abs})
 }
@@ -288,6 +300,7 @@ func (s *Server) startLocalRuntime(restart bool) bool {
 	t.state, t.image, t.err, t.log = "starting", ref, "", nil
 	t.mu.Unlock()
 	go func() {
+		defer s.local.events.publish("places")
 		owner := s.local.ownerID
 		fail := func(err error) {
 			t.mu.Lock()
@@ -335,6 +348,8 @@ func (s *Server) startLocalRuntime(restart bool) bool {
 			fail(err)
 			return
 		}
+		// Пресеты основного места накатываются при старте (local_presets.go).
+		s.applyAllPresetsAt(owner, 0)
 		t.logf("рабочее место запущено")
 		t.mu.Lock()
 		t.state, t.pending = "idle", false

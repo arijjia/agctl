@@ -8,7 +8,33 @@
   --green: #3fb950;
   --red: #f85149;
   --yellow: #d29922;
+  /* Поверхности и акценты, свои у светлой темы (см. [data-theme="light"]).
+     data-theme ставит только лаунчер (web/src/theme.ts): страницы серверного
+     режима без атрибута выглядят ровно как здесь. */
+  --btn-bg: #21262d;
+  --input-bg: #0d1117;
+  --log-bg: #010409;
+  --primary: #1f6feb;
+  --primary-text: #e6edf3;
+  --error-text: #ffb3ad;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+:root[data-theme="light"] {
+  --bg: #f6f8fa;
+  --card: #ffffff;
+  --border: #d0d7de;
+  --text: #1f2328;
+  --muted: #59636e;
+  --accent: #0969da;
+  --green: #1a7f37;
+  --red: #cf222e;
+  --yellow: #9a6700;
+  --btn-bg: #eaeef2;
+  --input-bg: #ffffff;
+  --log-bg: #f6f8fa;
+  --primary: #0969da;
+  --primary-text: #ffffff;
+  --error-text: #cf222e;
 }
 * { box-sizing: border-box; }
 body {
@@ -56,7 +82,7 @@ label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color:
 .component-option input[type="checkbox"] { flex: 0 0 auto; width: 16px; height: 16px; margin: 2px 0 0; padding: 0; }
 .component-option > span { display: flex; flex-direction: column; gap: 3px; }
 input {
-  background: #0d1117;
+  background: var(--input-bg);
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 6px;
@@ -66,7 +92,7 @@ input {
 input:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
 
 button, .button {
-  background: #21262d;
+  background: var(--btn-bg);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -79,7 +105,7 @@ button, .button {
   gap: 6px;
 }
 button:hover, .button:hover { border-color: var(--accent); }
-button.primary, .button.primary { background: #1f6feb; border-color: #1f6feb; }
+button.primary, .button.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
 button.primary:disabled { opacity: 0.6; cursor: default; }
 button.danger { color: var(--red); }
 .tabs { display: flex; gap: 6px; }
@@ -88,7 +114,7 @@ button.danger { color: var(--red); }
 
 .stack { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
 select {
-  background: #0d1117;
+  background: var(--input-bg);
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 6px;
@@ -99,7 +125,7 @@ select {
 .error {
   background: rgba(248, 81, 73, 0.12);
   border: 1px solid rgba(248, 81, 73, 0.4);
-  color: #ffb3ad;
+  color: var(--error-text);
   border-radius: 6px;
   padding: 8px 10px;
   font-size: 13px;
@@ -136,7 +162,7 @@ select {
 .ws-name { font-weight: 600; }
 .ws-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .logs {
-  background: #010409;
+  background: var(--log-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px;
@@ -361,5 +387,62 @@ button.small { padding: 1px 8px; font-size: 12px; }
 .secret-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; max-width: 760px; }
 .secret-form input[type="password"], .secret-form input[type="text"], .secret-form input:not([type]) { flex: 1; min-width: 200px; }
 label.inline { flex-direction: row; align-items: center; gap: 6px; }
-.task-log { background: #0b0f14; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font: 12.5px/1.45 var(--mono); max-height: 320px; overflow: auto; white-space: pre-wrap; max-width: 900px; }
+.task-log { background: var(--log-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font: 12.5px/1.45 var(--mono); max-height: 320px; overflow: auto; white-space: pre-wrap; max-width: 900px; }
 button.small { padding: 4px 10px; font-size: 12.5px; }
+
+/* ── лаунчер v2: рабочие места, модели, встроенный режим ── */
+.place-grid { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }
+.place-card { display: flex; flex-direction: column; gap: 10px; margin: 0; }
+/* Строки папок в редакторе места: одна строка = одно поле на всю ширину. */
+.mount-edit { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+.mount-edit:last-of-type { border-bottom: none; }
+.mount-edit-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mount-edit-row input.grow { flex: 1; min-width: 220px; }
+.place-card.state-running { border-color: color-mix(in srgb, var(--green) 55%, var(--border)); }
+.place-card.state-error { border-color: color-mix(in srgb, var(--red) 55%, var(--border)); }
+.place-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.place-head h3 { margin: 0 0 2px; font-size: 16px; }
+.mounts { display: flex; flex-direction: column; gap: 4px; }
+.mount-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 0; border-bottom: 1px dashed var(--border); }
+.mount-row:last-child { border-bottom: none; }
+.mount-row .grow { flex: 1; min-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mount-name { width: 120px; padding: 2px 6px; font-size: 12px; }
+.reveal { display: inline-flex; gap: 4px; }
+.place-new { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 180px; border-style: dashed; cursor: pointer; color: var(--text); margin: 0; }
+.place-new:hover { border-color: var(--accent); }
+.place-new .plus { font-size: 28px; color: var(--accent); }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow: auto; z-index: 50; }
+.modal { width: min(760px, 100%); display: flex; flex-direction: column; gap: 8px; }
+.modal h2 { margin-top: 0; }
+.small-title { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 12px 0 2px; }
+.folder-picker { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.crumbs { display: flex; align-items: center; flex-wrap: wrap; font-family: var(--mono); font-size: 12.5px; }
+.link-btn { background: none; border: none; padding: 0 2px; color: var(--accent); cursor: pointer; font: inherit; }
+.folder-list { display: flex; flex-direction: column; max-height: 260px; overflow: auto; }
+.folder-item { text-align: left; background: none; border: none; border-radius: 6px; padding: 5px 8px; color: var(--text); cursor: pointer; font-size: 13.5px; }
+.folder-item:hover { background: var(--bg); }
+.model-grid { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }
+.model-card { display: flex; flex-direction: column; gap: 8px; margin: 0; }
+.model-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.model-line h3 { margin: 0; }
+.model-card .secret-form { flex-direction: column; align-items: stretch; }
+.model-card .secret-form input { width: 100%; }
+.model-card { display: flex; flex-direction: column; gap: 8px; margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; font: 12.5px var(--mono); }
+.chip-on { border-color: var(--accent); color: var(--accent); }
+.embed-shell { padding: 12px; }
+.embed-shell .place-grid, .embed-shell .model-grid { grid-template-columns: 1fr; }
+
+/* ── пресеты возможностей (PresetsView) ──────────────────────────────────── */
+.preset-list { display: flex; flex-direction: column; gap: 12px; }
+.preset-card { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.preset-lines { display: flex; flex-direction: column; gap: 6px; }
+.preset-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 3px 0; border-bottom: 1px dashed var(--border); }
+.preset-line:last-child { border-bottom: none; }
+.preset-line .chips { display: inline-flex; }
+.check-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.check-row { flex-direction: row; align-items: flex-start; gap: 8px; color: var(--text); font-size: 13.5px; cursor: pointer; padding: 3px 0; }
+.check-row input[type="checkbox"] { flex: 0 0 auto; width: 15px; height: 15px; margin: 2px 0 0; padding: 0; }
+.embed-foot { margin-top: 16px; }
+a.button[aria-disabled="true"] { opacity: .5; pointer-events: none; }

@@ -120,3 +120,97 @@ export const local = {
   start: () => req<any>("POST", "/api/local/ui/start"),
   restart: () => req<any>("POST", "/api/local/ui/restart"),
 };
+
+// places — рабочие места локального режима (лаунчер v2). Изменения передают
+// ревизию: устаревшая отклоняется сервером (409), интерфейс перечитывает.
+export type PlaceMount = { host: string; name: string };
+export type PlaceTask = { state: string; image: string; log: string[]; error: string; restartNeeded: boolean };
+export type Place = {
+  id: string;
+  slot: number; // слот лаунчера: 0 — основное место
+  name: string;
+  main: boolean;
+  image: string;
+  mounts: PlaceMount[];
+  revision: number;
+  url: string;
+  dshHome: string;
+  state: "running" | "sleeping" | "starting" | "building" | "error";
+  task: PlaceTask;
+  layout: { host: string; container: string }[];
+};
+export type FsListing = {
+  path: string;
+  parent: string;
+  home: string;
+  entries: { name: string; path: string; git: boolean }[];
+  selectable: boolean;
+  reason: string;
+};
+export type ModelProvider = {
+  id: string;
+  baseUrls: string[];
+  models: string[];
+  defaultModel: string;
+  keyEnv: string;
+  keySet: boolean;
+  primary: boolean;
+};
+export const places = {
+  list: () => req<{ places: Place[] }>("GET", "/api/local/ui/places"),
+  create: (p: { name: string; id?: string; image?: string; mounts: PlaceMount[] }) =>
+    req<Place>("POST", "/api/local/ui/places", p),
+  update: (id: string, p: { name: string; image?: string; mounts: PlaceMount[]; revision: number }) =>
+    req<Place>("PUT", `/api/local/ui/places/${encodeURIComponent(id)}`, p),
+  remove: (id: string) => req<{ archived: string }>("DELETE", `/api/local/ui/places/${encodeURIComponent(id)}`),
+  action: (id: string, action: "start" | "restart" | "stop") =>
+    req<any>("POST", `/api/local/ui/places/${encodeURIComponent(id)}/${action}`),
+  logs: (id: string, tail = 300) =>
+    req<{ logs: string; running: boolean }>("GET", `/api/local/ui/places/${encodeURIComponent(id)}/logs?tail=${tail}`),
+  fs: (path: string, hidden = false) =>
+    req<FsListing>("GET", `/api/local/ui/fs?path=${encodeURIComponent(path)}${hidden ? "&hidden=1" : ""}`),
+  fsDialog: () => req<{ cancelled: boolean; path?: string }>("POST", "/api/local/ui/fs/dialog", {}),
+  reveal: (path: string, app: "finder" | "vscode") => req<any>("POST", "/api/local/ui/reveal", { path, app }),
+  models: () => req<{ providers: ModelProvider[] }>("GET", "/api/local/ui/models"),
+};
+
+// presets — пресеты возможностей: наборы MCP и скиллов контейнера, применяемые
+// к рабочим местам. В dsh сессия создаётся с готовым пресетом; изменение
+// передаёт ревизию (устаревшая — 409).
+export type Preset = {
+  id: string;
+  name: string;
+  description: string;
+  mcp: string[];
+  skills: string[];
+  places: string[];
+  revision: number;
+};
+export type PresetsCatalog = {
+  presets: Preset[];
+  mcp: { id: string; title: string; description: string; secretEnv: string }[];
+  skills: { id: string; title: string; description: string }[];
+  places: { id: string; name: string }[];
+};
+export const presets = {
+  list: () => req<PresetsCatalog>("GET", "/api/local/ui/presets"),
+  create: (p: { name: string; description?: string; mcp: string[]; skills: string[]; places: string[] }) =>
+    req<Preset>("POST", "/api/local/ui/presets", p),
+  update: (id: string, p: { name: string; description?: string; mcp: string[]; skills: string[]; places: string[]; revision: number }) =>
+    req<Preset>("PUT", `/api/local/ui/presets/${encodeURIComponent(id)}`, p),
+  remove: (id: string) => req<any>("DELETE", `/api/local/ui/presets/${encodeURIComponent(id)}`),
+};
+
+// onLocalEvents — подписка на изменения (другая вкладка, таб dsh, CLI):
+// вызывает cb при каждом событии; возвращает отписку.
+export function onLocalEvents(cb: (topic: string) => void): () => void {
+  const es = new EventSource("/api/local/ui/events");
+  es.addEventListener("change", (ev) => {
+    try {
+      cb(JSON.parse((ev as MessageEvent).data).topic);
+    } catch {
+      cb("");
+    }
+  });
+  return () => es.close();
+}

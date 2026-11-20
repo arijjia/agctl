@@ -215,6 +215,22 @@ func TestInjectBrandBootIntoLoginIndex(t *testing.T) {
 	}
 }
 
+func TestInjectLocalModeBoot(t *testing.T) {
+	idx := []byte("<!doctype html><html><head><meta charset='utf-8'></head><body><div id=root></div></body></html>")
+	out := string(injectLocalModeBoot(idx))
+	if !strings.Contains(out, `data-agctl="mode-boot">window.__AGCTL_LOCAL__=true;`) {
+		t.Fatal("флаг локального режима не вставлен в index")
+	}
+	boot := strings.Index(out, `data-agctl="mode-boot"`)
+	headEnd := strings.Index(out, "</head>")
+	if boot < 0 || headEnd < 0 || boot > headEnd {
+		t.Fatalf("mode-boot-скрипт вне <head>: boot=%d head=%d", boot, headEnd)
+	}
+	if again := string(injectLocalModeBoot([]byte(out))); again != out {
+		t.Fatal("инъекция флага локального режима должна быть идемпотентной")
+	}
+}
+
 func TestInjectChatShellResponseUpdatesBodyLength(t *testing.T) {
 	srv := &Server{brand: fixtureView(t)}
 	body := []byte("<!doctype html><html><head><title>DeepSeek Harness</title></head><body>x</body></html>")

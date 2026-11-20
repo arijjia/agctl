@@ -176,3 +176,19 @@ func injectBrandBoot(index []byte, v profile.View) []byte {
 	}
 	return []byte(script + s)
 }
+
+// injectLocalModeBoot помечает страницу SPA как локальный режим
+// (window.__AGCTL_LOCAL__): без сессии фронт показывает вход по ссылке из CLI
+// (agctl dev open), а не серверную форму логина — в локальном режиме
+// регистраций и паролей нет. Идемпотентно.
+func injectLocalModeBoot(index []byte) []byte {
+	s := string(index)
+	if strings.Contains(s, `data-agctl="mode-boot"`) {
+		return index
+	}
+	script := `<script data-agctl="mode-boot">window.__AGCTL_LOCAL__=true;</script>`
+	if i := openingTagEnd(s, "head"); i >= 0 {
+		return []byte(s[:i] + script + s[i:])
+	}
+	return []byte(script + s)
+}
