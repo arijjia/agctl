@@ -18,6 +18,10 @@ IMG_WEB ?= agctl-dsh-web:0.2.2
 IMG_FLAVORS ?= web
 IMG_ARCH := $(shell docker version --format '{{.Server.Arch}}' 2>/dev/null || echo aarch64)
 IMG_GOARCH := $(subst aarch64,arm64,$(subst x86_64,amd64,$(IMG_ARCH)))
+# Доп. аргументы docker build базовых образов — например
+# IMG_BUILD_ARGS="--build-arg DSH_VERSION=0.2.2-rc.6": собрать образ на
+# версии канала next, не двигая пин в Dockerfile (воркфлоу dsh-bump).
+IMG_BUILD_ARGS ?=
 
 # Надстройка образа профиля организации (images.dockerfile в profile.yaml):
 # собирается поверх базовых вариантов как agctl-dsh-<id>:<тег> (локальные) и
@@ -49,11 +53,11 @@ img_build:
 	GOOS=linux GOARCH=$(IMG_GOARCH) go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-linux-$(IMG_GOARCH) ./cmd/agctl-guest
 	GOOS=linux GOARCH=$(IMG_GOARCH) go build -tags server -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-server-linux-$(IMG_GOARCH) ./cmd/agctl-guest
 	$(call prepare_image_ctx,.build-img,dist/agctl-guest-linux-$(IMG_GOARCH))
-	docker build -t $(IMG) .build-img
-	docker build --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
+	docker build $(IMG_BUILD_ARGS) -t $(IMG) .build-img
+	docker build $(IMG_BUILD_ARGS) --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
 	$(call prepare_image_ctx,.build-img-server,dist/agctl-guest-server-linux-$(IMG_GOARCH))
-	docker build --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER) .build-img-server
-	docker build --build-arg AGCTL_NO_SSHD=1 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER_NOSSH) .build-img-server
+	docker build $(IMG_BUILD_ARGS) --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER) .build-img-server
+	docker build $(IMG_BUILD_ARGS) --build-arg AGCTL_NO_SSHD=1 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER_NOSSH) .build-img-server
 	@if echo " $(IMG_FLAVORS) " | grep -q ' web '; then \
 	  docker build --build-arg BASE=$(IMG) -t $(IMG_WEB) .build-img/flavors/web; fi
 	@$(MAKE) --no-print-directory img_profile
@@ -82,27 +86,27 @@ img_profile:
 # img_build; бинарь берём из dist).
 ## img_build_nossh: пересобрать только agctl-dsh-nossh из уже готового .build-img
 img_build_nossh:
-	docker build --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
+	docker build $(IMG_BUILD_ARGS) --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
 
 ## img_build_server: пересобрать серверные agctl-dsh-server(-nossh): guest-бинарь `-tags server` (ax-runner, init-chat-home)
 img_build_server:
 	GOOS=linux GOARCH=$(IMG_GOARCH) go build -tags server -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-server-linux-$(IMG_GOARCH) ./cmd/agctl-guest
 	$(call prepare_image_ctx,.build-img-server,dist/agctl-guest-server-linux-$(IMG_GOARCH))
-	docker build --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER) .build-img-server
-	docker build --build-arg AGCTL_NO_SSHD=1 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER_NOSSH) .build-img-server
+	docker build $(IMG_BUILD_ARGS) --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER) .build-img-server
+	docker build $(IMG_BUILD_ARGS) --build-arg AGCTL_NO_SSHD=1 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER_NOSSH) .build-img-server
 
 ## img_build_amd64: agctl-dsh и agctl-dsh-server под linux/amd64 (например, с Apple Silicon для x86-сервера)
 img_build_amd64:
 	GOOS=linux GOARCH=amd64 go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-linux-amd64 ./cmd/agctl-guest
 	GOOS=linux GOARCH=amd64 go build -tags server -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-server-linux-amd64 ./cmd/agctl-guest
 	$(call prepare_image_ctx,.build-img,dist/agctl-guest-linux-amd64)
-	docker build --platform linux/amd64 -t $(IMG) .build-img
+	docker build $(IMG_BUILD_ARGS) --platform linux/amd64 -t $(IMG) .build-img
 	$(call prepare_image_ctx,.build-img-server,dist/agctl-guest-server-linux-amd64)
-	docker build --platform linux/amd64 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER) .build-img-server
+	docker build $(IMG_BUILD_ARGS) --platform linux/amd64 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER) .build-img-server
 
 ## img_build_server_amd64: пересобрать только серверные agctl-dsh-server(-nossh) под linux/amd64
 img_build_server_amd64:
 	GOOS=linux GOARCH=amd64 go build -tags server -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-server-linux-amd64 ./cmd/agctl-guest
 	$(call prepare_image_ctx,.build-img-server,dist/agctl-guest-server-linux-amd64)
-	docker build --platform linux/amd64 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER) .build-img-server
-	docker build --platform linux/amd64 --build-arg AGCTL_NO_SSHD=1 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER_NOSSH) .build-img-server
+	docker build $(IMG_BUILD_ARGS) --platform linux/amd64 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER) .build-img-server
+	docker build $(IMG_BUILD_ARGS) --platform linux/amd64 --build-arg AGCTL_NO_SSHD=1 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER_NOSSH) .build-img-server

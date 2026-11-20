@@ -15,6 +15,10 @@ RUN apt-get update \
 # профилей: пакеты организации ставятся в её image/Dockerfile (FROM agctl-dsh).
 
 FROM base AS dsh
+# Пин dsh — дефолт ARG DSH_VERSION, его двигает bin/dsh-bump.sh --update.
+# Оверрайд --build-arg DSH_VERSION=<ver> собирает тот же образ на версии
+# другого канала (workflow dsh-bump так проверяет свежий dist-tag next).
+ARG DSH_VERSION=0.2.2-rc.3
 # идентичность git для агента (в любом репо контейнера)
 RUN git config --system user.name "agent" \
   && git config --system user.email "agent@workspace.local" \
@@ -23,7 +27,7 @@ RUN git config --system user.name "agent" \
   && npm config set allow-scripts \
       @deepseek-ai/dsh-subprocess-local,koffi,node-pty,fsevents,protobufjs,esbuild \
       --location=user \
-  && npm install -g --no-audit --no-fund @deepseek-ai/dsh@0.2.2-rc.3 \
+  && npm install -g --no-audit --no-fund @deepseek-ai/dsh@${DSH_VERSION} \
   && dsh --version
 ENV PATH="/opt/dsh/bin:${PATH}"
 
