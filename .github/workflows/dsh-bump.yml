@@ -1,9 +1,14 @@
 name: dsh-bump
 
-# Еженедельный cron: гейт e2e-smoke переписан под v3 (персональный
-# контейнер + проекты, карточка e2e-smoke-v3), красные запуски v2-эпохи
-# больше не воспроизводятся. Ручной запуск:
-#   gh workflow run dsh-bump --repo arijjia/agctl
+# Еженедельная проверка обновлений dsh (карточки dsh-pin-bump-automation,
+# dsh-bump-next-channel):
+#   bump        — пин до dist-tag latest (rc/stable), полный конвейер
+#                 (go/SPA/e2e-smoke) и PR; автомержа нет;
+#   probe-next  — свежая версия из dist-tag next;
+#   verify-next — если next впереди пина: образ на этой версии
+#                 (--build-arg DSH_VERSION, пин не двигается), тесты
+#                 плагинов и e2e-first-session; при провале — issue.
+# Ручной запуск: gh workflow run dsh-bump --repo arijjia/agctl
 on:
   schedule:
     - cron: "23 4 * * 1" # еженедельно по понедельникам (как до e16fce9)
@@ -12,6 +17,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
   bump:
@@ -24,8 +30,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.27"
-      - name: Обновить pin DSH до latest rc/stable
-        run: bin/dsh-bump.sh --update
+      - name: Обновить pin DSH до latest (rc/stable)
+        run: bin/dsh-bump.sh --update --channel latest
       - id: diff
         name: Проверить, изменился ли pin
         run: |
@@ -42,11 +48,11 @@ jobs:
           make web_build
       - if: steps.diff.outputs.changed == 'true'
         name: Собрать новый образ DSH
-        run: make img_build IMG=agctl-dsh:dsh-bump-e2e
+        run: make img_build IMG=agctl-dsh:dsh-bump-e2e IMG_SERVER=agctl-dsh-server:dsh-bump-e2e
       - if: steps.diff.outputs.changed == 'true'
         name: Изолированный e2e со стабом LLM
         env:
-          TEST_IMAGE: agctl-dsh:dsh-bump-e2e
+          TEST_IMAGE: agctl-dsh-server:dsh-bump-e2e
           FAKE_LLM: "1"
           FAKE_LLM_BIND: 0.0.0.0
           CLEANUP: "1"
@@ -63,3 +69,76 @@ jobs:
             Automated DSH pin refresh from npm `latest` (rc/stable only).
             Go tests, SPA build, Docker image build, and isolated e2e must pass
             before this PR is created.
+
+  probe-next:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.probe.outputs.changed }}
+      version: ${{ steps.probe.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - id: probe
+        name: Сравнить пин с dist-tag next
+        run: |
+          NEXT="$(npm view @deepseek-ai/dsh dist-tags.next)"
+          PINNED="$(bin/dsh-bump.sh | sed -n 's/^pinned: //p')"
+          echo "pinned: $PINNED, next: $NEXT" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$NEXT" ] && [ "$NEXT" != "$PINNED" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  verify-next:
+    needs: probe-next
+    if: needs.probe-next.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    env:
+      NEXT_VERSION: ${{ needs.probe-next.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27"
+      - name: Тесты плагинов (internal/provision)
+        run: |
+          go vet ./internal/provision/...
+          go test ./internal/provision/...
+      - name: Собрать образ на версии next (пин не двигается)
+        run: make img_build IMG=agctl-dsh:next-verify IMG_SERVER=agctl-dsh-server:next-verify IMG_FLAVORS= IMG_BUILD_ARGS="--build-arg DSH_VERSION=${NEXT_VERSION}"
+      - name: Системные зависимости e2e (nc)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends netcat-openbsd
+      - name: Установить Playwright
+        working-directory: tests/e2e-ui
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: e2e первой сессии на next
+        env:
+          IMG: agctl-dsh-server:next-verify
+        run: bin/e2e-first-session.sh
+      - if: success()
+        name: Итог в summary
+        run: |
+          echo "✅ dsh next ${NEXT_VERSION}: образ, тесты плагинов и e2e первой сессии зелёные" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        name: Репорт в issue (без автомержа)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="dsh next ${NEXT_VERSION}: проверки образа не прошли"
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          EXISTING="$(gh issue list --state open --limit 100 --json number,title \
+            --jq ".[] | select(.title == \"$TITLE\") | .number" 2>/dev/null || true)"
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Повторно красный на \`${NEXT_VERSION}\`: $RUN_URL"
+          else
+            gh issue create --title "$TITLE" --body "Версия next \`${NEXT_VERSION}\` не прошла конвейер: образ + тесты плагинов + e2e-first-session. Лог: $RUN_URL. Пин не двигался; обновлять только после зелёного прогона или починки контракта."
+          fi

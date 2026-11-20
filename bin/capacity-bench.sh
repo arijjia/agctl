@@ -3,7 +3,7 @@
 # Изолированный TEST_HOME, уникальный порт, стаб LLM. На выходе — таблица
 # markdown с числами и сырой JSON в /tmp.
 #
-#   TEST_IMAGE=agctl-dsh:0.2.0-rc2-e2e-n1 bin/capacity-bench.sh [N]
+#   TEST_IMAGE=agctl-dsh-server:0.2.0-rc2-e2e-n1 bin/capacity-bench.sh [N]
 #
 # Замеряет на каждом воркспейсе:
 #   cold_start_s  — create → running (первый бут: provision + контейнер)

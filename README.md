@@ -17,8 +17,11 @@
 | [Кластерный](#кластерный-режим) | `agctl-server --runtime k8s\|ax` | организация без отдельного Docker-хоста | под Kubernetes или актор Google AX / Agent Substrate на пользователя |
 
 Третий бинарь, `agctl-guest`, живёт внутри образа рабочего места
-(`/usr/local/bin/agctl`): это клиент моста к хосту, раннер AX и
-init-контейнер Kubernetes. Пользователь его не запускает.
+(`/usr/local/bin/agctl`). Он собирается в двух вариантах из одного кода,
+каждый под свой режим и своё семейство образов: локальный вариант (только
+мост к хосту) — в образах `agctl-dsh*`; серверный (`-tags server`: раннер
+AX и init-контейнер Kubernetes) — в образах `agctl-dsh-server*`.
+Пользователь его не запускает.
 
 Как система устроена внутри — процессы, сети и порты, данные и секреты,
 разбор кодовой базы по режимам — описано в
@@ -48,7 +51,8 @@ init-контейнер Kubernetes. Пользователь его не зап�
 
 Релизы собираются goreleaser по тегу `v*` и публикуются на странице
 [Releases](https://github.com/arijjia/agctl/releases): архивы
-`agctl_<ос>_<архитектура>`, `agctl-guest_linux_<архитектура>`,
+`agctl_<ос>_<архитектура>`, `agctl-guest_linux_<архитектура>` (локальный
+guest), `agctl-guest-server_linux_<архитектура>` (серверный guest),
 `agctl-server_<ос>_<архитектура>` и `checksums.txt`. Если список релизов
 пуст, тег ещё не выпускался: соберите из исходников (раздел
 [Сборка из исходников](#сборка-из-исходников)) или возьмите сборку у
@@ -73,9 +77,11 @@ irm https://raw.githubusercontent.com/arijjia/agctl/main/bin/install.ps1 | iex
    установлен и авторизован, иначе напрямую) и сверяет SHA-256;
 3. кладёт `agctl` в `~/.local/bin` (Windows: `%LOCALAPPDATA%\agctl`) и
    снимает карантин macOS или отметку «скачано из интернета» на Windows;
-4. кладёт `agctl-guest-linux-<arch>` в `~/.local/lib/agctl` (Windows — рядом
-   с `agctl.exe`): он нужен, чтобы собрать образ рабочего места на этой
-   машине, если реестр образов недоступен;
+4. кладёт `agctl-guest-linux-<arch>` (локальный guest) и
+   `agctl-guest-server-linux-<arch>` (серверный guest) в `~/.local/lib/agctl`
+   (Windows — рядом с `agctl.exe`): они нужны, чтобы собрать образ рабочего
+   места на этой машине, если реестр образов недоступен — свой вариант под
+   локальный (`agctl-dsh*`) и серверный (`agctl-dsh-server*`) режимы;
 5. на Windows добавляет каталог в `PATH` пользователя, на macOS и Linux
    подсказывает, если `~/.local/bin` в `PATH` нет, и печатает
    `agctl version`.
@@ -88,7 +94,8 @@ irm https://raw.githubusercontent.com/arijjia/agctl/main/bin/install.ps1 | iex
 
 **Комплект организации.** Организация может публиковать свой релиз в
 приватном репозитории профиля `<org>/agctl-profile-<id>`: архив с `agctl`,
-`agctl-guest-linux-<arch>` и профилем организации. Доступ проверяется
+`agctl-guest-linux-<arch>`, `agctl-guest-server-linux-<arch>` и профилем
+организации. Доступ проверяется
 учётной записью GitHub: администратор добавляет разработчика в этот
 репозиторий с правом чтения, а разработчик один раз ставит GitHub CLI
 (`brew install gh`, `winget install GitHub.cli` или пакет дистрибутива) и
@@ -220,10 +227,10 @@ agctl dev up
 - Linux-хост (или macOS для пробного запуска) с Docker Engine и доступом
   процесса к сокету Docker.
 - Бинарь `agctl-server` (архив `agctl-server_<ос>_<архитектура>` из релиза
-  или `make go_build`) и образ рабочего места `agctl-dsh` (собирается
-  `make img_build` или скачивается из реестра организации; если его нет,
-  сервер соберёт базовый образ сам — для этого рядом с бинарём или в
-  `./dist` должен лежать `agctl-guest-linux-<arch>`).
+  или `make go_build`) и образ рабочего места `agctl-dsh-server`
+  (собирается `make img_build_server` или скачивается из реестра
+  организации; если его нет, сервер соберёт базовый образ сам — для этого
+  рядом с бинарём или в `./dist` должен лежать `agctl-guest-server-linux-<arch>`).
 - Обратный прокси с TLS перед сервером (nginx, Caddy, ingress) и ключ
   модели.
 
@@ -247,12 +254,15 @@ AGCTL_LLM_API_KEY=… agctl-server serve --profile <id> --secure-cookies
 | `--home` | `~/.agctl` | дом данных: SQLite, мастер-ключ, данные пользователей |
 | `--addr` | `127.0.0.1:8929` | адрес интерфейса и API |
 | `--profile`, `--profile-dir` | `agctl` | профиль организации по имени или каталогом |
-| `--image` | `agctl-dsh:0.2.2` | образ рабочего места |
+| `--image` | `agctl-dsh-server:0.2.2` | серверный образ рабочего места (guest: ax-runner, init-chat-home); надстройка профиля — `agctl-dsh-server-<профиль>` |
 | `--dev-images` | `images.dev` профиля | каталог образов в лаунчере разработчика |
 | `--dev-env` | пусто | имена переменных окружения хоста, которые получает контейнер разработчика (например токены GitLab и Jira из `.env`) |
 | `--llm-base-url`, `--llm-model`, `--llm-models`, `--llm-api-key` | из профиля | провайдер модели по умолчанию (ключ лучше передавать переменной `AGCTL_LLM_API_KEY`) |
 | `--chat-ttl-min` | 60 | минуты простоя до усыпления контейнера |
 | `--mem-gb`, `--cpus` | 2, 2 | лимиты контейнера |
+| `--docker-runtime` | пусто (runc) | OCI-рантайм Docker-бэкенда: `runsc` (gVisor) или `kata` — изоляция ядра; должен быть зарегистрирован в dockerd |
+| `--docker-pids-limit` | 4096 | лимит процессов контейнера |
+| `--docker-harden` | включено | урезанные capabilities и `no-new-privileges` для контейнеров; `=0` — аварийный откат |
 | `--secure-cookies` | выключен | cookie с флагом Secure (когда TLS завершается на прокси) |
 | `--register-per-min` | 30 | ограничение регистраций с одного IP (0 — без ограничения) |
 | `--cors-origin` | пусто | точный список источников для кросс-доменного `/api` |
@@ -301,7 +311,7 @@ microVM, данные на томе актора, ключ модели можн
 egress-шлюзе Substrate, не передавая его в песочницу).
 
 ```bash
-make img_serve_build img_build                   # образы шлюза agctl-serve и рабочего места
+make img_serve_build img_build                   # образы шлюза agctl-serve и рабочих мест (локальные + серверные)
 make img_push REGISTRY=registry.example.com/agctl
 make k8s_secret                                  # Secret agctl-llm из .env
 make k8s_profile PROFILE=<id>                    # профиль организации в ConfigMap
@@ -328,7 +338,8 @@ make install
 ```
 
 `make install` собирает интерфейс и бинари и ставит `agctl` и
-`agctl-server` в `~/.local/bin`, `agctl-guest-linux-<arch>` в
+`agctl-server` в `~/.local/bin`, оба варианта guest —
+`agctl-guest-linux-<arch>` и `agctl-guest-server-linux-<arch>` — в
 `~/.local/lib/agctl` и автодополнение fish (`agctl.fish`,
 `agctl-server.fish`). `INSTALL_DIR=…` меняет каталог. Повторяйте после
 каждого `git pull`: старый бинарь в `PATH` — частая причина ошибки
@@ -337,12 +348,32 @@ make install
 Другие цели (полный список — `make help`):
 
 - `make go_build` — `dist/agctl` и `dist/agctl-server` (Node не нужен:
-  `web/dist` хранится в репозитории); `make go_linux` — `agctl-guest`;
-- `make go_test`, `make go_vet` — проверки;
+  `web/dist` хранится в репозитории); `make go_linux` — `agctl-guest`
+  локального варианта (bridge); `make go_linux_server` — серверного
+  (ax-runner, init-chat-home);
+- `make go_test_all`, `make go_vet_all` — проверки в обоих вариантах guest;
 - `make release_local` — все бинари для darwin, linux и windows, arm64 и
   amd64, в `dist/`;
-- `make img_build [PROFILE=<id>]` — образы рабочего места;
+- `make img_build [PROFILE=<id>]` — образы рабочего места: локальные
+  `agctl-dsh(-nossh)` + вкус web и серверные `agctl-dsh-server(-nossh)`;
+  `make img_build_server` — только серверные;
 - `make uninstall` — убрать то, что поставил `install`.
+
+### Обновление dsh
+
+Пин dsh — `ARG DSH_VERSION` в `internal/assets/image/Dockerfile`; свежие
+версии npm выходят под dist-tag `next` раньше, чем `latest`. Сверка и
+подъём пина — `bin/dsh-bump.sh`: без аргументов показывает пин и оба
+канала, `--check` (exit 1 при дрейфе, ворота по умолчанию по `next`),
+`--update [--channel latest|next]` двигает пин в рамках rc-политики
+(alpha/beta/dev не ставятся в любом канале). После `--update` — собрать
+образ и прогнать e2e (`make img_build && FAKE_LLM=1 bin/e2e-smoke.sh`).
+Воркфлоу `dsh-bump` делает это еженедельно сам: PR с подъёмом пина по
+`latest` (полный конвейер: go/SPA, образ, e2e-smoke) и отдельная проверка
+`next` — образ собирается на её версии без изменения пина
+(`make img_build IMG_BUILD_ARGS="--build-arg DSH_VERSION=<next>"`) и
+проходит тесты плагинов и `bin/e2e-first-session.sh`; при провале
+заводится issue, пин не двигается.
 
 ## Карта системы
 

@@ -45,8 +45,13 @@ type Config struct {
 	MaxPerUser  int    // legacy seat limit; no effect in v3
 	MemoryBytes int64
 	NanoCPUs    int64
-	Image       string
-	DevImages   []string // каталог образов лаунчера developer'а (пусто = только cfg.Image)
+	// Упрочнение Docker-бэкенда (dockerrt.Config): OCI-рантайм (runsc/kata,
+	// только серверный режим), потолок процессов, аварийное выключение.
+	DockerRuntime     string
+	DockerPidsLimit   int64
+	DockerNoHardening bool
+	Image             string
+	DevImages         []string // каталог образов лаунчера developer'а (пусто = только cfg.Image)
 	// BaseImage — базовый agctl-dsh под надстройкой профиля (images.dockerfile);
 	// пусто или равен Image = надстройки нет.
 	BaseImage        string
@@ -165,6 +170,10 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 		Home:              cfg.Home,
 		DshSkel:           assetsSkel,
 		Version:           cfg.Version,
+		GuestServer:       true, // образы agctl-dsh-server*: guest с ax-runner/init-chat-home
+		ContainerRuntime:  cfg.DockerRuntime,
+		PidsLimit:         cfg.DockerPidsLimit,
+		NoHardening:       cfg.DockerNoHardening,
 	}, assets.Image)
 	if err != nil {
 		return nil, err

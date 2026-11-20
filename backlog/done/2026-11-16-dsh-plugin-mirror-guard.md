@@ -2,13 +2,13 @@
 schema: 1.1.0
 id: dsh-plugin-mirror-guard
 title: "Гард дрейфа зеркал плагинов: dsh-plugins ↔ internal/assets/dsh-skel (diff -r в CI/pre-commit)"
-status: open
+status: done
 priority: P2
 size: S
 area: platform
 repo: arijjia/agctl
 created: 2026-11-16
-updated: 2026-11-16
+updated: 2026-11-20
 tags: ["ci", "plugins"]
 depends: []
 sessions:
@@ -23,3 +23,4 @@ sessions:
 
 - 2026-11-16: создано по итогам карточки v3-product-e2e-playwright (фикс перехвата RU-кнопки вручную зеркалился в dsh-skel; рекомендация из конца тура).
 - 2026-11-16: создано (`gitctl backlog new`).
+- 2026-11-20: Гард — Go-тест `internal/assets/mirror_test.go` (TestDshPluginMirrorsInSync): пары dsh-plugins/<n> ↔ @arijjia/agctl-<n> находит сам, сравнивает деревья байт в байт (node_modules и .DS_Store не в счёт), падает и на плагин без пары; в CI идёт шагом `go test ./...`. Проверено: на текущем дереве зелёный; намеренный рассинхрон (лишний файл в cabinet, правка package.json в chat-brand) — красный со списком файлов и строкой cp для синхронизации.

@@ -4,18 +4,21 @@
 #
 # Два источника:
 #   • публичный релиз agctl (goreleaser): agctl_windows_<arch>.zip,
-#     agctl-guest_linux_<arch>.tar.gz + checksums.txt;
+#     agctl-guest_linux_<arch>.tar.gz (локальный guest),
+#     agctl-guest-server_linux_<arch>.tar.gz (серверный guest) + checksums.txt;
 #   • комплект организации — релиз приватного репозитория профиля
 #     $env:AGCTL_REPO = '<org>/agctl-profile-<id>': zip agctl-<id>-<версия>-windows-<arch>.zip
-#     (agctl.exe + agctl-guest-linux-<arch> + profile\) + checksums-<версия>.txt; нужен
-#     авторизованный gh. Профиль кладётся в %LOCALAPPDATA%\agctl\profiles\<id>;
-#     в конце скрипт сам подключает профиль (agctl dev init --profile-dir …
+#     (agctl.exe + agctl-guest-linux-<arch> + agctl-guest-server-linux-<arch> + profile\) +
+#     checksums-<версия>.txt; нужен авторизованный gh. Профиль кладётся в
+#     %LOCALAPPDATA%\agctl\profiles\<id>; в конце скрипт сам подключает
+#     профиль (agctl dev init --profile-dir …
 #     --yes; AGCTL_NO_INIT=1 — не подключать, напечатать команду).
 #
 # Что делает: скачивает архив и контрольные суммы (через gh, если он есть и
 # авторизован, иначе Invoke-WebRequest), сверяет SHA-256, кладёт agctl.exe в
 # %LOCALAPPDATA%\agctl, снимает отметку «скачано из интернета», рядом кладёт
-# agctl-guest — linux-бинарь образа рабочего места (нужен только для
+# оба agctl-guest — linux-бинари образа рабочего места своего режима
+# (локальный agctl-dsh* / серверный agctl-dsh-server*; нужны только для
 # самосборки образа без реестра), добавляет каталог в PATH пользователя,
 # печатает agctl version.
 #
@@ -129,11 +132,15 @@ try {
         if (-not (Test-Path (Join-Path $top 'agctl.exe'))) { throw "в $bundle нет $top\agctl.exe" }
         Move-Item -Force (Join-Path $top 'agctl.exe') $exe
         if (-not $env:AGCTL_NO_LINUX) {
-            # Комплекты до разделения бинарей несут agctl-linux-<arch> (единый
-            # бинарь, те же команды образа); findLinuxBinary понимает оба имени.
+            # Комплекты до разделения по режимам несут agctl-linux-<arch> (единый
+            # бинарь, надмножество команд); findLinuxBinary понимает оба имени.
             $guest = "agctl-guest-linux-$arch"
             if (-not (Test-Path (Join-Path $top $guest))) { $guest = "agctl-linux-$arch" }
             Install-LinuxBuild (Join-Path $top $guest) $guest
+            $guestServer = "agctl-guest-server-linux-$arch"
+            if (Test-Path (Join-Path $top $guestServer)) {
+                Install-LinuxBuild (Join-Path $top $guestServer) $guestServer
+            }
         }
         if (-not (Test-Path (Join-Path $top 'profile\profile.yaml'))) { throw 'в комплекте нет profile\profile.yaml' }
         New-Item -ItemType Directory -Force (Split-Path $profileDir -Parent) | Out-Null
@@ -157,6 +164,11 @@ try {
                 Install-LinuxBuild 'agctl-guest' "agctl-guest-linux-$arch"
                 $legacy = Join-Path $installDir "agctl-linux-$arch"
                 if (Test-Path $legacy) { Remove-Item -Force $legacy }
+                $serverArchive = "agctl-guest-server_linux_$arch.tar.gz"
+                Fetch $serverArchive
+                Verify $serverArchive 'checksums.txt'
+                if ((Invoke-Native 'tar' @('xzf', $serverArchive, 'agctl-guest')) -ne 0) { throw "tar не распаковал $serverArchive" }
+                Install-LinuxBuild 'agctl-guest' "agctl-guest-server-linux-$arch"
             } else {
                 Write-Warning 'tar не найден (Windows 10 до 1803) — бинарь образа для самосборки пропущен'
             }

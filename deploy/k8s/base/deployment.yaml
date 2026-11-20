@@ -34,7 +34,7 @@ spec:
             - name: AGCTL_RUNTIME
               value: k8s
             - name: AGCTL_K8S_IMAGE
-              value: registry.example.com/agctl/agctl-dsh:0.2.2
+              value: registry.example.com/agctl/agctl-dsh-server:0.2.2
             - name: AGCTL_K8S_SHARED_CLAIM
               value: agctl-data
             - name: AGCTL_K8S_STORAGE_CLASS

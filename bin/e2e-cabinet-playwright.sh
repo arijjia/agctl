@@ -15,7 +15,7 @@ ADDR="127.0.0.1:${E2E_UI_PORT:-18936}"
 BASE="http://$ADDR"
 FAKE_PORT="${E2E_UI_FAKE_PORT:-18772}"
 LLM_BASE_URL="http://host.docker.internal:$FAKE_PORT/v1"
-IMG="${IMG:-agctl-dsh:0.2.2}"
+IMG="${IMG:-agctl-dsh-server:0.2.2}"
 BIN="$TEST_HOME/agctl"
 ADMIN_LOGIN="cabinet-admin"
 ADMIN_PASSWORD="cabinet-admin-pass-1"
@@ -28,7 +28,7 @@ if [ ! -d tests/e2e-ui/node_modules/playwright ]; then
 fi
 command -v ssh-keygen >/dev/null || { echo "ssh-keygen не найдена" >&2; exit 2; }
 if ! docker image inspect "$IMG" >/dev/null 2>&1; then
-  echo "Docker image $IMG missing. Build it or pass IMG=..." >&2
+  echo "Docker image $IMG missing. Build it (make img_build_server) or pass IMG=..." >&2
   exit 2
 fi
 

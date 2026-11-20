@@ -3,7 +3,7 @@
 # персональный контейнер + проекты. Всё в своём TEST_HOME, свой тег образа,
 # свой порт; секреты/токены не печатаются.
 #
-#   TEST_IMAGE=agctl-dsh:0.2.0-rc2-e2e-n1 bin/e2e-smoke.sh
+#   TEST_IMAGE=agctl-dsh-server:0.2.0-rc2-e2e-n1 bin/e2e-smoke.sh
 #
 # Сценарий v3 (v2-воркспейсы удалены вместе с маршрутами):
 #   регистрация/роли → маршрутов v2 нет → проект (создание/листинг/git-репо) →
@@ -12,8 +12,10 @@
 #   dsh-home/креды → живой провод до стаба LLM.
 #
 # Переменные:
-#   TEST_IMAGE  (обяз.) тег уже собранного образа
-#   AGCTL_BIN   бинарь (по умолчанию dist/agctl-server, соберём если нет)
+#   TEST_IMAGE  (обяз.) тег уже собранного серверного образа (agctl-dsh-server,
+#               make img_build_server)
+#   AGCTL_BIN   готовый бинарь agctl-server; по умолчанию собираем свежий из
+#               дерева в TEST_HOME (устаревший dist/ тихо гонял бы старый код)
 #   TEST_ADDR   адрес UI (по умолчанию 127.0.0.1:18929)
 #   FAKE_LLM    1 = поднять стаб OpenAI-API и проверить живой провод
 #               до модели (контейнер → стаб) curl-пробой с ключом из
@@ -32,7 +34,7 @@ skip() { printf '  SKIP: %s\n' "$*"; }
 [ -n "${TEST_IMAGE:-}" ] || { echo "TEST_IMAGE не задан" >&2; exit 2; }
 TEST_ADDR="${TEST_ADDR:-127.0.0.1:18929}"
 TEST_PORT="${TEST_ADDR##*:}"
-AGCTL_BIN="${AGCTL_BIN:-$REPO_ROOT/dist/agctl-server}"
+AGCTL_BIN="${AGCTL_BIN:-}"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
 TEST_HOME="$HOME/.agctl-e2e-$RUN_ID"
 COOKIES_ADMIN="$TEST_HOME/qa-admin.cookies"
@@ -57,8 +59,10 @@ preflight() {
   if nc -z 127.0.0.1 "$TEST_PORT" 2>/dev/null; then
     echo "порт $TEST_PORT занят — выбери другой TEST_ADDR" >&2; exit 2
   fi
-  if [ ! -x "$AGCTL_BIN" ]; then
-    say "Сборка бинаря"
+  if [ -z "$AGCTL_BIN" ]; then
+    AGCTL_BIN="$TEST_HOME/agctl-server"
+    mkdir -p "$TEST_HOME"
+    say "Сборка бинаря из текущего дерева"
     make web_build >/dev/null 2>&1 || { echo "web_build упал" >&2; exit 2; }
     go build -trimpath -o "$AGCTL_BIN" ./cmd/agctl-server || { echo "go build упал" >&2; exit 2; }
   fi
@@ -243,6 +247,11 @@ if [ -n "${CONTAINER:-}" ]; then
   mounts=$(docker inspect --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}; {{end}}' "$CONTAINER" 2>/dev/null)
   echo "$mounts" | grep -q '/workspace' && echo "$mounts" | grep -q '/home/dsh' \
     && pass "монтирования /workspace и /home/dsh" || fail "mounts: $mounts"
+  hard=$(docker inspect --format '{{json .HostConfig.CapDrop}}|{{json .HostConfig.SecurityOpt}}|{{.HostConfig.PidsLimit}}' "$CONTAINER" 2>/dev/null)
+  case "$hard" in
+    '["ALL"]|'*'no-new-privileges'*'|'[1-9]*) pass "упрочнение: CapDrop ALL, no-new-privileges, PidsLimit (${hard##*|})" ;;
+    *) fail "упрочнение не применено: $hard" ;;
+  esac
   srcok=$(printf '%s' "$mounts" | grep -c "$TEST_HOME/chats/u2")
   [ "$srcok" -ge 1 ] && pass "тома живут в TEST_HOME (изоляция прогона)" || fail "чужие источники монтирований"
 else

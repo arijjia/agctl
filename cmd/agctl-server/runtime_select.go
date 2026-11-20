@@ -50,6 +50,10 @@ func parseRuntimeKind(raw string) (string, error) {
 type runtimeFlags struct {
 	kind *string
 
+	dockerRuntime   *string
+	dockerPidsLimit *int
+	dockerHarden    *bool
+
 	k8sNamespace     *string
 	k8sKubeconfig    *string
 	k8sImage         *string
@@ -85,10 +89,14 @@ func registerRuntimeFlags(fsSet *flag.FlagSet, cfg cli.UserConfig) cli.Runtime {
 	rf := &runtimeFlags{}
 	rf.kind = fsSet.String("runtime", cli.EnvOr("AGCTL_RUNTIME", cli.FirstNonEmpty(cfg.Serve.Runtime, runtimeDocker)), "бэкенд персональных рантаймов: docker | k8s | ax (Google AX + Agent Substrate)")
 
+	rf.dockerRuntime = fsSet.String("docker-runtime", cli.EnvOr("AGCTL_DOCKER_RUNTIME", ""), "OCI-рантайм контейнеров Docker-бэкенда: пусто = runc демона, runsc (gVisor), kata — изоляция ядра; должен быть зарегистрирован в dockerd")
+	rf.dockerPidsLimit = fsSet.Int("docker-pids-limit", cli.EnvInt("AGCTL_DOCKER_PIDS_LIMIT", 4096), "потолок процессов контейнера Docker-бэкенда")
+	rf.dockerHarden = fsSet.Bool("docker-harden", cli.EnvOr("AGCTL_DOCKER_HARDEN", "1") != "0", "упрочнение контейнеров Docker-бэкенда: CapDrop ALL + минимум для entrypoint/sshd, no-new-privileges, лимит процессов; 0 = аварийный откат")
+
 	k := cfg.Serve.K8s
 	rf.k8sNamespace = fsSet.String("k8s-namespace", cli.EnvOr("AGCTL_K8S_NAMESPACE", k.Namespace), "namespace подов пользователей (пусто = namespace шлюза в кластере)")
 	rf.k8sKubeconfig = fsSet.String("k8s-kubeconfig", cli.EnvOr("AGCTL_K8S_KUBECONFIG", k.Kubeconfig), "kubeconfig (пусто = in-cluster service account)")
-	rf.k8sImage = fsSet.String("k8s-image", cli.EnvOr("AGCTL_K8S_IMAGE", k.Image), "образ agctl-dsh в реестре, доступном кластеру (пусто = --image)")
+	rf.k8sImage = fsSet.String("k8s-image", cli.EnvOr("AGCTL_K8S_IMAGE", k.Image), "образ agctl-dsh-server в реестре, доступном кластеру (пусто = --image)")
 	rf.k8sStorageClass = fsSet.String("k8s-storage-class", cli.EnvOr("AGCTL_K8S_STORAGE_CLASS", k.StorageClass), "StorageClass PVC пользователей (пусто = дефолт кластера)")
 	rf.k8sStorageSize = fsSet.String("k8s-storage-size", cli.EnvOr("AGCTL_K8S_STORAGE_SIZE", cli.FirstNonEmpty(k.StorageSize, "5Gi")), "размер PVC пользователя")
 	rf.k8sRuntimeClass = fsSet.String("k8s-runtime-class", cli.EnvOr("AGCTL_K8S_RUNTIME_CLASS", k.RuntimeClass), "RuntimeClass подов (например gvisor)")
@@ -103,7 +111,7 @@ func registerRuntimeFlags(fsSet *flag.FlagSet, cfg cli.UserConfig) cli.Runtime {
 	a := cfg.Serve.AX
 	rf.axServer = fsSet.String("ax-server", cli.EnvOr("AGCTL_AX_SERVER", cli.FirstNonEmpty(a.Server, "ax-server.ax-system.svc.cluster.local:8080")), "gRPC-адрес ax-server")
 	rf.axAtespace = fsSet.String("ax-atespace", cli.EnvOr("AGCTL_AX_ATESPACE", cli.FirstNonEmpty(a.Atespace, "agctl")), "atespace задач пользователей (одна установка = один atespace)")
-	rf.axImage = fsSet.String("ax-image", cli.EnvOr("AGCTL_AX_IMAGE", a.Image), "образ песочницы agctl-dsh, pinned by digest (name@sha256:…)")
+	rf.axImage = fsSet.String("ax-image", cli.EnvOr("AGCTL_AX_IMAGE", a.Image), "образ песочницы agctl-dsh-server, pinned by digest (name@sha256:…)")
 	rf.axRouterURL = fsSet.String("ax-router-url", cli.EnvOr("AGCTL_AX_ROUTER_URL", cli.FirstNonEmpty(a.RouterURL, "http://atenet-router.ate-system.svc.cluster.local:80")), "URL маршрутизатора Substrate (atenet-router)")
 	rf.axRouterCA = fsSet.String("ax-router-ca", cli.EnvOr("AGCTL_AX_ROUTER_CA", a.RouterCA), "PEM CA маршрутизатора (https)")
 	rf.axRouterCert = fsSet.String("ax-router-cert", cli.EnvOr("AGCTL_AX_ROUTER_CERT", a.RouterCert), "PEM клиентского сертификата mTLS маршрутизатора (PodCertificate)")
@@ -138,6 +146,9 @@ func buildServer(rf *runtimeFlags, db *store.DB, sec *secrets.Manager, cfg serve
 	}
 	switch kind {
 	case runtimeDocker:
+		cfg.DockerRuntime = *rf.dockerRuntime
+		cfg.DockerPidsLimit = int64(*rf.dockerPidsLimit)
+		cfg.DockerNoHardening = !*rf.dockerHarden
 		return server.New(db, sec, cfg)
 	case runtimeK8s:
 		k8sCfg := k8srt.Config{

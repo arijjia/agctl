@@ -52,3 +52,28 @@ func TestFindLinuxBinaryMissingArch(t *testing.T) {
 		t.Fatalf("взяли чужую архитектуру: %s", p)
 	}
 }
+
+// Серверный вариант: только agctl-guest-server-linux-<arch>; локальный бинарь
+// (agctl-guest-linux-<arch> после разделения по режимам) серверу не подходит —
+// в нём нет ax-runner/init-chat-home.
+func TestFindServerLinuxBinary(t *testing.T) {
+	dir := t.TempDir()
+	touch(t, dir, "agctl-guest-linux-arm64")
+	if _, err := findServerLinuxBinary(dir, "arm64"); err == nil {
+		t.Fatal("сервер взял локальный guest — нужен отказ")
+	}
+	touch(t, dir, "agctl-guest-server-linux-arm64")
+	touch(t, dir, "agctl-guest-server-linux-amd64")
+	for _, arch := range []string{"amd64", "arm64"} {
+		got, err := findServerLinuxBinary(dir, arch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if filepath.Base(got) != "agctl-guest-server-linux-"+arch {
+			t.Fatalf("arch %s: got %s", arch, got)
+		}
+	}
+	if got, err := findServerLinuxBinary(dir, ""); err != nil || filepath.Base(got) != "agctl-guest-server-linux-arm64" {
+		t.Fatalf("any arch: %s %v", got, err)
+	}
+}
