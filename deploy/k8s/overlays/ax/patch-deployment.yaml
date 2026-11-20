@@ -15,9 +15,9 @@ spec:
             - name: AGCTL_AX_ATESPACE
               value: agctl
             # Образ песочницы — ТОЛЬКО по digest (Substrate отвергает теги):
-            # make img_push REGISTRY=… печатает digest agctl-dsh.
+            # make img_push REGISTRY=… печатает digest agctl-dsh-server.
             - name: AGCTL_AX_IMAGE
-              value: registry.example.com/agctl/agctl-dsh@sha256:0000000000000000000000000000000000000000000000000000000000000000
+              value: registry.example.com/agctl/agctl-dsh-server@sha256:0000000000000000000000000000000000000000000000000000000000000000
             # Маршрутизатор: http :80 (ingress-политика по SPIFFE шлюза) или
             # https :443 с mTLS — тогда раскомментируйте cert/key/ca ниже.
             - name: AGCTL_AX_ROUTER_URL

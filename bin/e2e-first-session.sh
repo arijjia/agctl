@@ -4,10 +4,11 @@
 # композер активен, сессия открыта, фатальных ошибок консоли нет».
 #
 #   bin/e2e-first-session.sh
-#   IMG=agctl-dsh:0.2.2 AGCTL_BIN=dist/agctl-server bin/e2e-first-session.sh
+#   IMG=agctl-dsh-server:0.2.2 AGCTL_BIN=dist/agctl-server bin/e2e-first-session.sh
 #
 # Переменные:
-#   IMG        образ чат-контейнера (по умолчанию agctl-dsh:0.2.2)
+#   IMG        серверный образ чат-контейнера (по умолчанию agctl-dsh-server:0.2.2,
+#              make img_build_server; локальный agctl-dsh без init-chat-home не подходит)
 #   AGCTL_BIN  бинарь (по умолчанию собирается из текущего дерева)
 #   E2E_ADDR   адрес стенда (по умолчанию 127.0.0.1:18937)
 set -u
@@ -18,7 +19,7 @@ RUN_ID="$(date +%Y%m%d-%H%M%S)"
 TEST_HOME="${E2E_UI_HOME:-/tmp/agctl-first-session-$RUN_ID}"
 ADDR="${E2E_ADDR:-127.0.0.1:18937}"
 BASE="http://$ADDR"
-IMG="${IMG:-agctl-dsh:0.2.2}"
+IMG="${IMG:-agctl-dsh-server:0.2.2}"
 BIN="${AGCTL_BIN:-$TEST_HOME/agctl}"
 LOGIN="demo-user"
 PASSWORD="DemoUser-2026!"
@@ -28,7 +29,7 @@ if [ ! -d tests/e2e-ui/node_modules/playwright ]; then
   exit 2
 fi
 if ! docker image inspect "$IMG" >/dev/null 2>&1; then
-  echo "Docker image $IMG missing. Build it (make img_build) or pass IMG=..." >&2
+  echo "Docker image $IMG missing. Build it (make img_build_server) or pass IMG=..." >&2
   exit 2
 fi
 if ! nc -z 127.0.0.1 "${ADDR##*:}" 2>/dev/null; then :; else

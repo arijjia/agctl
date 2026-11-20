@@ -3,10 +3,10 @@
 # admin approve -> SSH pubkey -> project folder -> session in project cwd,
 # then a REAL SSH login into the personal container (key-only, loopback port).
 #
-#   IMG=agctl-dsh:0.2.2 bin/e2e-developer-flow.sh
+#   IMG=agctl-dsh-server:0.2.2 bin/e2e-developer-flow.sh
 #
 # Prerequisites: npm ci && npx playwright install chromium in tests/e2e-ui/;
-# built agctl-dsh image (make img_build IMG=...); ssh-keygen, ssh, python3.
+# built server image agctl-dsh-server (make img_build_server IMG_SERVER=...); ssh-keygen, ssh, python3.
 # Uses an isolated TEST_HOME, its own ports and an ephemeral SSH keypair;
 # never prints private-key material.
 set -u
@@ -18,7 +18,7 @@ ADDR="127.0.0.1:${E2E_DEVFLOW_PORT:-18941}"
 BASE="http://$ADDR"
 FAKE_PORT="${E2E_DEVFLOW_FAKE_PORT:-18776}"
 LLM_BASE_URL="http://host.docker.internal:$FAKE_PORT/v1"
-IMG="${IMG:-agctl-dsh:0.2.2}"
+IMG="${IMG:-agctl-dsh-server:0.2.2}"
 BIN="$TEST_HOME/agctl"
 ADMIN_LOGIN="devflow-admin"
 ADMIN_PASSWORD="devflow-admin-pass-1"
@@ -50,7 +50,7 @@ if [ ! -d tests/e2e-ui/node_modules/playwright ]; then
 fi
 command -v ssh-keygen >/dev/null || { echo "ssh-keygen не найден" >&2; exit 2; }
 command -v ssh >/dev/null || { echo "ssh-клиент не найден" >&2; exit 2; }
-docker image inspect "$IMG" >/dev/null 2>&1 || { echo "image $IMG не найдена; сначала make img_build IMG=$IMG" >&2; exit 2; }
+docker image inspect "$IMG" >/dev/null 2>&1 || { echo "image $IMG не найдена; сначала make img_build_server IMG_SERVER=$IMG" >&2; exit 2; }
 
 mkdir -p "$TEST_HOME"
 go build -o "$BIN" ./cmd/agctl-server || exit 2
