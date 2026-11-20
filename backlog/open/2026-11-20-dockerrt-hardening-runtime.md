@@ -40,11 +40,21 @@ Docker Sandboxes (`sbx`) для сервера не подходят: инстр
 
 - [ ] `--docker-runtime runsc` проверен на Linux-хосте: чат, SSH developer'а,
       egress-сеть, сон/пробуждение.
-- [ ] Упрочнение включено по умолчанию, e2e (`bin/e2e-smoke.sh`,
+- [x] Упрочнение включено по умолчанию, e2e (`bin/e2e-smoke.sh`,
       `bin/e2e-ssh.sh`, `bin/e2e-local-mode.sh`) зелёные.
-- [ ] `docs/architecture.md` §4.2 и §10.4 обновлены.
+- [x] `docs/architecture.md` §4.2 и §10.4 обновлены.
 
 ## Журнал
 
 - 2026-11-20: создано (`gitctl backlog new`) по итогам исследования Docker
   Sandboxes.
+- 2026-11-20: Реализовано (ветка agent/dockerrt-hardening): `dockerrt/harden.go` —
+  CapDrop ALL + CHOWN/DAC_OVERRIDE/FOWNER/FSETID/SETGID/SETUID/SYS_CHROOT/KILL/
+  AUDIT_WRITE (non-root не включали: entrypoint chown'ит тома хоста, sshd с
+  privsep), `no-new-privileges`, PidsLimit 4096; флаги agctl-server
+  `--docker-runtime` (проверка по docker info при старте), `--docker-pids-limit`,
+  `--docker-harden=0` (откат); локальный режим получает упрочнение без рантайма.
+  Юнит-тесты harden_test.go; смоук проверяет инспектом CapDrop/SecurityOpt/
+  PidsLimit. Docker Desktop (macOS): e2e-ssh 16/0, e2e-local-mode 44/0,
+  e2e-smoke 39/0 CHAT=PASS. Открыто: `--docker-runtime runsc` на Linux-хосте
+  с gVisor (чат, SSH, egress-сеть, сон/пробуждение) — здесь нет такого хоста.

@@ -56,6 +56,17 @@ type Config struct {
 	// init-chat-home. agctl-server ставит true; сборка локального режима
 	// (BuildDevImage) оставляет false — там guest только с bridge.
 	GuestServer bool
+
+	// Упрочнение контейнера (карточка dockerrt-hardening-runtime).
+	// ContainerRuntime — OCI-рантайм Docker (HostConfig.Runtime): пусто = runc
+	// демона, "runsc" (gVisor), "kata" — изоляция ядра; наличие проверяется
+	// в New по docker info. Ставит только agctl-server.
+	ContainerRuntime string
+	// PidsLimit — потолок процессов контейнера; 0 = defaultPidsLimit.
+	PidsLimit int64
+	// NoHardening — выключить CapDrop/no-new-privileges/PidsLimit (аварийный
+	// откат, если надстройке профиля нужны снятые capabilities).
+	NoHardening bool
 }
 
 // Метки контейнеров agctl.
@@ -97,6 +108,15 @@ func New(cfg Config, imageFS fs.FS) (*Runtime, error) {
 		cfg.Version = "dev"
 	}
 	_ = ping
+	if cfg.ContainerRuntime != "" {
+		info, err := cli.Info(ctx, client.InfoOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("docker: info (проверка рантайма %s): %w", cfg.ContainerRuntime, err)
+		}
+		if err := checkContainerRuntime(cfg.ContainerRuntime, info.Info.Runtimes); err != nil {
+			return nil, err
+		}
+	}
 	return &Runtime{cli: cli, cfg: cfg, imageFS: imageFS}, nil
 }
 
@@ -486,6 +506,7 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 			RestartPolicy: container.RestartPolicy{Name: "no"},
 		},
 	}
+	rt.applyHardening(cfg.HostConfig)
 	// Egress-allowlist (opt-in): выделенная сеть + DOCKER-USER правила до
 	// старта контейнера, чтобы ни один пакет не ушёл мимо запрета.
 	if opts.EgressAllowlist {

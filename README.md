@@ -260,6 +260,9 @@ AGCTL_LLM_API_KEY=… agctl-server serve --profile <id> --secure-cookies
 | `--llm-base-url`, `--llm-model`, `--llm-models`, `--llm-api-key` | из профиля | провайдер модели по умолчанию (ключ лучше передавать переменной `AGCTL_LLM_API_KEY`) |
 | `--chat-ttl-min` | 60 | минуты простоя до усыпления контейнера |
 | `--mem-gb`, `--cpus` | 2, 2 | лимиты контейнера |
+| `--docker-runtime` | пусто (runc) | OCI-рантайм Docker-бэкенда: `runsc` (gVisor) или `kata` — изоляция ядра; должен быть зарегистрирован в dockerd |
+| `--docker-pids-limit` | 4096 | лимит процессов контейнера |
+| `--docker-harden` | включено | урезанные capabilities и `no-new-privileges` для контейнеров; `=0` — аварийный откат |
 | `--secure-cookies` | выключен | cookie с флагом Secure (когда TLS завершается на прокси) |
 | `--register-per-min` | 30 | ограничение регистраций с одного IP (0 — без ограничения) |
 | `--cors-origin` | пусто | точный список источников для кросс-доменного `/api` |

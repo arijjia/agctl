@@ -50,6 +50,10 @@ func parseRuntimeKind(raw string) (string, error) {
 type runtimeFlags struct {
 	kind *string
 
+	dockerRuntime   *string
+	dockerPidsLimit *int
+	dockerHarden    *bool
+
 	k8sNamespace     *string
 	k8sKubeconfig    *string
 	k8sImage         *string
@@ -84,6 +88,10 @@ type runtimeFlags struct {
 func registerRuntimeFlags(fsSet *flag.FlagSet, cfg cli.UserConfig) cli.Runtime {
 	rf := &runtimeFlags{}
 	rf.kind = fsSet.String("runtime", cli.EnvOr("AGCTL_RUNTIME", cli.FirstNonEmpty(cfg.Serve.Runtime, runtimeDocker)), "бэкенд персональных рантаймов: docker | k8s | ax (Google AX + Agent Substrate)")
+
+	rf.dockerRuntime = fsSet.String("docker-runtime", cli.EnvOr("AGCTL_DOCKER_RUNTIME", ""), "OCI-рантайм контейнеров Docker-бэкенда: пусто = runc демона, runsc (gVisor), kata — изоляция ядра; должен быть зарегистрирован в dockerd")
+	rf.dockerPidsLimit = fsSet.Int("docker-pids-limit", cli.EnvInt("AGCTL_DOCKER_PIDS_LIMIT", 4096), "потолок процессов контейнера Docker-бэкенда")
+	rf.dockerHarden = fsSet.Bool("docker-harden", cli.EnvOr("AGCTL_DOCKER_HARDEN", "1") != "0", "упрочнение контейнеров Docker-бэкенда: CapDrop ALL + минимум для entrypoint/sshd, no-new-privileges, лимит процессов; 0 = аварийный откат")
 
 	k := cfg.Serve.K8s
 	rf.k8sNamespace = fsSet.String("k8s-namespace", cli.EnvOr("AGCTL_K8S_NAMESPACE", k.Namespace), "namespace подов пользователей (пусто = namespace шлюза в кластере)")
@@ -138,6 +146,9 @@ func buildServer(rf *runtimeFlags, db *store.DB, sec *secrets.Manager, cfg serve
 	}
 	switch kind {
 	case runtimeDocker:
+		cfg.DockerRuntime = *rf.dockerRuntime
+		cfg.DockerPidsLimit = int64(*rf.dockerPidsLimit)
+		cfg.DockerNoHardening = !*rf.dockerHarden
 		return server.New(db, sec, cfg)
 	case runtimeK8s:
 		k8sCfg := k8srt.Config{

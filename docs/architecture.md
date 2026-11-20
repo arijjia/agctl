@@ -411,6 +411,26 @@ MCP проекта). Их копии лежат в `internal/assets/dsh-skel`; �
   (`SweepVersionDrift`), а при каждом старте рабочего места пересоздаёт
   контейнер, собранный не из желаемого образа (данные на томах сохраняются).
 
+**Упрочнение контейнера** (`internal/runtime/dockerrt/harden.go`, карточка
+`dockerrt-hardening-runtime`) включено по умолчанию в обоих режимах.
+Entrypoint работает от root (chown на томах хоста, sshd с privsep), поэтому
+контейнер остаётся root, но с урезанными правами:
+
+- `CapDrop: ALL` и обратно только `CHOWN`, `DAC_OVERRIDE`, `FOWNER`,
+  `FSETID`, `SETGID`, `SETUID`, `SYS_CHROOT`, `KILL`, `AUDIT_WRITE` (набор
+  k8srt с SSH плюс `FSETID`); по сравнению с дефолтом Docker сняты `MKNOD`,
+  `NET_RAW`, `NET_BIND_SERVICE`, `SETFCAP`, `SETPCAP`;
+- `no-new-privileges` — setuid-бинари не повышают права;
+- лимит процессов `--docker-pids-limit` (по умолчанию 4096);
+- seccomp — дефолтный профиль демона.
+
+Изоляцию ядра даёт OCI-рантайм: `agctl-server serve --docker-runtime runsc`
+(gVisor) или `kata` (microVM), env `AGCTL_DOCKER_RUNTIME`. Рантайм должен
+быть зарегистрирован в dockerd: сервер проверяет его по `docker info` при
+старте и падает с понятной ошибкой. В локальном режиме рантайм не
+выставляется. Аварийный откат упрочнения (например, надстройке профиля
+нужны снятые capabilities) — `--docker-harden=0` (`AGCTL_DOCKER_HARDEN=0`).
+
 **Egress-allowlist** (`internal/runtime/dockerrt/egress.go`, поле
 `Config.EgressAllowlist`; флага в `serve` сейчас нет, поэтому механизм
 реализован и покрыт тестом, но из CLI не включается — раздел 10.4).
@@ -1223,7 +1243,11 @@ agctl/
   пример `deploy/ax/egress-policy.example.yaml` расходится с форматом
   `credentialUri`, который формирует код.
 - **SSH в поде от root.** С включённым SSH под Kubernetes работает от root
-  с дополнительными capabilities.
+  с дополнительными capabilities. Docker-контейнер рабочего места всегда
+  работает от root (с урезанными capabilities и `no-new-privileges`,
+  раздел 4.2); по умолчанию — общее ядро хоста (runc), изоляцию ядра даёт
+  только `--docker-runtime runsc|kata`, живьём на Linux-хосте ещё не
+  проверенная.
 - **Ключ модели доступен агенту.** Во всех режимах, кроме AX с подстановкой
   на egress, агент может прочитать `.credentials.yaml` (раздел 8.4).
 - **Windows живьём не проверен.** Локальный режим на Windows пока
