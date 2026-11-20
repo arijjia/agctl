@@ -4,12 +4,11 @@
 #
 #   bin/e2e-cabinet.sh [--skip-docker]
 #
-# Секция A (docker): собрать/взять образ, поднять agctl serve на тестовом
-#   home, создать воркспейс, дождаться running, проверить через шлюз
-#   /w/<id>/: boot graph содержит @arijjia/agctl-cabinet.
 # Секция B (без docker): изолированный dsh web (night-profile) содержит
-#   код панели в combo-бандле; agctl REST отвечает с CORS-заголовками.
-# После себя: глушит serve/fake, воркспейс удаляет.
+#   код панели в combo-бандле. Секция C (docker): multi-user Tier 0 через
+#   /chat/ — personal dsh runtimes, изоляция volumes; v2-воркспейсы и
+#   шлюз /w/ снесены в v3 (карточка legacy-workspace-code-cleanup).
+# После себя: глушит serve/fake.
 set -u
 cd "$(dirname "$0")/.."
 REPO_ROOT="$PWD"
@@ -25,7 +24,7 @@ NIGHT_HOME="$TEST_HOME/dsh-home"
 NIGHT_PORT="${E2E_NIGHT_PORT:-3556}"
 NIGHT_LOG="$TEST_HOME/night-profile.log"
 
-PASS=0; FAIL=0; WSID=""
+PASS=0; FAIL=0
 pass() { PASS=$((PASS+1)); echo "  ok: $1"; }
 fail() { FAIL=$((FAIL+1)); echo "  FAIL: $1"; }
 
@@ -34,17 +33,6 @@ go build -o "$BIN" ./cmd/agctl-server || { echo "go build не удался" >&2
 
 AGCTL_PID=""; FAKE_PID=""
 cleanup() {
-  if [ -n "$WSID" ] && [ -f "$TEST_HOME/jar" ]; then
-    curl -s -b "$TEST_HOME/jar" -X DELETE "$B/api/workspaces/$WSID" -o /dev/null 2>/dev/null || true
-    for i in $(seq 1 30); do
-      [ -z "$(docker ps -aq --filter "label=agctl.workspace=$WSID" 2>/dev/null)" ] && break
-      sleep 1
-    done
-    if [ -n "$(docker ps -aq --filter "label=agctl.workspace=$WSID" 2>/dev/null)" ]; then
-      echo "cleanup: fallback remove own container agctl-$WSID" >&2
-      docker rm -f "agctl-$WSID" >/dev/null 2>&1 || true
-    fi
-  fi
   if [ -n "$AGCTL_PID" ]; then
     kill "$AGCTL_PID" >/dev/null 2>&1 || true
     wait "$AGCTL_PID" 2>/dev/null || true
@@ -68,55 +56,6 @@ trap cleanup EXIT INT TERM
 
 echo "== e2e-cabinet $RUN_ID (img=$IMG) =="
 
-# ── Секция A: воркспейс из образа, панель через шлюз ────────────────────────
-if [ "$SKIP_DOCKER" != "--skip-docker" ]; then
-  python3 bin/fake-llm.py --port 18769 >"$TEST_HOME/fake.log" 2>&1 &
-  FAKE_PID=$!
-  nohup "$BIN" serve --home "$TEST_HOME" --addr "$ADDR" --image "$IMG" \
-    --cors-origin "http://127.0.0.1:3555" > "$TEST_HOME/serve.log" 2>&1 &
-  AGCTL_PID=$!
-  for i in $(seq 1 15); do sleep 1; curl -s -o /dev/null "$B/api/me" && break; done
-
-  curl -s -c "$TEST_HOME/jar" -H 'Content-Type: application/json' \
-    -d '{"login":"cabe2e","password":"cabinet-e2e-pass-1"}' "$B/api/register" \
-    -o /dev/null
-  code=$(curl -s -o /dev/null -w '%{http_code}' -b "$TEST_HOME/jar" "$B/api/me")
-  [ "$code" = "200" ] && pass "agctl serve: регистрация+сессия" || fail "agctl serve /api/me = $code"
-
-  curl -s -b "$TEST_HOME/jar" -H 'Content-Type: application/json' \
-    -d '{"name":"cab-e2e","kit":"base","components":["core-workspace"],"baseURL":"http://host.docker.internal:18769/v1","models":["stub-model"],"apiKey":"sk-e2e-fake-not-a-secret"}' \
-    "$B/api/workspaces" -o /dev/null
-  WS=""
-  for i in $(seq 1 40); do
-    sleep 2
-    WS=$(curl -s -b "$TEST_HOME/jar" "$B/api/workspaces" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-w = d['workspaces'][0] if d['workspaces'] else {}
-print((w['id'] + ' ' + w['status']) if w else '')")
-    case "$WS" in *running*) break;; esac
-  done
-  case "$WS" in
-    *running*)
-      pass "воркспейс создан и running ($WS)"
-      WSID="${WS%% *}"
-      SSHSTATE=$(curl -s -b "$TEST_HOME/jar" "$B/api/workspaces/$WSID" | python3 -c "import json,sys; w=json.load(sys.stdin)['workspace']; print(w.get('sshEnabled'), w.get('sshPort'))")
-      [ "$SSHSTATE" = "False 0" ] && pass "без ключа SSH отключён по умолчанию" || fail "SSH должен быть выключен без ключа, got '$SSHSTATE'"
-      BOUND=$(docker port "agctl-$WSID" 2222/tcp 2>/dev/null || true)
-      [ -z "$BOUND" ] && pass "без ключа контейнерный порт 2222 не опубликован" || fail "SSH-порт открыт без ключа: $BOUND"
-      html=$(curl -s -b "$TEST_HOME/jar" -L "$B/w/$WSID/")
-      echo "$html" | grep -q 'agctl-cabinet' \
-        && pass "шлюз /w/<id>: boot graph содержит @arijjia/agctl-cabinet" \
-        || fail "шлюз /w/<id>: панели нет в boot graph"
-      ;;
-    *)
-      fail "воркспейс не поднялся: '$WS' (лог: $TEST_HOME/serve.log)"
-      ;;
-  esac
-else
-  echo "== секция A пропущена (--skip-docker) =="
-fi
-
 # ── Секция B: изолированный dsh web с панелью (night-profile) ──────────────
 DSH_HOME_TEST="$NIGHT_HOME" PORT="$NIGHT_PORT" bin/night-profile.sh >"$NIGHT_LOG" 2>&1 || fail "night-profile не поднялся"
 if [ -f "$NIGHT_HOME/web-$NIGHT_PORT.log" ]; then
@@ -134,10 +73,29 @@ fi
 # Корень без сессии ведёт на login; после сессии — в /chat/. Два пользователя
 # должны получить разные dsh containers + разные постоянные DSH_HOME volumes.
 if [ "$SKIP_DOCKER" != "--skip-docker" ]; then
-  code=$(curl -s -o /dev/null -w '%{http_code}' -D "$TEST_HOME/root.headers" "$B/")
-  grep -qi '^Location: /app/' "$TEST_HOME/root.headers" \
-    && pass "корень без сессии → /app/ (SPA-логин)" \
-    || fail "корень без сессии не ведёт на /app/ (HTTP $code)"
+  python3 bin/fake-llm.py --port 18769 >"$TEST_HOME/fake.log" 2>&1 &
+  FAKE_PID=$!
+  nohup "$BIN" serve --home "$TEST_HOME" --addr "$ADDR" --image "$IMG" \
+    --cors-origin "http://127.0.0.1:3555" > "$TEST_HOME/serve.log" 2>&1 &
+  AGCTL_PID=$!
+  for i in $(seq 1 15); do sleep 1; curl -s -o /dev/null "$B/api/me" && break; done
+
+  curl -s -c "$TEST_HOME/jar" -H 'Content-Type: application/json' \
+    -d '{"login":"cabe2e","password":"cabinet-e2e-pass-1"}' "$B/api/register" \
+    -o /dev/null
+  code=$(curl -s -o /dev/null -w '%{http_code}' -b "$TEST_HOME/jar" "$B/api/me")
+  [ "$code" = "200" ] && pass "agctl serve: регистрация+сессия" || fail "agctl serve /api/me = $code"
+
+  code=$(curl -s -o "$TEST_HOME/root-anon.html" -w '%{http_code}' "$B/")
+  if [ "$code" = "200" ] && grep -q 'agctl' "$TEST_HOME/root-anon.html"; then
+    pass "корень без сессии — страница входа SPA (HTTP 200)"
+  else
+    fail "корень без сессии не отдал страницу входа (HTTP $code)"
+  fi
+  curl -s -o /dev/null -w '%{redirect_url}' -b "$TEST_HOME/jar" "$B/" > "$TEST_HOME/root-admin.url"
+  grep -q '/admin' "$TEST_HOME/root-admin.url" \
+    && pass "корень админа → /admin (личный чат админу не выдаётся)" \
+    || fail "корень админа не ведёт в /admin: $(cat "$TEST_HOME/root-admin.url")"
 
   check_chat() {
     local label="$1" jar="$2" out="$3" code=""
@@ -153,13 +111,17 @@ if [ "$SKIP_DOCKER" != "--skip-docker" ]; then
     return 1
   }
 
-  check_chat "admin user" "$TEST_HOME/jar" "$TEST_HOME/chat-user1.html"
-  grep -q 'dsh-auth-' "$TEST_HOME/jar" && grep -q '/chat/' "$TEST_HOME/jar" \
+  # Чат — только не-админам: admin → /admin, пользователь платформы → /chat/.
+  curl -s -c "$TEST_HOME/user1.jar" -H 'Content-Type: application/json' \
+    -d '{"login":"cabinet-student","password":"student-pass-1"}' \
+    "$B/api/register" -o /dev/null
+  check_chat "first user" "$TEST_HOME/user1.jar" "$TEST_HOME/chat-user1.html"
+  grep -q 'dsh-auth-' "$TEST_HOME/user1.jar" && grep -q '/chat/' "$TEST_HOME/user1.jar" \
     && pass "DSH auth cookie path-scoped to /chat/" \
     || fail "DSH cookie не ограничена путём /chat/"
 
   curl -s -c "$TEST_HOME/user2.jar" -H 'Content-Type: application/json' \
-    -d '{"login":"cabinet-student","password":"student-pass-1"}' \
+    -d '{"login":"cabinet-student2","password":"student-pass-2"}' \
     "$B/api/register" -o /dev/null
   check_chat "second user" "$TEST_HOME/user2.jar" "$TEST_HOME/chat-user2.html"
 
@@ -171,7 +133,7 @@ import json, sys, uuid
 print(json.dumps({"type":"client-request", "rpcId":str(uuid.uuid4()), "method":sys.argv[1], "payload":{"args":json.loads(sys.argv[2])}}))
 PY
 )
-  CREATE_RESP=$(curl -s -b "$TEST_HOME/jar" -c "$TEST_HOME/jar" -H 'Content-Type: application/json' \
+  CREATE_RESP=$(curl -s -b "$TEST_HOME/user1.jar" -c "$TEST_HOME/user1.jar" -H 'Content-Type: application/json' \
     -d "$CREATE_BODY" "$B/chat/api/session/create")
   SESSION_ID=$(printf '%s' "$CREATE_RESP" | python3 -c "import json,sys; d=json.load(sys.stdin); r=d.get('result',{}); v=r.get('value',{}) if isinstance(r,dict) else {}; print(v.get('sessionId',''))" 2>/dev/null || true)
   if [ -z "$SESSION_ID" ]; then
@@ -183,13 +145,12 @@ import json, sys, uuid
 print(json.dumps({"type":"client-request", "rpcId":str(uuid.uuid4()), "method":sys.argv[1], "payload":{"args":json.loads(sys.argv[2])}}))
 PY
 )
-    LIST_RESP=$(curl -s -b "$TEST_HOME/jar" -c "$TEST_HOME/jar" -H 'Content-Type: application/json' \
+    LIST_RESP=$(curl -s -b "$TEST_HOME/user1.jar" -c "$TEST_HOME/user1.jar" -H 'Content-Type: application/json' \
       -d "$LIST_BODY" "$B/chat/api/session/list")
-    SESSION_CWD=$(printf '%s' "$LIST_RESP" | python3 -c "import json,sys; d=json.load(sys.stdin); r=d.get('result',{}); v=r.get('value',{}) if isinstance(r,dict) else {}; print(next((x.get('cwd','') for x in v.get('items',[]) if x.get('sessionId')=='$SESSION_ID'),''))" 2>/dev/null || true)
-    SESS_DIR="$TEST_HOME/chats/u1/work/.sessions/$SESSION_ID"
-    [ "$SESSION_CWD" = "/workspace/.sessions/$SESSION_ID" ] && [ -f "$SESS_DIR/.agctl-session-workdir" ] \
-      && pass "DSH Session $SESSION_ID is born with a hidden persistent cwd" \
-      || fail "session cwd not scoped: cwd='$SESSION_CWD' dir='$SESS_DIR' response='$LIST_RESP'"
+    SESSION_OK=$(printf '%s' "$LIST_RESP" | python3 -c "import json,sys; d=json.load(sys.stdin); items=d.get('result',{}).get('value',{}).get('items',[]); print(int(any(x.get('sessionId')=='$SESSION_ID' for x in items)))" 2>/dev/null || true)
+    [ "$SESSION_OK" = "1" ] \
+      && pass "DSH Remote API round-trip: session $SESSION_ID видна в session/list" \
+      || fail "session/list не вернул созданную сессию: $LIST_RESP"
   fi
 
   python3 - "$TEST_HOME" <<'PY'
@@ -201,16 +162,14 @@ for cid in ids:
     data = json.loads(subprocess.check_output(["docker", "inspect", cid], text=True))[0]
     for mount in data.get("Mounts", []):
         source = pathlib.Path(mount.get("Source", "")).resolve()
-        for uid in (1, 2):
+        for uid in (2, 3):  # u1 — admin, чата нет
             expected = root / "chats" / f"u{uid}" / "dsh-home"
             if source == expected:
-                env = set(data.get("Config", {}).get("Env", []))
-                scoped = "AGCTL_CHAT_SESSION_ROOT=/workspace/.sessions" in env
-                found[uid] = (data.get("Id"), str(source), scoped)
-if set(found) != {1, 2} or found[1][0] == found[2][0] or found[1][1] == found[2][1] or not found[1][2] or not found[2][2]:
-    print("FAIL: per-user chat runtimes/volumes/session-scope env not isolated:", found)
+                found[uid] = (data.get("Id"), str(source))
+if set(found) != {2, 3} or found[2][0] == found[3][0] or found[2][1] == found[3][1]:
+    print("FAIL: per-user chat runtimes/volumes not isolated:", found)
     sys.exit(1)
-print("  ok: two users → distinct containers/DSH_HOME volumes; chat-only session-scope env is set")
+print("  ok: two users → distinct containers/DSH_HOME volumes")
 PY
   [ $? -eq 0 ] && pass "per-user chat runtimes are isolated" || fail "per-user chat isolation check failed"
 fi

@@ -15,7 +15,7 @@ SQLite, DeepSeek Harness в контейнере рабочего места. П
 - Секреты (LLM-токены, ключи) никогда не попадают в код, тесты, логи и образы;
   CI-гард gitleaks. Тестовые прогоны — только в изолированном `$TEST_HOME`
   с уникальным тегом образа; Docker e2e — `bin/e2e-local-mode.sh`,
-  `bin/e2e-smoke.sh`, `bin/e2e-cabinet.sh`, `bin/e2e-ssh.sh`; браузерный — `tests/e2e-ui` (Playwright).
+  `bin/e2e-smoke.sh`, `bin/e2e-cabinet.sh`, `bin/e2e-developer-flow.sh`; браузерный — `tests/e2e-ui` (Playwright).
 - Документация в репо: README — установка и запуск всех трёх режимов,
   `docs/architecture.md` — архитектура всей системы (режимы, сети и порты,
   данные и секреты, ревью кодовой базы по режимам). Прежние доки (архитектура

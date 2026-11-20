@@ -1247,7 +1247,9 @@ Windows, сборка SPA, gitleaks; по тегу — пробная сборк
 Живые сценарии (`bin/`): `e2e-local-mode.sh` (локальный режим целиком:
 init, доступы, запуск, вход, папка проектов, мост, обновление и откат),
 `e2e-smoke.sh` (сервер со стабом модели: роли, проекты, autosave, живой
-запрос к модели), `e2e-cabinet.sh`, `e2e-ssh.sh`, `e2e-first-session.sh`,
+запрос к модели), `e2e-cabinet.sh` (панель: night-profile + multi-user
+/chat/), `e2e-developer-flow.sh` (браузерный flow роли developer с реальным
+SSH-входом), `e2e-first-session.sh`,
 `e2e-k8s-kind.sh` (kind-кластер), браузерные сценарии `tests/e2e-ui`.
 
 ## 12. Состояние и открытые вопросы
