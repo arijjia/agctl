@@ -1,3 +1,5 @@
+//go:build !server
+
 package main
 
 // bridge.go — клиент моста к хосту изнутри контейнера рабочего места

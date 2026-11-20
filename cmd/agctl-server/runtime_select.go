@@ -88,7 +88,7 @@ func registerRuntimeFlags(fsSet *flag.FlagSet, cfg cli.UserConfig) cli.Runtime {
 	k := cfg.Serve.K8s
 	rf.k8sNamespace = fsSet.String("k8s-namespace", cli.EnvOr("AGCTL_K8S_NAMESPACE", k.Namespace), "namespace подов пользователей (пусто = namespace шлюза в кластере)")
 	rf.k8sKubeconfig = fsSet.String("k8s-kubeconfig", cli.EnvOr("AGCTL_K8S_KUBECONFIG", k.Kubeconfig), "kubeconfig (пусто = in-cluster service account)")
-	rf.k8sImage = fsSet.String("k8s-image", cli.EnvOr("AGCTL_K8S_IMAGE", k.Image), "образ agctl-dsh в реестре, доступном кластеру (пусто = --image)")
+	rf.k8sImage = fsSet.String("k8s-image", cli.EnvOr("AGCTL_K8S_IMAGE", k.Image), "образ agctl-dsh-server в реестре, доступном кластеру (пусто = --image)")
 	rf.k8sStorageClass = fsSet.String("k8s-storage-class", cli.EnvOr("AGCTL_K8S_STORAGE_CLASS", k.StorageClass), "StorageClass PVC пользователей (пусто = дефолт кластера)")
 	rf.k8sStorageSize = fsSet.String("k8s-storage-size", cli.EnvOr("AGCTL_K8S_STORAGE_SIZE", cli.FirstNonEmpty(k.StorageSize, "5Gi")), "размер PVC пользователя")
 	rf.k8sRuntimeClass = fsSet.String("k8s-runtime-class", cli.EnvOr("AGCTL_K8S_RUNTIME_CLASS", k.RuntimeClass), "RuntimeClass подов (например gvisor)")
@@ -103,7 +103,7 @@ func registerRuntimeFlags(fsSet *flag.FlagSet, cfg cli.UserConfig) cli.Runtime {
 	a := cfg.Serve.AX
 	rf.axServer = fsSet.String("ax-server", cli.EnvOr("AGCTL_AX_SERVER", cli.FirstNonEmpty(a.Server, "ax-server.ax-system.svc.cluster.local:8080")), "gRPC-адрес ax-server")
 	rf.axAtespace = fsSet.String("ax-atespace", cli.EnvOr("AGCTL_AX_ATESPACE", cli.FirstNonEmpty(a.Atespace, "agctl")), "atespace задач пользователей (одна установка = один atespace)")
-	rf.axImage = fsSet.String("ax-image", cli.EnvOr("AGCTL_AX_IMAGE", a.Image), "образ песочницы agctl-dsh, pinned by digest (name@sha256:…)")
+	rf.axImage = fsSet.String("ax-image", cli.EnvOr("AGCTL_AX_IMAGE", a.Image), "образ песочницы agctl-dsh-server, pinned by digest (name@sha256:…)")
 	rf.axRouterURL = fsSet.String("ax-router-url", cli.EnvOr("AGCTL_AX_ROUTER_URL", cli.FirstNonEmpty(a.RouterURL, "http://atenet-router.ate-system.svc.cluster.local:80")), "URL маршрутизатора Substrate (atenet-router)")
 	rf.axRouterCA = fsSet.String("ax-router-ca", cli.EnvOr("AGCTL_AX_ROUTER_CA", a.RouterCA), "PEM CA маршрутизатора (https)")
 	rf.axRouterCert = fsSet.String("ax-router-cert", cli.EnvOr("AGCTL_AX_ROUTER_CERT", a.RouterCert), "PEM клиентского сертификата mTLS маршрутизатора (PodCertificate)")

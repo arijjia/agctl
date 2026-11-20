@@ -1,7 +1,9 @@
 # ── k8s: образы, деплой и смоук agctl в Kubernetes (agctl-hq/docs/kubernetes.md) ──────
 # REGISTRY — реестр, доступный кластеру (registry.example.com/agctl).
-# Образы: agctl-serve (шлюз, deploy/serve.Dockerfile) и agctl-dsh/-nossh
-# (рабочее место; те же, что img_build). Для бэкенда ax нужен digest agctl-dsh.
+# Образы: agctl-serve (шлюз, deploy/serve.Dockerfile), серверные agctl-dsh-server/
+# -nossh (рабочее место рантаймов k8s/ax, те же, что img_build_server) и
+# локальные agctl-dsh/-nossh (img_build; кластеру не нужны, пушим для полноты).
+# Для бэкенда ax нужен digest agctl-dsh-server.
 REGISTRY ?=
 K8S_OVERLAY ?= base
 K8S_NAMESPACE ?= agctl
@@ -15,16 +17,16 @@ img_serve_build:
 	GOOS=linux GOARCH=$(K8S_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-server-linux-$(K8S_ARCH) ./cmd/agctl-server
 	docker build --platform linux/$(K8S_ARCH) --build-arg TARGETARCH=$(K8S_ARCH) -t $(IMG_SERVE) -f deploy/serve.Dockerfile .
 
-## img_push: тегировать и запушить agctl-serve, agctl-dsh, agctl-dsh-nossh, вкусы (web, вкусы профиля) и надстройки профиля PROFILE в REGISTRY (Nexus и пр.); печатает digest agctl-dsh (для AGCTL_AX_IMAGE)
+## img_push: тегировать и запушить agctl-serve, серверные agctl-dsh-server(-nossh) с надстройкой профиля, локальные agctl-dsh(-nossh)/вкусы в REGISTRY (Nexus и пр.); печатает digest agctl-dsh-server (для AGCTL_AX_IMAGE)
 img_push:
 	@test -n "$(REGISTRY)" || { echo "✗ задай REGISTRY=<реестр>/agctl"; exit 1; }
-	@set -e; for img in $(IMG_SERVE) $(IMG) $(IMG_NOSSH) $(if $(PROFILE_DOCKERFILE),$(call overlay_tag,$(IMG)) $(call overlay_tag,$(IMG_NOSSH))); do \
+	@set -e; for img in $(IMG_SERVE) $(IMG_SERVER) $(IMG_SERVER_NOSSH) $(if $(PROFILE_DOCKERFILE),$(call overlay_tag,$(IMG_SERVER)) $(call overlay_tag,$(IMG_SERVER_NOSSH))); do \
 	  docker tag "$$img" "$(REGISTRY)/$$img"; docker push "$(REGISTRY)/$$img"; done
-	@# Образы локального режима (вкусы): пушим те, что собраны.
-	@set -e; for img in $(IMG_WEB) $(if $(PROFILE_DOCKERFILE),$(call overlay_tag,$(IMG_WEB))) $(foreach fl,$(PROFILE_FLAVORS),$(call flavor_tag,$(fl))); do \
+	@# Локальные образы и вкусы: пушим те, что собраны (кластеру не нужны).
+	@set -e; for img in $(IMG) $(IMG_NOSSH) $(if $(PROFILE_DOCKERFILE),$(call overlay_tag,$(IMG)) $(call overlay_tag,$(IMG_NOSSH))) $(IMG_WEB) $(if $(PROFILE_DOCKERFILE),$(call overlay_tag,$(IMG_WEB))) $(foreach fl,$(PROFILE_FLAVORS),$(call flavor_tag,$(fl))); do \
 	  if docker image inspect "$$img" >/dev/null 2>&1; then docker tag "$$img" "$(REGISTRY)/$$img"; docker push "$(REGISTRY)/$$img"; fi; done
-	@echo "digest agctl-dsh (AGCTL_AX_IMAGE):"; \
-	docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$(REGISTRY)/$(IMG)" | grep "^$(REGISTRY)/$(firstword $(subst :, ,$(IMG)))@" | head -n1
+	@echo "digest $(IMG_SERVER) (AGCTL_AX_IMAGE):"; \
+	docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$(REGISTRY)/$(IMG_SERVER)" | grep "^$(REGISTRY)/$(firstword $(subst :, ,$(IMG_SERVER)))@" | head -n1
 
 ## k8s_render: отрендерить манифесты (kustomize overlay K8S_OVERLAY: base | overlays/kind | overlays/ax)
 k8s_render:

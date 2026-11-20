@@ -1,8 +1,8 @@
 package dockerrt
 
-// devbuild.go — сборка образа рабочего места локального режима на машине
+// devbuild.go — сборка образа рабочего места ЛОКАЛЬНОГО режима на машине
 // разработчика без репозитория (agctl dev up, когда образа нет ни локально,
-// ни в реестре). Повторяет цепочку make img_build / img_profile:
+// ни в реестре). Повторяет цепочку make img_build:
 //
 //	agctl-dsh:<tag>                       базовый (встроенный контекст)
 //	agctl-dsh-web:<tag>                   вкус web (встроенный flavors/web)
@@ -84,6 +84,8 @@ func BuildDevImage(ctx context.Context, b DevBuild) error {
 		return err
 	}
 	defer cli.Close()
+	// GuestServer не ставим (false): локальному режиму нужен guest только с
+	// bridge — бинарь dist/agctl-guest-linux-<arch>.
 	rt := &Runtime{cli: cli, cfg: Config{BinDir: b.BinDir, DshSkel: b.SkelFS}, imageFS: b.ImageFS}
 	log := b.Log
 	if log == nil {

@@ -165,6 +165,7 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 		Home:              cfg.Home,
 		DshSkel:           assetsSkel,
 		Version:           cfg.Version,
+		GuestServer:       true, // образы agctl-dsh-server*: guest с ax-runner/init-chat-home
 	}, assets.Image)
 	if err != nil {
 		return nil, err
