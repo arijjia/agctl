@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/arijjia/agctl/internal/localmode"
@@ -174,5 +175,18 @@ func TestDevStale(t *testing.T) {
 		if got := devStale(&c.st); got != c.want {
 			t.Errorf("%s: devStale = %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// TestDevEgressArgs — egress-allowlist из dev.yaml всегда уходит в serve
+// явными флагами (и выключенный тоже): env машины его не перекрывает.
+func TestDevEgressArgs(t *testing.T) {
+	got := strings.Join(devEgressArgs(&localmode.Config{}), " ")
+	if got != "--egress-allowlist=false --egress-allow=" {
+		t.Fatalf("выключенный egress: %q", got)
+	}
+	got = strings.Join(devEgressArgs(&localmode.Config{EgressAllowlist: true, EgressAllow: []string{"gitlab.example.org", "10.0.0.0/8"}}), " ")
+	if got != "--egress-allowlist=true --egress-allow=gitlab.example.org,10.0.0.0/8" {
+		t.Fatalf("включённый egress: %q", got)
 	}
 }

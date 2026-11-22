@@ -88,6 +88,14 @@ type Data struct {
 
 	LLM llm `yaml:"llm"`
 
+	// Egress — куда контейнеру рабочего места можно ходить при включённом
+	// egress-allowlist (карточка dockerrt-egress-flag-key-proxy): хосты,
+	// IPv4 или CIDR (GitLab, Jira, реестр). Хосты провайдеров модели
+	// разрешаются всегда, их сюда писать не нужно.
+	Egress struct {
+		Allow []string `yaml:"allow"`
+	} `yaml:"egress"`
+
 	Help struct {
 		CabinetTitle string `yaml:"cabinet_title"`
 	} `yaml:"help"`

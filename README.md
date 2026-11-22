@@ -189,6 +189,14 @@ agctl dev up
 резервных копии данных dsh). Серверный дом `~/.agctl` и
 `~/.config/agctl/config.yaml` на локальный режим не влияют.
 
+### Ограничение исходящего трафика
+
+`egress_allowlist: true` в `dev.yaml` сажает рабочее место на выделенную
+сеть: наружу доступны только DNS, ваша машина (мост, LiteLLM на хосте),
+провайдеры модели, `egress.allow` профиля и список `egress_allow` в
+`dev.yaml` (хосты, IPv4 или CIDR). Применяется после `agctl dev down` и
+`agctl dev up`.
+
 ### Мост к хосту
 
 Агент работает в Linux-контейнере, а часть программ есть только на вашей
@@ -263,6 +271,8 @@ AGCTL_LLM_API_KEY=… agctl-server serve --profile <id> --secure-cookies
 | `--docker-runtime` | пусто (runc) | OCI-рантайм Docker-бэкенда: `runsc` (gVisor) или `kata` — изоляция ядра; должен быть зарегистрирован в dockerd |
 | `--docker-pids-limit` | 4096 | лимит процессов контейнера |
 | `--docker-harden` | включено | урезанные capabilities и `no-new-privileges` для контейнеров; `=0` — аварийный откат |
+| `--egress-allowlist` | выключен | контейнеры на выделенной сети: наружу только DNS, хост, провайдеры модели и белый список |
+| `--egress-allow` | `egress.allow` профиля | дополнительные хосты, IPv4 или CIDR через запятую (GitLab, Jira, реестр) для `--egress-allowlist` |
 | `--secure-cookies` | выключен | cookie с флагом Secure (когда TLS завершается на прокси) |
 | `--register-per-min` | 30 | ограничение регистраций с одного IP (0 — без ограничения) |
 | `--cors-origin` | пусто | точный список источников для кросс-доменного `/api` |

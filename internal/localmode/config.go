@@ -43,6 +43,11 @@ type Config struct {
 	Addr       string  `yaml:"addr,omitempty"`        // адрес UI (loopback)
 	MemGB      float64 `yaml:"mem_gb,omitempty"`
 	CPUs       float64 `yaml:"cpus,omitempty"`
+	// EgressAllowlist — контейнер на выделенной сети: наружу только DNS,
+	// хост (мост, LiteLLM на хосте), провайдеры модели, egress.allow профиля и
+	// EgressAllow (карточка dockerrt-egress-flag-key-proxy). По умолчанию выкл.
+	EgressAllowlist bool     `yaml:"egress_allowlist,omitempty"`
+	EgressAllow     []string `yaml:"egress_allow,omitempty"` // хосты, IPv4, CIDR сверх профиля
 	// Env — НЕсекретные переменные контейнера (URL Jira/GitLab, логины).
 	Env map[string]string `yaml:"env,omitempty"`
 	// Secrets — имена секретов в хранилище ОС (значения там, не здесь).

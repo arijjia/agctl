@@ -37,6 +37,8 @@ type UserConfig struct {
 		MemGB              float64   `yaml:"mem_gb"`
 		CPUs               float64   `yaml:"cpus"`
 		CORSOrigins        string    `yaml:"cors_origins"`
+		EgressAllowlist    bool      `yaml:"egress_allowlist"` // карточки egress-allowlist, dockerrt-egress-flag-key-proxy
+		EgressAllow        string    `yaml:"egress_allow"`     // хосты/IPv4/CIDR через запятую сверх профиля
 		K8s                K8sConfig `yaml:"k8s"`
 		AX                 AXConfig  `yaml:"ax"`
 	} `yaml:"serve"`

@@ -9,7 +9,10 @@
 #
 # Переменные: IMG (образ), AGCTL_BIN (готовый бинарь; по умолчанию свежая
 # сборка ./cmd/agctl во временный каталог — устаревший dist/ гонял бы старый код),
-# E2E_ADDR (адрес UI, по умолчанию 127.0.0.1:18940), KEEP=1 — не чистить дом.
+# E2E_ADDR (адрес UI, по умолчанию 127.0.0.1:18940), KEEP=1 — не чистить дом,
+# EGRESS=1 — рабочее место с egress-allowlist (dev.yaml egress_allowlist):
+# разрешённый IP доступен, прочий интернет нет, мост к хосту работает из
+# выделенной сети (карточка dockerrt-egress-flag-key-proxy).
 set -u
 cd "$(dirname "$0")/.."
 IMG="${IMG:-agctl-dsh:0.2.2}"
@@ -44,6 +47,14 @@ cleanup() {
     fi
   done
   docker rmi "$IMG_B" >/dev/null 2>&1
+  if [ "${EGRESS:-0}" = 1 ]; then
+    for n in $(docker network ls -q --filter "label=agctl.home=$AGCTL_DEV_HOME/data"); do
+      chain="AGCTL-EGRESS-$(docker network inspect "$n" --format '{{.Name}}' | sed 's/^agctl-egress-//' | tr a-z A-Z)"
+      docker run --rm --network host --cap-add NET_ADMIN --entrypoint sh "$IMG" -c \
+        "while iptables -D DOCKER-USER -j $chain 2>/dev/null; do :; done; iptables -F $chain 2>/dev/null; iptables -X $chain 2>/dev/null" >/dev/null 2>&1
+      docker network rm "$n" >/dev/null 2>&1
+    done
+  fi
   if [ "${KEEP:-0}" != 1 ] && [ -n "$RUN" ] && [ -d "$RUN" ]; then
     rm -rf -- "$RUN"
   fi
@@ -69,6 +80,12 @@ bridge:
         name: {required: true, pattern: "[A-Z]+"}
       confirm: true
 EOF
+if [ "${EGRESS:-0}" = 1 ]; then
+  cat >> "$AGCTL_DEV_HOME/dev.yaml" <<EOF
+egress_allowlist: true
+egress_allow: ["1.1.1.1"]
+EOF
+fi
 printf 'e2e-gitlab-token\n' | "$BIN" dev secrets set GITLAB_TOKEN --stdin >/dev/null && pass "secret GITLAB_TOKEN" || fail "secret"
 printf 'https://gitlab.example.org\n' | "$BIN" dev secrets set GITLAB_URL --stdin >/dev/null && pass "GITLAB_URL (несекретная)" || fail "GITLAB_URL"
 # Ключ модели: без него лаунчер не стартует рабочее место после входа
@@ -110,6 +127,13 @@ for c in $(docker ps -q); do
   if docker inspect "$c" --format '{{range .Mounts}}{{.Source}} {{end}}' | grep -q "$RUN"; then CID=$c; fi
 done
 [ -n "$CID" ] && pass "контейнер найден" || fail "контейнер не найден"
+if [ "${EGRESS:-0}" = 1 ] && [ -n "$CID" ]; then
+  say "egress-allowlist"
+  docker inspect "$CID" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' | grep -q '^agctl-egress-' \
+    && pass "контейнер в сети agctl-egress-*" || fail "сеть: $(docker inspect "$CID" --format '{{json .NetworkSettings.Networks}}' | head -c 200)"
+  docker exec "$CID" timeout 5 bash -c '</dev/tcp/1.1.1.1/443' 2>/dev/null && pass "разрешённый 1.1.1.1:443 доступен" || fail "1.1.1.1:443 закрыт"
+  docker exec "$CID" timeout 5 bash -c '</dev/tcp/9.9.9.9/443' 2>/dev/null && fail "9.9.9.9:443 открыт — egress не режется" || pass "неразрешённый 9.9.9.9:443 закрыт"
+fi
 if [ -n "$CID" ]; then
   docker exec "$CID" cat /workspace/demo-repo/README.md 2>/dev/null | grep -q hello \
     && pass "/workspace = родная папка" || fail "маунт папки"

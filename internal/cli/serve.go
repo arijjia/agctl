@@ -116,6 +116,8 @@ func Serve(args []string, opts ServeOptions) {
 	chatTTLMin := fsSet.Int("chat-ttl-min", NonZeroOr(cfg.Serve.ChatTTLMin, 60), "минуты простоя персонального контейнера до сна (том пользователя сохраняется)")
 	registerPerMin := fsSet.Int("register-per-min", NonZeroOr(cfg.Serve.RegisterPerMin, 30), "лимит регистраций с одного IP в минуту; 0 — отключить защиту (нагрузочные прогоны)")
 	corsOrigins := fsSet.String("cors-origin", EnvOr("AGCTL_CORS_ORIGINS", cfg.Serve.CORSOrigins), "точные origins через запятую, которым разрешён кросс-доменный /api (кабинет-плагин dsh web); пусто = CORS выключен")
+	egressAllowlist := fsSet.Bool("egress-allowlist", EnvOr("AGCTL_EGRESS_ALLOWLIST", boolStr(cfg.Serve.EgressAllowlist)) == "1", "Docker-бэкенд: контейнеры рабочих мест на выделенной сети, наружу только DNS, хост (host.docker.internal), провайдеры модели и белый список (--egress-allow, профиль egress.allow); остальное отбрасывается")
+	egressAllow := fsSet.String("egress-allow", EnvOr("AGCTL_EGRESS_ALLOW", cfg.Serve.EgressAllow), "белый список egress сверх профиля: хосты, IPv4 или CIDR через запятую (GitLab, Jira, реестр); действует с --egress-allowlist")
 	tier0 := fsSet.Bool("tier0", true, "поднимать общий чат (Tier 0) и отдавать корень платформы в него")
 	memGB := fsSet.Float64("mem-gb", NonZeroOr(cfg.Serve.MemGB, 2), "лимит памяти контейнера, ГБ")
 	cpus := fsSet.Float64("cpus", NonZeroOr(cfg.Serve.CPUs, 2), "лимит CPU контейнера")
@@ -186,6 +188,8 @@ func Serve(args []string, opts ServeOptions) {
 		PublicURL:         DerivePublicURL(*publicURL, *addr),
 		CORSOrigins:       SplitCSV(*corsOrigins),
 		Tier0:             *tier0,
+		EgressAllowlist:   *egressAllowlist,
+		EgressAllow:       append(append([]string(nil), prof.Egress.Allow...), SplitCSV(*egressAllow)...),
 		ChatTTL:           time.Duration(*chatTTLMin) * time.Minute,
 		RegisterPerMinute: regLimitValue(*registerPerMin),
 		DefaultLLM:        defaultLLM,

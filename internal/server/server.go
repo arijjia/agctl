@@ -62,7 +62,8 @@ type Config struct {
 	AutosaveEvery    time.Duration
 	CORSOrigins      []string // точные origins, которым разрешён кросс-доменный доступ к /api (кабинет-плагин dsh); пусто = CORS выключен
 	Tier0            bool     // корень платформы ведёт в персональный чат (/chat/)
-	EgressAllowlist  bool     // чат-контейнеры на выделенной сети: egress только DNS и хост-шлюз (карточка egress-allowlist)
+	EgressAllowlist  bool     // чат-контейнеры на выделенной сети: egress только DNS, хост, провайдеры модели и EgressAllow (карточки egress-allowlist, dockerrt-egress-flag-key-proxy)
+	EgressAllow      []string // белый список egress сверх провайдеров модели: хосты, IPv4, CIDR (профиль egress.allow + --egress-allow)
 	LauncherSlotsMax int      // максимум живых слотов developer'а (--launcher-slots-max; карточка developer-multi-containers, 0/вне диапазона = дефолт 3)
 	// HALeaderLease — имя coordination.k8s.io Lease для выбора лидера фоновых
 	// циклов при 2+ репликах шлюза (карточка ha-control-plane; --ha-leader-lease).
@@ -174,6 +175,7 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 		ContainerRuntime:  cfg.DockerRuntime,
 		PidsLimit:         cfg.DockerPidsLimit,
 		NoHardening:       cfg.DockerNoHardening,
+		EgressAllow:       cfg.EgressAllow,
 	}, assets.Image)
 	if err != nil {
 		return nil, err

@@ -694,6 +694,7 @@ func devServe(home string, args []string) {
 		"--chat-ttl-min", "720", // рабочий день: не усыплять контейнер на обеде
 		"--dev-env=",
 	}
+	serveArgs = append(serveArgs, devEgressArgs(cfg)...)
 	if cfg.ProfileDir != "" {
 		serveArgs = append(serveArgs, "--profile-dir", cfg.ProfileDir)
 	} else {
@@ -1322,4 +1323,13 @@ func profileBridgeTools(p *profile.Data) ([]localbridge.Tool, error) {
 		return nil, err
 	}
 	return doc.Tools, nil
+}
+
+// devEgressArgs — egress-allowlist из dev.yaml в флаги serve. Явно и в обе
+// стороны: серверные env AGCTL_EGRESS_* машины на локальный режим не влияют.
+func devEgressArgs(cfg *localmode.Config) []string {
+	return []string{
+		"--egress-allowlist=" + strconv.FormatBool(cfg.EgressAllowlist),
+		"--egress-allow=" + strings.Join(cfg.EgressAllow, ","),
+	}
 }

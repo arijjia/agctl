@@ -8,7 +8,7 @@ size: M
 area: platform
 repo: arijjia/agctl
 created: 2026-11-20
-updated: 2026-11-20
+updated: 2026-11-22
 tags: ["docker", "security", "secrets", "egress"]
 depends: []
 ---
@@ -40,3 +40,4 @@ depends: []
 
 - 2026-11-20: создано (`gitctl backlog new`) по итогам исследования Docker
   Sandboxes.
+- 2026-11-22: Часть 1 (egress) сделана в ветке agent/dockerrt-egress-flag. Флаг терялся при разделении бинарей 2026-11-19 (Config.EgressAllowlist был, serve не выставлял) — возвращён в общий serve: --egress-allowlist / AGCTL_EGRESS_ALLOWLIST / serve.egress_allowlist, --egress-allow / AGCTL_EGRESS_ALLOW / serve.egress_allow, профиль egress.allow, dev.yaml egress_allowlist + egress_allow (agctl dev передаёт явными флагами). Правила: кроме DNS/шлюза — IPv4 провайдеров модели (те же пины /etc/hosts), белый список (хосты пинятся, IPv4, CIDR), объединение по дому. Найдено и исправлено: на Docker Desktop host-gateway = 192.168.65.254 (не шлюз сети) — мост к хосту и LiteLLM на хосте из egress-сети были недоступны; хелпер теперь узнаёт IPv4 host-gateway и разрешает его (негативный контроль: без правила host.docker.internal закрыт). Проверки на Docker Desktop: TestEgressLive (1.1.1.1 открыт, 9.9.9.9 закрыт, сервис на хосте открыт), EGRESS=1 e2e-local-mode 47/0 (мост из egress-сети), e2e-local-mode 44/0, e2e-smoke с AGCTL_EGRESS_ALLOWLIST=1 40/0 CHAT=PASS (стаб модели на хосте), без egress 40/0. Не проверено: Linux-хост. Осталось: часть 2 — прокси с подстановкой ключа модели.

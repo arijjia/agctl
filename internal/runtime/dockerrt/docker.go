@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/moby/moby/api/types/container"
@@ -67,6 +68,12 @@ type Config struct {
 	// NoHardening — выключить CapDrop/no-new-privileges/PidsLimit (аварийный
 	// откат, если надстройке профиля нужны снятые capabilities).
 	NoHardening bool
+
+	// EgressAllow — куда ещё, кроме провайдеров модели, контейнеру можно
+	// ходить при egress-allowlist: хосты, IPv4 или CIDR (профиль
+	// egress.allow + флаг --egress-allow). Хосты резолвятся на хосте при
+	// старте контейнера и пинятся в /etc/hosts, как провайдеры модели.
+	EgressAllow []string
 }
 
 // Метки контейнеров agctl.
@@ -81,6 +88,11 @@ type Runtime struct {
 	cli     *client.Client
 	cfg     Config
 	imageFS fs.FS // контекст образа (префикс "image")
+
+	// egress — адреса, уже разрешённые в цепочке дома (объединение по всем
+	// контейнерам: у пользователей бывают разные провайдеры).
+	egressMu      sync.Mutex
+	egressAllowed map[string]bool
 }
 
 // New подключается к Docker (env/дефолтные сокеты). imageFS — контекст
@@ -514,7 +526,13 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		if err != nil {
 			return StartResult{}, err
 		}
-		if err := rt.applyEgressRules(ctx, egressChainName(rt.cfg.Home), subnet, gateway); err != nil {
+		allowPins, allowCIDRs, allowErrs := egressTargets(rt.cfg.EgressAllow, net.LookupIP)
+		for _, err := range allowErrs {
+			log.Printf("[dockerrt] %s: egress-allow: %v", wsID, err)
+		}
+		cfg.HostConfig.ExtraHosts = append(cfg.HostConfig.ExtraHosts, allowPins...)
+		allowed := rt.egressUnion(append(allowCIDRs, pinIPs(append(pins, allowPins...))...))
+		if err := rt.applyEgressRules(ctx, egressChainName(rt.cfg.Home), subnet, gateway, allowed); err != nil {
 			return StartResult{}, err
 		}
 		cfg.HostConfig.NetworkMode = container.NetworkMode(netName)

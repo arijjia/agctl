@@ -145,3 +145,12 @@ func EnvInt(key string, def int) int {
 	}
 	return def
 }
+
+// boolStr — "1"/"0" для дефолтов булевых флагов, которые читаются из env
+// (EnvOr(...) == "1").
+func boolStr(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
+}
