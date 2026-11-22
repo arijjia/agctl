@@ -9,7 +9,7 @@
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "2fd974d961738dc551cba8e84a335eb3903003d0"
+      "revision": "aaa0350c49a5735787a999a5d2ccbdc64df657fb"
     },
     "views": [
       {
@@ -26,6 +26,17 @@
           "llm"
         ],
         "note": "тот же serve (образ agctl-serve); вместо dockerd — API k8s или AX; данные — PVC/RWX или том актора; сон = удалить под / Suspend"
+      },
+      {
+        "id": "v-ha",
+        "label": "2+ реплики шлюза (HA)",
+        "focus": [
+          "api",
+          "runmgr",
+          "ha",
+          "k8spod"
+        ],
+        "note": "лидер через Lease и PG-хранилище реализованы, но serve не регистрирует --ha-leader-lease/--store-dsn: держать 1 реплику"
       }
     ],
     "subtitle": "Тот же agctl-server serve, вместо dockerd — API-сервер Kubernetes или Google AX + Agent Substrate (прототип)"
@@ -47,20 +58,20 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 462,
-          "end_line": 464,
+          "line": 539,
+          "end_line": 541,
           "label": "GET /admin и /launcher — страницы SPA"
         },
         {
           "path": "internal/server/chat.go",
-          "line": 842,
-          "end_line": 870,
+          "line": 902,
+          "end_line": 930,
           "label": "rootEntry: редирект по роли из сессии"
         },
         {
           "path": "internal/server/launcher.go",
-          "line": 46,
-          "end_line": 150,
+          "line": 93,
+          "end_line": 197,
           "label": "лаунчер-API: каталог образов, старт/стоп"
         }
       ]
@@ -81,20 +92,20 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 308,
-          "end_line": 403,
+          "line": 378,
+          "end_line": 473,
           "label": "mux: API, admin-API, лаунчер, /map"
         },
         {
           "path": "internal/server/handlers.go",
-          "line": 78,
-          "end_line": 81,
+          "line": 73,
+          "end_line": 76,
           "label": "первый пользователь — admin; пароли argon2id"
         },
         {
           "path": "internal/server/server.go",
-          "line": 366,
-          "end_line": 369,
+          "line": 436,
+          "end_line": 439,
           "label": "апрув/реджект заявок — requireAdmin"
         }
       ]
@@ -103,7 +114,7 @@
       "id": "runmgr",
       "type": "backend",
       "label": "Менеджер чат-рантаймов",
-      "sublabel": "userID→runtime · ensureChat · docker|k8s|ax",
+      "sublabel": "{uid, slot}→runtime · docker|k8s|ax",
       "pos": [
         400,
         366
@@ -115,20 +126,21 @@
       "sources": [
         {
           "path": "internal/server/chat.go",
-          "line": 571,
-          "end_line": 613,
-          "label": "ensureChat: lock на пользователя, ChatSpec"
+          "line": 614,
+          "end_line": 660,
+          "label": "ensureChat(uid, slot): lock, ChatSpec"
         },
         {
           "path": "internal/runtime/chat.go",
-          "line": 66,
-          "end_line": 74,
+          "line": 83,
+          "end_line": 91,
           "label": "ChatProvider: Ensure/Stop/Logs/HasActiveSSH"
         },
         {
           "path": "cmd/agctl-server/runtime_select.go",
-          "line": 132,
-          "label": "buildServer: бэкенд docker|k8s|ax (--runtime)"
+          "line": 142,
+          "label": "buildServer: бэкенд docker|k8s|ax (--runtime)",
+          "end_line": 142
         }
       ]
     },
@@ -148,15 +160,15 @@
       "sources": [
         {
           "path": "internal/server/chat.go",
-          "line": 871,
-          "end_line": 936,
+          "line": 937,
+          "end_line": 1002,
           "label": "chatProxy: ReverseProxy + mint, dsh-auth cookie"
         },
         {
           "path": "internal/server/chat.go",
-          "line": 832,
-          "end_line": 833,
-          "label": "HTML прогрева, пока рантайм стартует"
+          "line": 984,
+          "end_line": 990,
+          "label": "mTLS к роутеру AX: ChatHandle.TLSConfig"
         },
         {
           "path": "internal/server/chatshell.go",
@@ -170,7 +182,7 @@
       "id": "k8spod",
       "type": "cloud",
       "label": "Под пользователя — k8s",
-      "sublabel": "Pod · Service · NetPol · Secret · PVC/RWX",
+      "sublabel": "Pod · Svc · NetPol · Secret · PVC · egress",
       "pos": [
         800,
         490
@@ -182,20 +194,21 @@
       "sources": [
         {
           "path": "internal/runtime/k8srt/provider.go",
-          "line": 217,
-          "end_line": 265,
+          "line": 226,
+          "end_line": 274,
           "label": "EnsureChat: Secret, Service, NetworkPolicy, Pod"
         },
         {
           "path": "internal/runtime/k8srt/provider.go",
-          "line": 456,
-          "end_line": 461,
+          "line": 484,
+          "end_line": 489,
           "label": "NetworkPolicy: ingress только с подов шлюза"
         },
         {
-          "path": "deploy/serve.Dockerfile",
-          "line": 7,
-          "label": "образ шлюза agctl-serve (distroless)"
+          "path": "internal/runtime/k8srt/egress.go",
+          "line": 3,
+          "end_line": 10,
+          "label": "--k8s-egress-policy: DNS + ipBlock LLM"
         }
       ]
     },
@@ -215,14 +228,14 @@
       "sources": [
         {
           "path": "internal/runtime/axrt/provider.go",
-          "line": 240,
-          "end_line": 242,
+          "line": 256,
+          "end_line": 258,
           "label": "GetTask → CreateTask → ResumeTask → Ready"
         },
         {
           "path": "internal/runtime/axrt/provider.go",
-          "line": 477,
-          "end_line": 479,
+          "line": 504,
+          "end_line": 506,
           "label": "StopChat = SuspendTask (снимок актора)"
         },
         {
@@ -249,14 +262,14 @@
       "sources": [
         {
           "path": "cmd/agctl-guest/axrunner.go",
-          "line": 3,
-          "end_line": 9,
+          "line": 5,
+          "end_line": 11,
           "label": "раннер песочницы: :80, прокси на dsh, boot-log"
         },
         {
           "path": "cmd/agctl-guest/axrunner.go",
-          "line": 111,
-          "end_line": 118,
+          "line": 113,
+          "end_line": 120,
           "label": "конфиг провайдера у шлюза (URL шлюза + токен)"
         },
         {
@@ -283,8 +296,9 @@
       "sources": [
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 400,
-          "label": "host-gateway в ExtraHosts контейнера"
+          "line": 464,
+          "label": "host-gateway в ExtraHosts контейнера",
+          "end_line": 464
         },
         {
           "path": "internal/cli/serve.go",
@@ -297,6 +311,40 @@
           "line": 17,
           "end_line": 25,
           "label": "нейтральный профиль: llm + map.llm_label"
+        }
+      ]
+    },
+    {
+      "id": "ha",
+      "type": "security",
+      "label": "HA: Lease + PostgreSQL",
+      "sublabel": "код есть · флаги serve потеряны",
+      "pos": [
+        400,
+        486
+      ],
+      "size": [
+        200,
+        76
+      ],
+      "sources": [
+        {
+          "path": "internal/leaderelection/leaderelection.go",
+          "line": 1,
+          "end_line": 3,
+          "label": "Lease: лидер фоновых циклов"
+        },
+        {
+          "path": "internal/store/store.go",
+          "line": 35,
+          "end_line": 39,
+          "label": "store.Open: SQLite или postgres://"
+        },
+        {
+          "path": "internal/cli/serve.go",
+          "line": 169,
+          "end_line": 169,
+          "label": "serve открывает только agctl.db"
         }
       ]
     }
@@ -342,6 +390,13 @@
       "to": "api",
       "label": "GET /ax/provider-config",
       "variant": "dashed"
+    },
+    {
+      "id": "c25",
+      "from": "ha",
+      "to": "runmgr",
+      "label": "фоновые циклы — только лидер",
+      "variant": "dashed"
     }
   ],
   "boundaries": [
@@ -377,7 +432,8 @@
       "wraps": [
         "api",
         "chatgw",
-        "runmgr"
+        "runmgr",
+        "ha"
       ],
       "pad": 10
     }
@@ -394,7 +450,9 @@
         "Ключи LLM в ax: env задачи (--ax-inject-llm-key=1) или egress-инъекция — dsh шлёт Bearer placeholder, atenet-egress подменяет его из k8s Secret по EgressPolicy, которую ведёт сам agctl; ключ не попадает в песочницу и снимок",
         "ax ssh — opt-in (--ax-debug-ssh): guest-gRPC Substrate на том же :80, платформенного sshd нет, Кабинет видит «спит»",
         "Манифесты deploy/k8s (kustomize base + overlays) и deploy/ax, образ шлюза deploy/serve.Dockerfile, смоук в kind — bin/e2e-k8s-kind.sh; live-прогон на кластере с Substrate/AX не автоматизирован",
-        "Риски до живого развёртывания: прокси чата не предъявляет клиентский сертификат mTLS маршрутизатору AX (сертификат — только для boot-log); под с SSH работает от root; исходящий трафик подов не ограничен"
+        "Исходящий трафик подов: opt-in --k8s-egress-policy — DNS к kube-dns + ipBlock /32 LLM-хостов, обновление раз в 10 мин; без флага не ограничен",
+        "HA (overlay ha, bin/e2e-ha-kind.sh): Lease-лидер + PostgreSQL реализованы, но флаги --ha-leader-lease и --store-dsn потеряны при переносе serve в internal/cli — сейчас только 1 реплика",
+        "Риски до живого развёртывания: mTLS к маршрутизатору AX есть (ChatHandle.TLSConfig), но вживую не проверен; под с SSH работает от root"
       ]
     }
   ]

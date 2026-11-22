@@ -1,6 +1,6 @@
 package server
 
-// local_places.go — лаунчер v2, этап 1 (docs/proposals/2026-11-18-launcher-v2.md):
+// local_places.go — лаунчер v2 (docs/architecture.md, раздел 6.9):
 // несколько рабочих мест владельца в локальном режиме. Основное рабочее
 // место (id "main") — прежнее: папка и образ из dev.yaml, адрес /chat/.
 // Дополнительные места хранятся в таблице places: своя папка (или несколько
