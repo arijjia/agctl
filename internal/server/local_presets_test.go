@@ -144,13 +144,21 @@ func TestLocalFSDialog(t *testing.T) {
 	saved := dialogHook
 	t.Cleanup(func() { dialogHook = saved })
 
-	dialogHook = func() (string, bool, error) { return "/Users/masha/proj", false, nil }
+	// Путь — настоящий абсолютный путь хост-ОС: обработчик прогоняет его
+	// через filepath.Abs и EvalSymlinks, а POSIX-литерал на Windows
+	// превращается в D:\… (CI windows-latest).
+	picked := t.TempDir()
+	want, err := filepath.EvalSymlinks(picked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dialogHook = func() (string, bool, error) { return picked, false, nil }
 	code, body := env.do(c, "POST", "/api/local/ui/fs/dialog", nil)
 	got := decode[struct {
 		Cancelled bool   `json:"cancelled"`
 		Path      string `json:"path"`
 	}](t, body)
-	if code != 200 || got.Cancelled || got.Path != "/Users/masha/proj" {
+	if code != 200 || got.Cancelled || got.Path != want {
 		t.Fatalf("диалог: %d %s", code, body)
 	}
 
