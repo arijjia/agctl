@@ -1304,6 +1304,7 @@ agctl/
 | `up`, `corp`, `demo`, `stop`, `down`, `logs`, `status` | серверный режим на этой машине |
 | `k8s_render`, `k8s_apply`, `k8s_profile`, `k8s_secret`, `k8s_status`, `k8s_e2e_kind` | кластер |
 | `profile-fetch`, `profiles` | профили организаций |
+| `local_up`, `local_init`, `local_img`, `local_list`, `local_down`, `local_status`, `local_logs`, `local_open`, `local_doctor` | локальный режим из исходников, по дому `~/.agctl-dev[-<id>]` и порту на профиль (`bin/local.sh`) |
 | `map`, `map_build`, `map_check` | карты системы |
 | `hooks` | pre-commit: gofmt, vet, проверка синтаксиса JS, синхронизация плагинов, запрет `.env` |
 

@@ -392,6 +392,33 @@ make install
   `make img_build_server` — только серверные;
 - `make uninstall` — убрать то, что поставил `install`.
 
+### Локальный режим из исходников: по дому на профиль
+
+Для разработки agctl и отладки профилей организаций локальный режим
+поднимается целями `make local_*` ([bin/local.sh](bin/local.sh)): бинарь
+собирается из текущего checkout'а, а не скачивается из релиза, и у каждого
+профиля — свой дом и порт, все установки могут работать одновременно.
+
+```bash
+make local_up                        # свой agctl: профиль agctl, ~/.agctl-dev, порт 8930
+make local_up PROFILE=<id>           # профиль из ../agctl-profile-<id>: ~/.agctl-dev-<id>, свой порт
+make local_list                      # все дома на машине: профиль, адрес, состояние
+make local_img PROFILE=<id>          # пересобрать образы с надстройкой профиля и перевести место на них
+make local_down|local_status|local_logs|local_open|local_doctor PROFILE=<id>
+```
+
+- `local_up` — `make install`, затем `agctl dev init` (профиль-сиблинг,
+  порт, при первом запуске папка `LOCAL_WORKDIR`, по умолчанию `~/src`) и
+  `agctl dev up`; запущенный процесс старой сборки перезапускается сам.
+- Профиль берётся из сиблинга `../agctl-profile-<id>` (или
+  `LOCAL_PROFILE_DIR`), ссылка `profiles/<id>` для `make img_*` создаётся
+  сама. Правка профиля применяется после `local_down` и `local_up`.
+- Порт профиля выбирается один раз — первый свободный с 8931 — и хранится
+  в `dev.yaml` дома; 8930 закреплён за нейтральным agctl.
+- Хранилище ОС у домов общее; отдельные секреты дома — `LOCAL_SECRETS=file`.
+- Если в checkout'е есть незакоммиченные правки, `local_up` предупреждает:
+  они попали в бинарь.
+
 ### Обновление dsh
 
 Пин dsh — `ARG DSH_VERSION` в `internal/assets/image/Dockerfile`; свежие
