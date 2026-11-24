@@ -9,7 +9,7 @@
       "url": "git@github.com:arijjia/agctl.git",
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "2fd974d961738dc551cba8e84a335eb3903003d0"
+      "revision": "9355ddab5ea2b7407de04d7ffd7c8ffe0d867e68"
     },
     "views": [
       {
@@ -23,7 +23,8 @@
           "seckey",
           "chatgw",
           "runmgr",
-          "sshd"
+          "sshd",
+          "wgw"
         ],
         "note": "логин +0; админ всегда +0 (панели отдаёт API-блок serve); developer в /launcher +0 до старта; /chat/ → +1 dsh web (+1 sshd)"
       },
@@ -47,14 +48,13 @@
         "focus": [
           "browser",
           "sshclient",
-          "wgw",
           "dshchat",
           "sshd",
+          "harden",
           "wkspace",
-          "gitstore",
           "llm"
         ],
-        "note": "SSH к тем же файлам пользователя; Git — локальный go-git autosave в .git проекта (без push); bare repos/ — legacy"
+        "note": "SSH к тем же файлам пользователя; Git — локальный go-git autosave в .git проекта (без push); контейнер урезан CapDrop"
       },
       {
         "id": "v-wl",
@@ -88,20 +88,20 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 462,
-          "end_line": 464,
+          "line": 539,
+          "end_line": 541,
           "label": "GET /admin и /launcher — страницы SPA"
         },
         {
           "path": "internal/server/chat.go",
-          "line": 842,
-          "end_line": 870,
+          "line": 902,
+          "end_line": 930,
           "label": "rootEntry: редирект по роли из сессии"
         },
         {
           "path": "internal/server/launcher.go",
-          "line": 46,
-          "end_line": 150,
+          "line": 93,
+          "end_line": 197,
           "label": "лаунчер-API: каталог образов, старт/стоп"
         }
       ]
@@ -122,19 +122,20 @@
       "sources": [
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 69,
-          "label": "docker-клиент (FromEnv)"
+          "line": 89,
+          "label": "docker-клиент (FromEnv)",
+          "end_line": 89
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 408,
-          "end_line": 416,
+          "line": 472,
+          "end_line": 480,
           "label": "публикация :3080 и :2222 только на 127.0.0.1"
         },
         {
           "path": "internal/runtime/dockerrt/admin.go",
-          "line": 33,
-          "end_line": 100,
+          "line": 34,
+          "end_line": 101,
           "label": "ChatContainers + статы (админ-API)"
         }
       ]
@@ -155,20 +156,20 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 308,
-          "end_line": 403,
+          "line": 378,
+          "end_line": 473,
           "label": "mux: API, admin-API, лаунчер, /map"
         },
         {
           "path": "internal/server/handlers.go",
-          "line": 78,
-          "end_line": 81,
+          "line": 73,
+          "end_line": 76,
           "label": "первый пользователь — admin; пароли argon2id"
         },
         {
           "path": "internal/server/server.go",
-          "line": 366,
-          "end_line": 369,
+          "line": 436,
+          "end_line": 439,
           "label": "апрув/реджект заявок — requireAdmin"
         }
       ]
@@ -189,8 +190,9 @@
       "sources": [
         {
           "path": "internal/store/store.go",
-          "line": 26,
-          "label": "DSN journal_mode(WAL), busy_timeout"
+          "line": 47,
+          "label": "DSN journal_mode(WAL), busy_timeout",
+          "end_line": 47
         },
         {
           "path": "internal/cli/serve.go",
@@ -222,8 +224,8 @@
       "sources": [
         {
           "path": "internal/server/server.go",
-          "line": 503,
-          "end_line": 542,
+          "line": 580,
+          "end_line": 619,
           "label": "StartBackground: рипер, autosave, reconcile"
         },
         {
@@ -234,8 +236,8 @@
         },
         {
           "path": "internal/server/chat.go",
-          "line": 708,
-          "end_line": 726,
+          "line": 755,
+          "end_line": 773,
           "label": "reapIdleChats: сон по TTL, том живёт"
         }
       ]
@@ -244,7 +246,7 @@
       "id": "runmgr",
       "type": "backend",
       "label": "Менеджер чат-рантаймов",
-      "sublabel": "userID→runtime · ensureChat · docker",
+      "sublabel": "{uid, slot}→runtime · ensureChat",
       "pos": [
         672,
         252
@@ -256,20 +258,21 @@
       "sources": [
         {
           "path": "internal/server/chat.go",
-          "line": 571,
-          "end_line": 613,
-          "label": "ensureChat: lock на пользователя, ChatSpec"
+          "line": 614,
+          "end_line": 660,
+          "label": "ensureChat(uid, slot): lock, ChatSpec"
         },
         {
           "path": "internal/runtime/chat.go",
-          "line": 66,
-          "end_line": 74,
+          "line": 83,
+          "end_line": 91,
           "label": "ChatProvider: Ensure/Stop/Logs/HasActiveSSH"
         },
         {
           "path": "cmd/agctl-server/runtime_select.go",
-          "line": 132,
-          "label": "buildServer: бэкенд docker|k8s|ax (--runtime)"
+          "line": 142,
+          "label": "buildServer: бэкенд docker|k8s|ax (--runtime)",
+          "end_line": 142
         }
       ]
     },
@@ -289,14 +292,14 @@
       "sources": [
         {
           "path": "internal/server/chat.go",
-          "line": 871,
-          "end_line": 936,
+          "line": 937,
+          "end_line": 1002,
           "label": "chatProxy: ReverseProxy + mint, dsh-auth cookie"
         },
         {
           "path": "internal/server/chat.go",
-          "line": 832,
-          "end_line": 833,
+          "line": 889,
+          "end_line": 892,
           "label": "HTML прогрева, пока рантайм стартует"
         },
         {
@@ -310,8 +313,8 @@
     {
       "id": "wgw",
       "type": "backend",
-      "label": "Legacy-шлюз /w/{id}/",
-      "sublabel": "модуль · места до v3 · 410",
+      "label": "Серверные модули",
+      "sublabel": "регистрация · роли · лаунчер · админка",
       "pos": [
         412,
         452
@@ -322,22 +325,22 @@
       ],
       "sources": [
         {
-          "path": "internal/server/gateway.go",
-          "line": 3,
-          "end_line": 40,
-          "label": "обратный прокси /w/{id}/ → 127.0.0.1:<hostPort>"
+          "path": "internal/server/modules.go",
+          "line": 26,
+          "end_line": 36,
+          "label": "ServerModules: состав модулей serve"
         },
         {
-          "path": "internal/server/gateway.go",
-          "line": 75,
-          "end_line": 93,
-          "label": "owner-check + брендированная страница stopped"
+          "path": "internal/server/launcher.go",
+          "line": 63,
+          "end_line": 71,
+          "label": "slotLimit: до 3 слотов developer'а"
         },
         {
-          "path": "internal/server/workspace_page.go",
-          "line": 3,
-          "end_line": 46,
-          "label": "HTML «рабочее место остановлено» с авто-refresh"
+          "path": "internal/server/handlers.go",
+          "line": 73,
+          "end_line": 76,
+          "label": "регистрация: первый — admin"
         }
       ]
     },
@@ -412,8 +415,8 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 431,
-          "end_line": 432,
+          "line": 495,
+          "end_line": 496,
           "label": "work → /workspace, dsh-home → /home/dsh bind"
         },
         {
@@ -446,47 +449,49 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 431,
-          "label": "work → /workspace bind"
+          "line": 495,
+          "label": "work → /workspace bind",
+          "end_line": 495
         },
         {
           "path": "internal/provision/projects.go",
-          "line": 445,
-          "end_line": 448,
+          "line": 467,
+          "end_line": 470,
           "label": "AutosaveLocalProject: commit без push"
         }
       ]
     },
     {
-      "id": "gitstore",
-      "type": "database",
-      "label": "repos/*.git — legacy bare",
-      "sublabel": "legacy origin · v3 — без remote",
+      "id": "harden",
+      "type": "security",
+      "label": "Упрочнение контейнера",
+      "sublabel": "CapDrop ALL · no-new-privs · pids",
       "pos": [
         1190,
-        700
+        232
       ],
       "size": [
-        180,
-        88
+        170,
+        72
       ],
       "sources": [
         {
-          "path": "internal/provision/provision.go",
-          "line": 1,
-          "end_line": 5,
-          "label": "bare-origin + клон + autosave (legacy seats)"
+          "path": "internal/runtime/dockerrt/harden.go",
+          "line": 32,
+          "end_line": 47,
+          "label": "applyHardening: CapDrop, no-new-privs"
         },
         {
-          "path": "internal/provision/provision.go",
-          "line": 255,
-          "end_line": 273,
-          "label": "Layout.Repo: $HOME/repos/<owner>/<name>.git"
+          "path": "internal/runtime/dockerrt/harden.go",
+          "line": 21,
+          "end_line": 25,
+          "label": "оставленные capabilities"
         },
         {
-          "path": "internal/provision/provision.go",
-          "line": 897,
-          "label": "AutosaveOnce: commit+push (legacy)"
+          "path": "cmd/agctl-server/runtime_select.go",
+          "line": 92,
+          "end_line": 94,
+          "label": "--docker-runtime runsc|kata, --docker-harden"
         }
       ]
     },
@@ -540,8 +545,8 @@
         },
         {
           "path": "internal/server/chat.go",
-          "line": 694,
-          "end_line": 697,
+          "line": 741,
+          "end_line": 744,
           "label": "ключ — только у роли developer/admin"
         }
       ]
@@ -562,8 +567,9 @@
       "sources": [
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 400,
-          "label": "host-gateway в ExtraHosts контейнера"
+          "line": 464,
+          "label": "host-gateway в ExtraHosts контейнера",
+          "end_line": 464
         },
         {
           "path": "internal/cli/serve.go",
@@ -601,8 +607,8 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 411,
-          "end_line": 416,
+          "line": 475,
+          "end_line": 480,
           "label": "2222 публикуется на loopback"
         }
       ]
@@ -638,7 +644,7 @@
       "id": "egress",
       "type": "security",
       "label": "Egress-allowlist",
-      "sublabel": "не подключён к serve",
+      "sublabel": "opt-in --egress-allowlist",
       "pos": [
         392,
         140
@@ -656,14 +662,15 @@
         },
         {
           "path": "internal/runtime/dockerrt/docker.go",
-          "line": 445,
-          "end_line": 452,
+          "line": 524,
+          "end_line": 531,
           "label": "Start: сеть и правила при EgressAllowlist"
         },
         {
-          "path": "internal/server/server.go",
-          "line": 60,
-          "label": "Config.EgressAllowlist (флаг serve)"
+          "path": "internal/cli/serve.go",
+          "line": 119,
+          "label": "флаги --egress-allowlist, --egress-allow",
+          "end_line": 120
         }
       ]
     }
@@ -680,10 +687,11 @@
     },
     {
       "kind": "region",
-      "label": "Контейнер пользователя u<id> — ×N, ленивый, TTL 1 ч",
+      "label": "Контейнер u<id>[-s<N>] — ×N, ленивый, TTL 1 ч",
       "wraps": [
         "dshchat",
-        "sshd"
+        "sshd",
+        "harden"
       ],
       "pad": 20
     },
@@ -707,8 +715,7 @@
         "agdb",
         "seckey",
         "dshhome",
-        "wkspace",
-        "gitstore"
+        "wkspace"
       ],
       "pad": 36
     },
@@ -716,8 +723,7 @@
       "kind": "security-group",
       "label": "Git — версионированные данные",
       "wraps": [
-        "wkspace",
-        "gitstore"
+        "wkspace"
       ],
       "pad": 12
     },
@@ -736,7 +742,7 @@
         "seckey",
         "dshhome",
         "wkspace",
-        "gitstore",
+        "harden",
         "dshchat",
         "sshd",
         "profile",
@@ -810,15 +816,15 @@
     {
       "id": "c15",
       "from": "bg",
-      "to": "gitstore",
-      "label": "go-git autosave (legacy)",
+      "to": "wkspace",
+      "label": "go-git autosave · коммит без push",
       "variant": "dashed"
     },
     {
       "id": "c16",
-      "from": "wgw",
+      "from": "chatgw",
       "to": "profile",
-      "label": "file read · брендинг шлюзов",
+      "label": "file read · брендинг шлюза",
       "variant": "dashed"
     },
     {
@@ -826,6 +832,13 @@
       "from": "dockerd",
       "to": "egress",
       "label": "сеть + DOCKER-USER",
+      "variant": "dashed"
+    },
+    {
+      "id": "c18",
+      "from": "dockerd",
+      "to": "harden",
+      "label": "HostConfig · runc|runsc|kata",
       "variant": "dashed"
     }
   ],
@@ -854,10 +867,11 @@
         "Путь чата: браузер → :8929 → proxy + mint ?token= → DNAT → dsh :3080 (bind eth0) → LLM :443",
         "Апстрим dsh запрещает только wildcard-бинд — dsh слушает eth0 контейнера напрямую, релея в образе нет",
         "/admin и /launcher — страницы того же SPA на :8929; роль из сессии решает редирект корня",
-        "Egress-allowlist (egress.go): сеть agctl-egress-*, наружу только DNS и хост-шлюз, правило в DOCKER-USER; код и тест есть, флага в serve нет — сейчас не включается",
+        "Egress-allowlist (egress.go): сеть agctl-egress-*, наружу DNS, хост, провайдеры модели и egress.allow; opt-in --egress-allowlist",
         "Кластер: шлюз → Service :80 → под dsh :3080 (k8s) или atenet-router + заголовок ate-target-actor → ax-runner :80 → dsh :3080 (ax)",
         "/map — эта карта за сессией (requireUser); сборка — system/map/*.html через go:embed",
-        "Ключ модели в контейнере — только файлом dsh-home/.credentials.yaml (0600), в env контейнера ключей LLM нет (dockerrt.containerEnv)"
+        "Ключ модели в контейнере — только файлом dsh-home/.credentials.yaml (0600), в env контейнера ключей LLM нет (dockerrt.containerEnv)",
+        "Контейнер — root с урезанными правами: CapDrop ALL + 9 capabilities, no-new-privileges, PidsLimit 4096; изоляция ядра — --docker-runtime runsc|kata (harden.go)"
       ]
     },
     {
@@ -869,21 +883,21 @@
         "Сейчас в коде: $AGCTL_HOME/chats/u<id>/{dsh-home,work}; цель v3 — u<id>/{dsh-home,workspace/<project>}, миграции пока нет",
         "Рамка Git: версии — workspace/<project> (go-git autosave: локальный commit, без remote и push); вне Git — dsh-home, agctl.db, secrets.key, контейнеры",
         "Контейнер можно удалить — том остаётся. Бэкап платформы = копия $AGCTL_HOME",
-        "repos/<owner>/*.git — bare origin только legacy workspace-мест (их create-API отвечает 410); проекты v3 туда не пишут",
         "Миграция 012 добавила в agctl.db proxy_requests (журнал запросов шлюза) и quotas (бюджеты токенов на роль/юзера)",
-        "В кластере: подкаталог общего RWX-тома или PVC на пользователя (k8s) либо долговечный том актора /workspace + снимки Substrate (ax); Secret ключей LLM — в namespace"
+        "В кластере: подкаталог общего RWX-тома или PVC на пользователя (k8s) либо долговечный том актора /workspace + снимки Substrate (ax); Secret ключей LLM — в namespace",
+        "Наследие мест до v3 (/w/{id}/, bare repos/, Jira-поллер) удалено 2026-11-19; таблицы 002–007 остаются в миграциях"
       ]
     },
     {
       "dot": "cyan",
       "title": "agctl-server serve — сердце платформы",
       "items": [
-        "Бинарь agctl-server (cmd/agctl-server) = общее ядро internal/server + серверные модули (ServerModules: регистрация, роли, лаунчер, админка, autosave, /w) + рантаймы docker|k8s|ax; локальный режим — отдельный бинарь agctl",
+        "Бинарь agctl-server (cmd/agctl-server) = общее ядро internal/server + серверные модули (ServerModules: регистрация, роли, лаунчер, админка, autosave) + рантаймы docker|k8s|ax; локальный режим — отдельный бинарь agctl",
         "Постоянно работающий управляющий процесс платформы на хосте: один Go-процесс, слушает :8929, принимает HTTP/WS/SSE.",
-        "Подрамка «agctl-server serve» — логические блоки ОДНОГО процесса: шлюз /chat/, legacy-шлюз /w/{id}/, менеджер рантаймов, REST API + auth, хранилище+секреты, фоновые горутины.",
+        "Подрамка «agctl-server serve» — логические блоки ОДНОГО процесса: шлюз /chat/, серверные модули, менеджер рантаймов, REST API + auth, хранилище+секреты, фоновые горутины.",
         "Менеджер рантаймов держит карту userID→runtime и лениво запускает рантайм пользователя через выбранный бэкенд (ChatProvider: docker | k8s | ax); TTL/reaper останавливает вычисления, но оставляет том.",
         "agctl-server serve не запускает команды агента и не проксирует файловые записи: dsh и дочерние инструменты читают и пишут напрямую через RW bind mount.",
-        "Фоновые задачи — горутины того же процесса: ядро — усыпление по TTL, сверка рантаймов, чистка сессий; модули — autosave (prewarm и Jira не подключены к флагам)",
+        "Фоновые задачи — горутины того же процесса: ядро — усыпление по TTL, сверка рантаймов, чистка сессий; модули — autosave (prewarm не подключён к флагам)",
         "Брендинг и LLM-дефолты — из профиля организации (internal/profile: данные, не код; --profile/--profile-dir, make profile-fetch): шлюзы инжектят window.__AGCTL_BRAND__ в <head> до первого кадра; в ядре нет литералов организаций — guard-тест TestCoreIsOrganizationFree",
         "Админ-API: обзор, список/стат контейнеров, стоп/старт/рестарт, запросы шлюза, траектории (чтение sessions/ из томов), квоты — всё под requireAdmin и в audit"
       ]
@@ -918,7 +932,8 @@
         "developer после входа попадает в /launcher — контейнер не стартует до выбора образа и «Запустить»",
         "Каталог образов — images.dev профиля (agctl-dsh:0.2.2, agctl-dsh-nossh:0.2.2) или --dev-images; желаемый образ — метка agctl.image.desired на контейнере",
         "agctl-dsh-nossh (ENV AGCTL_NO_SSHD=1): sshd не поднимается даже с ключом, порт 2222 не публикуется",
-        "Смена образа на живом рантайме: serve усыпляет контейнер и пересоздаёт на желаемом образе (том сохраняется)"
+        "Смена образа на живом рантайме: serve усыпляет контейнер и пересоздаёт на желаемом образе (том сохраняется)",
+        "developer держит до 3 слотов — контейнеры u<id>-s<N> со своими образами и томами (модуль launcher)"
       ]
     },
     {
