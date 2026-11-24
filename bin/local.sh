@@ -29,7 +29,7 @@ export AGCTL_DEV_HOME="$home"
 [ "${LOCAL_SECRETS:-}" = file ] && export AGCTL_DEV_SECRETS=file
 
 # addr из dev.yaml дома (пусто — не инициализирован).
-addr_of() { sed -n 's/^addr: *//p' "$1/dev.yaml" 2>/dev/null | head -1; }
+addr_of() { [ -f "$1/dev.yaml" ] || return 0; sed -n 's/^addr: *//p' "$1/dev.yaml" | head -1; }
 
 profile_dir() {
 	local d=${LOCAL_PROFILE_DIR:-$root/../agctl-profile-$profile}
