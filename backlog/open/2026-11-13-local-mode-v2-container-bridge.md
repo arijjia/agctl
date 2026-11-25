@@ -1,5 +1,5 @@
 ---
-schema: 1.0.0
+schema: 1.2.0
 id: local-mode-v2-container-bridge
 title: "Локальный режим v2: контейнер + мост к хосту (agctl dev)"
 status: open
@@ -8,9 +8,12 @@ size: L
 area: platform
 repo: arijjia/agctl
 created: 2026-11-13
-updated: 2026-11-14
+updated: 2026-11-25
 tags: ["local", "dev", "docker", "bridge"]
 depends: ["local-dev-mode"]
+sessions:
+  - session-1b497025-c44d-4733-bb3d-7d70ab937a0a:work
+not-before: 2026-12-09
 ---
 ## Описание
 
@@ -53,8 +56,8 @@ depends: ["local-dev-mode"]
 - [x] Секреты GitLab/Jira/LLM из хранилища ОС доходят до контейнера, не
       попадают в образ, логи и git.
 - [ ] Образы web и 1С публикуются в реестр; разработчик ничего не собирает.
-      (образы собираются `make img_build PROFILE=…`, пушатся `make img_push`;
-      ждёт адреса Nexus и ссылок на него в images.dev профиля)
+      (вынесено в карточку `local-mode-v2-images-nexus-publish`, гейт
+      not-before 2026-12-09 — ждёт адрес Nexus от владельца)
 - [x] `update` и `rollback` проходят без потери сессий; e2e-скрипт.
 - [ ] Проверено на Windows (WSL2) и macOS. (macOS — живьём; Windows —
       только кросс-сборка, нужна машина)
@@ -65,3 +68,6 @@ depends: ["local-dev-mode"]
 
 - 2026-11-13: создано (`gitctl backlog new`). Концепция и вопросы — в штабе (docs/local-mode-*-2026-11-13.md). Известно: реестр образов — Nexus организации, ключи LLM на пилоте вручную, Docker на машинах тестовых групп ставит организация; открыт вопрос про WSL2.
 - 2026-11-14: реализовано на ветке agent/local-mode-v2. `agctl dev init/up/down/status/open/logs/secrets/bridge/update/rollback/doctor` поверх serve (Config.Local: владелец developer, вход по одноразовому токену, без регистрации, loopback; /workspace = папка разработчика, автосейв и удаление каталогов выключены). Секреты: go-keyring (Keychain/Credential Manager/Secret Service) с запасным AES-GCM файлом; env контейнера + производные имена для glab/MCP. Найдено: bash dsh вычищает *TOKEN*/*KEY*/*SECRET*/*PASSWORD* из env команд агента — доступы теперь ещё и файлами в dsh-home/.agctl (git credential helper, glab config, credentials.env, bridge.json; указатели GIT_CONFIG_GLOBAL/GLAB_CONFIG_DIR/AGCTL_CREDENTIALS_ENV), касается и серверного DevEnv. Мост: internal/localbridge (argv без shell, проверка значений, confirm + approve на хосте, журнал), клиент `agctl bridge list|call|mcp` в контейнере, скилл agctl-host-bridge, MCP «Мост к хосту» (только локально); на Linux — доп. слушатель на docker0 только для путей моста. Образы: базовый + glab/jira-cli/uv/rg/jq/клиенты БД, прогрев MCP GitLab/Playwright; вкус web (Playwright+Chromium) в ядре; вкус 1С (Temurin JRE 21 + BSL LS 1.0.7 — 1.0.x не работает на Java 17) и белый список ibcmd — в профиле utmn. Каталог MCP: + GitLab, Jira (uvx mcp-atlassian), Playwright, мост. Попутно: Windows-сборка main падала на agent-substrate/env/guest — вынесено в axguest_unix.go. Проверки: go vet/test, -race на сервере, bin/e2e-local-mode.sh 42/42 на живом Docker (macOS), агент в чате сам вызвал команду хоста через мост, MCP Playwright открыл страницу в образе web. Осталось: адреса Nexus в профиле, Windows/WSL2 живьём, Jira-MCP живьём на Jira ЦИТ, jira-cli init.
+- 2026-11-25: refl: 2026-11-25 burn-тур (worktree wt/local-mode-v2-container-bridge): код карточки влит в main (ветка agent/local-mode-v2 устранена, зависимость local-dev-mode выполнена — в main); go vet/test зелёные. Из 5 критериев закрыты 3, 2 открытых — внешние блокеры, не код: (а) образы web/1С не опубликованы — нужны адреса Nexus и ссылки в images.dev профиля; (б) Windows/WSL2 живьём — нужна машина. Дальше: блокер (а) вынесен в карточку local-mode-v2-images-nexus-publish, (б) остаётся здесь до появления машины. Ветка wt/ без кода — работа только в журнале.
+- 2026-11-25: refl: 2026-11-25: блокер Nexus вынесен в карточку local-mode-v2-images-nexus-publish (open, not-before 2026-12-09): гейт пройден, тело с фактами репо (img_push в bin/k8s.mk, images.dev в profile.yaml, репо профиля ../agctl-profile-utmn). Остальной открытый критерий — Windows/WSL2 живьём, нужен физический доступ к машине.
+- 2026-11-25: hold not-before 2026-12-09 (оба открытых критерия — внешние вводные: адрес Nexus (см. local-mode-v2-images-nexus-publish) и Windows-машина; код в main, зелёный)
