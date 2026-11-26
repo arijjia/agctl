@@ -46,6 +46,7 @@ const devUsage = `agctl dev — локальный режим: платформ�
   down      остановить (данные и сессии сохраняются)
   status    состояние: адрес, образ, папка, рабочее место, мост
   paths     где что лежит: корень, бинари, профиль, дом и его файлы, порты, контейнеры, маунты, секреты [--json]
+  images    образы каталога: есть ли на машине, версия dsh, сборка guest, дата, размер, устаревшие [--json]
   open      открыть браузер (новая ссылка входа)
   logs [-f] лог фонового процесса
   secrets   доступы в хранилище ОС: list | set ИМЯ [--stdin] | rm ИМЯ
@@ -91,6 +92,8 @@ func cmdDev(args []string) {
 		err = devStatus(home)
 	case "paths":
 		err = devPaths(h, args[1:])
+	case "images":
+		err = devImages(home, args[1:])
 	case "open":
 		err = devOpen(home, args[1:])
 	case "logs":

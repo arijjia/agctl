@@ -107,6 +107,8 @@ complete -c agctl -n '__agctl_at dev' -x -a paths -d 'где что лежит: 
 complete -c agctl -n '__agctl_at dev' -x -a migrate -d 'перенести прежние дома ~/.agctl-dev в homes/'
 complete -c agctl -n '__agctl_in dev' -l home -x -d 'id дома (каталог homes/<id>)'
 complete -c agctl -n '__agctl_in dev paths' -l json -d 'машинный вывод'
+complete -c agctl -n '__agctl_at dev' -x -a images -d 'образы каталога: версия dsh, сборка guest, устаревшие'
+complete -c agctl -n '__agctl_in dev images' -l json -d 'машинный вывод'
 complete -c agctl -n '__agctl_in dev migrate' -l apply -d 'выполнить перенос (без флага — план)'
 complete -c agctl -n '__agctl_in dev migrate' -l from -x -a '(__fish_complete_directories)' -d 'где искать прежние дома'
 complete -c agctl -n '__agctl_at dev' -x -a help -d 'справка локального режима'
