@@ -33,17 +33,38 @@ func dshHomeSettingKey(userID int64, slot int) string {
 	return dshHomeSettingPrefix + strconv.FormatInt(userID, 10) + "-s" + strconv.Itoa(slot)
 }
 
+// LocalMainDshHomeHooks — своя папка dsh-home основного места живёт в
+// config.yaml рядом с его папкой и образом: её видят и CLI-бэкапы
+// (agctl dev update / restore), и agctl dev paths.
+type LocalMainDshHomeHooks interface {
+	MainDshHome() string
+	SetMainDshHome(dir string) error
+}
+
 // customDshHome — явная папка dsh-home места ("" — по умолчанию, в доме
 // agctl). Только локальный режим и только владелец.
 func (s *Server) customDshHome(key chatKey) string {
 	if !s.isLocal() || s.local == nil || key.uid != s.local.ownerID || s.db == nil {
 		return ""
 	}
-	v, err := s.db.SettingGet(dshHomeSettingKey(key.uid, key.slot))
+	settingKey := dshHomeSettingKey(key.uid, key.slot)
+	v, err := s.db.SettingGet(settingKey)
 	if err != nil {
-		return ""
+		v = ""
 	}
-	return strings.TrimSpace(v)
+	v = strings.TrimSpace(v)
+	if h, ok := s.localHooks().(LocalMainDshHomeHooks); ok && key.slot == 0 {
+		if cur := strings.TrimSpace(h.MainDshHome()); cur != "" || v == "" {
+			return cur
+		}
+		// Ранняя запись основного места в settings — переносим в config.yaml.
+		if err := h.SetMainDshHome(v); err != nil {
+			log.Printf("[local] перенос dsh-home основного места в config.yaml: %v", err)
+			return v
+		}
+		_ = s.db.SettingSet(settingKey, "")
+	}
+	return v
 }
 
 // defaultDshHome — dsh-home места в доме agctl (без явной папки).
@@ -110,7 +131,11 @@ func canonicalPath(p string) string {
 // место в дом agctl) и подготовить её как git-репозиторий конфигурации.
 // Возвращает заметку для журнала (без git — папка работает и так).
 func (s *Server) setCustomDshHome(owner int64, slot int, dir string) (string, error) {
-	if err := s.db.SettingSet(dshHomeSettingKey(owner, slot), dir); err != nil {
+	if h, ok := s.localHooks().(LocalMainDshHomeHooks); ok && slot == 0 {
+		if err := h.SetMainDshHome(dir); err != nil {
+			return "", err
+		}
+	} else if err := s.db.SettingSet(dshHomeSettingKey(owner, slot), dir); err != nil {
 		return "", err
 	}
 	if dir == "" {

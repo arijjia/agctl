@@ -46,6 +46,14 @@ func ServerHome(home string) string { return filepath.Join(home, "data") }
 // DshHome — DSH_HOME владельца (сессии, настройки dsh). Владелец локального
 // режима — всегда первый пользователь (u1).
 func DshHome(home string) string {
+	if cfg, err := Load(home); err == nil && cfg.DshHome != "" {
+		return cfg.DshHome // своя папка основного места (config.yaml dsh_home)
+	}
+	return DefaultDshHome(home)
+}
+
+// DefaultDshHome — dsh-home основного места в данных дома.
+func DefaultDshHome(home string) string {
 	return filepath.Join(ServerHome(home), "chats", "u1", "dsh-home")
 }
 

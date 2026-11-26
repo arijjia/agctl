@@ -104,3 +104,8 @@ func (h *devHooks) SetRuntimeKind(kind string) error { return localmode.SetRunti
 // HostPaths / SetHostPaths — «пути как на хосте» (config.yaml host_paths).
 func (h *devHooks) HostPaths() bool            { return h.cfg().HostPaths }
 func (h *devHooks) SetHostPaths(on bool) error { return localmode.SetHostPaths(h.home, on) }
+
+// MainDshHome / SetMainDshHome — своя папка dsh-home основного места
+// (config.yaml dsh_home: её же берут бэкапы agctl dev update).
+func (h *devHooks) MainDshHome() string             { return h.cfg().DshHome }
+func (h *devHooks) SetMainDshHome(dir string) error { return localmode.SetDshHome(h.home, dir) }

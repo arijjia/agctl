@@ -22,6 +22,21 @@ type fakeHooks struct {
 	built   []string
 	// hostPaths — config.yaml host_paths («пути как на хосте»).
 	hostPaths bool
+	// mainDshHome — config.yaml dsh_home (своя папка основного места).
+	mainDshHome string
+}
+
+func (f *fakeHooks) MainDshHome() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.mainDshHome
+}
+
+func (f *fakeHooks) SetMainDshHome(dir string) error {
+	f.mu.Lock()
+	f.mainDshHome = dir
+	f.mu.Unlock()
+	return nil
 }
 
 func (f *fakeHooks) HostPaths() bool {
