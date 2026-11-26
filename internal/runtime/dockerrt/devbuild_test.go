@@ -18,6 +18,8 @@ func TestDevBuildPlan(t *testing.T) {
 		want []string
 	}{
 		{"базовый", DevBuild{Target: "agctl-dsh:0.2.2"}, []string{"agctl-dsh:0.2.2"}},
+		{"минимальный", DevBuild{Target: "agctl-dsh-min:0.2.2", Flavor: "min"}, []string{"agctl-dsh-min:0.2.2"}},
+		{"версия dsh тегом", DevBuild{Target: "agctl-dsh:0.2.3-alpha.2"}, []string{"agctl-dsh:0.2.3-alpha.2"}},
 		{"web", DevBuild{Target: "agctl-dsh-web:0.2.2", Flavor: "web"}, []string{"agctl-dsh:0.2.2", "agctl-dsh-web:0.2.2"}},
 		{"профиль", DevBuild{Target: "agctl-dsh-utmn:0.2.2", ProfileID: "utmn", Overlay: overlay, ProfileFS: prof},
 			[]string{"agctl-dsh:0.2.2", "agctl-dsh-utmn:0.2.2"}},

@@ -109,6 +109,7 @@ func (s *Server) registerLocalUIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/local/ui/image", s.requireLocalOwner(s.handleLocalImagePut))
 	mux.HandleFunc("PUT /api/local/ui/workdir", s.requireLocalOwner(s.handleLocalWorkDirPut))
 	mux.HandleFunc("PUT /api/local/ui/runtime", s.requireLocalOwner(s.handleLocalRuntimePut))
+	mux.HandleFunc("PUT /api/local/ui/hostpaths", s.requireLocalOwner(s.handleLocalHostPathsPut))
 	mux.HandleFunc("POST /api/local/ui/start", s.requireLocalOwner(s.handleLocalStart))
 	mux.HandleFunc("POST /api/local/ui/restart", s.requireLocalOwner(s.handleLocalRestart))
 }
@@ -154,6 +155,10 @@ func (s *Server) handleLocalUI(w http.ResponseWriter, r *http.Request, id identi
 	// runtimeKind — выбранный рантайм (docker | sbx), runtimes — что есть на
 	// машине; runtime.kind — в каком поднято работающее место.
 	resp["runtimeKind"], resp["runtimes"] = s.localRuntimes()
+	// hostPaths — «пути как на хосте» включены; hostPathsAvailable — режим
+	// есть у этой сборки и машины (не Windows).
+	_, hostPathsHook := s.localHooks().(LocalHostPathsHooks)
+	resp["hostPaths"], resp["hostPathsAvailable"] = s.localHostPaths(), hostPathsHook && hostPathsSupported()
 	writeJSON(w, http.StatusOK, resp)
 }
 

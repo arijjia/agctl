@@ -21,6 +21,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -462,8 +463,12 @@ type StartResult struct {
 // SSH-канал (ключ передаётся env в контейнер, порт 2222 публикуется на loopback).
 type StartOpts struct {
 	// ExtraBinds — доп. bind-маунты "host:/workspace/<имя>" (несколько папок
-	// рабочего места локального режима).
-	ExtraBinds  []string
+	// рабочего места локального режима) и "host:host" (пути как на хосте).
+	ExtraBinds []string
+	// WorkingDir — рабочий каталог процесса контейнера ("" — WORKDIR образа).
+	WorkingDir string
+	// Env — переменные, перекрывающие базовые (HOME и т.п.) и дополняющие.
+	Env         []string
 	HostPort    int
 	SSHPubKey   string   // пусто = sshd не поднимаем
 	SSHHostPort int      // 0 = не публиковать (осмысленно только с SSHPubKey)
@@ -516,7 +521,7 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		log.Printf("[dockerrt] %s: %v — для этого LLM endpoint нет DNS-пина (проверьте VPN)", wsID, err)
 	}
 	extraHosts = append(extraHosts, pins...)
-	env := containerEnv(wsID, opts.DevEnv)
+	env := overrideEnv(containerEnv(wsID, opts.DevEnv), opts.Env)
 	portBindings := network.PortMap{
 		network.MustParsePort("3080/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: fmt.Sprint(opts.HostPort)}},
 	}
@@ -531,8 +536,9 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 	cfg := client.ContainerCreateOptions{
 		Name: name,
 		Config: &container.Config{
-			Image: desired,
-			Env:   env,
+			Image:      desired,
+			Env:        env,
+			WorkingDir: opts.WorkingDir,
 			Labels: map[string]string{
 				labelWorkspace:    wsID,
 				labelVersion:      rt.cfg.Version,
@@ -979,6 +985,64 @@ func FreePort() (int, error) {
 // npm-скрипты агента. dsh читает ключи из DSH_HOME/.credentials.yaml. Файл
 // агент технически прочитать может (его процессы — тот же пользователь), это
 // задокументированное ограничение dsh-credentials-local.
+// overrideEnv — env с заменой одноимённых переменных из extra (KEY=VALUE).
+func overrideEnv(env, extra []string) []string {
+	if len(extra) == 0 {
+		return env
+	}
+	keys := map[string]bool{}
+	for _, kv := range extra {
+		if i := strings.IndexByte(kv, '='); i > 0 {
+			keys[kv[:i]] = true
+		}
+	}
+	out := make([]string, 0, len(env)+len(extra))
+	for _, kv := range env {
+		if i := strings.IndexByte(kv, '='); i > 0 && keys[kv[:i]] {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return append(out, extra...)
+}
+
+// reservedContainerPaths — каталоги образа, поверх которых (и внутри
+// которых) папку хоста по её пути не монтируем (режим «пути как на хосте»).
+var reservedContainerPaths = []string{
+	"/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/root", "/run", "/sbin",
+	"/sys", "/usr", "/workspace", "/home/dsh",
+	"/opt/dsh", "/opt/dsh-skel", "/opt/npm-mcp", "/opt/ms-playwright",
+	"/tmp/npm-cache", "/tmp/cache",
+	"/var/lib", "/var/run", "/var/cache", "/var/log", "/var/spool", "/var/tmp",
+}
+
+// reservedContainerRoots — корни, которые нельзя закрыть папкой целиком
+// (подкаталоги — можно: /tmp/proj, /home/user/src, /var/folders/… macOS).
+var reservedContainerRoots = []string{"/home", "/media", "/mnt", "/opt", "/srv", "/tmp", "/var"}
+
+// HostPathMountable — папку хоста можно смонтировать в контейнер по тому
+// же пути: абсолютный POSIX-путь (не C:\…) вне системных каталогов образа.
+func HostPathMountable(p string) bool {
+	if !strings.HasPrefix(p, "/") || strings.ContainsAny(p, ":\\") {
+		return false
+	}
+	clean := path.Clean(p)
+	if clean == "/" {
+		return false
+	}
+	for _, r := range reservedContainerPaths {
+		if clean == r || strings.HasPrefix(clean, r+"/") {
+			return false
+		}
+	}
+	for _, r := range reservedContainerRoots {
+		if clean == r {
+			return false
+		}
+	}
+	return true
+}
+
 func containerEnv(wsID string, devEnv []string) []string {
 	env := []string{
 		"AGCTL_WS_ID=" + wsID,

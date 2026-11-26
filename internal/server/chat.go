@@ -699,6 +699,7 @@ func (s *Server) ensureChat(userID int64, slot int) (*chatRuntime, error) {
 		spec.WorkDir = ex.WorkDir
 		spec.Mounts = ex.Mounts
 		spec.DshHome = ex.DshHome
+		spec.HostPaths = ex.HostPaths
 		spec.DevEnv = append(spec.DevEnv, ex.Env...)
 		spec.Local = true
 	}

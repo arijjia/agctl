@@ -276,10 +276,10 @@ func (s *Server) viewOf(owner int64, rec localPlaceRec, main bool) placeView {
 		v.Image = s.localHooks().CurrentImage()
 	}
 	if len(rec.Mounts) == 1 {
-		v.Layout = []mountLayout{{Host: rec.Mounts[0].Host, Container: "/workspace"}}
+		v.Layout = []mountLayout{{Host: rec.Mounts[0].Host, Container: s.hostPathsLayout(rec.Mounts[0].Host, "/workspace")}}
 	} else {
 		for _, m := range rec.Mounts {
-			v.Layout = append(v.Layout, mountLayout{Host: m.Host, Container: "/workspace/" + m.Name})
+			v.Layout = append(v.Layout, mountLayout{Host: m.Host, Container: s.hostPathsLayout(m.Host, "/workspace/"+m.Name)})
 		}
 	}
 	t := s.placeTask(rec.Slot)

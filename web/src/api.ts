@@ -125,6 +125,10 @@ export type LocalUI = {
   task: { state: string; image: string; log: string[]; error: string; restartNeeded: boolean };
   llmKeySet: boolean;
   runtimeKind?: string;
+  // hostPaths — «пути как на хосте»: папки проектов видны в контейнере по
+  // тем же путям, что на машине (config.yaml host_paths).
+  hostPaths?: boolean;
+  hostPathsAvailable?: boolean;
   runtimes?: RuntimeOption[];
 };
 export const local = {
@@ -326,4 +330,5 @@ export const pathsApi = { get: () => req<PathsReport>("GET", "/api/local/ui/path
 export type RuntimeOption = { id: string; title: string; available: boolean; detail?: string };
 export const runtimeApi = {
   set: (runtime: string) => req<{ runtime: string; restartNeeded: boolean }>("PUT", "/api/local/ui/runtime", { runtime }),
+  hostPaths: (enabled: boolean) => req<{ hostPaths: boolean }>("PUT", "/api/local/ui/hostpaths", { enabled }),
 };

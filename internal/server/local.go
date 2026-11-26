@@ -280,6 +280,8 @@ type localExtras struct {
 	Mounts  []agctlrt.Mount // несколько папок → /workspace/<имя>
 	Env     []string        // доступы из хранилища ОС, адрес и токен моста
 	DshHome string          // явная папка dsh-home места ("" — в доме agctl)
+	// HostPaths — «пути как на хосте» (config.yaml host_paths, рантайм docker).
+	HostPaths bool
 }
 
 // localChatExtras дополняет спецификацию рабочего места владельца в локальном
@@ -301,6 +303,7 @@ func (s *Server) localChatExtras(key chatKey) (localExtras, bool, error) {
 		ex.WorkDir, ex.Mounts = placeBinds(p)
 	}
 	ex.DshHome = s.customDshHome(key)
+	ex.HostPaths = s.localHostPaths()
 	var env []string
 	if h := s.cfg.Local.Hooks; h != nil {
 		env = append(env, h.ContainerEnv()...)

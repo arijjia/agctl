@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/arijjia/agctl/internal/provision"
 	agctlrt "github.com/arijjia/agctl/internal/runtime"
@@ -72,6 +73,33 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 			return agctlrt.ChatHandle{}, err
 		}
 	}
+	// Пути как на хосте (локальный режим): папки проектов видны ещё и по
+	// своим хостовым путям, процесс и воркспейс dsh по умолчанию — там же;
+	// /workspace остаётся (совместимость скиллов и прежних сессий).
+	var hostEnv []string
+	workingDir, defaultWS := "", "/workspace"
+	if spec.HostPaths {
+		switch {
+		case spec.WorkDir != "" && HostPathMountable(work):
+			extraBinds = append(extraBinds, work+":"+work)
+			workingDir, defaultWS = work, work
+			hostEnv = append(hostEnv, "HOME="+work, "AGCTL_WORKSPACE_ROOT="+work)
+		case len(spec.Mounts) > 0:
+			var dirs []string
+			for _, m := range spec.Mounts {
+				if HostPathMountable(m.Host) {
+					extraBinds = append(extraBinds, m.Host+":"+m.Host)
+					dirs = append(dirs, m.Host)
+				}
+			}
+			if len(dirs) > 0 {
+				hostEnv = append(hostEnv, "AGCTL_WORKSPACE_DIRS="+strings.Join(dirs, ":"))
+			}
+		}
+	}
+	if _, err := provision.EnsureDefaultWorkspace(dshHome, defaultWS); err != nil {
+		return agctlrt.ChatHandle{}, fmt.Errorf("dockerrt: воркспейс dsh по умолчанию: %w", err)
+	}
 	// Идемпотентная перезапись настроек провайдера на каждом ленивом старте:
 	// DSH_HOME мог быть засеян до появления платформенного провайдера, а
 	// личный секрет пользователя мог смениться между снами контейнера.
@@ -108,6 +136,8 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	layout := provision.Layout{Work: work, DshHome: dshHome}
 	opts.DevEnv = spec.DevEnv // доменные креды developer'а из .env хоста
 	opts.ExtraBinds = extraBinds
+	opts.WorkingDir = workingDir
+	opts.Env = hostEnv
 	res, err := rt.Start(ctx, layout, spec.RuntimeID, opts, spec.Provider)
 	if err != nil {
 		return agctlrt.ChatHandle{}, err

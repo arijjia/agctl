@@ -25,10 +25,13 @@ map:
   llm_label: LLM gateway
 examples:
   jira_url: https://jira.example.com
-# Образы рабочего места: базовый agctl-dsh без надстройки организации;
-# лаунчер developer'а выбирает между вариантами «с SSH» и «без SSH».
+# Образы рабочего места: базовый agctl-dsh без надстройки организации,
+# минимальный (только dsh и git) и вкус web; лаунчер developer'а выбирает
+# между вариантами «с SSH» и «без SSH». Тег вида 0.2.3-alpha.2 — версия dsh:
+# такой образ лаунчер соберёт на этой версии (проверка апгрейда dsh).
 images:
   dev:
     - agctl-dsh:0.2.2
+    - agctl-dsh-min:0.2.2
     - agctl-dsh-web:0.2.2
     - agctl-dsh-nossh:0.2.2

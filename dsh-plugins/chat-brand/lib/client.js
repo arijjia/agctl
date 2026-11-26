@@ -549,7 +549,9 @@ window.__ModuleLoader__.load({
 					const sessions = sessionList.getSnapshot && sessionList.getSnapshot();
 					if (!workspaces || !sessions || workspaces.phase !== "ready" || sessions.phase !== "ready") return;
 					if ((sessions.ids || []).length > 0 || (workspaces.archivedSessionIds || []).length > 0) return;
-					const workspace = (workspaces.items || []).find((item) => item.path === "/workspace" || item.title === "Default workspace");
+					// воркспейс по умолчанию: /workspace или (пути как на хосте) хостовая папка
+					// проектов — её agctl засевает с тем же title «default-workspace»
+					const workspace = (workspaces.items || []).find((item) => item.path === "/workspace" || item.title === "Default workspace" || item.title === "default-workspace");
 					if (!workspace) return;
 					started = true;
 					uiWorkspace.startSession(workspace.workspaceId);
