@@ -58,11 +58,20 @@ func TestAgentCredentialsFiles(t *testing.T) {
 	if strings.Contains(string(skill), "glpat") || !strings.Contains(string(skill), "`GITLAB_TOKEN`") {
 		t.Fatalf("скилл называет доступы, но не содержит значений: %s", skill)
 	}
-	// доступ отозван — файлы убираются
+	// доступ отозван — файлы доступов убираются, метка версий dsh-home
+	// (agctl prepare, state.json) в том же каталоге остаётся
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(`{"dsh":"0.2.2"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if extra := s.writeAgentCredentials(userKey(7), nil); extra != nil {
 		t.Fatal("без env — без указателей")
 	}
-	if _, err := os.Stat(dir); !os.IsNotExist(err) {
-		t.Fatal("каталог доступов удаляется при отзыве")
+	for _, name := range []string{"credentials.env", "bridge.json", "git-credentials", "gitconfig", "glab"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s остался после отзыва доступа", name)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "state.json")); err != nil {
+		t.Fatalf("метка версий dsh-home пропала при отзыве доступа: %v", err)
 	}
 }

@@ -34,6 +34,18 @@ func (c *Config) RuntimeKind() string {
 
 // SetRuntime — рантайм рабочего места в dev.yaml (выбор в лаунчере или
 // флагом --runtime). Данные рабочего места от рантайма не зависят.
+// SetDshHome — своя папка dsh-home основного места ("" — в данных дома).
+func SetDshHome(home, dir string) error {
+	editMu.Lock()
+	defer editMu.Unlock()
+	cfg, err := Load(home)
+	if err != nil {
+		return err
+	}
+	cfg.DshHome = dir
+	return cfg.Save(home)
+}
+
 // SetHostPaths — включить или выключить «пути как на хосте» (config.yaml).
 func SetHostPaths(home string, on bool) error {
 	editMu.Lock()

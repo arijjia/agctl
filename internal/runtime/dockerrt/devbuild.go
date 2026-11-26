@@ -128,7 +128,7 @@ func BuildDevImage(ctx context.Context, b DevBuild) error {
 			return fmt.Errorf("docker: тег %s → %s: %w", local, b.Target, err)
 		}
 		if b.Log != nil {
-			b.Log(fmt.Sprintf("✓ %s — собран на месте как %s", b.Target, local))
+			b.Log(fmt.Sprintf("✓ %s — собран на месте как %s (версию из реестра потом возьмёт agctl dev update)", b.Target, local))
 		}
 		return nil
 	}

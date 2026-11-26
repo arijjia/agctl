@@ -75,7 +75,7 @@ func prepareHome(home, pkgPath, guest string, now time.Time) []string {
 	case c > 0:
 		out = append(out, fmt.Sprintf("prepare: апгрейд dsh %s → %s (сессии и настройки dsh переносит сам)", st.Dsh, cur))
 	case c < 0:
-		out = append(out, fmt.Sprintf("prepare: ⚠ откат dsh %s → %s: сессии, записанные новой версией, эта может не открыть — пробуйте версии на клоне места, исходный dsh-home — в бэкапе agctl dev update", st.Dsh, cur))
+		out = append(out, fmt.Sprintf("prepare: ⚠ откат dsh %s → %s: сессии, записанные новой версией, эта может не открыть — новые версии пробуйте на клоне места («Клонировать»); бэкап dsh-home есть, только если образ меняли через agctl dev update", st.Dsh, cur))
 	default:
 		out = append(out, "prepare: dsh "+cur)
 	}

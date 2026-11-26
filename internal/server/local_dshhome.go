@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/arijjia/agctl/internal/provision"
 	"github.com/arijjia/agctl/internal/store"
@@ -32,17 +33,38 @@ func dshHomeSettingKey(userID int64, slot int) string {
 	return dshHomeSettingPrefix + strconv.FormatInt(userID, 10) + "-s" + strconv.Itoa(slot)
 }
 
+// LocalMainDshHomeHooks — своя папка dsh-home основного места живёт в
+// config.yaml рядом с его папкой и образом: её видят и CLI-бэкапы
+// (agctl dev update / restore), и agctl dev paths.
+type LocalMainDshHomeHooks interface {
+	MainDshHome() string
+	SetMainDshHome(dir string) error
+}
+
 // customDshHome — явная папка dsh-home места ("" — по умолчанию, в доме
 // agctl). Только локальный режим и только владелец.
 func (s *Server) customDshHome(key chatKey) string {
 	if !s.isLocal() || s.local == nil || key.uid != s.local.ownerID || s.db == nil {
 		return ""
 	}
-	v, err := s.db.SettingGet(dshHomeSettingKey(key.uid, key.slot))
+	settingKey := dshHomeSettingKey(key.uid, key.slot)
+	v, err := s.db.SettingGet(settingKey)
 	if err != nil {
-		return ""
+		v = ""
 	}
-	return strings.TrimSpace(v)
+	v = strings.TrimSpace(v)
+	if h, ok := s.localHooks().(LocalMainDshHomeHooks); ok && key.slot == 0 {
+		if cur := strings.TrimSpace(h.MainDshHome()); cur != "" || v == "" {
+			return cur
+		}
+		// Ранняя запись основного места в settings — переносим в config.yaml.
+		if err := h.SetMainDshHome(v); err != nil {
+			log.Printf("[local] перенос dsh-home основного места в config.yaml: %v", err)
+			return v
+		}
+		_ = s.db.SettingSet(settingKey, "")
+	}
+	return v
 }
 
 // defaultDshHome — dsh-home места в доме agctl (без явной папки).
@@ -50,10 +72,80 @@ func (s *Server) defaultDshHome(key chatKey) string {
 	return filepath.Join(s.cfg.Home, "chats", chatStorageID(key.uid, key.slot), "dsh-home")
 }
 
-// validateDshHomeDir — явная папка dsh-home: абсолютный путь, не корень и
+// validateDshHomeDir — явная папка dsh-home места slot (-1 — нового) с
+// папками проектов mounts: проверка пути (validateDshHomePath) и
+// пересечений. Папка проектов не может лежать внутри dsh-home (git
+// конфигурации забрал бы проекты); папка не занята другим местом (два dsh на
+// одном каталоге портят друг другу сессии и пресеты); непустая папка —
+// только уже засеянный dsh-home или его репозиторий.
+func (s *Server) validateDshHomeDir(owner int64, slot int, dir string, mounts []placeMount) (string, error) {
+	abs, err := s.validateDshHomePath(dir)
+	if err != nil || abs == "" {
+		return abs, err
+	}
+	projects := func(ms []placeMount) error {
+		for _, m := range ms {
+			mh := canonicalPath(filepath.Clean(m.Host))
+			if mh == abs || pathUnder(abs, mh) {
+				return fmt.Errorf("папка dsh-home: папка проектов %s оказалась бы внутри неё (git конфигурации забрал бы проекты) — возьмите отдельную, например %s", mh, filepath.Join(mh, "ag_dsh"))
+			}
+		}
+		return nil
+	}
+	if err := projects(mounts); err != nil {
+		return "", err
+	}
+	views, err := s.placeViews(owner)
+	if err != nil {
+		return "", err
+	}
+	for _, v := range views {
+		if v.Slot == slot {
+			continue // папки этого места — из запроса (выше)
+		}
+		if err := projects(v.Mounts); err != nil {
+			return "", err
+		}
+		if !v.DshHomeCustom {
+			continue
+		}
+		other := canonicalPath(filepath.Clean(v.DshHome))
+		if other == abs || pathUnder(abs, other) || pathUnder(other, abs) {
+			return "", fmt.Errorf("папка dsh-home: %s уже занята местом «%s» — у каждого места своя (копия места — «Клонировать»)", other, v.Name)
+		}
+	}
+	if !dshHomeDirUsable(abs) {
+		return "", fmt.Errorf("папка dsh-home: %s не пуста и не похожа на dsh-home — нужна пустая папка, dsh-home или его репозиторий (git clone)", abs)
+	}
+	return abs, nil
+}
+
+// dshHomeDirUsable — папка пуста (или её нет), уже засеянный dsh-home или
+// репозиторий dsh-home (.gitignore agctl). Чужой проект с кодом — нет:
+// первый коммит конфигурации забрал бы его незакоммиченные правки.
+func dshHomeDirUsable(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return os.IsNotExist(err)
+	}
+	empty := true
+	for _, e := range entries {
+		if e.Name() != ".DS_Store" {
+			empty = false
+			break
+		}
+	}
+	if empty || dshHomeSeeded(dir) {
+		return true
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, ".gitignore")) // #nosec G304 -- папка владельца
+	return err == nil && strings.HasPrefix(string(raw), provision.DshHomeGitignoreHeader)
+}
+
+// validateDshHomePath — путь явной папки dsh-home: абсолютный, не корень и
 // не домашний каталог целиком, не внутри данных agctl (там dsh-home мест по
 // умолчанию). Папки может не быть — создастся.
-func (s *Server) validateDshHomeDir(dir string) (string, error) {
+func (s *Server) validateDshHomePath(dir string) (string, error) {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
 		return "", nil
@@ -109,7 +201,11 @@ func canonicalPath(p string) string {
 // место в дом agctl) и подготовить её как git-репозиторий конфигурации.
 // Возвращает заметку для журнала (без git — папка работает и так).
 func (s *Server) setCustomDshHome(owner int64, slot int, dir string) (string, error) {
-	if err := s.db.SettingSet(dshHomeSettingKey(owner, slot), dir); err != nil {
+	if h, ok := s.localHooks().(LocalMainDshHomeHooks); ok && slot == 0 {
+		if err := h.SetMainDshHome(dir); err != nil {
+			return "", err
+		}
+	} else if err := s.db.SettingSet(dshHomeSettingKey(owner, slot), dir); err != nil {
 		return "", err
 	}
 	if dir == "" {
@@ -230,6 +326,19 @@ func (s *Server) handlePlaceClone(w http.ResponseWriter, r *http.Request, id ide
 		writeErr(w, http.StatusConflict, "исходное место сейчас запускается — дождитесь и повторите")
 		return
 	}
+	// Копия — при остановленном источнике и под его замком первого старта:
+	// открытая вкладка чата не поднимет место посреди копирования (её запрос
+	// подождёт), иначе SQLite и сессии dsh скопировались бы рваными.
+	srcLock := s.chatStartLock(srcKey)
+	srcLock.Lock()
+	locked := true
+	unlock := func() {
+		if locked {
+			locked = false
+			srcLock.Unlock()
+		}
+	}
+	defer unlock()
 	s.chatMu.Lock()
 	wasRunning := s.chats[srcKey] != nil
 	s.chatMu.Unlock()
@@ -240,6 +349,7 @@ func (s *Server) handlePlaceClone(w http.ResponseWriter, r *http.Request, id ide
 		}
 	}
 	restartSrc := func() {
+		unlock()
 		if wasRunning {
 			s.startPlaceRuntime(id.ID, srcSlot, false)
 		}
@@ -306,4 +416,19 @@ func (s *Server) handlePlaceClone(w http.ResponseWriter, r *http.Request, id ide
 	s.local.events.publish("places")
 	s.local.events.publish("presets")
 	writeJSON(w, http.StatusCreated, s.viewOf(id.ID, rec, false))
+}
+
+// chatStartLock — замок первого старта слота (тот же, что у ensureChat).
+func (s *Server) chatStartLock(key chatKey) *sync.Mutex {
+	s.chatMu.Lock()
+	defer s.chatMu.Unlock()
+	if s.chatLocks == nil {
+		s.chatLocks = make(map[chatKey]*sync.Mutex)
+	}
+	lock := s.chatLocks[key]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		s.chatLocks[key] = lock
+	}
+	return lock
 }

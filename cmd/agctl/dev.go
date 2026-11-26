@@ -460,9 +460,19 @@ func devPrepareImage(ctx context.Context, p *profile.Data, target, flavor string
 	pctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
 	logf(fmt.Sprintf("… образа %s нет локально — пробую docker pull", target))
-	if err := dockerrt.PullImage(pctx, target); err == nil {
+	pullErr := dockerrt.PullImage(pctx, target)
+	if pullErr == nil {
 		logf(fmt.Sprintf("✓ образ %s скачан", target))
 		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Образ реестра собирается на месте, только когда реестр сказал «нет
+	// такого» (или пакет закрыт); сбой связи — ошибка: иначе 10–20 минут
+	// сборки, и образ под именем реестра уже не скачается.
+	if dockerrt.LocalImageName(target) != target && !dockerrt.PullMissing(pullErr) {
+		return fmt.Errorf("образ %s не скачан: %v — похоже на сбой связи с реестром (сеть, VPN, прокси, docker login); повторите, когда связь будет, или выберите локальный образ (agctl dev images)", target, pullErr)
 	}
 	b := dockerrt.DevBuild{
 		Target: target, Flavor: flavor, BinDir: localmode.GuestDir(),
@@ -547,11 +557,17 @@ func devPull(ref string) error {
 
 // ── up / serve / down ─────────────────────────────────────────────────────
 
+// devUpFlags — флаги agctl dev up (общие для up и авто-init первого up).
+func devUpFlags(handling flag.ErrorHandling) (fs *flag.FlagSet, noOpen, foreground *bool, runtimeFlag *string) {
+	fs = flag.NewFlagSet("dev up", handling)
+	noOpen = fs.Bool("no-open", false, "не открывать браузер")
+	foreground = fs.Bool("foreground", false, "в текущем терминале (Ctrl+C — остановка)")
+	runtimeFlag = fs.String("runtime", "", "рантайм рабочего места: docker | sbx (запоминается в dev.yaml)")
+	return fs, noOpen, foreground, runtimeFlag
+}
+
 func devUp(home string, args []string) error {
-	fs := flag.NewFlagSet("dev up", flag.ExitOnError)
-	noOpen := fs.Bool("no-open", false, "не открывать браузер")
-	foreground := fs.Bool("foreground", false, "в текущем терминале (Ctrl+C — остановка)")
-	runtimeFlag := fs.String("runtime", "", "рантайм рабочего места: docker | sbx (запоминается в dev.yaml)")
+	fs, noOpen, foreground, runtimeFlag := devUpFlags(flag.ExitOnError)
 	_ = fs.Parse(args)
 	cfg, err := localmode.Load(home)
 	if err != nil {
@@ -1555,13 +1571,10 @@ func devAutoInit(h localmode.Home, upArgs []string) error {
 	if len(localmode.ListHomes()) > 0 {
 		return nil // дома есть, но не этот — пусть ошибка скажет, какой выбрать
 	}
-	workdir := ""
-	for _, a := range upArgs {
-		if !strings.HasPrefix(a, "-") {
-			workdir = a
-			break
-		}
-	}
+	fs, _, _, _ := devUpFlags(flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	_ = fs.Parse(upArgs) // ошибки флагов скажет сам up
+	workdir := fs.Arg(0)
 	if workdir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {

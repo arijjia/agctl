@@ -2,7 +2,9 @@ package dockerrt
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/moby/moby/client"
@@ -74,6 +76,24 @@ func ImageInfo(ctx context.Context, ref string) (ImageMeta, error) {
 		m.Labels = insp.Config.Labels
 	}
 	return m, nil
+}
+
+// PullMissing — реестр ответил, что образа нет или он закрыт: manifest
+// unknown, not found, repository does not exist, denied/unauthorized (так
+// GHCR отвечает и на ещё не опубликованный или приватный пакет). Сбой связи
+// (DNS, VPN, прокси, таймаут) и отмена — не сюда: собирать образ на месте
+// под именем реестра из-за сбоя связи нельзя — потом он уже не скачается.
+func PullMissing(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, s := range []string{"manifest unknown", "not found", "does not exist", "denied", "unauthorized", "no such image"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // PullImage тянет ref из реестра (учётные данные — docker login на хосте).

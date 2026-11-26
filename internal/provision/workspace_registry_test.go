@@ -50,12 +50,47 @@ func TestEnsureDefaultWorkspace(t *testing.T) {
 	if changed, err := EnsureDefaultWorkspace(home, "/Users/dev/src"); changed || err != nil {
 		t.Fatalf("повтор: changed=%v err=%v", changed, err)
 	}
+	// название, данное владельцем, повторный старт без смены не трогает
+	reg = read(home)
+	reg["tables"].(map[string]any)["workspaces"].(map[string]any)["ws-agctl-host"].(map[string]any)["title"] = "Мои проекты"
+	raw, _ := json.Marshal(reg)
+	if err := os.WriteFile(filepath.Join(home, "storages", "workspace.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := EnsureDefaultWorkspace(home, "/Users/dev/src"); changed || err != nil {
+		t.Fatalf("повтор после переименования: changed=%v err=%v", changed, err)
+	}
+	if title := read(home)["tables"].(map[string]any)["workspaces"].(map[string]any)["ws-agctl-host"].(map[string]any)["title"]; title != "Мои проекты" {
+		t.Fatalf("название владельца сброшено: %v", title)
+	}
 	// обратно на /workspace — существующая запись, новой не появляется
 	if changed, err := EnsureDefaultWorkspace(home, "/workspace"); !changed || err != nil {
 		t.Fatalf("возврат: changed=%v err=%v", changed, err)
 	}
 	if reg := read(home); defaultPath(reg) != "/workspace" || len(reg["tables"].(map[string]any)["workspaces"].(map[string]any)) != 2 {
 		t.Fatalf("возврат на /workspace: %v", reg)
+	}
+
+	// отпустить хостовый воркспейс: свой — возвращается на /workspace,
+	// выбор владельца — нет, нет реестра — нечего делать
+	if changed, err := EnsureDefaultWorkspace(home, "/Users/dev/src"); !changed || err != nil {
+		t.Fatalf("снова на хост: changed=%v err=%v", changed, err)
+	}
+	if changed, err := ReleaseHostWorkspace(home, "/workspace"); !changed || err != nil || defaultPath(read(home)) != "/workspace" {
+		t.Fatalf("отпустить свой хостовый: changed=%v err=%v", changed, err)
+	}
+	reg = read(home)
+	reg["global"].(map[string]any)["defaultWorkspaceId"] = "ws-mine"
+	reg["tables"].(map[string]any)["workspaces"].(map[string]any)["ws-mine"] = map[string]any{"path": "/workspace/app", "title": "app"}
+	raw, _ = json.Marshal(reg)
+	if err := os.WriteFile(filepath.Join(home, "storages", "workspace.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := ReleaseHostWorkspace(home, "/workspace"); changed || err != nil || defaultPath(read(home)) != "/workspace/app" {
+		t.Fatalf("выбор владельца тронут: changed=%v err=%v", changed, err)
+	}
+	if changed, err := ReleaseHostWorkspace(t.TempDir(), "/workspace"); changed || err != nil {
+		t.Fatalf("без реестра: changed=%v err=%v", changed, err)
 	}
 
 	fresh := t.TempDir()

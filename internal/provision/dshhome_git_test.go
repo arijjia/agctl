@@ -41,6 +41,11 @@ func TestDshHomeRepo(t *testing.T) {
 	write("profiles/web/package.json", "{}")
 	write("profiles/web/node_modules/@x/y/index.js", "x")
 	write("skills/demo/SKILL.md", "# demo\n")
+	write("skills/agctl-host-bridge/SKILL.md", "# мост\n")
+	write("settings.yaml", "llm: {}\n")
+	write("settings.yaml.imported", "llm: {}\n")
+	write("profiles/web/cordis.patch.yml", "rows: []\n")
+	write("profiles/web/cordis.yml", "rows: []\n")
 
 	ok, err := CommitDshHome(dir, "agctl: начальная конфигурация")
 	if err != nil || !ok {
@@ -55,7 +60,8 @@ func TestDshHomeRepo(t *testing.T) {
 			t.Errorf("в коммите нет %s:\n%s", must, files)
 		}
 	}
-	for _, never := range []string{".credentials.yaml", ".agctl/", "agctl-poisk", "sessions/", "storages/", "node_modules"} {
+	for _, never := range []string{".credentials.yaml", ".agctl/", "agctl-poisk", "sessions/", "storages/", "node_modules",
+		"settings.yaml", "cordis.patch.yml", "cordis.yml", "agctl-host-bridge"} {
 		if strings.Contains(files, never) {
 			t.Errorf("в коммит попало %s:\n%s", never, files)
 		}

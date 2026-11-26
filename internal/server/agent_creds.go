@@ -52,7 +52,11 @@ func (s *Server) writeAgentCredentials(key chatKey, env []string) []string {
 		}
 	}
 	if len(vals) == 0 {
-		_ = os.RemoveAll(dir)
+		// Доступ отозван: убрать только свои файлы доступов — в .agctl живут
+		// и метка версий dsh-home (agctl prepare), и патч пресетов.
+		for _, name := range []string{"credentials.env", "bridge.json", "git-credentials", "gitconfig", "glab"} {
+			_ = os.RemoveAll(filepath.Join(dir, name))
+		}
 		return nil
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {

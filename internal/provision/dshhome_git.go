@@ -20,7 +20,11 @@ import (
 )
 
 // DshHomeGitignore — что из dsh-home не идёт в git.
-const DshHomeGitignore = `# agctl: dsh-home как git-репозиторий конфигурации агента — скиллы,
+// DshHomeGitignoreHeader — начало .gitignore dsh-home: по нему папка
+// узнаётся как репозиторий dsh-home (в том числе после git clone).
+const DshHomeGitignoreHeader = "# agctl: dsh-home как git-репозиторий"
+
+const DshHomeGitignore = DshHomeGitignoreHeader + ` конфигурации агента — скиллы,
 # пресеты, плагины (package.json), настройки. Секреты, сессии, кэши и то,
 # что agctl пересобирает на каждом старте, — вне git.
 
@@ -32,6 +36,14 @@ const DshHomeGitignore = `# agctl: dsh-home как git-репозиторий к
 
 # пресеты лаунчера agctl (пересобираются, в env MCP — доступы этой машины)
 .agent-presets/agctl-*/
+
+# что agctl и dsh пересобирают на каждом старте: провайдеры и модели этой
+# машины (их источник — лаунчер), собранный конфиг, встроенные скиллы agctl
+settings.yaml
+settings.yaml.imported
+profiles/web/cordis.patch.yml
+profiles/web/cordis.yml
+skills/agctl-*/
 
 # сессии и рабочее состояние dsh (перенос сессий — отдельно)
 sessions/
