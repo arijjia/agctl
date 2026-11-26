@@ -626,3 +626,4 @@ button.small { padding: 4px 10px; font-size: 10px; }
 .steps { margin: 0 0 14px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 .row-actions { margin-top: 12px; }
 .embed-shell { padding: 14px; }
+.chip-warn { border-color: rgba(212, 118, 10, 0.6); color: var(--yellow); background: rgba(212, 118, 10, 0.08); text-decoration: line-through; }

@@ -130,3 +130,41 @@ func TestStandardPresetPluginsMissing(t *testing.T) {
 		t.Fatal("ожидалась ошибка: нет preset-standard")
 	}
 }
+
+// MCP-сервер без нужных доступов отключается в пресете (иначе dsh ждёт его
+// при старте и рабочее место не поднимается), а у каждого сервера есть
+// предел на запуск.
+func TestMcpRowDisabledWithoutCredentials(t *testing.T) {
+	home := t.TempDir()
+	gitlab, _ := PlatformMcpServer("gitlab")
+	jira, _ := PlatformMcpServer("jira")
+	env := map[string]string{"JIRA_URL": "https://jira.example.invalid", "JIRA_API_TOKEN": "unit"}
+	if err := EnsureAgentPreset(home, "agctl-bank", "Банк", "", []McpServerSpec{gitlab, jira}, env); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(home, ".agent-presets", "agctl-bank", "agent.cordis.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows []struct {
+		ID       string         `yaml:"id"`
+		Disabled bool           `yaml:"disabled"`
+		Config   map[string]any `yaml:"config"`
+	}
+	if err := yaml.Unmarshal(raw, &rows); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, r := range rows {
+		got[r.ID] = r.Disabled
+		if r.Config["startupTimeoutMs"] != mcpStartupTimeoutMs {
+			t.Fatalf("%s: нет предела на запуск: %v", r.ID, r.Config["startupTimeoutMs"])
+		}
+	}
+	if !got["mcp-gitlab"] || got["mcp-jira"] {
+		t.Fatalf("gitlab без токена должен быть отключён, jira с доступами — включён: %v\n%s", got, raw)
+	}
+	if m := gitlab.MissingEnv(env); len(m) != 1 || m[0] != "GITLAB_PERSONAL_ACCESS_TOKEN" {
+		t.Fatalf("MissingEnv gitlab: %v", m)
+	}
+}

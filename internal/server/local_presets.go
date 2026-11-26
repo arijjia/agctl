@@ -288,9 +288,25 @@ func (s *Server) handlePresetsList(w http.ResponseWriter, r *http.Request, id id
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	out := []*localPreset{}
+	// missing — каких доступов не хватает серверам пресета: такие серверы в
+	// харнессе отключены, лаунчер показывает причину.
+	type presetView struct {
+		*localPreset
+		Missing map[string][]string `json:"missing,omitempty"`
+	}
+	env := s.containerEnvMap(id.ID)
+	out := []presetView{}
 	for _, pid := range sortedPresetIDs(presets) {
-		out = append(out, presets[pid])
+		v := presetView{localPreset: presets[pid]}
+		for _, spec := range s.presetSpecs(presets[pid]) {
+			if m := spec.MissingEnv(env); len(m) > 0 {
+				if v.Missing == nil {
+					v.Missing = map[string][]string{}
+				}
+				v.Missing[spec.ID] = m
+			}
+		}
+		out = append(out, v)
 	}
 	mcp := []map[string]any{}
 	for _, spec := range s.mcpCatalog() {

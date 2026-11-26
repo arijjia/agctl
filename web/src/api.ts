@@ -177,6 +177,9 @@ export type Preset = {
   skills: string[];
   places: string[];
   revision: number;
+  // missing — серверы пресета без нужных доступов: id сервера → имена
+  // переменных («A|B» — хватит одной). В харнессе такие серверы отключены.
+  missing?: Record<string, string[]>;
 };
 export type PresetsCatalog = {
   presets: Preset[];
