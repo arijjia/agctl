@@ -36,6 +36,11 @@ type Provider struct {
 	// Extras — дополнительные провайдеры со своими эндпоинтами, моделями и
 	// ключами; попадают в тот же выпадающий список dsh.
 	Extras []ExtraProvider
+	// SubagentModels — модели, на которых агент может запускать сабагентов
+	// (быстрые модели для мелких задач): "модель" — у основного провайдера,
+	// "алиас/модель" — у дополнительного. Пусто — сабагенты на модели
+	// родителя. В dsh — настройка subagent-model-selection-settings.
+	SubagentModels []string
 }
 
 // ExtraProvider — второй (третий, …) провайдер в выпадающем списке dsh:
@@ -610,6 +615,35 @@ type providerBlock struct {
 	primary      bool
 }
 
+// subagentRoutes — маршруты (алиас, модель) для сабагентов: "модель" — у
+// основного провайдера, "алиас/модель" — у дополнительного; неизвестные
+// алиасы и модели пропускаются (dsh отверг бы весь список), дубли — тоже.
+func subagentRoutes(models []string, blocks []providerBlock, primary string) [][2]string {
+	known := map[string]map[string]bool{}
+	for _, b := range blocks {
+		set := map[string]bool{}
+		for _, m := range b.models {
+			set[m] = true
+		}
+		known[b.alias] = set
+	}
+	var out [][2]string
+	seen := map[string]bool{}
+	for _, raw := range models {
+		raw = strings.TrimSpace(raw)
+		alias, model := primary, raw
+		if i := strings.Index(raw, "/"); i > 0 && known[raw[:i]] != nil {
+			alias, model = raw[:i], raw[i+1:]
+		}
+		if model == "" || !known[alias][model] || seen[alias+"/"+model] {
+			continue
+		}
+		seen[alias+"/"+model] = true
+		out = append(out, [2]string{alias, model})
+	}
+	return out
+}
+
 // providerBlocks собирает основной провайдер (со всеми BaseURL-алиасами) и
 // дополнительные. Алиасы уникальны и безопасны как YAML-ключи.
 func providerBlocks(p Provider) []providerBlock {
@@ -800,6 +834,14 @@ func RefreshProvider(home string, p Provider) error {
 		}
 	}
 	sb.WriteString("agent-default-model:\n  provider: " + defaultAlias + "\n  model: " + yamlStr(defaultModel) + "\n")
+	if routes := subagentRoutes(p.SubagentModels, blocks, defaultAlias); len(routes) > 0 {
+		// Сабагенты на быстрых моделях: dsh разрешает агенту выбирать модель
+		// ребёнка только из этого списка (политика пишется в новые сессии).
+		sb.WriteString("subagent-model-selection-settings:\n  enabled: true\n  allowedModels:\n")
+		for _, r := range routes {
+			sb.WriteString("    - provider: " + r[0] + "\n      model: " + yamlStr(r[1]) + "\n")
+		}
+	}
 	if err := os.WriteFile(filepath.Join(home, "settings.yaml"), []byte(sb.String()), 0o644); err != nil {
 		return fmt.Errorf("provision: settings.yaml: %w", err)
 	}

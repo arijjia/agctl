@@ -136,6 +136,7 @@ func Serve(args []string, opts ServeOptions) {
 	llmBaseURL := fsSet.String("llm-base-url", EnvOr("AGCTL_LLM_BASE_URL", prof.LLM.DefaultBaseURL), "базовый URL OpenAI-совместимого провайдера чата по умолчанию (пусто = платформа без провайдера по умолчанию)")
 	llmModel := fsSet.String("llm-model", EnvOr("AGCTL_LLM_MODEL", prof.LLM.DefaultModel), "модель чата по умолчанию (из списка llm-models)")
 	llmModels := fsSet.String("llm-models", EnvOr("AGCTL_LLM_MODELS", prof.LLM.DefaultModels), "список моделей чата через запятую")
+	llmSubagentModels := fsSet.String("llm-subagent-models", EnvOr("AGCTL_LLM_SUBAGENT_MODELS", prof.LLM.SubagentModels), "модели сабагентов через запятую: модель или алиас/модель (быстрые модели для мелких задач)")
 	llmAPIKey := fsSet.String("llm-api-key", strings.TrimSpace(EnvOr("AGCTL_LLM_API_KEY", "")), "ключ провайдера чата (предпочтительно через env AGCTL_LLM_API_KEY)")
 	rt := runtimeFlags(fsSet, cfg)
 	_ = profileFlag
@@ -159,6 +160,8 @@ func Serve(args []string, opts ServeOptions) {
 		Models:  SplitCSV(*llmModels),
 		APIKey:  *llmAPIKey,
 		Extras:  ProfExtraProviders(prof),
+
+		SubagentModels: SplitCSV(*llmSubagentModels),
 	}
 	if defaultLLM.Model == "" && len(defaultLLM.Models) > 0 {
 		defaultLLM.Model = defaultLLM.Models[0]
