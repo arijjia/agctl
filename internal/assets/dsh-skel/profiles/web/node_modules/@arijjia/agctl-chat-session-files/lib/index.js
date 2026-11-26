@@ -36,8 +36,28 @@ export function apply(ctx) {
 	const workspaceRoot = process.env.AGCTL_WORKSPACE_ROOT || "/workspace";
 	const workspaceDirs = (process.env.AGCTL_WORKSPACE_DIRS || "").split(":").filter((d) => d.startsWith("/"));
 	const localMode = process.env.AGCTL_LOCAL_MODE === "1";
+	// Host paths mode: the same folders are also mounted under /workspace (compat),
+	// so /workspace/<name> registrations are aliases of host-path ones. Aliases
+	// without sessions are dropped to keep the sidebar free of duplicates; ones
+	// with history stay (their sessions remain reachable).
+	const hostPaths = workspaceRoot !== "/workspace" || workspaceDirs.length > 0;
+	const pruneAliases = async () => {
+		if (!localMode || !hostPaths || typeof registry.list !== "function" || typeof registry.delete !== "function") return;
+		for (const workspace of registry.list()) {
+			const dir = workspace && workspace.path;
+			if (typeof dir !== "string" || !dir.startsWith("/workspace/")) continue;
+			if (!Array.isArray(workspace.sessionIds) || workspace.sessionIds.length > 0) continue;
+			try {
+				await registry.delete(workspace.id);
+				ctx.logger.info(`agctl-chat-session-files: alias workspace removed for ${dir} (host paths)`);
+			} catch (error) {
+				ctx.logger.info(`agctl-chat-session-files: alias workspace kept for ${dir}: ${error?.message ?? error}`);
+			}
+		}
+	};
 	const pruneStale = async () => {
 		if (!localMode || typeof registry.list !== "function" || typeof registry.delete !== "function") return;
+		await pruneAliases();
 		for (const workspace of registry.list()) {
 			const dir = workspace && workspace.path;
 			if (typeof dir !== "string" || !dir.startsWith(workspaceRoot + "/")) continue;
