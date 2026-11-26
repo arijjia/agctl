@@ -34,3 +34,16 @@ func TestDevBuildPlan(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalImageName(t *testing.T) {
+	for ref, want := range map[string]string{
+		"ghcr.io/org/agctl-dsh:0.2.2":                            "agctl-dsh:0.2.2",
+		"registry.example.org/agctl/agctl-dsh-min:0.2.3-alpha.2": "agctl-dsh-min:0.2.3-alpha.2",
+		"agctl-dsh-web:0.2.2":                                    "agctl-dsh-web:0.2.2",
+		"ghcr.io/org/other:1":                                    "ghcr.io/org/other:1",
+	} {
+		if got := LocalImageName(ref); got != want {
+			t.Errorf("%s → %s, нужно %s", ref, got, want)
+		}
+	}
+}

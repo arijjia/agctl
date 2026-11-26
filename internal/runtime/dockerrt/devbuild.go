@@ -15,6 +15,7 @@ package dockerrt
 import (
 	"context"
 	"fmt"
+	"github.com/moby/moby/client"
 	"io/fs"
 	"os"
 	"path"
@@ -59,6 +60,21 @@ func withSuffix(ref, suffix string) string {
 	return ref + "-" + suffix
 }
 
+// LocalImageName — имя образа без реестра и пространства имён:
+// "ghcr.io/org/agctl-dsh-min:0.2.2" → "agctl-dsh-min:0.2.2". Чужие образы
+// (не agctl-dsh*) возвращаются как есть.
+func LocalImageName(ref string) string {
+	slash := strings.LastIndex(ref, "/")
+	if slash < 0 {
+		return ref
+	}
+	name := ref[slash+1:]
+	if !strings.HasPrefix(name, "agctl-dsh") {
+		return ref
+	}
+	return name
+}
+
 // DevBuildPlan — ступени сборки (для сообщений и тестов): итоговый образ —
 // последний.
 func DevBuildPlan(b DevBuild) []string {
@@ -98,6 +114,23 @@ func BuildDevImage(ctx context.Context, b DevBuild) error {
 	log := b.Log
 	if log == nil {
 		log = func(string) {}
+	}
+	// Образ реестра (ghcr.io/org/agctl-dsh:0.2.2), которого нет ни локально,
+	// ни в реестре, собирается на месте под локальным именем и получает имя
+	// реестра тегом: каталог профиля один и для машин с реестром, и без.
+	if local := LocalImageName(b.Target); local != b.Target {
+		inner := b
+		inner.Target = local
+		if err := BuildDevImage(ctx, inner); err != nil {
+			return err
+		}
+		if _, err := cli.ImageTag(ctx, client.ImageTagOptions{Source: local, Target: b.Target}); err != nil {
+			return fmt.Errorf("docker: тег %s → %s: %w", local, b.Target, err)
+		}
+		if b.Log != nil {
+			b.Log(fmt.Sprintf("✓ %s — собран на месте как %s", b.Target, local))
+		}
+		return nil
 	}
 	plan := DevBuildPlan(b)
 	if last := plan[len(plan)-1]; last != b.Target {
