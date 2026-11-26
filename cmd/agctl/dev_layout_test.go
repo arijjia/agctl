@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -366,5 +367,35 @@ func TestDevMigrate(t *testing.T) {
 	}
 	if n, err := localmode.Load(localmode.HomeDir("agctl")); err != nil || n.Image != "" {
 		t.Fatalf("нейтральный дом: %+v %v", n, err)
+	}
+}
+
+// Первый `agctl dev up` без единого дома настраивает дом по умолчанию сам:
+// папка проектов — аргумент up (создаётся), с путями как на хосте; при
+// существующем доме ничего не трогает.
+func TestDevAutoInit(t *testing.T) {
+	layoutRoot(t)
+	h, _ := localmode.SelectHome("")
+	work := filepath.Join(t.TempDir(), "src")
+	if err := devAutoInit(h, []string{"--no-open", work}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := localmode.Load(h.Dir)
+	if err != nil {
+		t.Fatalf("дом не создан: %v", err)
+	}
+	if st, err := os.Stat(work); err != nil || !st.IsDir() {
+		t.Fatalf("папка проектов не создана: %v", err)
+	}
+	if cfg.WorkDir == "" || cfg.HostPaths != (runtime.GOOS != "windows") {
+		t.Fatalf("config.yaml: %+v", cfg)
+	}
+	// второй раз — дом есть, ничего не меняется
+	other := filepath.Join(t.TempDir(), "other")
+	if err := devAutoInit(h, []string{other}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(other); !os.IsNotExist(err) {
+		t.Fatal("при существующем доме авто-init не должен ничего создавать")
 	}
 }

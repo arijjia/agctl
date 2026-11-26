@@ -2,13 +2,13 @@
 schema: 1.5.0
 id: e2e-smoke-home-cleanup
 title: "e2e-smoke: тестовый HOME в $TMPDIR и автоочистка при успехе"
-status: open
+status: done
 priority: P3
 size: S
 area: e2e
 repo: arijjia/agctl
 created: 2026-11-26
-updated: 2026-11-26
+updated: 2026-11-27
 tags: ["e2e", "hygiene"]
 depends: []
 ---
@@ -51,3 +51,11 @@ depends: []
 - 2026-11-26: gate: ready (попытка 3)
 - 2026-11-26: gate passed, feedback cleared
 - 2026-11-26: unpark: гейт ready
+
+## Журнал
+
+- 2026-11-27: сделано. Дом прогона — `mktemp -d "$TMPDIR/agctl-e2e-smoke.XXXXXX"`
+  (канонический путь, как у e2e-local-mode), успешный прогон чистит за собой,
+  `KEEP=1` — сохранить, упавший оставляет каталог и печатает путь;
+  `CLEANUP=1` принимается с предупреждением в stderr. Проверка: FAKE_LLM
+  smoke на agctl-dsh-server:0.2.2 — PASS, в `~` не появилось `.agctl-e2e-*`.

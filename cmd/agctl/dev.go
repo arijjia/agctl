@@ -85,7 +85,9 @@ func cmdDev(args []string) {
 	case "init":
 		err = devInit(h, args[1:])
 	case "up":
-		err = devUp(home, args[1:])
+		if err = devAutoInit(h, args[1:]); err == nil {
+			err = devUp(home, args[1:])
+		}
 	case "down":
 		err = devDown(home)
 	case "status":
@@ -1540,4 +1542,36 @@ func devProfileKeyEnvs(cfg *localmode.Config) []string {
 		}
 	}
 	return out
+}
+
+// devAutoInit — первый `agctl dev up` на машине без единого дома: дом по
+// умолчанию создаётся сам (как `agctl dev init --yes`), папка проектов —
+// аргумент up или ~/src (создаётся). Образ, доступы и папки дальше — в
+// лаунчере. Если дома уже есть, ничего не делает: выбор дома остаётся явным.
+func devAutoInit(h localmode.Home, upArgs []string) error {
+	if _, err := localmode.Load(h.Dir); !errors.Is(err, localmode.ErrNotInitialized) {
+		return nil
+	}
+	if len(localmode.ListHomes()) > 0 {
+		return nil // дома есть, но не этот — пусть ошибка скажет, какой выбрать
+	}
+	workdir := ""
+	for _, a := range upArgs {
+		if !strings.HasPrefix(a, "-") {
+			workdir = a
+			break
+		}
+	}
+	if workdir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		workdir = filepath.Join(home, "src")
+	}
+	if err := os.MkdirAll(workdir, 0o755); err != nil {
+		return fmt.Errorf("папка проектов %s: %w", workdir, err)
+	}
+	fmt.Printf("… дом «%s» ещё не настроен — настраиваю по умолчанию (как agctl dev init --yes), папка проектов %s\n", h.ID, workdir)
+	return devInit(h, []string{"--yes", "--workdir", workdir})
 }
