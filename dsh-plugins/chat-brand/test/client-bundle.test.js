@@ -263,7 +263,8 @@ test("D6: автостарт первой сессии объявлен и зв�
 	const src = await readFile(clientPath, "utf8");
 	assert.match(src, /ensureFirstWorkspaceSession/, "автостарт первой сессии на месте");
 	assert.match(src, /healStuckWorkspacePick/, "лечение застрявшего выбора на месте");
-	assert.match(src, /item\.path === "\/workspace" \|\| item\.title === "Default workspace"/, "первая сессия — Default workspace платформы");
+	assert.match(src, /item\.title === "Default workspace" \|\| item\.title === "default-workspace"/, "первая сессия — воркспейс по умолчанию платформы (по названию)");
+	assert.match(src, /item\.path === "\/workspace"/, "запасной путь — /workspace");
 	assert.match(src, /workspaces\.phase !== "ready" \|\| sessions\.phase !== "ready"/, "автостарт ждёт готовности списков");
 	assert.match(src, /\(sessions\.ids \|\| \[\]\)\.length > 0 \|\| \(workspaces\.archivedSessionIds \|\| \[\]\)\.length > 0/, "автостарт не срабатывает, когда сессии уже есть");
 	assert.match(src, /uiWorkspace\.startSession\(undefined\)/, "лечение идёт тем же штатным переходом, что у «+» у папки");

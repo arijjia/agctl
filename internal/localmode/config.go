@@ -27,7 +27,7 @@ const DefaultAddr = "127.0.0.1:8930"
 // конфиг ничего не копируется: образ по умолчанию и белый список моста
 // профиля читаются из профиля на каждом старте.
 type Config struct {
-	Profile    string  `yaml:"profile,omitempty"`     // id профиля (agctl, utmn…)
+	Profile    string  `yaml:"profile,omitempty"`     // id профиля (agctl или id профиля организации)
 	ProfileDir string  `yaml:"profile_dir,omitempty"` // явный каталог профиля
 	Image      string  `yaml:"image,omitempty"`       // образ — только явный выбор; пусто = по профилю
 	Flavor     string  `yaml:"flavor,omitempty"`      // вкус образа (web, …)
@@ -56,6 +56,11 @@ type Config struct {
 	// Runtime — рантайм рабочего места: docker (по умолчанию) или sbx
 	// (Docker Sandboxes, microVM); см. runtime.go.
 	Runtime string `yaml:"runtime,omitempty"`
+	// HostPaths — «пути как на хосте»: папки проектов видны в контейнере по
+	// тем же путям, что на этой машине (агент, его сессии и предложенные им
+	// команды говорят хостовыми путями); /workspace остаётся как был. Только
+	// рантайм docker, пути вида /Users/…, /home/…
+	HostPaths bool `yaml:"host_paths,omitempty"`
 	// PreviousImage — образ до последнего update (для rollback).
 	PreviousImage string `yaml:"previous_image,omitempty"`
 }
@@ -164,6 +169,9 @@ var configDocs = []fieldDoc{
 	{"workdir", "папка проектов на этой машине; агент видит только её (в контейнере — /workspace)",
 		"agctl dev init --workdir, agctl dev up <папка>, лаунчер",
 		"вы"},
+	{"host_paths", "true — «пути как на хосте»: папки проектов видны в контейнере ещё и по своим путям на этой машине, агент работает там же (пути в сессиях открываются во внешнем редакторе, команды агента выполняются на хосте как есть); /workspace остаётся. Только рантайм docker, не Windows",
+		"лаунчер («Рабочие места» → «пути как на хосте»); по умолчанию false",
+		"вы через лаунчер или правку файла; применяется при перезапуске места"},
 	{"addr", "адрес веб-интерфейса и моста к хосту; только loopback (127.0.0.1:ПОРТ)",
 		"agctl dev init --addr; по умолчанию " + DefaultAddr,
 		"вы; применяется после agctl dev down && agctl dev up"},
@@ -219,7 +227,7 @@ func (c *Config) values() map[string]any {
 	return map[string]any{
 		"profile": c.Profile, "profile_dir": c.ProfileDir,
 		"image": c.Image, "flavor": c.Flavor, "previous_image": c.PreviousImage,
-		"workdir": c.WorkDir, "addr": c.Addr, "mem_gb": c.MemGB, "cpus": c.CPUs,
+		"workdir": c.WorkDir, "host_paths": c.HostPaths, "addr": c.Addr, "mem_gb": c.MemGB, "cpus": c.CPUs,
 		"egress_allowlist": c.EgressAllowlist, "egress_allow": allow,
 		"env": env, "secrets": secrets,
 		"runtime": c.Runtime, "providers": providers,

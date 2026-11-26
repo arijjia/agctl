@@ -5922,7 +5922,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         </div>
         <ul>
           <li>Ядро agctl — универсальное: ни одного литерала организации в коде; проверяет guard-тест TestCoreIsOrganizationFree (internal/profile/guard_test.go)</li>
-          <li>Кастомизация — данные-профиль: profile.yaml + assets/logo.png в отдельном репо (agctl-profile-utmn), приватность не зависит от ядра</li>
+          <li>Кастомизация — данные-профиль: profile.yaml + assets/logo.png в отдельном репо (agctl-profile-<id>), приватность не зависит от ядра</li>
           <li>agctl-server serve читает профиль при старте (--profile/--profile-dir, make profile-fetch) и инжектит window.__AGCTL_BRAND__ в &lt;head&gt; до первого кадра</li>
           <li>Дефолты чата и подпись LLM на этой карте берутся из профиля; секреты (API-ключи) в профиль не входят — env/SQLite как раньше</li>
           <li>Встроенный нейтральный профиль agctl: публичный OpenAI-совместимый провайдер по умолчанию, ключ только в .env хоста; профили организаций — отдельные приватные репо (make profile-fetch, make up PROFILE=&lt;id&gt;)</li>

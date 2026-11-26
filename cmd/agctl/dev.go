@@ -162,22 +162,29 @@ func devInit(h localmode.Home, args []string) error {
 	prof := fs.String("profile", "", "профиль организации: id из <корень>/profiles (agctl — встроенный нейтральный)")
 	profDir := fs.String("profile-dir", "", "явный каталог профиля вместо <корень>/profiles/<id>")
 	image := fs.String("image", "", "образ рабочего места (из реестра организации); пусто — по профилю")
-	flavor := fs.String("flavor", "", "вкус образа из профиля (web, 1c…)")
+	flavor := fs.String("flavor", "", "вкус образа: web, min или вкус профиля организации")
 	workdir := fs.String("workdir", "", "папка проектов по умолчанию (→ /workspace)")
 	nonInteractive := fs.Bool("yes", false, "не спрашивать (только флаги)")
 	noPull := fs.Bool("no-pull", false, "не тянуть образ сейчас (с --cli)")
 	cliWizard := fs.Bool("cli", false, "спросить образ и доступы в терминале (по умолчанию — в браузере, в лаунчере)")
 	addr := fs.String("addr", "", "адрес UI (только 127.0.0.1:PORT), по умолчанию "+localmode.DefaultAddr)
 	runtimeFlag := fs.String("runtime", "", "рантайм рабочего места: docker (по умолчанию) | sbx (Docker Sandboxes)")
+	hostPaths := fs.Bool("host-paths", runtime.GOOS != "windows", "пути как на хосте: папки проектов видны в контейнере по тем же путям (новый дом — включено, кроме Windows)")
 	_ = fs.Parse(args)
+	hostPathsSet := false
+	fs.Visit(func(f *flag.Flag) { hostPathsSet = hostPathsSet || f.Name == "host-paths" })
 
 	h = devInitHome(h, *prof, *profDir)
 	home := h.Dir
 	cfg, err := localmode.Load(home)
 	if errors.Is(err, localmode.ErrNotInitialized) {
-		cfg = &localmode.Config{}
+		// Новый дом: «пути как на хосте» по умолчанию (агент и вы видите
+		// одни и те же пути); прежние дома не меняются без явного флага.
+		cfg = &localmode.Config{HostPaths: *hostPaths && runtime.GOOS != "windows"}
 	} else if err != nil {
 		return err
+	} else if hostPathsSet {
+		cfg.HostPaths = *hostPaths && runtime.GOOS != "windows"
 	}
 	in := bufio.NewReader(os.Stdin)
 	ask := func(q, def string) string {
@@ -455,6 +462,7 @@ func devPrepareImage(ctx context.Context, p *profile.Data, target, flavor string
 	b := dockerrt.DevBuild{
 		Target: target, Flavor: flavor, BinDir: localmode.GuestDir(),
 		ImageFS: assets.Image, SkelFS: assets.DshSkel,
+		Version: version, Commit: commit, BuildDate: buildDate,
 		Log: func(m string) { logf("  " + m) },
 	}
 	if p != nil {
@@ -482,6 +490,9 @@ func devFlavorOf(cfg *localmode.Config, p *profile.Data, image string) string {
 	}
 	if strings.Contains(image, "-web") {
 		return "web"
+	}
+	if strings.HasSuffix(strings.SplitN(image[strings.LastIndex(image, "/")+1:], ":", 2)[0], "agctl-dsh-min") {
+		return "min"
 	}
 	if p != nil && p.View().FS != nil {
 		if ents, err := fs.ReadDir(p.View().FS, "image/flavors"); err == nil {

@@ -173,6 +173,26 @@ function RuntimeSwitch({ ui, note }: { ui: LocalUI; note: (m: string, err?: bool
           </button>
         ))}
       </div>
+      {ui.hostPathsAvailable && (
+        <label className="inline" title="Папки проектов видны в контейнере по тем же путям, что на этой машине: пути в сессиях агента открываются во внешнем редакторе, его команды можно выполнить на хосте. /workspace остаётся. Применяется при перезапуске места.">
+          <input
+            type="checkbox"
+            checked={!!ui.hostPaths}
+            disabled={ui.runtimeKind === "sbx"}
+            onChange={async (e) => {
+              try {
+                const on = e.target.checked;
+                await runtimeApi.hostPaths(on);
+                note(on ? "Пути как на хосте включены — перезапустите рабочие места" : "Пути как на хосте выключены — перезапустите рабочие места");
+              } catch (err: any) {
+                note(err.message, true);
+              }
+            }}
+          />{" "}
+          пути как на хосте — агент видит папки проектов по тем же путям, что и вы
+          {ui.runtimeKind === "sbx" && <span className="muted small"> (только для рантайма docker)</span>}
+        </label>
+      )}
     </Panel>
   );
 }

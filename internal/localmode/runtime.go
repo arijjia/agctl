@@ -34,6 +34,18 @@ func (c *Config) RuntimeKind() string {
 
 // SetRuntime — рантайм рабочего места в dev.yaml (выбор в лаунчере или
 // флагом --runtime). Данные рабочего места от рантайма не зависят.
+// SetHostPaths — включить или выключить «пути как на хосте» (config.yaml).
+func SetHostPaths(home string, on bool) error {
+	editMu.Lock()
+	defer editMu.Unlock()
+	cfg, err := Load(home)
+	if err != nil {
+		return err
+	}
+	cfg.HostPaths = on
+	return cfg.Save(home)
+}
+
 func SetRuntime(home, kind string) error {
 	kind, err := ParseRuntime(kind)
 	if err != nil {

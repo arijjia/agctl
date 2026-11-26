@@ -100,3 +100,7 @@ func (h *devHooks) Runtimes() []server.LocalRuntime {
 }
 
 func (h *devHooks) SetRuntimeKind(kind string) error { return localmode.SetRuntime(h.home, kind) }
+
+// HostPaths / SetHostPaths — «пути как на хосте» (config.yaml host_paths).
+func (h *devHooks) HostPaths() bool            { return h.cfg().HostPaths }
+func (h *devHooks) SetHostPaths(on bool) error { return localmode.SetHostPaths(h.home, on) }

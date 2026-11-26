@@ -184,6 +184,12 @@ fi
 if [ -n "$CID" ]; then
   docker exec "$CID" cat /workspace/demo-repo/README.md 2>/dev/null | grep -q hello \
     && pass "/workspace = родная папка" || fail "маунт папки"
+  # Пути как на хосте (новый дом — по умолчанию): та же папка по своему пути,
+  # процесс агента и HOME — там же.
+  docker exec "$CID" cat "$WORK/demo-repo/README.md" 2>/dev/null | grep -q hello \
+    && pass "пути как на хосте: папка по своему пути" || fail "папка по хостовому пути"
+  docker exec "$CID" sh -c "test \"\$HOME\" = '$WORK' && test \"\$(pwd)\" = '$WORK'" \
+    && pass "пути как на хосте: HOME и pwd = папка хоста" || fail "HOME/pwd: $(docker exec "$CID" sh -c 'echo $HOME $(pwd)')"
   docker exec "$CID" sh -c 'echo "$GITLAB_TOKEN|$GITLAB_HOST|$GITLAB_API_URL"' | grep -q "e2e-gitlab-token|gitlab.example.org|https://gitlab.example.org/api/v4" \
     && pass "env доступов + производные имена" || fail "env доступов"
   docker exec "$CID" sh -c 'test -z "${AGCTL_LLM_API_KEY:-}"' && pass "ключа LLM нет в env контейнера" || fail "ключ LLM в env"

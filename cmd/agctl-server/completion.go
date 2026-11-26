@@ -78,7 +78,7 @@ complete -c agctl-server -n '__fish_seen_subcommand_from serve' -l home -x -a '(
 complete -c agctl-server -n '__fish_seen_subcommand_from serve' -l addr -x -d 'адрес UI/API (host:port)'
 complete -c agctl-server -n '__fish_seen_subcommand_from serve' -l image -x -d 'тег серверного образа agctl-dsh-server'
 complete -c agctl-server -n '__fish_seen_subcommand_from serve' -l bin-dir -x -a '(__fish_complete_directories)' -d 'каталог linux-сборок для образа'
-complete -c agctl-server -n '__fish_seen_subcommand_from serve' -l profile -x -d 'профиль платформы (agctl, utmn, …)'
+complete -c agctl-server -n '__fish_seen_subcommand_from serve' -l profile -x -d 'профиль платформы: agctl или id профиля организации'
 complete -c agctl-server -n '__fish_seen_subcommand_from serve' -l profile-dir -x -a '(__fish_complete_directories)' -d 'каталог профиля с диска'
 complete -c agctl-server -n '__fish_seen_subcommand_from serve' -l llm-base-url -x -d 'базовый URL OpenAI-совместимого провайдера'
 complete -c agctl-server -n '__fish_seen_subcommand_from serve' -l llm-model -x -d 'модель чата по умолчанию'

@@ -22,6 +22,12 @@ func SetBuild(name, ver, com, date string) {
 // Version — версия сборки (метка контейнеров, диагностика дрейфа).
 func Version() string { return version }
 
+// Commit — коммит сборки (метка образа, собранного на месте).
+func Commit() string { return commit }
+
+// BuildDate — дата сборки (метка образа, собранного на месте).
+func BuildDate() string { return buildDate }
+
 // VersionLine — строка `<бинарь> version`.
 func VersionLine() string {
 	v := binName + " " + version

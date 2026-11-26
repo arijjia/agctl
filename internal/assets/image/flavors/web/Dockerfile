@@ -13,3 +13,6 @@ RUN pw="$(find "$NPM_MCP_CACHE/_npx" -path '*/node_modules/playwright/cli.js' | 
   && node "$pw" install --with-deps chromium \
   && rm -rf /var/lib/apt/lists/* \
   && ls /opt/ms-playwright
+# Метка вкуса поверх меток базового образа (версия dsh, сборка guest).
+LABEL io.agctl.image.variant="web" \
+      org.opencontainers.image.title="agctl-dsh-web"

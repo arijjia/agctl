@@ -549,7 +549,12 @@ window.__ModuleLoader__.load({
 					const sessions = sessionList.getSnapshot && sessionList.getSnapshot();
 					if (!workspaces || !sessions || workspaces.phase !== "ready" || sessions.phase !== "ready") return;
 					if ((sessions.ids || []).length > 0 || (workspaces.archivedSessionIds || []).length > 0) return;
-					const workspace = (workspaces.items || []).find((item) => item.path === "/workspace" || item.title === "Default workspace");
+					// воркспейс по умолчанию — по title (agctl держит «default-workspace» только у
+					// него: /workspace или, в режиме «пути как на хосте», хостовая папка
+					// проектов), иначе прежний /workspace
+					const items = workspaces.items || [];
+					const workspace = items.find((item) => item.title === "Default workspace" || item.title === "default-workspace")
+						|| items.find((item) => item.path === "/workspace");
 					if (!workspace) return;
 					started = true;
 					uiWorkspace.startSession(workspace.workspaceId);

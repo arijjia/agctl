@@ -99,10 +99,25 @@ export type LocalEntry = {
   value?: string;
   known: boolean;
 };
+// LocalImage — образ из каталога лаунчера: есть ли на машине и что внутри
+// (метки io.agctl.* образа; у собранных до меток — пусто, outdated).
+export type LocalImage = {
+  ref: string;
+  present: boolean;
+  flavor?: string;
+  dshVersion?: string;
+  guestRevision?: string;
+  guestApi?: number;
+  variant?: string;
+  built?: string;
+  sizeMb?: number;
+  outdated?: boolean;
+  note?: string;
+};
 export type LocalUI = {
   profile: string;
   workdir: string;
-  images: { ref: string; present: boolean; flavor?: string }[];
+  images: LocalImage[];
   current: string;
   secrets: LocalEntry[];
   storage: string;
@@ -110,6 +125,10 @@ export type LocalUI = {
   task: { state: string; image: string; log: string[]; error: string; restartNeeded: boolean };
   llmKeySet: boolean;
   runtimeKind?: string;
+  // hostPaths — «пути как на хосте»: папки проектов видны в контейнере по
+  // тем же путям, что на машине (config.yaml host_paths).
+  hostPaths?: boolean;
+  hostPathsAvailable?: boolean;
   runtimes?: RuntimeOption[];
 };
 export const local = {
@@ -137,6 +156,9 @@ export type Place = {
   revision: number;
   url: string;
   dshHome: string;
+  // dsh-home в явной папке владельца — git-репозиторий конфигурации агента.
+  dshHomeCustom?: boolean;
+  dshHomeGit?: { repo: boolean; commits: boolean; remote?: string; dirty: boolean; branch?: string };
   state: "running" | "sleeping" | "starting" | "building" | "error";
   task: PlaceTask;
   layout: { host: string; container: string }[];
@@ -151,10 +173,14 @@ export type FsListing = {
 };
 export const places = {
   list: () => req<{ places: Place[] }>("GET", "/api/local/ui/places"),
-  create: (p: { name: string; id?: string; image?: string; mounts: PlaceMount[] }) =>
+  create: (p: { name: string; id?: string; image?: string; mounts: PlaceMount[]; dshHome?: string }) =>
     req<Place>("POST", "/api/local/ui/places", p),
-  update: (id: string, p: { name: string; image?: string; mounts: PlaceMount[]; revision: number }) =>
+  update: (id: string, p: { name: string; image?: string; mounts: PlaceMount[]; revision: number; dshHome?: string }) =>
     req<Place>("PUT", `/api/local/ui/places/${encodeURIComponent(id)}`, p),
+  // clone — новое место с теми же папками и образом и копией dsh-home
+  // (сессии, скиллы, настройки); источник на время копии останавливается.
+  clone: (id: string, p: { name?: string; start?: boolean }) =>
+    req<Place>("POST", `/api/local/ui/places/${encodeURIComponent(id)}/clone`, p),
   remove: (id: string) => req<{ archived: string }>("DELETE", `/api/local/ui/places/${encodeURIComponent(id)}`),
   action: (id: string, action: "start" | "restart" | "stop") =>
     req<any>("POST", `/api/local/ui/places/${encodeURIComponent(id)}/${action}`),
@@ -304,4 +330,5 @@ export const pathsApi = { get: () => req<PathsReport>("GET", "/api/local/ui/path
 export type RuntimeOption = { id: string; title: string; available: boolean; detail?: string };
 export const runtimeApi = {
   set: (runtime: string) => req<{ runtime: string; restartNeeded: boolean }>("PUT", "/api/local/ui/runtime", { runtime }),
+  hostPaths: (enabled: boolean) => req<{ hostPaths: boolean }>("PUT", "/api/local/ui/hostpaths", { enabled }),
 };

@@ -22,6 +22,16 @@ IMG_GOARCH := $(subst aarch64,arm64,$(subst x86_64,amd64,$(IMG_ARCH)))
 # IMG_BUILD_ARGS="--build-arg DSH_VERSION=0.2.2-rc.6": собрать образ на
 # версии канала next, не двигая пин в Dockerfile (воркфлоу dsh-bump).
 IMG_BUILD_ARGS ?=
+# Метки образа (Dockerfile, последний слой): сборка agctl, дата — их читают
+# лаунчер и make img_list. Пин dsh — единственный, в Dockerfile полного
+# образа; минимальный образ и img_dsh берут его отсюда.
+IMG_LABEL_ARGS = --build-arg AGCTL_VERSION=$(VERSION) --build-arg AGCTL_COMMIT=$(COMMIT) --build-arg AGCTL_BUILD_DATE=$(BUILD_DATE)
+IMG_ARGS = $(IMG_LABEL_ARGS) $(IMG_BUILD_ARGS)
+DSH_PIN := $(shell sed -n 's/^ARG DSH_VERSION=\([0-9][^" ]*\).*/\1/p' internal/assets/image/Dockerfile | head -1)
+# Минимальный образ (Dockerfile.min): node, git, dsh и guest — «чистый» dsh.
+# IMG_VARIANTS= (пусто) — не собирать.
+IMG_MIN ?= agctl-dsh-min:0.2.2
+IMG_VARIANTS ?= min
 
 # Надстройка образа профиля организации (images.dockerfile в profile.yaml):
 # собирается поверх базовых вариантов как agctl-dsh-<id>:<тег> (локальные) и
@@ -44,7 +54,7 @@ define prepare_image_ctx
 	cp $(2) $(1)/agctl
 endef
 
-.PHONY: img_build img_build_amd64 img_build_nossh img_build_server img_build_server_amd64 img_profile
+.PHONY: img_build img_build_amd64 img_build_nossh img_build_server img_build_server_amd64 img_profile img_dsh img_list
 # В контекст кладём настоящий скелет DSH_HOME: COPY skel/ в Dockerfile требует
 # каталог даже пустым, а git пустые каталоги не хранит — на чистом клоне его
 # нет (падало из коробки: "/skel": not found). Скелет нужен entrypoint'у для
@@ -55,14 +65,17 @@ img_build:
 	GOOS=linux GOARCH=$(IMG_GOARCH) go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-linux-$(IMG_GOARCH) ./cmd/agctl-guest
 	GOOS=linux GOARCH=$(IMG_GOARCH) go build -tags server -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-server-linux-$(IMG_GOARCH) ./cmd/agctl-guest
 	$(call prepare_image_ctx,.build-img,dist/agctl-guest-linux-$(IMG_GOARCH))
-	docker build $(IMG_BUILD_ARGS) -t $(IMG) .build-img
-	docker build $(IMG_BUILD_ARGS) --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
+	docker build $(IMG_ARGS) -t $(IMG) .build-img
+	docker build $(IMG_ARGS) --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
 	$(call prepare_image_ctx,.build-img-server,dist/agctl-guest-server-linux-$(IMG_GOARCH))
-	docker build $(IMG_BUILD_ARGS) --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER) .build-img-server
-	docker build $(IMG_BUILD_ARGS) --build-arg AGCTL_NO_SSHD=1 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER_NOSSH) .build-img-server
+	docker build $(IMG_ARGS) --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER) .build-img-server
+	docker build $(IMG_ARGS) --build-arg AGCTL_NO_SSHD=1 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER_NOSSH) .build-img-server
 	@if echo " $(IMG_FLAVORS) " | grep -q ' web '; then \
 	  docker build --build-arg BASE=$(IMG) -t $(IMG_WEB) .build-img/flavors/web; fi
+	@if echo " $(IMG_VARIANTS) " | grep -q ' min '; then \
+	  docker build --build-arg DSH_VERSION=$(DSH_PIN) $(IMG_ARGS) -f .build-img/Dockerfile.min -t $(IMG_MIN) .build-img; fi
 	@$(MAKE) --no-print-directory img_profile
+	@$(MAKE) --no-print-directory img_list
 
 # PIP_INDEX_URL — зеркало PyPI (Nexus организации) для стадии wheels надстройки.
 PIP_INDEX_ARG = $(if $(PIP_INDEX_URL),--build-arg PIP_INDEX_URL=$(PIP_INDEX_URL))
@@ -88,27 +101,48 @@ img_profile:
 # img_build; бинарь берём из dist).
 ## img_build_nossh: пересобрать только agctl-dsh-nossh из уже готового .build-img
 img_build_nossh:
-	docker build $(IMG_BUILD_ARGS) --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
+	docker build $(IMG_ARGS) --build-arg AGCTL_NO_SSHD=1 -t $(IMG_NOSSH) .build-img
 
 ## img_build_server: пересобрать серверные agctl-dsh-server(-nossh): guest-бинарь `-tags server` (ax-runner, init-chat-home)
 img_build_server:
 	GOOS=linux GOARCH=$(IMG_GOARCH) go build -tags server -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-server-linux-$(IMG_GOARCH) ./cmd/agctl-guest
 	$(call prepare_image_ctx,.build-img-server,dist/agctl-guest-server-linux-$(IMG_GOARCH))
-	docker build $(IMG_BUILD_ARGS) --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER) .build-img-server
-	docker build $(IMG_BUILD_ARGS) --build-arg AGCTL_NO_SSHD=1 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER_NOSSH) .build-img-server
+	docker build $(IMG_ARGS) --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER) .build-img-server
+	docker build $(IMG_ARGS) --build-arg AGCTL_NO_SSHD=1 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER_NOSSH) .build-img-server
 
 ## img_build_amd64: agctl-dsh и agctl-dsh-server под linux/amd64 (например, с Apple Silicon для x86-сервера)
 img_build_amd64:
 	GOOS=linux GOARCH=amd64 go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-linux-amd64 ./cmd/agctl-guest
 	GOOS=linux GOARCH=amd64 go build -tags server -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-server-linux-amd64 ./cmd/agctl-guest
 	$(call prepare_image_ctx,.build-img,dist/agctl-guest-linux-amd64)
-	docker build $(IMG_BUILD_ARGS) --platform linux/amd64 -t $(IMG) .build-img
+	docker build $(IMG_ARGS) --platform linux/amd64 -t $(IMG) .build-img
 	$(call prepare_image_ctx,.build-img-server,dist/agctl-guest-server-linux-amd64)
-	docker build $(IMG_BUILD_ARGS) --platform linux/amd64 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER) .build-img-server
+	docker build $(IMG_ARGS) --platform linux/amd64 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER) .build-img-server
 
 ## img_build_server_amd64: пересобрать только серверные agctl-dsh-server(-nossh) под linux/amd64
 img_build_server_amd64:
 	GOOS=linux GOARCH=amd64 go build -tags server -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-server-linux-amd64 ./cmd/agctl-guest
 	$(call prepare_image_ctx,.build-img-server,dist/agctl-guest-server-linux-amd64)
-	docker build $(IMG_BUILD_ARGS) --platform linux/amd64 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER) .build-img-server
-	docker build $(IMG_BUILD_ARGS) --platform linux/amd64 --build-arg AGCTL_NO_SSHD=1 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER_NOSSH) .build-img-server
+	docker build $(IMG_ARGS) --platform linux/amd64 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER) .build-img-server
+	docker build $(IMG_ARGS) --platform linux/amd64 --build-arg AGCTL_NO_SSHD=1 --build-arg GUEST_FLAVOR=server -t $(IMG_SERVER_NOSSH) .build-img-server
+
+# ── версии dsh рядом с пином: тег образа = версия dsh ────────────────────────
+# Канал альфы/next проверяется отдельным образом, пин в Dockerfile не
+# двигается: make img_dsh DSH=0.2.3-alpha.2 → agctl-dsh:0.2.3-alpha.2 (и
+# agctl-dsh-min:<DSH>, если IMG_VARIANTS содержит min). Тот же тег лаунчер
+# понимает сам: образ agctl-dsh:<версия dsh>, которого нет, он собирает на
+# этой версии. Переключение места между тегами — апгрейд и откат dsh.
+DSH ?=
+## img_dsh: образ рабочего места на другой версии dsh: make img_dsh DSH=0.2.3-alpha.2 → agctl-dsh:<DSH> (+ agctl-dsh-min:<DSH>)
+img_dsh:
+	@test -n "$(DSH)" || { echo 'usage: make img_dsh DSH=<версия dsh, например 0.2.3-alpha.2>'; exit 1; }
+	GOOS=linux GOARCH=$(IMG_GOARCH) go build -trimpath -ldflags '$(LDFLAGS)' -o dist/agctl-guest-linux-$(IMG_GOARCH) ./cmd/agctl-guest
+	$(call prepare_image_ctx,.build-img,dist/agctl-guest-linux-$(IMG_GOARCH))
+	docker build $(IMG_ARGS) --build-arg DSH_VERSION=$(DSH) -t agctl-dsh:$(DSH) .build-img
+	@if echo " $(IMG_VARIANTS) " | grep -q ' min '; then \
+	  docker build $(IMG_ARGS) --build-arg DSH_VERSION=$(DSH) -f .build-img/Dockerfile.min -t agctl-dsh-min:$(DSH) .build-img; fi
+	@$(MAKE) --no-print-directory img_list
+
+## img_list: образы рабочего места на этой машине: версия dsh, сборка guest, уровень API, дата, размер
+img_list:
+	@sh bin/img-list.sh

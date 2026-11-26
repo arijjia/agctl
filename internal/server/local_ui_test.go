@@ -20,6 +20,21 @@ type fakeHooks struct {
 	image   string
 	present map[string]bool
 	built   []string
+	// hostPaths — config.yaml host_paths («пути как на хосте»).
+	hostPaths bool
+}
+
+func (f *fakeHooks) HostPaths() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.hostPaths
+}
+
+func (f *fakeHooks) SetHostPaths(on bool) error {
+	f.mu.Lock()
+	f.hostPaths = on
+	f.mu.Unlock()
+	return nil
 }
 
 func newFakeHooks() *fakeHooks {

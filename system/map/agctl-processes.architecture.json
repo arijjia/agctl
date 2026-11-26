@@ -918,7 +918,7 @@
       "title": "White-label: ядро и профиль",
       "items": [
         "Ядро agctl — универсальное: ни одного литерала организации в коде; проверяет guard-тест TestCoreIsOrganizationFree (internal/profile/guard_test.go)",
-        "Кастомизация — данные-профиль: profile.yaml + assets/logo.png в отдельном репо (agctl-profile-utmn), приватность не зависит от ядра",
+        "Кастомизация — данные-профиль: profile.yaml + assets/logo.png в отдельном репо (agctl-profile-<id>), приватность не зависит от ядра",
         "agctl-server serve читает профиль при старте (--profile/--profile-dir, make profile-fetch) и инжектит window.__AGCTL_BRAND__ в <head> до первого кадра",
         "Дефолты чата и подпись LLM на этой карте берутся из профиля; секреты (API-ключи) в профиль не входят — env/SQLite как раньше",
         "Встроенный нейтральный профиль agctl: публичный OpenAI-совместимый провайдер по умолчанию, ключ только в .env хоста; профили организаций — отдельные приватные репо (make profile-fetch, make up PROFILE=<id>)"

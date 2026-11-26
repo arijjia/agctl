@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/arijjia/agctl/internal/assets"
 	"io"
 	"io/fs"
 	"log"
@@ -20,6 +21,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -44,6 +46,8 @@ type Config struct {
 	Home        string // local Docker adapter storage root; K8s adapters use PVCs instead
 	DshSkel     fs.FS  // embedded DSH home seed for lazy Chat runtimes
 	Version     string // версия agctl (метка контейнера для диагностики дрейфа)
+	Commit      string // сборка agctl (метка образа io.agctl.guest.revision при сборке на месте)
+	BuildDate   string // дата сборки agctl (метка образа org.opencontainers.image.created)
 
 	// Надстройка организации (профиль images.dockerfile): Image собирается
 	// из Overlay (Dockerfile = OverlayDockerfile) с build-arg BASE=BaseImage,
@@ -176,6 +180,15 @@ func (rt *Runtime) buildOverlay(ctx context.Context) error {
 // buildBase собирает базовый образ рабочего места из встроенного контекста
 // под тегом tag (вариант guest — по cfg.GuestServer).
 func (rt *Runtime) buildBase(ctx context.Context, tag string) error {
+	return rt.buildBaseVariant(ctx, tag, "")
+}
+
+// buildBaseVariant — базовый образ из встроенного контекста: variant ""
+// — полный (Dockerfile), "min" — минимальный (Dockerfile.min). Тег-версия
+// dsh (agctl-dsh:0.2.3-alpha.2) собирает образ на этой версии dsh;
+// минимальному без такого тега передаётся пин из Dockerfile. Метки образа
+// (сборка agctl, дата) — как у make img_build.
+func (rt *Runtime) buildBaseVariant(ctx context.Context, tag, variant string) error {
 	var bin string
 	var err error
 	if rt.cfg.GuestServer {
@@ -211,12 +224,38 @@ func (rt *Runtime) buildBase(ctx context.Context, tag string) error {
 	if err := os.Chmod(dst, 0o755); err != nil {
 		return err
 	}
-	args := map[string]*string{}
+	args := rt.labelArgs()
 	if rt.cfg.GuestServer {
 		server := "server"
 		args["GUEST_FLAVOR"] = &server
 	}
-	return rt.buildContext(ctx, ctxDir, tag, "Dockerfile", args)
+	dsh := assets.DshVersionFromTag(imageTag(tag))
+	dockerfile := "Dockerfile"
+	if variant == "min" {
+		dockerfile = "Dockerfile.min"
+		if dsh == "" {
+			dsh = assets.PinnedDshVersion()
+		}
+	}
+	if dsh != "" {
+		args["DSH_VERSION"] = &dsh
+	}
+	return rt.buildContext(ctx, ctxDir, tag, dockerfile, args)
+}
+
+// labelArgs — build-arg'и меток образа: версия и сборка agctl, дата.
+func (rt *Runtime) labelArgs() map[string]*string {
+	args := map[string]*string{}
+	set := func(k, v string) {
+		if v != "" {
+			v := v
+			args[k] = &v
+		}
+	}
+	set("AGCTL_VERSION", rt.cfg.Version)
+	set("AGCTL_COMMIT", rt.cfg.Commit)
+	set("AGCTL_BUILD_DATE", rt.cfg.BuildDate)
+	return args
 }
 
 // buildContext — docker build каталога ctxDir под тегом tag.
@@ -424,8 +463,12 @@ type StartResult struct {
 // SSH-канал (ключ передаётся env в контейнер, порт 2222 публикуется на loopback).
 type StartOpts struct {
 	// ExtraBinds — доп. bind-маунты "host:/workspace/<имя>" (несколько папок
-	// рабочего места локального режима).
-	ExtraBinds  []string
+	// рабочего места локального режима) и "host:host" (пути как на хосте).
+	ExtraBinds []string
+	// WorkingDir — рабочий каталог процесса контейнера ("" — WORKDIR образа).
+	WorkingDir string
+	// Env — переменные, перекрывающие базовые (HOME и т.п.) и дополняющие.
+	Env         []string
 	HostPort    int
 	SSHPubKey   string   // пусто = sshd не поднимаем
 	SSHHostPort int      // 0 = не публиковать (осмысленно только с SSHPubKey)
@@ -478,7 +521,7 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		log.Printf("[dockerrt] %s: %v — для этого LLM endpoint нет DNS-пина (проверьте VPN)", wsID, err)
 	}
 	extraHosts = append(extraHosts, pins...)
-	env := containerEnv(wsID, opts.DevEnv)
+	env := overrideEnv(containerEnv(wsID, opts.DevEnv), opts.Env)
 	portBindings := network.PortMap{
 		network.MustParsePort("3080/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: fmt.Sprint(opts.HostPort)}},
 	}
@@ -493,8 +536,9 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 	cfg := client.ContainerCreateOptions{
 		Name: name,
 		Config: &container.Config{
-			Image: desired,
-			Env:   env,
+			Image:      desired,
+			Env:        env,
+			WorkingDir: opts.WorkingDir,
 			Labels: map[string]string{
 				labelWorkspace:    wsID,
 				labelVersion:      rt.cfg.Version,
@@ -941,6 +985,64 @@ func FreePort() (int, error) {
 // npm-скрипты агента. dsh читает ключи из DSH_HOME/.credentials.yaml. Файл
 // агент технически прочитать может (его процессы — тот же пользователь), это
 // задокументированное ограничение dsh-credentials-local.
+// overrideEnv — env с заменой одноимённых переменных из extra (KEY=VALUE).
+func overrideEnv(env, extra []string) []string {
+	if len(extra) == 0 {
+		return env
+	}
+	keys := map[string]bool{}
+	for _, kv := range extra {
+		if i := strings.IndexByte(kv, '='); i > 0 {
+			keys[kv[:i]] = true
+		}
+	}
+	out := make([]string, 0, len(env)+len(extra))
+	for _, kv := range env {
+		if i := strings.IndexByte(kv, '='); i > 0 && keys[kv[:i]] {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return append(out, extra...)
+}
+
+// reservedContainerPaths — каталоги образа, поверх которых (и внутри
+// которых) папку хоста по её пути не монтируем (режим «пути как на хосте»).
+var reservedContainerPaths = []string{
+	"/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/root", "/run", "/sbin",
+	"/sys", "/usr", "/workspace", "/home/dsh",
+	"/opt/dsh", "/opt/dsh-skel", "/opt/npm-mcp", "/opt/ms-playwright",
+	"/tmp/npm-cache", "/tmp/cache",
+	"/var/lib", "/var/run", "/var/cache", "/var/log", "/var/spool", "/var/tmp",
+}
+
+// reservedContainerRoots — корни, которые нельзя закрыть папкой целиком
+// (подкаталоги — можно: /tmp/proj, /home/user/src, /var/folders/… macOS).
+var reservedContainerRoots = []string{"/home", "/media", "/mnt", "/opt", "/srv", "/tmp", "/var"}
+
+// HostPathMountable — папку хоста можно смонтировать в контейнер по тому
+// же пути: абсолютный POSIX-путь (не C:\…) вне системных каталогов образа.
+func HostPathMountable(p string) bool {
+	if !strings.HasPrefix(p, "/") || strings.ContainsAny(p, ":\\") {
+		return false
+	}
+	clean := path.Clean(p)
+	if clean == "/" {
+		return false
+	}
+	for _, r := range reservedContainerPaths {
+		if clean == r || strings.HasPrefix(clean, r+"/") {
+			return false
+		}
+	}
+	for _, r := range reservedContainerRoots {
+		if clean == r {
+			return false
+		}
+	}
+	return true
+}
+
 func containerEnv(wsID string, devEnv []string) []string {
 	env := []string{
 		"AGCTL_WS_ID=" + wsID,

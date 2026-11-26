@@ -38,6 +38,9 @@ func (s *Server) projectDshHome(userID int64) string { return s.dshHomeFor(userK
 // dshHomeFor — DSH_HOME слота: у каждого рабочего места свой (сессии,
 // скиллы и настройки dsh разных мест не смешиваются).
 func (s *Server) dshHomeFor(key chatKey) string {
+	if custom := s.customDshHome(key); custom != "" {
+		return custom
+	}
 	return filepath.Join(s.cfg.Home, "chats", chatStorageID(key.uid, key.slot), "dsh-home")
 }
 

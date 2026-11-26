@@ -167,3 +167,66 @@ test("server mode never removes registrations", async (t) => {
 	assert.deepEqual(registry.deleted, []);
 	assert.ok([...registry.items.values()].some((w) => w.path === stale));
 });
+
+test("host paths mode: session-less /workspace aliases dropped, host folders registered", async (t) => {
+	const root = await workspaceRoot(t); // stands for the host path of the projects folder
+	const created = [];
+	const deleted = [];
+	const items = [
+		{ id: "ws-alias-empty", path: "/workspace/1", sessionIds: [] },
+		{ id: "ws-alias-history", path: "/workspace/2", sessionIds: ["s1"] },
+		{ id: "ws-default", path: "/workspace", sessionIds: [] },
+	];
+	const registry = {
+		list: () => items.filter((w) => !deleted.includes(w.id)),
+		async delete(id) {
+			deleted.push(id);
+		},
+		async resolveByPath(dir) {
+			return items.find((w) => w.path === dir);
+		},
+		async create(dir) {
+			created.push(dir);
+			return { id: `ws-${dir}`, path: dir };
+		},
+	};
+	const old = { root: process.env.AGCTL_WORKSPACE_ROOT, local: process.env.AGCTL_LOCAL_MODE };
+	process.env.AGCTL_WORKSPACE_ROOT = root;
+	process.env.AGCTL_LOCAL_MODE = "1";
+	try {
+		apply({ workspaceRegistry: registry, logger: { info: () => {} } });
+		await settle();
+	} finally {
+		for (const [k, v] of [["AGCTL_WORKSPACE_ROOT", old.root], ["AGCTL_LOCAL_MODE", old.local]]) {
+			if (v === undefined) delete process.env[k];
+			else process.env[k] = v;
+		}
+	}
+	assert.deepEqual(deleted, ["ws-alias-empty"], "only the alias without sessions is dropped; /workspace itself stays");
+	assert.deepEqual(created.sort(), [path.join(root, "1"), path.join(root, "2")]);
+});
+
+test("host paths mode with several folders: AGCTL_WORKSPACE_DIRS registered as is", async (t) => {
+	const root = await workspaceRoot(t);
+	const dirs = [path.join(root, "1"), path.join(root, "2")];
+	const created = [];
+	const registry = {
+		async resolveByPath() {
+			return undefined;
+		},
+		async create(dir) {
+			created.push(dir);
+			return { id: `ws-${dir}`, path: dir };
+		},
+	};
+	const old = process.env.AGCTL_WORKSPACE_DIRS;
+	process.env.AGCTL_WORKSPACE_DIRS = dirs.join(":");
+	try {
+		apply({ workspaceRegistry: registry, logger: { info: () => {} } });
+		await settle();
+	} finally {
+		if (old === undefined) delete process.env.AGCTL_WORKSPACE_DIRS;
+		else process.env.AGCTL_WORKSPACE_DIRS = old;
+	}
+	assert.deepEqual(created, dirs, "each place folder is a workspace; /workspace is not scanned");
+});
