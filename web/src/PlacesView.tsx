@@ -343,7 +343,7 @@ function PlaceCard({
       </div>
       {p.task.restartNeeded && (
         <div className="notice small">
-          Папки, образ или доступы изменены — место работает на старых.
+          Папки, образ, доступы или пресеты изменены — место работает на старых.
           <button className="primary small" disabled={busy} onClick={() => act("restart")}>
             Перезапустить
           </button>

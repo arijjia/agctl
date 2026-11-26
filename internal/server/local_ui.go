@@ -347,12 +347,11 @@ func (s *Server) startLocalRuntime(restart bool) bool {
 			t.mu.Unlock()
 		}
 		t.logf("запускаю рабочее место на " + ref)
-		if _, err := s.ensureChat(owner, 0); err != nil {
+		// Пресеты основного места кладутся в dsh-home до entrypoint (local_presets.go).
+		if err := s.ensureChatWithPresets(owner, 0, t.logf); err != nil {
 			fail(err)
 			return
 		}
-		// Пресеты основного места накатываются при старте (local_presets.go).
-		s.applyAllPresetsAt(owner, 0)
 		t.logf("рабочее место запущено")
 		t.mu.Lock()
 		t.state, t.pending = "idle", false

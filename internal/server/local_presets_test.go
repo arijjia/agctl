@@ -193,3 +193,54 @@ func TestLocalFSDialog(t *testing.T) {
 		t.Fatalf("сбой диалога: %d", code)
 	}
 }
+
+// dsh видит пресеты только со старта (entrypoint собирает их в --patch):
+// пресет нового места ложится в dsh-home до первого старта dsh — место
+// само перезапускается один раз; пресет для работающего места выставляет
+// «нужен перезапуск», перезапуск его снимает без лишних рестартов.
+func TestLocalPresetsRestartSemantics(t *testing.T) {
+	env, _ := newLocalUIEnv(t)
+	c := loginOwner(t, env)
+	owner := env.srv.local.ownerID
+	rid := env.srv.chatRuntimeID(owner, 0)
+
+	if code, body := env.do(c, "POST", "/api/local/ui/presets", map[string]any{
+		"name": "poisk", "mcp": []string{"ddg"}, "places": []string{"main"},
+	}); code != http.StatusCreated {
+		t.Fatalf("пресет до старта: %d %s", code, body)
+	}
+	if code, body := env.do(c, "POST", "/api/local/ui/start", nil); code != http.StatusAccepted {
+		t.Fatalf("старт: %d %s", code, body)
+	}
+	snap := env.waitTask("idle")
+	if got := env.rt.chatStarts[rid]; got != 2 {
+		t.Fatalf("первый старт с пресетом: стартов %d, нужно 2 (пресет лёг после посева dsh-home)", got)
+	}
+	if !strings.Contains(strings.Join(snap["log"].([]string), "\n"), "перезапускаю, чтобы dsh их увидел") {
+		t.Fatalf("лог задачи: %v", snap["log"])
+	}
+	if snap["restartNeeded"] != false {
+		t.Fatalf("после старта перезапуск не нужен: %v", snap)
+	}
+
+	// работающее место + новый пресет → нужен перезапуск
+	if code, body := env.do(c, "POST", "/api/local/ui/presets", map[string]any{
+		"name": "docs", "mcp": []string{"context7"}, "places": []string{"main"},
+	}); code != http.StatusCreated {
+		t.Fatalf("второй пресет: %d %s", code, body)
+	}
+	if snap := env.srv.local.task.snapshot(); snap["restartNeeded"] != true {
+		t.Fatalf("restartNeeded не выставлен после пресета: %v", snap)
+	}
+	if code, _ := env.do(c, "POST", "/api/local/ui/restart", nil); code != http.StatusAccepted {
+		t.Fatalf("restart: %d", code)
+	}
+	snap = env.waitTask("idle")
+	if snap["restartNeeded"] != false {
+		t.Fatalf("restartNeeded не снят: %v", snap)
+	}
+	// dsh-home уже засеян — пресеты легли до старта, лишнего рестарта нет
+	if got := env.rt.chatStarts[rid]; got != 3 {
+		t.Fatalf("перезапуск с засеянным dsh-home: стартов %d, нужно 3", got)
+	}
+}
