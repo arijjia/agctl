@@ -184,6 +184,8 @@ fi
 if [ -n "$CID" ]; then
   docker exec "$CID" cat /workspace/demo-repo/README.md 2>/dev/null | grep -q hello \
     && pass "/workspace = родная папка" || fail "маунт папки"
+  docker logs "$CID" 2>&1 | grep -q 'prepare: dsh' \
+    && pass "entrypoint: метка версии dsh-home (agctl prepare)" || fail "нет строки agctl prepare в логе контейнера"
   # Пути как на хосте (новый дом — по умолчанию): та же папка по своему пути,
   # процесс агента и HOME — там же.
   docker exec "$CID" cat "$WORK/demo-repo/README.md" 2>/dev/null | grep -q hello \

@@ -38,7 +38,8 @@ var help = cli.Usage{
 	Sections: []cli.UsageSection{{
 		Title: "Команды",
 		Rows: append(append(modeRows(),
-			cli.UsageRow{Name: "presets-sync", Desc: []string{"собрать патч пресетов agctl для dsh (entrypoint образа)"}}),
+			cli.UsageRow{Name: "presets-sync", Desc: []string{"собрать патч пресетов agctl для dsh (entrypoint образа)"}},
+			cli.UsageRow{Name: "prepare", Desc: []string{"метка версий dsh-home, предупреждение об откате dsh (entrypoint образа)"}}),
 			cli.UsageRow{Name: "version", Desc: []string{"версия и сборка"}},
 			cli.UsageRow{Name: "help", Desc: []string{"эта справка"}},
 		),
@@ -57,6 +58,8 @@ func main() {
 		cmdBridge(os.Args[2:])
 	case "presets-sync":
 		cmdPresetsSync(os.Args[2:])
+	case "prepare":
+		cmdPrepare(os.Args[2:])
 	case "ax-runner":
 		cmdAXRunner(os.Args[2:])
 	case "init-chat-home": // initContainer пода k8s (k8srt), серверный образ

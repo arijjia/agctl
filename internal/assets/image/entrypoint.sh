@@ -69,6 +69,12 @@ if [ -n "$LAUNCHER" ] && [ -d "$HOME" ] && [ -z "${DSH_PERMISSION_MODE:-}" ]; th
   fi
 fi
 
+# Версии dsh-home: какой dsh писал его прежде — апгрейд в лог, откат с
+# предупреждением (guest; старый guest без команды — молча дальше).
+if agctl help 2>&1 | grep -q prepare; then
+  agctl prepare 2>&1 | sed 's/^/[agctl-entrypoint] /' || true
+fi
+
 # Пресеты agctl (лаунчер, MCP-наборы воркспейсов): dsh читает пресеты только
 # как строки-декларации в патче, каталог .agent-presets он не сканирует.
 # guest собирает патч-слой из $DSH_HOME/.agent-presets/agctl-*/ поверх состава
