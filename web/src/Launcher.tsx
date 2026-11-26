@@ -52,7 +52,7 @@ export default function Launcher({ user }: { user: User }) {
   }, []);
   useEffect(load, [load]);
 
-  const slotOp = async (slot: number, action: "start" | "stop" | "activate", image?: string) => {
+  const slotOp = async (slot: number, action: "start" | "stop" | "activate" | "image", image?: string) => {
     setErr("");
     setMsg("");
     setBusySlot(slot);
