@@ -363,6 +363,7 @@ func (s *Server) startLocalRuntime(restart bool) bool {
 			fail(err)
 			return
 		}
+		s.commitDshHomeIfNew(userKey(owner), t.logf)
 		t.logf("рабочее место запущено")
 		t.mu.Lock()
 		t.state, t.pending = "idle", false

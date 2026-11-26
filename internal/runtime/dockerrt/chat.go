@@ -23,6 +23,12 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	}
 	base := filepath.Join(rt.cfg.Home, "chats", spec.StorageID)
 	dshHome, work := filepath.Join(base, "dsh-home"), filepath.Join(base, "work")
+	if spec.DshHome != "" {
+		if !filepath.IsAbs(spec.DshHome) {
+			return agctlrt.ChatHandle{}, fmt.Errorf("dockerrt: dsh-home must be absolute: %q", spec.DshHome)
+		}
+		dshHome = spec.DshHome
+	}
 	if spec.WorkDir != "" {
 		// Локальный режим: /workspace — родная папка проектов разработчика.
 		if !filepath.IsAbs(spec.WorkDir) {

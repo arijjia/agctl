@@ -105,6 +105,9 @@ func (f *fakeRuntime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (ag
 	f.chatSpecs[spec.RuntimeID] = spec
 	base := filepath.Join(f.chatHome, "chats", spec.StorageID)
 	dshHome, work := filepath.Join(base, "dsh-home"), filepath.Join(base, "work")
+	if spec.DshHome != "" { // явная папка dsh-home — как у dockerrt
+		dshHome = spec.DshHome
+	}
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		return agctlrt.ChatHandle{}, err
 	}

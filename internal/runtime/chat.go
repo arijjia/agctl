@@ -47,6 +47,10 @@ type ChatSpec struct {
 	// пользователя точки монтирования не создаются). Взаимоисключимо с
 	// WorkDir. Только Docker-бэкенд.
 	Mounts []Mount
+	// DshHome — явная папка dsh-home на хосте (локальный режим: например,
+	// git-репозиторий конфигурации агента, общий для нескольких мест и
+	// машин). Пусто — <дом>/chats/<StorageID>/dsh-home. Docker и sbx.
+	DshHome string
 }
 
 // Mount — папка хоста, подключаемая в /workspace/<Name> рабочего места.

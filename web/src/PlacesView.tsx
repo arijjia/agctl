@@ -221,6 +221,9 @@ function PlaceEditor({
   const [name, setName] = useState(place?.name || "");
   const [mounts, setMounts] = useState<PlaceMount[]>(place?.mounts || []);
   const [image, setImage] = useState(place?.image || ui.current);
+  // dsh-home: "" — в доме agctl; путь — своя папка (git-репозиторий конфигурации)
+  const [dshHome, setDshHome] = useState(place?.dshHomeCustom ? place.dshHome : "");
+  const [dshCustom, setDshCustom] = useState(!!place?.dshHomeCustom);
   const [startNow, setStartNow] = useState(!place);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -230,11 +233,13 @@ function PlaceEditor({
     try {
       // пустые строки — не папки; у нового места пустой список = дефолт сервера
       const clean = mounts.filter((m) => m.host.trim() !== "");
+      const home = dshCustom ? dshHome.trim() : "";
+      if (dshCustom && !home) throw new Error("укажите папку dsh-home или выберите «в доме agctl»");
       if (place) {
-        await places.update(place.id, { name, image, mounts: clean, revision: place.revision });
+        await places.update(place.id, { name, image, mounts: clean, revision: place.revision, dshHome: home });
         onSaved(`«${name}»: сохранено` + (place.state === "running" ? " — перезапустите, чтобы применить" : ""));
       } else {
-        const p = await places.create({ name, image, mounts: clean });
+        const p = await places.create({ name, image, mounts: clean, dshHome: home || undefined });
         if (startNow) await places.action(p.id, "start");
         onSaved(`«${name}»: создано` + (startNow ? ", запускаю…" : ""));
       }
@@ -295,6 +300,44 @@ function PlaceEditor({
             </label>
           ))}
         </div>
+        <h3 className="small-title">dsh-home — сессии, скиллы, пресеты, настройки агента</h3>
+        <label className="inline">
+          <input type="radio" name="dsh-home" checked={!dshCustom} onChange={() => setDshCustom(false)} /> в доме agctl
+          (по умолчанию)
+        </label>
+        <label className="inline">
+          <input type="radio" name="dsh-home" checked={dshCustom} onChange={() => setDshCustom(true)} /> своя папка — станет
+          git-репозиторием конфигурации агента
+        </label>
+        {dshCustom && (
+          <div className="mount-row">
+            <input
+              className="mono grow"
+              value={dshHome}
+              placeholder="например, ~/src/ag_dsh"
+              onChange={(e) => setDshHome(e.target.value)}
+            />
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const r = await places.fsDialog();
+                  if (!r.cancelled && r.path) setDshHome(r.path);
+                } catch (e: any) {
+                  setErr(e.message);
+                }
+              }}
+            >
+              Выбрать…
+            </button>
+          </div>
+        )}
+        {dshCustom && (
+          <p className="muted small">
+            Папки может не быть — создастся. Секреты, сессии и кэши в git не попадают (.gitignore); первый коммит —
+            после первого запуска. Залейте репозиторий на свой Git и подключайте его к другим местам и машинам.
+          </p>
+        )}
         {!place && (
           <label className="inline">
             <input type="checkbox" checked={startNow} onChange={(e) => setStartNow(e.target.checked)} /> запустить сразу
@@ -336,6 +379,21 @@ function PlaceCard({
     try {
       await places.action(p.id, a);
       note(a === "stop" ? `«${p.name}» остановлено, данные сохранены` : `«${p.name}»: готовлю…`);
+    } catch (e: any) {
+      note(e.message, true);
+    }
+  };
+  const clone = async () => {
+    const name = prompt(
+      `Клон «${p.name}»: новое место с теми же папками и образом и копией dsh-home (сессии, скиллы, настройки). ` +
+        (running ? "Место остановится на время копии и запустится снова. " : "") +
+        "Название клона:",
+      `${p.name} (клон)`,
+    );
+    if (name === null) return;
+    try {
+      const c = await places.clone(p.id, { name });
+      note(`«${c.name}» — клон «${p.name}» готов; запустите его, чтобы пробовать без риска для исходного`);
     } catch (e: any) {
       note(e.message, true);
     }
@@ -390,8 +448,20 @@ function PlaceCard({
         ))}
         {!compact && (
           <div className="mount-row">
-            <span className="small muted grow">dsh-home (сессии, скиллы, настройки):</span>
+            <span className="small muted grow" title={p.dshHome}>
+              dsh-home (сессии, скиллы, настройки){p.dshHomeCustom ? <>: <span className="mono">{p.dshHome}</span></> : ":"}{" "}
+              {p.dshHomeGit?.repo && <span className="badge">git{p.dshHomeGit.branch ? ` · ${p.dshHomeGit.branch}` : ""}</span>}{" "}
+              {p.dshHomeGit?.repo && p.dshHomeGit.dirty && <span className="badge state-exited">есть изменения</span>}
+            </span>
             <RevealButtons path={p.dshHome} note={note} />
+          </div>
+        )}
+        {!compact && p.dshHomeGit?.repo && p.dshHomeGit.commits && !p.dshHomeGit.remote && (
+          <div className="notice small">
+            dsh-home — git-репозиторий без удалённого: залейте его на свой Git, чтобы подключать к другим местам:{" "}
+            <span className="mono">
+              git -C {p.dshHome} remote add origin &lt;url&gt; &amp;&amp; git -C {p.dshHome} push -u origin main
+            </span>
           </div>
         )}
       </div>
@@ -419,6 +489,9 @@ function PlaceCard({
             <span className="spacer" />
             <button className="ghost" disabled={busy} onClick={onEdit}>
               Изменить
+            </button>
+            <button className="ghost" disabled={busy} onClick={clone} title="Копия места с dsh-home: пробы новой версии образа, плагинов, ручной бэкап">
+              Клонировать
             </button>
             {!p.main && (
               <button className="ghost danger" disabled={busy} onClick={del}>

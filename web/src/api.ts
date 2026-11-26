@@ -152,6 +152,9 @@ export type Place = {
   revision: number;
   url: string;
   dshHome: string;
+  // dsh-home в явной папке владельца — git-репозиторий конфигурации агента.
+  dshHomeCustom?: boolean;
+  dshHomeGit?: { repo: boolean; commits: boolean; remote?: string; dirty: boolean; branch?: string };
   state: "running" | "sleeping" | "starting" | "building" | "error";
   task: PlaceTask;
   layout: { host: string; container: string }[];
@@ -166,10 +169,14 @@ export type FsListing = {
 };
 export const places = {
   list: () => req<{ places: Place[] }>("GET", "/api/local/ui/places"),
-  create: (p: { name: string; id?: string; image?: string; mounts: PlaceMount[] }) =>
+  create: (p: { name: string; id?: string; image?: string; mounts: PlaceMount[]; dshHome?: string }) =>
     req<Place>("POST", "/api/local/ui/places", p),
-  update: (id: string, p: { name: string; image?: string; mounts: PlaceMount[]; revision: number }) =>
+  update: (id: string, p: { name: string; image?: string; mounts: PlaceMount[]; revision: number; dshHome?: string }) =>
     req<Place>("PUT", `/api/local/ui/places/${encodeURIComponent(id)}`, p),
+  // clone — новое место с теми же папками и образом и копией dsh-home
+  // (сессии, скиллы, настройки); источник на время копии останавливается.
+  clone: (id: string, p: { name?: string; start?: boolean }) =>
+    req<Place>("POST", `/api/local/ui/places/${encodeURIComponent(id)}/clone`, p),
   remove: (id: string) => req<{ archived: string }>("DELETE", `/api/local/ui/places/${encodeURIComponent(id)}`),
   action: (id: string, action: "start" | "restart" | "stop") =>
     req<any>("POST", `/api/local/ui/places/${encodeURIComponent(id)}/${action}`),

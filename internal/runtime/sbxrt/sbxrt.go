@@ -199,6 +199,9 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	}
 	base := filepath.Join(rt.cfg.Home, "chats", spec.StorageID)
 	dshHome, work, primary := filepath.Join(base, "dsh-home"), filepath.Join(base, "work"), filepath.Join(base, "sbx")
+	if spec.DshHome != "" && filepath.IsAbs(spec.DshHome) {
+		dshHome = spec.DshHome
+	}
 	if spec.WorkDir != "" {
 		if len(spec.Mounts) > 0 {
 			return fail(errors.New("sbxrt: WorkDir and Mounts are mutually exclusive"))

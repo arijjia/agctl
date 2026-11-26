@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/arijjia/agctl/internal/localmode"
+	"github.com/arijjia/agctl/internal/provision"
 	agctlrt "github.com/arijjia/agctl/internal/runtime"
 	"github.com/arijjia/agctl/internal/store"
 )
@@ -215,18 +216,22 @@ func (s *Server) registerLocalPlaceRoutes(mux *http.ServeMux) {
 
 // placeView — рабочее место в ответах API.
 type placeView struct {
-	ID       string        `json:"id"`
-	Slot     int           `json:"slot"`
-	Name     string        `json:"name"`
-	Main     bool          `json:"main"`
-	Image    string        `json:"image"`
-	Mounts   []placeMount  `json:"mounts"`
-	Revision int64         `json:"revision"`
-	URL      string        `json:"url"`
-	DshHome  string        `json:"dshHome"`
-	State    string        `json:"state"` // running | sleeping | starting | building | error
-	Task     any           `json:"task"`
-	Layout   []mountLayout `json:"layout"`
+	ID       string       `json:"id"`
+	Slot     int          `json:"slot"`
+	Name     string       `json:"name"`
+	Main     bool         `json:"main"`
+	Image    string       `json:"image"`
+	Mounts   []placeMount `json:"mounts"`
+	Revision int64        `json:"revision"`
+	URL      string       `json:"url"`
+	DshHome  string       `json:"dshHome"`
+	// DshHomeCustom — dsh-home в явной папке владельца (не в доме agctl);
+	// DshHomeGit — её git-состояние (репозиторий конфигурации агента).
+	DshHomeCustom bool                   `json:"dshHomeCustom"`
+	DshHomeGit    *provision.DshHomeRepo `json:"dshHomeGit,omitempty"`
+	State         string                 `json:"state"` // running | sleeping | starting | building | error
+	Task          any                    `json:"task"`
+	Layout        []mountLayout          `json:"layout"`
 }
 
 // mountLayout — где папка хоста видна в контейнере.
@@ -257,6 +262,11 @@ func (s *Server) viewOf(owner int64, rec localPlaceRec, main bool) placeView {
 	key := chatKey{uid: owner, slot: rec.Slot}
 	v := placeView{ID: rec.ID, Slot: rec.Slot, Name: rec.Name, Main: main, Image: rec.Image, Mounts: rec.Mounts,
 		Revision: rec.Revision, DshHome: s.dshHomeFor(key)}
+	if custom := s.customDshHome(key); custom != "" {
+		v.DshHomeCustom = true
+		st := provision.DshHomeRepoState(custom)
+		v.DshHomeGit = &st
+	}
 	if main {
 		v.URL = "/chat/"
 	} else {
@@ -326,6 +336,9 @@ type placeReq struct {
 	Image    string       `json:"image"`
 	Mounts   []placeMount `json:"mounts"`
 	Revision int64        `json:"revision"`
+	// DshHome — явная папка dsh-home (git-репозиторий конфигурации агента);
+	// nil — не менять, "" — вернуть в дом agctl.
+	DshHome *string `json:"dshHome,omitempty"`
 }
 
 // validImageRef — образ из каталога профиля или любой явный тег без пробелов.
@@ -384,6 +397,13 @@ func (s *Server) handlePlaceCreate(w http.ResponseWriter, r *http.Request, id id
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	dshHome := ""
+	if req.DshHome != nil {
+		if dshHome, err = s.validateDshHomeDir(*req.DshHome); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	if _, err := s.db.PlaceGet(id.ID, pid); err == nil {
 		writeErr(w, http.StatusConflict, "рабочее место с таким id уже есть")
 		return
@@ -409,7 +429,13 @@ func (s *Server) handlePlaceCreate(w http.ResponseWriter, r *http.Request, id id
 		return
 	}
 	rec, _ := s.placeFromStore(p)
-	_ = s.db.Audit(id.Login, "local.place.create", pid, fmt.Sprintf("слот %d %s", slot, raw))
+	if note, err := s.setCustomDshHome(id.ID, slot, dshHome); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	} else if note != "" {
+		s.placeTask(slot).logf(note)
+	}
+	_ = s.db.Audit(id.Login, "local.place.create", pid, fmt.Sprintf("слот %d %s dsh-home=%s", slot, raw, dshHome))
 	s.local.events.publish("places")
 	writeJSON(w, http.StatusCreated, s.viewOf(id.ID, rec, false))
 }
@@ -442,8 +468,17 @@ func (s *Server) handlePlaceUpdate(w http.ResponseWriter, r *http.Request, id id
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	var dshHome *string
+	if req.DshHome != nil {
+		abs, err := s.validateDshHomeDir(*req.DshHome)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		dshHome = &abs
+	}
 	if pid == mainPlaceID {
-		s.updateMainPlace(w, id, expect, image, mounts)
+		s.updateMainPlace(w, id, expect, image, mounts, dshHome)
 		return
 	}
 	name := strings.TrimSpace(req.Name)
@@ -468,6 +503,14 @@ func (s *Server) handlePlaceUpdate(w http.ResponseWriter, r *http.Request, id id
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if dshHome != nil && *dshHome != s.customDshHome(chatKey{uid: id.ID, slot: p.Slot}) {
+		if note, err := s.setCustomDshHome(id.ID, p.Slot, *dshHome); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		} else if note != "" {
+			s.placeTask(p.Slot).logf(note)
+		}
+	}
 	rec, _ := s.placeFromStore(p)
 	s.markPlacePending(chatKey{uid: id.ID, slot: p.Slot})
 	_ = s.db.Audit(id.Login, "local.place.update", pid, string(raw))
@@ -477,7 +520,7 @@ func (s *Server) handlePlaceUpdate(w http.ResponseWriter, r *http.Request, id id
 
 // updateMainPlace — основное место: папка и образ живут в config.yaml, у него
 // одна папка; ревизия — счётчик изменений в памяти процесса.
-func (s *Server) updateMainPlace(w http.ResponseWriter, id identity, expect int64, image string, mounts []placeMount) {
+func (s *Server) updateMainPlace(w http.ResponseWriter, id identity, expect int64, image string, mounts []placeMount, dshHome *string) {
 	if expect != s.local.mainRevision() {
 		writeErr(w, http.StatusConflict, "рабочее место уже изменили в другом окне — обновите страницу")
 		return
@@ -501,6 +544,14 @@ func (s *Server) updateMainPlace(w http.ResponseWriter, id identity, expect int6
 		if err := s.db.SettingSet(chatImageSettingKey(id.ID, 0), image); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
+		}
+	}
+	if dshHome != nil && *dshHome != s.customDshHome(userKey(id.ID)) {
+		if note, err := s.setCustomDshHome(id.ID, 0, *dshHome); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		} else if note != "" {
+			s.local.task.logf(note)
 		}
 	}
 	s.local.bumpMain()
@@ -541,6 +592,7 @@ func (s *Server) handlePlaceDelete(w http.ResponseWriter, r *http.Request, id id
 		return
 	}
 	_ = s.db.SettingSet(chatImageSettingKey(id.ID, p.Slot), "")
+	_ = s.db.SettingSet(dshHomeSettingKey(id.ID, p.Slot), "") // явная папка владельца остаётся на диске
 	// Слот освобождается для следующего места — его данные (dsh-home:
 	// сессии, скиллы, настройки) уходят в архив рядом, а не наследуются.
 	archived := s.archiveSlotStorage(key)
@@ -586,6 +638,10 @@ func (s *Server) stopPlace(key chatKey) error {
 
 func (s *Server) handlePlaceAction(w http.ResponseWriter, r *http.Request, id identity) {
 	pid, action := r.PathValue("id"), r.PathValue("action")
+	if action == "clone" {
+		s.handlePlaceClone(w, r, id, pid)
+		return
+	}
 	slot, ok := s.placeSlot(id.ID, pid)
 	if !ok {
 		writeErr(w, http.StatusNotFound, "рабочее место не найдено")
@@ -675,6 +731,7 @@ func (s *Server) startPlaceRuntime(owner int64, slot int, restart bool) bool {
 			fail(err)
 			return
 		}
+		s.commitDshHomeIfNew(key, t.logf)
 		t.logf("рабочее место запущено")
 		t.mu.Lock()
 		t.state, t.pending = "idle", false
