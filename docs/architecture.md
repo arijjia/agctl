@@ -1242,6 +1242,45 @@ Jira и т. п.) записывается в пресет отключённым
 серверами платформы. Проверка — `bin/e2e-local-mode.sh`, шаг «пресет
 лаунчера виден харнессу».
 
+Работающий dsh пресеты не перечитывает: сохранение пресета выставляет у
+работающих мест «нужен перезапуск», а при старте пресеты кладутся в
+dsh-home до entrypoint (`ensureChatWithPresets`); новое место, чей
+dsh-home засевается при первом старте, перезапускается один раз само.
+
+### 6.13 Пути как на хосте, своя папка dsh-home, клон места
+
+- **Пути как на хосте** (`config.yaml host_paths`, у нового дома включено,
+  кроме Windows; переключатель в лаунчере). Рантайм docker монтирует папку
+  места ещё и по её хостовому пути (`host:host` рядом с `/workspace`),
+  `HOME`, рабочий каталог процесса и воркспейс dsh по умолчанию — там же
+  (`ChatSpec.HostPaths`, `dockerrt.HostPathMountable` отсекает системные
+  каталоги образа, `provision.EnsureDefaultWorkspace` переключает реестр
+  воркспейсов dsh, прежний `/workspace` остаётся со своим путём в названии).
+  Плагин `chat-session-files` регистрирует воркспейсы по
+  `AGCTL_WORKSPACE_ROOT`/`AGCTL_WORKSPACE_DIRS` и снимает алиасы
+  `/workspace/<папка>` без сессий.
+- **Своя папка dsh-home** (`ChatSpec.DshHome`, настройка слота
+  `local.dsh_home.*` в SQLite): dsh-home места живёт в папке владельца и
+  становится git-репозиторием конфигурации агента
+  (`provision.InitDshHomeRepo`: `.gitignore` без секретов, сессий, кэшей и
+  управляемых пресетов; первый коммит — после первого старта). Удаление
+  места папку не трогает.
+- **Клон** (`POST /api/local/ui/places/{id}/clone`): новое место с теми же
+  папками и образом и копией dsh-home (`provision.CloneDir`: клон APFS на
+  macOS, reflink на Linux, иначе копия); запущенный источник на время
+  копии останавливается. Пресеты источника привязываются и к клону.
+
+### 6.14 Сабагенты на быстрых моделях
+
+`profile.yaml llm.subagent_models` (флаг `--llm-subagent-models`,
+`AGCTL_LLM_SUBAGENT_MODELS`) — модели, на которых агент может запускать
+сабагентов: «модель» основного провайдера или «алиас/модель»
+дополнительного. `provision.RefreshProvider` пишет их в настройку dsh
+`subagent-model-selection-settings` (`enabled`, `allowedModels`): dsh
+записывает политику в новые сессии, агент видит маршруты через
+`list_subagent_models` и выбирает модель ребёнка. Работает с dsh 0.2.2-rc.5
+(в rc.3 сессии веб-интерфейса политику не получали).
+
 ## 7. Сети и порты: сводка по всем режимам
 
 | Режим | Откуда → куда | Протокол и порт | Что защищает |
@@ -1340,13 +1379,30 @@ git-хуками и npm-скриптами. dsh читает ключ из `.cre
 `GUEST_FLAVOR=local|server`; контекст встроен в бинари, поэтому собрать
 образ можно и без исходников:
 
+Стадии упорядочены от редких изменений к частым: новая версия dsh
+пересобирает и перекачивает только слой dsh и выше (около 1,8 ГБ из 4,4),
+офис, CLI и MCP-кэш берутся из кэша слоёв.
+
 | Стадия | Содержимое |
 |---|---|
 | `base` | `node:22-bookworm-slim`, python3, pip, pytest, make, g++, git, openssh-server, iptables |
-| `dsh` | `@deepseek-ai/dsh` закреплённой версии (сейчас 0.2.2-rc.5, тег образа `0.2.2`), git-идентификатор агента |
-| `mcp-warm` | прогретый кэш npx для MCP-серверов DuckDuckGo, Context7, GitLab, Playwright |
-| `runtime` | кэш MCP, LibreOffice Impress (превью презентаций), ripgrep, fd, jq, sqlite3, клиенты БД, `glab`, `jira-cli`, `uv`/`uvx`, бинарь `agctl-guest` своего варианта как `/usr/local/bin/agctl` (build-arg `GUEST_FLAVOR`), скелет домашнего каталога, `entrypoint.sh`, обёртка `ax-task-runner` (только серверный вариант), `HEALTHCHECK` (`agctl-dsh-net health` раз в 30 секунд) |
+| `mcp-warm` (от `base`) | прогретый кэш npx для MCP-серверов DuckDuckGo, Context7, GitLab, Playwright |
+| `tools` (от `base`) | LibreOffice Impress (превью презентаций), ripgrep, fd, jq, sqlite3, клиенты БД, `glab`, `jira-cli`, `uv`/`uvx`, `kubectl` (пин версии и SHA-256 обеих архитектур) |
+| `runtime` (от `tools`) | кэш MCP; `@deepseek-ai/dsh` закреплённой версии (`ARG DSH_VERSION`, сейчас 0.2.2-rc.5; тег образа `0.2.2`) и git-идентификатор агента; бинарь `agctl-guest` своего варианта как `/usr/local/bin/agctl` (build-arg `GUEST_FLAVOR`), скелет домашнего каталога, `entrypoint.sh`, обёртка `ax-task-runner` (только серверный вариант), `HEALTHCHECK` (`agctl-dsh-net health` раз в 30 секунд); метки — последним слоем |
+| `Dockerfile.min` | минимальный `agctl-dsh-min`: та же `base` (общий кэш), dsh и guest — без офиса, CLI и MCP-кэша |
 | `flavors/web` | `FROM agctl-dsh` + Chromium через Playwright |
+
+Метки образа (`internal/assets/image_meta.go`): `io.agctl.dsh.version`,
+`io.agctl.guest.version`/`.revision`, `io.agctl.guest.api` (уровень
+возможностей guest: 2 — `presets-sync`), `io.agctl.image.variant`
+(`full`/`min`/`web`), `org.opencontainers.image.*`. Их ставят
+`make img_build`, `make img_dsh` и сборка на месте; лаунчер и
+`agctl dev images` показывают по ним, что внутри, и помечают образ
+устаревшим, если уровень API ниже `assets.GuestAPI` или меток нет.
+Тег-пререлиз (`agctl-dsh:0.2.3-alpha.2`) — версия dsh: такой образ
+собирается на этой версии (`assets.DshVersionFromTag`); образ с реестром в
+имени, которого нет в реестре, собирается на месте и получает имя реестра
+тегом (`dockerrt.LocalImageName`). Публикация в GHCR — воркфлоу `images`.
 
 Цепочка имён локальных образов: `agctl-dsh:0.2.2` (базовый),
 `agctl-dsh-nossh:0.2.2` (без sshd), `agctl-dsh-web:0.2.2` (вкус web),
