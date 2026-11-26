@@ -55,9 +55,8 @@ func EnsureDefaultWorkspace(home, dir string) (changed bool, err error) {
 			break
 		}
 	}
-	if id != "" && global["defaultWorkspaceId"] == id {
-		return false, nil
-	}
+	prev, _ := global["defaultWorkspaceId"].(string)
+	changed = prev != id || id == ""
 	if id == "" {
 		id = "ws-agctl-host"
 		for i := 2; workspaces[id] != nil; i++ {
@@ -72,6 +71,27 @@ func EnsureDefaultWorkspace(home, dir string) (changed bool, err error) {
 		global["workspaceIds"] = append([]any{id}, ids...)
 	}
 	global["defaultWorkspaceId"] = id
+	// В боковой панели dsh «Рабочая область по умолчанию» — по title: так
+	// называется только воркспейс по умолчанию; у прежних (с их сессиями)
+	// title — их путь, чтобы две записи не назывались одинаково.
+	for wid, w := range workspaces {
+		m, ok := w.(map[string]any)
+		if !ok {
+			continue
+		}
+		title, _ := m["title"].(string)
+		switch {
+		case wid == id && title != "default-workspace":
+			m["title"], changed = "default-workspace", true
+		case wid != id && title == "default-workspace":
+			if p, _ := m["path"].(string); p != "" {
+				m["title"], changed = p, true
+			}
+		}
+	}
+	if !changed {
+		return false, nil
+	}
 	out, err := json.MarshalIndent(reg, "", "  ")
 	if err != nil {
 		return false, err

@@ -44,6 +44,9 @@ func TestEnsureDefaultWorkspace(t *testing.T) {
 	if ws["ws-agctl"].(map[string]any)["path"] != "/workspace" || len(ws) != 2 {
 		t.Fatalf("прежний воркспейс должен остаться: %v", ws)
 	}
+	if ws["ws-agctl"].(map[string]any)["title"] != "/workspace" || ws["ws-agctl-host"].(map[string]any)["title"] != "default-workspace" {
+		t.Fatalf("названия: прежний — по пути, новый — по умолчанию: %v", ws)
+	}
 	if changed, err := EnsureDefaultWorkspace(home, "/Users/dev/src"); changed || err != nil {
 		t.Fatalf("повтор: changed=%v err=%v", changed, err)
 	}
