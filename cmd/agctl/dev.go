@@ -33,6 +33,7 @@ import (
 	"github.com/arijjia/agctl/internal/localmode"
 	"github.com/arijjia/agctl/internal/profile"
 	"github.com/arijjia/agctl/internal/runtime/dockerrt"
+	"github.com/arijjia/agctl/internal/runtime/sbxrt"
 	"github.com/arijjia/agctl/internal/server"
 	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
@@ -42,6 +43,7 @@ const devUsage = `agctl dev — локальный режим: платформ�
 
   init      настроить: профиль и папка проектов (образ и доступы — в лаунчере; --cli — в терминале)
   up [DIR]  поднять платформу и рабочее место (DIR → /workspace), открыть браузер
+            --runtime docker|sbx — рантайм рабочего места (init и up; запоминается в dev.yaml)
   down      остановить (данные и сессии сохраняются)
   status    состояние: адрес, образ, папка, рабочее место, мост
   open      открыть браузер (новая ссылка входа)
@@ -50,7 +52,7 @@ const devUsage = `agctl dev — локальный режим: платформ�
   bridge    мост к хосту: list | pending | approve ID | deny ID | log
   update    обновить образ рабочего места (бэкап, проверка, откат при сбое)
   rollback  вернуть предыдущий образ [--restore-data]
-  doctor    самодиагностика: docker, образ, доступы, сеть, мост
+  doctor    самодиагностика: docker, рантайм (sbx), образ, доступы, сеть, мост
 
 Дом режима: $AGCTL_DEV_HOME (по умолчанию ~/.agctl-dev), конфиг — dev.yaml.
 `
@@ -114,6 +116,7 @@ func devInit(home string, args []string) error {
 	noPull := fs.Bool("no-pull", false, "не тянуть образ сейчас (с --cli)")
 	cliWizard := fs.Bool("cli", false, "спросить образ и доступы в терминале (по умолчанию — в браузере, в лаунчере)")
 	addr := fs.String("addr", "", "адрес UI (только 127.0.0.1:PORT), по умолчанию "+localmode.DefaultAddr)
+	runtimeFlag := fs.String("runtime", "", "рантайм рабочего места: docker (по умолчанию) | sbx (Docker Sandboxes)")
 	_ = fs.Parse(args)
 
 	cfg, err := localmode.Load(home)
@@ -189,6 +192,20 @@ func devInit(home string, args []string) error {
 			}
 			if n, err := strconv.Atoi(ask("Номер образа", "1")); err == nil && n >= 1 && n <= len(p.Images.Dev) {
 				cfg.Image = p.Images.Dev[n-1]
+			}
+		}
+	}
+	if *runtimeFlag != "" {
+		kind, err := localmode.ParseRuntime(*runtimeFlag)
+		if err != nil {
+			return fmt.Errorf("--runtime: %w", err)
+		}
+		cfg.Runtime = kind
+		if kind == localmode.RuntimeSbx {
+			if version, err := sbxrt.Probe(context.Background(), ""); err != nil {
+				fmt.Printf("  ⚠ рантайм sbx выбран, но пока недоступен: %v\n", err)
+			} else {
+				fmt.Printf("Рантайм рабочего места: sbx (%s)\n", version)
 			}
 		}
 	}
@@ -441,10 +458,33 @@ func devUp(home string, args []string) error {
 	fs := flag.NewFlagSet("dev up", flag.ExitOnError)
 	noOpen := fs.Bool("no-open", false, "не открывать браузер")
 	foreground := fs.Bool("foreground", false, "в текущем терминале (Ctrl+C — остановка)")
+	runtimeFlag := fs.String("runtime", "", "рантайм рабочего места: docker | sbx (запоминается в dev.yaml)")
 	_ = fs.Parse(args)
 	cfg, err := localmode.Load(home)
 	if err != nil {
 		return err
+	}
+	runtimeChanged := false
+	if *runtimeFlag != "" {
+		kind, err := localmode.ParseRuntime(*runtimeFlag)
+		if err != nil {
+			return fmt.Errorf("--runtime: %w", err)
+		}
+		if runtimeChanged = kind != cfg.RuntimeKind(); runtimeChanged {
+			if err := localmode.SetRuntime(home, kind); err != nil {
+				return err
+			}
+			cfg.Runtime = kind
+		}
+	}
+	if _, err := localmode.ParseRuntime(cfg.Runtime); err != nil {
+		return fmt.Errorf("%s: %w", localmode.Path(home), err)
+	}
+	if cfg.RuntimeKind() == localmode.RuntimeSbx {
+		// Явная ошибка до старта, а не при первом открытии рабочего места.
+		if _, err := sbxrt.Probe(context.Background(), ""); err != nil {
+			return fmt.Errorf("рантайм sbx: %w\n  вернуть Docker: agctl dev up --runtime docker", err)
+		}
 	}
 	workdir := cfg.WorkDir
 	if fs.NArg() > 0 {
@@ -467,6 +507,9 @@ func devUp(home string, args []string) error {
 			return fmt.Errorf("уже запущено с папкой %s — сначала agctl dev down", st.WorkDir)
 		}
 		fmt.Printf("✓ уже запущено: http://%s\n", st.Addr)
+		if runtimeChanged {
+			fmt.Printf("  рантайм рабочего места: %s — применится при перезапуске места (лаунчер → «Перезапустить»)\n", cfg.RuntimeKind())
+		}
 		if !*noOpen {
 			return devOpen(home, nil)
 		}
@@ -718,7 +761,7 @@ func devServe(home string, args []string) {
 			localmode.ClearOwnState(home, os.Getpid())
 		}()
 	}
-	cli.Serve(serveArgs, cli.ServeOptions{Local: local, OnReady: onReady})
+	cli.Serve(serveArgs, cli.ServeOptions{Local: local, OnReady: onReady, Runtime: devRuntimeFlags(home)})
 	localmode.ClearOwnState(home, os.Getpid())
 }
 
@@ -808,6 +851,7 @@ func devStatus(home string) error {
 	fmt.Printf("дом:      %s\n", home)
 	fmt.Printf("профиль:  %s\n", cli.FirstNonEmpty(cfg.ProfileDir, cfg.Profile))
 	fmt.Printf("образ:    %s\n", cli.FirstNonEmpty(cfg.Image, "по профилю"))
+	fmt.Printf("рантайм:  %s\n", cfg.RuntimeKind())
 	fmt.Printf("папка:    %s\n", cli.FirstNonEmpty(cfg.WorkDir, "(не задана — agctl dev up DIR)"))
 	if st == nil || !devAlive(st) {
 		fmt.Println("статус:   остановлено (agctl dev up)")
@@ -831,7 +875,11 @@ func devStatus(home string) error {
 	} else {
 		fmt.Printf("сборка:   %s\n", devBuildID())
 	}
-	fmt.Printf("рабочее:  %v, папка %s\n", s.Runtime["state"], s.Workdir)
+	if kind, ok := s.Runtime["kind"].(string); ok && kind != "" {
+		fmt.Printf("рабочее:  %v (%s), папка %s\n", s.Runtime["state"], kind, s.Workdir)
+	} else {
+		fmt.Printf("рабочее:  %v, папка %s\n", s.Runtime["state"], s.Workdir)
+	}
 	fmt.Printf("мост:     инструментов %d, ждут подтверждения %d\n", s.BridgeTools, s.BridgePending)
 	return nil
 }
@@ -1235,6 +1283,18 @@ func devDoctor(home string) error {
 	}
 	api, err := dockerrt.PingDaemon(context.Background())
 	check("docker", err, "API "+api)
+	kind, kerr := localmode.ParseRuntime(cfg.Runtime)
+	check("рантайм", kerr, kind)
+	sbxVersion, sbxErr := sbxrt.Probe(context.Background(), "")
+	switch {
+	case kind == localmode.RuntimeSbx:
+		// установлен, вход выполнен, виртуализация (Apple Silicon / KVM) есть
+		check("sbx", sbxErr, sbxVersion)
+	case sbxErr != nil:
+		fmt.Printf("· %-22s не выбран; %v\n", "sbx", sbxErr)
+	default:
+		fmt.Printf("· %-22s %s — доступен, включить: agctl dev up --runtime sbx\n", "sbx", sbxVersion)
+	}
 	p, perr := devResolveProfile(cfg)
 	check("профиль", perr, cli.FirstNonEmpty(cfg.ProfileDir, cfg.Profile))
 	if err == nil && perr == nil {

@@ -188,8 +188,8 @@ agctl dev up
 
 | Команда | Что делает |
 |---|---|
-| `agctl dev init [--profile ID \| --profile-dir DIR] [--flavor web\|1c] [--image REF] [--workdir DIR] [--addr 127.0.0.1:PORT] [--yes] [--cli]` | настроить профиль и папку проектов; образ и доступы — в лаунчере (`--cli` — мастером в терминале) |
-| `agctl dev up [DIR] [--no-open] [--foreground]` | поднять платформу в фоне и открыть браузер; после обновления бинаря сам перезапускает фоновый процесс старой сборки |
+| `agctl dev init [--profile ID \| --profile-dir DIR] [--flavor web\|1c] [--image REF] [--workdir DIR] [--addr 127.0.0.1:PORT] [--runtime docker\|sbx] [--yes] [--cli]` | настроить профиль и папку проектов; образ и доступы — в лаунчере (`--cli` — мастером в терминале) |
+| `agctl dev up [DIR] [--no-open] [--foreground] [--runtime docker\|sbx]` | поднять платформу в фоне и открыть браузер; после обновления бинаря сам перезапускает фоновый процесс старой сборки |
 | `agctl dev down` | остановить платформу и контейнер; сессии и настройки сохраняются |
 | `agctl dev status` | адрес, образ, папка, сборка, состояние рабочего места и моста |
 | `agctl dev open` | новая ссылка входа в браузере |
@@ -198,7 +198,7 @@ agctl dev up
 | `agctl dev bridge list \| pending \| approve ID \| deny ID \| log` | мост к хосту: белый список, ожидающие подтверждения вызовы, решение, журнал |
 | `agctl dev update [--image REF]` | обновить образ: скачать, сделать резервную копию данных dsh, перезапустить, проверить, при сбое откатить |
 | `agctl dev rollback [--restore-data]` | вернуть предыдущий образ и при необходимости данные dsh |
-| `agctl dev doctor` | самодиагностика: Docker, образ, профиль, папка, доступы, сеть до модели, GitLab и Jira, мост |
+| `agctl dev doctor` | самодиагностика: Docker, рантайм (sbx: установлен, вход, виртуализация), образ, профиль, папка, доступы, сеть до модели, GitLab и Jira, мост |
 | `agctl version`, `agctl completion fish`, `agctl help` | версия и сборка, автодополнение для fish, справка |
 
 Внутри контейнера (бинарь образа `agctl-guest`): `agctl bridge list | call
@@ -215,6 +215,18 @@ agctl dev up
 процесс), `logs/` (`serve.log`, `bridge.log`), `backups/` (три последних
 резервных копии данных dsh). Серверный дом `~/.agctl` и
 `~/.config/agctl/config.yaml` на локальный режим не влияют.
+
+### Рантайм рабочего места: docker или sbx
+
+По умолчанию рабочее место — контейнер в Docker. `agctl dev up --runtime sbx`
+(или `agctl dev init --runtime sbx`, поле `runtime` в `dev.yaml`, лаунчер)
+переключает его на [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/):
+microVM со своим ядром, исходящая сеть запрещена по умолчанию, ключ модели
+остаётся на хосте. Нужны установленный `sbx` и вход `sbx login`;
+`agctl dev doctor` покажет, готов ли он. Вернуться — `--runtime docker`,
+данные при переключении сохраняются. Рантайм sbx пока не проверен на живой
+установке — отличия и ограничения описаны в
+[архитектуре, раздел 6.10](docs/architecture.md#610-рантаймы-рабочего-места-docker-и-sbx).
 
 ### Ограничение исходящего трафика
 

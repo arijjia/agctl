@@ -207,7 +207,7 @@ func (s *Server) handleLocalStatus(w http.ResponseWriter, r *http.Request) {
 	s.chatMu.Unlock()
 	runtime := map[string]any{"state": "sleeping"}
 	if rt != nil {
-		runtime = map[string]any{"state": "running", "image": rt.image, "endpoint": rt.handle.Endpoint}
+		runtime = map[string]any{"state": "running", "image": rt.image, "endpoint": rt.handle.Endpoint, "kind": handleKind(rt.handle)}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version": s.cfg.Version, "image": s.cfg.Image, "workdir": s.localWorkDir(),
