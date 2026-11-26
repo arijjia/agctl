@@ -649,6 +649,14 @@ func (s *Server) ensureChat(userID int64, slot int) (*chatRuntime, error) {
 		return nil, fmt.Errorf("chat runtime provider is not configured")
 	}
 
+	// Локальный режим: до перезаписи dsh-home забрать правки моделей,
+	// сделанные в самом харнессе (local_harness_sync.go).
+	if s.isLocal() && s.local != nil && userID == s.local.ownerID {
+		if s.pullHarnessLLM(s.dshHomeFor(key)) {
+			s.local.events.publish("secrets")
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 	spec := agctlrt.ChatSpec{

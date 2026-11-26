@@ -723,8 +723,12 @@ func syncLLMInPatch(home string, blocks []providerBlock, defaultAlias, defaultMo
 			setConfig(entry, "providers", providers)
 			haveLLM = true
 		case defaultPlugin:
-			setConfig(entry, "provider", defaultAlias)
-			setConfig(entry, "model", defaultModel)
+			// Модель по умолчанию, выбранную пользователем в харнессе, не
+			// сбрасываем, пока её провайдер и модель существуют.
+			if !defaultStillValid(entry, blocks) {
+				setConfig(entry, "provider", defaultAlias)
+				setConfig(entry, "model", defaultModel)
+			}
 			haveDefault = true
 		}
 	}
@@ -749,6 +753,28 @@ func syncLLMInPatch(home string, blocks []providerBlock, defaultAlias, defaultMo
 		return fmt.Errorf("provision: provider patch write %s: %w", patchPath, err)
 	}
 	return nil
+}
+
+// defaultStillValid — модель по умолчанию в патче указывает на существующие
+// провайдера и модель.
+func defaultStillValid(entry map[string]any, blocks []providerBlock) bool {
+	cfg, _ := entry["config"].(map[string]any)
+	provider, _ := cfg["provider"].(string)
+	model, _ := cfg["model"].(string)
+	if provider == "" || model == "" {
+		return false
+	}
+	for _, b := range blocks {
+		if b.alias != provider {
+			continue
+		}
+		for _, m := range b.models {
+			if m == model {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // RefreshProvider — перезапись настроек провайдера в существующем DSH_HOME
@@ -794,6 +820,11 @@ func RefreshProvider(home string, p Provider) error {
 	}
 	if err := os.WriteFile(filepath.Join(home, ".credentials.yaml"), []byte(creds), 0o600); err != nil {
 		return fmt.Errorf("provision: .credentials.yaml: %w", err)
+	}
+	// Снимок записанного: по нему отличают правки, сделанные в самом
+	// харнессе (llm_sync.go).
+	if err := WriteLLMBaseline(home); err != nil {
+		return fmt.Errorf("provision: снимок настроек моделей: %w", err)
 	}
 	return nil
 }
