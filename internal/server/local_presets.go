@@ -218,7 +218,10 @@ func (s *Server) ensureChatWithPresets(owner int64, slot int, logf func(string))
 	if _, err := s.ensureChat(owner, slot); err != nil {
 		return err
 	}
-	if n := s.applyAllPresetsAt(owner, slot); n > 0 && !seeded {
+	if seeded {
+		return nil // пресеты легли до старта; повторная запись гонялась бы с presets-sync
+	}
+	if n := s.applyAllPresetsAt(owner, slot); n > 0 {
 		logf(fmt.Sprintf("пресетов места: %d — первый старт, перезапускаю, чтобы dsh их увидел", n))
 		if err := s.stopPlace(key); err != nil {
 			return err
