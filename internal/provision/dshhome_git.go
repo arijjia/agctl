@@ -37,6 +37,14 @@ const DshHomeGitignore = DshHomeGitignoreHeader + ` конфигурации а�
 # пресеты лаунчера agctl (пересобираются, в env MCP — доступы этой машины)
 .agent-presets/agctl-*/
 
+# что agctl и dsh пересобирают на каждом старте: провайдеры и модели этой
+# машины (их источник — лаунчер), собранный конфиг, встроенные скиллы agctl
+settings.yaml
+settings.yaml.imported
+profiles/web/cordis.patch.yml
+profiles/web/cordis.yml
+skills/agctl-*/
+
 # сессии и рабочее состояние dsh (перенос сессий — отдельно)
 sessions/
 storages/
