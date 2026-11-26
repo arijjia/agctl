@@ -8,7 +8,7 @@ size: L
 area: platform
 repo: arijjia/agctl
 created: 2026-11-20
-updated: 2026-11-20
+updated: 2026-11-26
 tags: ["local", "sandbox", "docker", "security"]
 depends: []
 ---
@@ -70,3 +70,47 @@ customize, faq).
 - 2026-11-20: создано (`gitctl backlog new`). Исследование: на машине
   владельца Docker 29.9.3 — `docker sandbox` удалён, перенаправляет на sbx.
   Владелец: обычный docker остаётся, sbx — альтернативный режим рядом.
+- 2026-11-26: реализация без живого прогона (ветка `agent/sbx-runtime`).
+  **Живого sbx не было**: на машине разработки (macOS 15.7, arm64, Docker
+  29.9.3) `sbx` не установлен; установка требует доверить tap `docker/tap`
+  и войти под учётной записью Docker (п.1 спайка — решение владельца), поэтому
+  не ставился. CLI изучен по справочнику docs.docker.com/reference/cli/sbx
+  (docker/docs `data/sbx_cli`, снимок 2026-11-25) и руководствам
+  `ai/sandboxes` — каждый использованный флаг оттуда, список в шапке
+  `internal/runtime/sbxrt/sbxrt.go`. Карточка остаётся открытой.
+
+  Сделано и проверено тестами с подделкой CLI (тестовый бинарь в роли `sbx`):
+  - `internal/runtime/sbxrt`: старт, сон (`sbx stop`), пробуждение без
+    пересоздания, пересоздание при смене образа/маунтов/ресурсов/правил сети,
+    порт dsh web на `127.0.0.1`, дом dsh и папки проектов маунтами, логи и
+    здоровье по процессу `sbx exec`, явная ошибка с хвостом лога, если dsh не
+    поднялся;
+  - ключ модели: в VM — заглушка (`.credentials.yaml`, окружение), значение —
+    `sbx secret set-custom --value-stdin`; сеть: провайдеры модели, URL из
+    окружения места (GitLab, Jira, мост → `localhost:<порт>`), `egress.allow`;
+  - выбор: `runtime` в `dev.yaml`, `agctl dev init|up --runtime`, строка в
+    `status`, проверки в `doctor` (установлен, вход, Apple Silicon / `/dev/kvm`;
+    WHP на Windows отсюда не проверяется — ошибку даст сам sbx), лаунчер:
+    `GET /api/local/ui` (`runtimeKind`, `runtimes`, `runtime.kind`) и
+    `PUT /api/local/ui/runtime`; интерфейс SPA — отдельной задачей;
+  - режим `docker` не менялся: по умолчанию он, sbx не трогается, пока не
+    выбран.
+
+  Спайк, что осталось проверить на живом sbx (по пунктам описания):
+  1. Вход и политика организации — не проверялось.
+  2. Платформы — по документации: macOS 14+ Apple Silicon, Windows 11 + WHP,
+     Ubuntu 24.04+ с KVM; проверка в `doctor`.
+  3. Образ `agctl-dsh` как шаблон — главный риск. Документация требует в
+     образе пользователя `agent` (UID 1000, дом `/home/agent`), наш образ
+     работает от root с домом `/home/dsh` (а UID 1000 в `node:22-bookworm-slim`
+     занят пользователем `node`). Сейчас образ отдаётся как есть
+     (`--template`, агент `shell`, запуск `sbx exec -u root`); если sbx его не
+     примет — нужен производный образ-шаблон или kit v3. Также не проверено,
+     что `sbx template load` принимает tar от `docker save` и что
+     `agctl-dsh-net print` находит адрес интерфейса внутри песочницы.
+  4. Landlock dsh на virtiofs — не проверялось; детект в entrypoint тот же.
+  5. Подстановка ключа для собственного LiteLLM (`secret set-custom` с хостом
+     организации, в т.ч. по HTTP и с корпоративным CA) — не проверялось.
+  6. Мост — через `host.docker.internal` и правило `localhost:<порт>` (по
+     руководству «Accessing host services from a sandbox»); MCP-шлюз sbx не
+     использован.

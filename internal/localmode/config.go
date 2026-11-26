@@ -59,6 +59,9 @@ type Config struct {
 	Bridge    struct {
 		Tools []localbridge.Tool `yaml:"tools,omitempty"`
 	} `yaml:"bridge,omitempty"`
+	// Runtime — рантайм рабочего места: docker (по умолчанию) или sbx
+	// (Docker Sandboxes, microVM); см. runtime.go.
+	Runtime string `yaml:"runtime,omitempty"`
 	// PreviousImage — образ до последнего update (для rollback).
 	PreviousImage string `yaml:"previous_image,omitempty"`
 }

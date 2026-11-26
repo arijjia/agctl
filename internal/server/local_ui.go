@@ -97,6 +97,7 @@ func (s *Server) registerLocalUIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/local/ui/secrets/{name}", s.requireLocalOwner(s.handleLocalSecretDelete))
 	mux.HandleFunc("PUT /api/local/ui/image", s.requireLocalOwner(s.handleLocalImagePut))
 	mux.HandleFunc("PUT /api/local/ui/workdir", s.requireLocalOwner(s.handleLocalWorkDirPut))
+	mux.HandleFunc("PUT /api/local/ui/runtime", s.requireLocalOwner(s.handleLocalRuntimePut))
 	mux.HandleFunc("POST /api/local/ui/start", s.requireLocalOwner(s.handleLocalStart))
 	mux.HandleFunc("POST /api/local/ui/restart", s.requireLocalOwner(s.handleLocalRestart))
 }
@@ -126,9 +127,9 @@ func (s *Server) handleLocalUI(w http.ResponseWriter, r *http.Request, id identi
 	s.chatMu.Unlock()
 	runtime := map[string]any{"state": "sleeping"}
 	if rt != nil {
-		runtime = map[string]any{"state": "running", "image": rt.image}
+		runtime = map[string]any{"state": "running", "image": rt.image, "kind": handleKind(rt.handle)}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"profile":   s.brand.Name,
 		"workdir":   s.localWorkDir(),
 		"images":    h.Images(),
@@ -138,7 +139,11 @@ func (s *Server) handleLocalUI(w http.ResponseWriter, r *http.Request, id identi
 		"runtime":   runtime,
 		"task":      s.local.task.snapshot(),
 		"llmKeySet": h.LLMKey() != "",
-	})
+	}
+	// runtimeKind — выбранный рантайм (docker | sbx), runtimes — что есть на
+	// машине; runtime.kind — в каком поднято работающее место.
+	resp["runtimeKind"], resp["runtimes"] = s.localRuntimes()
+	writeJSON(w, http.StatusOK, resp)
 }
 
 type localSecretReq struct {

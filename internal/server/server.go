@@ -95,6 +95,9 @@ type Config struct {
 	// Modules — подключаемые части сервера (ServerModules() для agctl serve);
 	// локальный режим их не подключает.
 	Modules []Module
+	// WrapChatProvider — надстройка над Docker-провайдером рабочих мест в
+	// server.New (локальный режим: выбор рантайма docker | sbx). nil = Docker.
+	WrapChatProvider func(docker agctlrt.ChatProvider) agctlrt.ChatProvider
 }
 
 // RuntimeIface — то, что серверу нужно от docker-рантайма (мокается в тестах).
@@ -182,7 +185,11 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 	}
 	// Chat runtime выбирается в cmd/agctl/runtime_select.go (upstream-архитектура:
 	// docker | k8s | ax, WaitReady/ReadyTimeout у k8srt); server.New — Docker-путь.
-	s, err := NewWithRuntimeProviders(db, sec, cfg, rt, rt)
+	var chat agctlrt.ChatProvider = rt
+	if cfg.WrapChatProvider != nil {
+		chat = cfg.WrapChatProvider(rt)
+	}
+	s, err := NewWithRuntimeProviders(db, sec, cfg, rt, chat)
 	if err != nil {
 		return nil, err
 	}
