@@ -70,6 +70,9 @@ type llm struct {
 	DefaultBaseURL string `yaml:"default_base_url"`
 	DefaultModel   string `yaml:"default_model"`
 	DefaultModels  string `yaml:"default_models"`
+	// SubagentModels — модели для сабагентов через запятую ("модель" или
+	// "алиас/модель"): агент может отдавать мелкие задачи быстрой модели.
+	SubagentModels string `yaml:"subagent_models"`
 	// ExtraProviders — второй и последующие провайдеры в том же списке.
 	ExtraProviders []LLMExtraProvider `yaml:"extra_providers"`
 }
