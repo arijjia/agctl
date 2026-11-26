@@ -21,6 +21,36 @@ function flavorTitle(f?: string) {
   return "Базовый: dsh, git, glab, jira-cli, uv, kubectl, офис";
 }
 
+// cmpDsh — сравнение версий dsh вида 0.2.2-rc.5: >0 — a новее b.
+// Пререлиз младше релиза той же тройки; каналы alpha < beta < rc.
+export function cmpDsh(a: string, b: string): number {
+  const parse = (v: string) => {
+    const [core, pre = ""] = v.replace(/^v/, "").split("-", 2);
+    const nums = core.split(".").map((x) => parseInt(x, 10) || 0);
+    const [ch, n] = pre.split(".");
+    const rank = pre ? ({ alpha: 1, beta: 2, rc: 3 } as Record<string, number>)[ch] || 0 : 9;
+    return [nums[0] || 0, nums[1] || 0, nums[2] || 0, rank, parseInt(n, 10) || 0];
+  };
+  const x = parse(a);
+  const y = parse(b);
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] > y[i] ? 1 : -1;
+  return 0;
+}
+
+// imageKind — вид образа для сравнения версий: full | min | web | вкус.
+function imageKind(im: LocalImage) {
+  return im.variant || im.flavor || "full";
+}
+
+// newerImage — образ того же вида с более новым dsh в каталоге (подсказка
+// апгрейда: пробовать на клоне места).
+function newerImage(images: LocalImage[], cur?: LocalImage) {
+  if (!cur?.dshVersion) return undefined;
+  return images
+    .filter((i) => i.ref !== cur.ref && i.dshVersion && imageKind(i) === imageKind(cur) && cmpDsh(i.dshVersion, cur.dshVersion!) > 0)
+    .sort((a, b) => cmpDsh(b.dshVersion!, a.dshVersion!))[0];
+}
+
 // imageFacts — что внутри образа одной строкой: версия dsh, сборка guest,
 // дата и размер (по меткам образа).
 function imageFacts(im?: LocalImage) {
@@ -375,6 +405,7 @@ function PlaceCard({
   const running = p.state === "running";
   const img = ui.images.find((i) => i.ref === p.image);
   const present = img?.present;
+  const newer = newerImage(ui.images, img);
   const act = async (a: "start" | "restart" | "stop") => {
     try {
       await places.action(p.id, a);
@@ -428,6 +459,12 @@ function PlaceCard({
         </span>
       </div>
       {img?.outdated && img.present && <div className="notice small">Образ: {img.note}</div>}
+      {!compact && newer && (
+        <div className="muted small">
+          В каталоге есть dsh {newer.dshVersion} (<span className="mono">{newer.ref}</span>): «Клонировать» и смените
+          образ у клона, чтобы попробовать новую версию без риска для этого места; откат — прежний образ.
+        </div>
+      )}
       {p.task.restartNeeded && (
         <div className="notice small">
           Папки, образ, доступы или пресеты изменены — место работает на старых.
