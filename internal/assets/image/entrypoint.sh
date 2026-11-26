@@ -71,7 +71,7 @@ fi
 
 # Версии dsh-home: какой dsh писал его прежде — апгрейд в лог, откат с
 # предупреждением (guest; старый guest без команды — молча дальше).
-if agctl help 2>/dev/null | grep -q prepare; then
+if agctl help 2>&1 | grep -q prepare; then
   agctl prepare 2>&1 | sed 's/^/[agctl-entrypoint] /' || true
 fi
 
