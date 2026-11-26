@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { admin, api, type User } from "./api";
+import Shell, { useSection, type NavItem } from "./Shell";
+import ProfilePage from "./ProfilePage";
+import DownloadPage from "./DownloadPage";
 import { LogsPanel } from "./LogsPanel";
 import { AreaChart, BarChart, Donut, HBarList, bucketLabel, bucketTip } from "./charts";
 
@@ -782,40 +785,47 @@ function AuditTab() {
 
 // ── каркас ──────────────────────────────────────────────────────────────────
 
+const ADMIN_NAV: NavItem[] = [
+  ...TABS.map((t) => ({ id: t, label: t, group: "Администрирование" })),
+  { id: "profile", label: "Профиль", group: "Организация" },
+  { id: "download", label: "Скачать", group: "Организация" },
+];
+
+const ADMIN_SUBTITLE: Record<string, string> = {
+  Обзор: "Пользователи, рабочие места и запросы к моделям по всей организации.",
+  Пользователи: "Учётные записи, роли и лимиты.",
+  Контейнеры: "Рабочие места сотрудников: состояние, запуск, остановка, логи.",
+  Запросы: "Журнал запросов шлюза к моделям.",
+  Траектории: "Сессии агента и их шаги.",
+  Квоты: "Лимиты токенов по пользователям и ролям.",
+  Аудит: "Кто, что и когда менял.",
+  profile: "Настройки организации: бренд, модели, инструменты. Тот же файл, что лежит в каталоге профиля.",
+  download: "Установка agctl на компьютер разработчика.",
+};
+
 export default function AdminPanel({ user }: { user: User }) {
-  const [tab, setTab] = useState<Tab>("Обзор");
+  const [section, go] = useSection(ADMIN_NAV, "Обзор");
+  const tab = section as Tab;
   return (
-    <div className="admin-shell">
-      <header className="admin-header">
-        <div>
-          <h1>{(window as any).__AGCTL_BRAND__?.name || "agctl"} — панель управления</h1>
-          <p className="muted small">
-            {user.login} · роль admin · личный чат администратору не выдаётся
-          </p>
-        </div>
-        <button
-          className="ghost small"
-          onClick={async () => { try { await api.logout(); } catch {} window.location.replace("/"); }}
-        >
-          Выйти
-        </button>
-      </header>
-      <nav className="tabs admin-tabs">
-        {TABS.map((t) => (
-          <button key={t} className={t === tab ? "tab active" : "tab"} onClick={() => setTab(t)}>
-            {t}
-          </button>
-        ))}
-      </nav>
-      <main className="admin-main">
-        {tab === "Обзор" && <OverviewTab />}
-        {tab === "Пользователи" && <UsersTab />}
-        {tab === "Контейнеры" && <ContainersTab />}
-        {tab === "Запросы" && <RequestsTab />}
-        {tab === "Траектории" && <TracesTab />}
-        {tab === "Квоты" && <QuotasTab />}
-        {tab === "Аудит" && <AuditTab />}
-      </main>
-    </div>
+    <Shell
+      items={ADMIN_NAV}
+      active={section}
+      onSelect={go}
+      user={user.login}
+      pills={[{ label: "сервер организации", tone: "data" }, { label: "роль admin", tone: "warn" }]}
+      onLogout={async () => { try { await api.logout(); } catch {} window.location.replace("/"); }}
+      title={ADMIN_NAV.find((n) => n.id === section)?.label}
+      subtitle={ADMIN_SUBTITLE[section]}
+    >
+      {tab === "Обзор" && <OverviewTab />}
+      {tab === "Пользователи" && <UsersTab />}
+      {tab === "Контейнеры" && <ContainersTab />}
+      {tab === "Запросы" && <RequestsTab />}
+      {tab === "Траектории" && <TracesTab />}
+      {tab === "Квоты" && <QuotasTab />}
+      {tab === "Аудит" && <AuditTab />}
+      {section === "profile" && <ProfilePage />}
+      {section === "download" && <DownloadPage />}
+    </Shell>
   );
 }

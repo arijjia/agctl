@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { launcher, api, type User, type SlotInfo } from "./api";
+import Shell, { useSection, type NavItem } from "./Shell";
+import DownloadPage from "./DownloadPage";
+
+const DEV_NAV: NavItem[] = [
+  { id: "places", label: "Рабочие места" },
+  { id: "download", label: "Скачать" },
+];
 import { LogsPanel } from "./LogsPanel";
 
 // Launcher — лаунчер роли developer (карточка developer-launcher-images):
@@ -22,6 +29,7 @@ type ContainerRow = {
 };
 
 export default function Launcher({ user }: { user: User }) {
+  const [section, go] = useSection(DEV_NAV, "places");
   const [images, setImages] = useState<ImagesResp | null>(null);
   const [slots, setSlots] = useState<SlotInfo[]>([]);
   const [slotMax, setSlotMax] = useState(0);
@@ -78,26 +86,18 @@ export default function Launcher({ user }: { user: User }) {
   const fetchLogs = useCallback(() => launcher.logs(logsFor, 300), [logsFor]);
 
   return (
-    <div className="admin-shell">
-      <header className="admin-header">
-        <div>
-          <h1>{(window as any).__AGCTL_BRAND__?.name || "agctl"} — лаунчер разработчика</h1>
-          <p className="muted small">
-            {user.login} · роль developer · контейнер не запускается, пока вы не
-            выбрали образ и не нажали «Запустить» · слотов: {slotLive}/{slotMax}
-          </p>
-        </div>
-        <button
-          className="ghost small"
-          onClick={async () => { try { await api.logout(); } catch {} window.location.replace("/"); }}
-        >
-          Выйти
-        </button>
-      </header>
-      <nav className="tabs admin-tabs">
-        <button className="tab active">Рантаймы</button>
-      </nav>
-      <main className="admin-main">
+    <Shell
+      items={DEV_NAV}
+      active={section}
+      onSelect={go}
+      user={user.login}
+      pills={[{ label: "сервер организации", tone: "data" }, { label: `слотов ${slotLive}/${slotMax}`, tone: "muted" }]}
+      onLogout={async () => { try { await api.logout(); } catch {} window.location.replace("/"); }}
+      title={DEV_NAV.find((n) => n.id === section)?.label}
+      subtitle={section === "places" ? "Контейнер не запускается, пока вы не выбрали образ и не нажали «Запустить»." : "Установка agctl на компьютер разработчика."}
+    >
+      {section === "download" && <DownloadPage />}
+      <div hidden={section !== "places"}>
         <h2 className="small">Слоты (параллельные рантаймы с разными образами)</h2>
         <table className="admin-table">
           <thead><tr><th>Слот</th><th>Образ следующего старта</th><th>Состояние</th><th>Запущенный образ</th><th></th></tr></thead>
@@ -196,7 +196,7 @@ export default function Launcher({ user }: { user: User }) {
         {logsOpen && (
           <LogsPanel fetchLogs={fetchLogs} onClose={() => setLogsOpen(false)} />
         )}
-      </main>
-    </div>
+      </div>
+    </Shell>
   );
 }

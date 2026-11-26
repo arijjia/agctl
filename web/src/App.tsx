@@ -87,7 +87,7 @@ function LocalGate() {
         <p className="muted">Локальный режим на этой машине. Вход — по ссылке из CLI:</p>
         <pre className="mono small">agctl dev open</pre>
         <p className="muted small">
-          Если дом нестандартный, задайте AGCTL_DEV_HOME. Ссылка живёт до
+          Если домов несколько — <span className="mono">agctl dev --home &lt;id&gt; open</span>. Ссылка живёт до
           перезапуска <span className="mono">agctl dev</span>; команда сама
           откроет браузер.
         </p>

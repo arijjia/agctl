@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { local, onLocalEvents, type LocalUI, type User } from "./api";
+import { local, onLocalEvents, runtimeApi, type LocalUI, type User } from "./api";
+import Shell, { Panel, useSection, type NavItem } from "./Shell";
+import ProfilePage from "./ProfilePage";
+import PathsPage from "./PathsPage";
+import DownloadPage from "./DownloadPage";
 import PlacesView from "./PlacesView";
 import PresetsView from "./PresetsView";
 import AccessView from "./AccessView";
-import { applyTheme, currentTheme, toggleTheme, type Theme } from "./theme";
+import { applyTheme, currentTheme, type Theme } from "./theme";
 
 // LocalLauncher — лаунчер локального режима (agctl dev), v2: рабочие места
 // (несколько контейнеров со своими папками), модели и ключи, доступы.
@@ -19,6 +23,15 @@ const brand = (window as any).__AGCTL_BRAND__?.name || "agctl";
 
 type Tab = "places" | "presets" | "secrets";
 
+const SUBTITLE: Record<string, string> = {
+  places: "Контейнеры с агентом на этой машине: папка проектов, образ, запуск.",
+  presets: "Наборы инструментов агента: MCP-серверы и скиллы. Пресет выбирается в чате у поля ввода.",
+  secrets: "Провайдеры моделей и доступы рабочего места. Значения хранятся в хранилище секретов.",
+  profile: "Настройки организации: бренд, модели, инструменты. Тот же файл, что лежит в каталоге профиля.",
+  paths: "Всё, что agctl держит на этой машине: файлы, порты, контейнеры.",
+  download: "Установка agctl на компьютер разработчика.",
+};
+
 export type EmbedTarget = { section: Tab; ws: string };
 
 export function embedTarget(): EmbedTarget | null {
@@ -29,11 +42,21 @@ export function embedTarget(): EmbedTarget | null {
 
 export default function LocalLauncher({ user, initial, embed }: { user: User; initial: LocalUI; embed?: EmbedTarget | null }) {
   const [ui, setUI] = useState<LocalUI>(initial);
-  const [tab, setTab] = useState<Tab>(embed?.section || (initial.llmKeySet ? "places" : "secrets"));
+  const NAV: NavItem[] = [
+    { id: "places", label: "Рабочие места" },
+    { id: "presets", label: "Пресеты" },
+    { id: "secrets", label: "Доступ", warn: !ui.llmKeySet },
+    { id: "profile", label: "Профиль", group: "Организация" },
+    { id: "paths", label: "Где что лежит", group: "Система" },
+    { id: "download", label: "Скачать", group: "Система" },
+  ];
+  const [section, go] = useSection(NAV, initial.llmKeySet ? "places" : "secrets");
+  const tab: Tab = embed?.section || (section === "presets" || section === "secrets" ? section : "places");
+  const setTab = (t: Tab) => go(t);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
-  const [theme, setTheme] = useState<Theme>(currentTheme);
+  const [theme] = useState<Theme>(currentTheme);
 
   // Тема применяется и во встроенном режиме: таб dsh наследует выбор из
   // localStorage (тот же origin), что и полная вкладка лаунчера.
@@ -97,34 +120,59 @@ export default function LocalLauncher({ user, initial, embed }: { user: User; in
   }
 
   return (
-    <div className="admin-shell">
-      <header className="admin-header">
-        <div>
-          <h1>{brand} — рабочие места на этой машине</h1>
-          <p className="muted small">
-            {user.login} · локальный режим · профиль {ui.profile}
-          </p>
-        </div>
-        <button
-          className="small"
-          onClick={() => setTheme(toggleTheme(theme))}
-          title="Переключить светлую/тёмную тему"
-        >
-          {theme === "dark" ? "☀️ Светлая" : "🌙 Тёмная"}
-        </button>
-      </header>
-      <nav className="tabs admin-tabs">
-        <button className={tab === "places" ? "tab active" : "tab"} onClick={() => setTab("places")}>
-          Рабочие места
-        </button>
-        <button className={tab === "presets" ? "tab active" : "tab"} onClick={() => setTab("presets")}>
-          Пресеты
-        </button>
-        <button className={tab === "secrets" ? "tab active" : "tab"} onClick={() => setTab("secrets")}>
-          Доступ{!ui.llmKeySet && " ⚠"}
-        </button>
-      </nav>
-      <main className="admin-main">{body}</main>
-    </div>
+    <Shell
+      items={NAV}
+      active={section}
+      onSelect={go}
+      user={user.login}
+      pills={[
+        { label: "локальный режим", tone: "data", title: "Платформа работает на этой машине" },
+        ...(ui.runtimeKind ? [{ label: ui.runtimeKind === "sbx" ? "docker sandbox" : "docker", tone: "ok" as const, title: "Рантайм рабочего места" }] : []),
+      ]}
+      title={NAV.find((n) => n.id === section)?.label}
+      subtitle={SUBTITLE[section]}
+    >
+      {section === "profile" && <ProfilePage />}
+      {section === "paths" && <PathsPage />}
+      {section === "download" && <DownloadPage />}
+      {(section === "places" || section === "presets" || section === "secrets") && (
+        <>
+          {section === "places" && <RuntimeSwitch ui={ui} note={note} />}
+          {body}
+        </>
+      )}
+    </Shell>
+  );
+}
+
+// RuntimeSwitch — рантайм рабочего места: контейнер Docker или Docker
+// Sandboxes (микро-ВМ). Смена действует со следующего перезапуска места.
+function RuntimeSwitch({ ui, note }: { ui: LocalUI; note: (m: string, err?: boolean) => void }) {
+  if (!ui.runtimes?.length) return null;
+  return (
+    <Panel label="Рантайм рабочего места">
+      <div className="choice-row">
+        {ui.runtimes.map((r) => (
+          <button
+            key={r.id}
+            className={r.id === ui.runtimeKind ? "choice active" : "choice"}
+            disabled={!r.available && r.id !== ui.runtimeKind}
+            title={r.detail || ""}
+            onClick={async () => {
+              if (r.id === ui.runtimeKind) return;
+              try {
+                const res = await runtimeApi.set(r.id);
+                note(`Рантайм: ${r.title}${res.restartNeeded ? " — перезапустите рабочее место" : ""}`);
+              } catch (e: any) {
+                note(e.message, true);
+              }
+            }}
+          >
+            <b>{r.title}</b>
+            <span className="muted small">{r.available ? r.detail || "доступен" : r.detail || "недоступен на этой машине"}</span>
+          </button>
+        ))}
+      </div>
+    </Panel>
   );
 }
