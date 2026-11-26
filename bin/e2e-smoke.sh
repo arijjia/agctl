@@ -20,7 +20,10 @@
 #   FAKE_LLM    1 = поднять стаб OpenAI-API и проверить живой провод
 #               до модели (контейнер → стаб) curl-пробой с ключом из
 #               $DSH_HOME/.credentials.yaml (в env контейнера ключа нет)
-#   CLEANUP     1 = удалить TEST_HOME после успешного прогона
+#   KEEP        1 = оставить TEST_HOME после успешного прогона (по умолчанию
+#               успешный прогон чистит за собой; упавший — остаётся для
+#               разбора, путь печатается в итоге). CLEANUP=1 устарел: очистка
+#               и так по умолчанию.
 set -u
 cd "$(dirname "$0")/.."
 REPO_ROOT="$PWD"
@@ -36,7 +39,13 @@ TEST_ADDR="${TEST_ADDR:-127.0.0.1:18929}"
 TEST_PORT="${TEST_ADDR##*:}"
 AGCTL_BIN="${AGCTL_BIN:-}"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
-TEST_HOME="$HOME/.agctl-e2e-$RUN_ID"
+# Дом прогона — во временном каталоге (не в корне ~): канонический путь,
+# его и показывают маунты Docker (/var → /private/var на macOS).
+TMP_ROOT="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+TEST_HOME="$(cd "$(mktemp -d "$TMP_ROOT/agctl-e2e-smoke.XXXXXX")" && pwd -P)"
+if [ -n "${CLEANUP:-}" ]; then
+  echo "CLEANUP устарел: успешный прогон чистит за собой по умолчанию; KEEP=1 — сохранить" >&2
+fi
 COOKIES_ADMIN="$TEST_HOME/qa-admin.cookies"
 COOKIES_USER="$TEST_HOME/qa-user.cookies"
 JAR="$TEST_HOME/qa-admin-dsh.cookies"
@@ -351,9 +360,11 @@ names=$(jsonget "['projects']" 2>/dev/null | grep -c "'name': 'e2e-proj'")
 [ "$names" = 0 ] && pass "проект исчез из списка" || fail "проект остался в списке"
 
 say "ИТОГО: PASS=$PASS FAIL=$FAIL CHAT=$CHAT run=$RUN_ID"
-if [ "$FAILED" = 0 ] && [ "${CLEANUP:-0}" = "1" ]; then
+if [ "$FAILED" = 0 ] && [ "${KEEP:-0}" != "1" ]; then
   case "$TEST_HOME" in
-    "$HOME"/.agctl-e2e-*) rm -rf -- "$TEST_HOME" && printf 'очищено: %s\n' "$TEST_HOME" ;;
+    "$TMP_ROOT"/agctl-e2e-smoke.*) rm -rf -- "$TEST_HOME" && printf 'очищено: %s\n' "$TEST_HOME" ;;
   esac
+else
+  printf 'артефакты прогона: %s\n' "$TEST_HOME"
 fi
 [ "$FAILED" = 0 ] || exit 1
