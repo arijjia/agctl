@@ -455,6 +455,7 @@ func devPrepareImage(ctx context.Context, p *profile.Data, target, flavor string
 	b := dockerrt.DevBuild{
 		Target: target, Flavor: flavor, BinDir: localmode.GuestDir(),
 		ImageFS: assets.Image, SkelFS: assets.DshSkel,
+		Version: version, Commit: commit, BuildDate: buildDate,
 		Log: func(m string) { logf("  " + m) },
 	}
 	if p != nil {
@@ -482,6 +483,9 @@ func devFlavorOf(cfg *localmode.Config, p *profile.Data, image string) string {
 	}
 	if strings.Contains(image, "-web") {
 		return "web"
+	}
+	if strings.HasSuffix(strings.SplitN(image[strings.LastIndex(image, "/")+1:], ":", 2)[0], "agctl-dsh-min") {
+		return "min"
 	}
 	if p != nil && p.View().FS != nil {
 		if ents, err := fs.ReadDir(p.View().FS, "image/flavors"); err == nil {

@@ -99,10 +99,25 @@ export type LocalEntry = {
   value?: string;
   known: boolean;
 };
+// LocalImage — образ из каталога лаунчера: есть ли на машине и что внутри
+// (метки io.agctl.* образа; у собранных до меток — пусто, outdated).
+export type LocalImage = {
+  ref: string;
+  present: boolean;
+  flavor?: string;
+  dshVersion?: string;
+  guestRevision?: string;
+  guestApi?: number;
+  variant?: string;
+  built?: string;
+  sizeMb?: number;
+  outdated?: boolean;
+  note?: string;
+};
 export type LocalUI = {
   profile: string;
   workdir: string;
-  images: { ref: string; present: boolean; flavor?: string }[];
+  images: LocalImage[];
   current: string;
   secrets: LocalEntry[];
   storage: string;

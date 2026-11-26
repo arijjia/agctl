@@ -82,7 +82,7 @@ function PresetEditor({
         </p>
         <label>
           Название
-          <input value={name} autoFocus placeholder="например, 1С-разработка или Веб-набор" onChange={(e) => setName(e.target.value)} />
+          <input value={name} autoFocus placeholder="например, Поиск или Веб-набор" onChange={(e) => setName(e.target.value)} />
         </label>
         <label>
           Описание

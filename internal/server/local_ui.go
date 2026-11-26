@@ -24,6 +24,17 @@ type LocalImage struct {
 	Ref     string `json:"ref"`
 	Present bool   `json:"present"` // есть в локальном Docker
 	Flavor  string `json:"flavor,omitempty"`
+	// Что внутри (метки io.agctl.* образа; у собранных до меток — пусто).
+	DshVersion    string `json:"dshVersion,omitempty"`
+	GuestRevision string `json:"guestRevision,omitempty"`
+	GuestAPI      int    `json:"guestApi,omitempty"`
+	Variant       string `json:"variant,omitempty"` // full | min | web | …
+	Built         string `json:"built,omitempty"`   // дата сборки
+	SizeMB        int64  `json:"sizeMb,omitempty"`
+	// Outdated — образ старее этой сборки agctl (уровень API guest ниже
+	// нужного или меток нет): часть возможностей лаунчера в нём не работает.
+	Outdated bool   `json:"outdated,omitempty"`
+	Note     string `json:"note,omitempty"`
 }
 
 // LocalHooks — операции на хосте для лаунчера локального режима.

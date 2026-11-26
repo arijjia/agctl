@@ -5,6 +5,7 @@ package dockerrt
 // ни в реестре). Повторяет цепочку make img_build:
 //
 //	agctl-dsh:<tag>                       базовый (встроенный контекст)
+//	agctl-dsh-min:<tag>                   минимальный (Dockerfile.min, без ступеней сверху)
 //	agctl-dsh-web:<tag>                   вкус web (встроенный flavors/web)
 //	agctl-dsh[-web]-<профиль>:<tag>       надстройка профиля (images.dockerfile)
 //	agctl-dsh-<профиль>-<вкус>:<tag>      вкус профиля (image/flavors/<вкус>)
@@ -33,6 +34,9 @@ type DevBuild struct {
 	OverlayDockerfile string // имя Dockerfile в Overlay
 	ProfileFS         fs.FS  // корень профиля (image/flavors/<вкус>/Dockerfile)
 
+	// Сборка agctl — в метки образа (io.agctl.guest.*, created).
+	Version, Commit, BuildDate string
+
 	Log func(string)
 }
 
@@ -59,6 +63,9 @@ func withSuffix(ref, suffix string) string {
 // последний.
 func DevBuildPlan(b DevBuild) []string {
 	tag := imageTag(b.Target)
+	if b.Flavor == "min" {
+		return []string{"agctl-dsh-min:" + tag}
+	}
 	cur := "agctl-dsh:" + tag
 	plan := []string{cur}
 	if b.Flavor == "web" {
@@ -86,7 +93,8 @@ func BuildDevImage(ctx context.Context, b DevBuild) error {
 	defer cli.Close()
 	// GuestServer не ставим (false): локальному режиму нужен guest только с
 	// bridge — бинарь agctl-guest-linux-<arch> из BinDir.
-	rt := &Runtime{cli: cli, cfg: Config{BinDir: b.BinDir, DshSkel: b.SkelFS}, imageFS: b.ImageFS}
+	rt := &Runtime{cli: cli, cfg: Config{BinDir: b.BinDir, DshSkel: b.SkelFS,
+		Version: b.Version, Commit: b.Commit, BuildDate: b.BuildDate}, imageFS: b.ImageFS}
 	log := b.Log
 	if log == nil {
 		log = func(string) {}
@@ -113,6 +121,8 @@ func BuildDevImage(ctx context.Context, b DevBuild) error {
 		switch {
 		case ref == base:
 			err = rt.buildBase(ctx, ref)
+		case ref == "agctl-dsh-min:"+tag:
+			err = rt.buildBaseVariant(ctx, ref, "min")
 		case ref == "agctl-dsh-web:"+tag:
 			err = rt.buildFromFS(ctx, b.ImageFS, "image/flavors/web", "Dockerfile", ref, prev)
 		case b.Overlay != nil && ref == withSuffix(prev, b.ProfileID):

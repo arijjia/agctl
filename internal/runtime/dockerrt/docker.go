@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/arijjia/agctl/internal/assets"
 	"io"
 	"io/fs"
 	"log"
@@ -44,6 +45,8 @@ type Config struct {
 	Home        string // local Docker adapter storage root; K8s adapters use PVCs instead
 	DshSkel     fs.FS  // embedded DSH home seed for lazy Chat runtimes
 	Version     string // версия agctl (метка контейнера для диагностики дрейфа)
+	Commit      string // сборка agctl (метка образа io.agctl.guest.revision при сборке на месте)
+	BuildDate   string // дата сборки agctl (метка образа org.opencontainers.image.created)
 
 	// Надстройка организации (профиль images.dockerfile): Image собирается
 	// из Overlay (Dockerfile = OverlayDockerfile) с build-arg BASE=BaseImage,
@@ -176,6 +179,15 @@ func (rt *Runtime) buildOverlay(ctx context.Context) error {
 // buildBase собирает базовый образ рабочего места из встроенного контекста
 // под тегом tag (вариант guest — по cfg.GuestServer).
 func (rt *Runtime) buildBase(ctx context.Context, tag string) error {
+	return rt.buildBaseVariant(ctx, tag, "")
+}
+
+// buildBaseVariant — базовый образ из встроенного контекста: variant ""
+// — полный (Dockerfile), "min" — минимальный (Dockerfile.min). Тег-версия
+// dsh (agctl-dsh:0.2.3-alpha.2) собирает образ на этой версии dsh;
+// минимальному без такого тега передаётся пин из Dockerfile. Метки образа
+// (сборка agctl, дата) — как у make img_build.
+func (rt *Runtime) buildBaseVariant(ctx context.Context, tag, variant string) error {
 	var bin string
 	var err error
 	if rt.cfg.GuestServer {
@@ -211,12 +223,38 @@ func (rt *Runtime) buildBase(ctx context.Context, tag string) error {
 	if err := os.Chmod(dst, 0o755); err != nil {
 		return err
 	}
-	args := map[string]*string{}
+	args := rt.labelArgs()
 	if rt.cfg.GuestServer {
 		server := "server"
 		args["GUEST_FLAVOR"] = &server
 	}
-	return rt.buildContext(ctx, ctxDir, tag, "Dockerfile", args)
+	dsh := assets.DshVersionFromTag(imageTag(tag))
+	dockerfile := "Dockerfile"
+	if variant == "min" {
+		dockerfile = "Dockerfile.min"
+		if dsh == "" {
+			dsh = assets.PinnedDshVersion()
+		}
+	}
+	if dsh != "" {
+		args["DSH_VERSION"] = &dsh
+	}
+	return rt.buildContext(ctx, ctxDir, tag, dockerfile, args)
+}
+
+// labelArgs — build-arg'и меток образа: версия и сборка agctl, дата.
+func (rt *Runtime) labelArgs() map[string]*string {
+	args := map[string]*string{}
+	set := func(k, v string) {
+		if v != "" {
+			v := v
+			args[k] = &v
+		}
+	}
+	set("AGCTL_VERSION", rt.cfg.Version)
+	set("AGCTL_COMMIT", rt.cfg.Commit)
+	set("AGCTL_BUILD_DATE", rt.cfg.BuildDate)
+	return args
 }
 
 // buildContext — docker build каталога ctxDir под тегом tag.

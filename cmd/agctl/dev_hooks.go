@@ -7,6 +7,9 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"github.com/arijjia/agctl/internal/assets"
+	"strconv"
 	"strings"
 
 	"github.com/arijjia/agctl/internal/cli"
@@ -146,10 +149,49 @@ func (h *devHooks) Images() []server.LocalImage {
 	add(h.CurrentImage())
 	out := make([]server.LocalImage, 0, len(refs))
 	for _, r := range refs {
-		_, err := dockerrt.ImageID(context.Background(), r)
-		out = append(out, server.LocalImage{Ref: r, Present: err == nil, Flavor: devFlavorOf(&localmode.Config{}, h.prof, r)})
+		im := server.LocalImage{Ref: r, Flavor: devFlavorOf(&localmode.Config{}, h.prof, r)}
+		if meta, err := dockerrt.ImageInfo(context.Background(), r); err == nil {
+			im.Present = true
+			devDescribeImage(&im, meta)
+		} else if v := assets.DshVersionFromTag(devImageTag(r)); v != "" {
+			im.DshVersion = v // соберётся на этой версии dsh
+		}
+		out = append(out, im)
 	}
 	return out
+}
+
+// devDescribeImage — что внутри образа по его меткам и не устарел ли он
+// для этой сборки agctl (уровень API guest).
+func devDescribeImage(im *server.LocalImage, meta dockerrt.ImageMeta) {
+	l := meta.Labels
+	im.DshVersion = l[assets.LabelDshVersion]
+	im.GuestRevision = l[assets.LabelGuestRevision]
+	im.Variant = l[assets.LabelVariant]
+	im.Built = l[assets.LabelCreated]
+	if im.Built == "" && len(meta.Created) >= 10 {
+		im.Built = meta.Created[:10]
+	}
+	im.SizeMB = meta.Size / (1 << 20)
+	api, _ := strconv.Atoi(l[assets.LabelGuestAPI])
+	im.GuestAPI = api
+	switch {
+	case api == 0:
+		im.Outdated = true
+		im.Note = "образ собран до меток версий: что внутри — неизвестно; если пресеты не видны в чате — пересоберите (make img_build) или скачайте свежий"
+	case api < assets.GuestAPI:
+		im.Outdated = true
+		im.Note = fmt.Sprintf("образ старее платформы (API guest %d < %d): пересоберите или скачайте свежий", api, assets.GuestAPI)
+	}
+}
+
+// devImageTag — тег ссылки образа ("latest", если не указан).
+func devImageTag(ref string) string {
+	slash := strings.LastIndex(ref, "/")
+	if i := strings.LastIndex(ref, ":"); i > slash {
+		return ref[i+1:]
+	}
+	return "latest"
 }
 
 func (h *devHooks) SetImage(ref string) error {

@@ -57,6 +57,8 @@ type Config struct {
 	BaseImage        string
 	BinDir           string
 	Version          string // версия agctl (метка контейнеров, диагностика дрейфа сборок)
+	Commit           string // коммит сборки agctl (метка образа, собранного на месте)
+	BuildDate        string // дата сборки agctl (метка образа, собранного на месте)
 	SecureCookies    bool   // true when agctl is served behind a trusted HTTPS terminator
 	PublicURL        string // базовый URL шлюза, видимый песочницам (fetch-at-boot раннера AX); пусто = derive из --addr
 	AutosaveEvery    time.Duration
@@ -174,6 +176,8 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 		Home:              cfg.Home,
 		DshSkel:           assetsSkel,
 		Version:           cfg.Version,
+		Commit:            cfg.Commit,
+		BuildDate:         cfg.BuildDate,
 		// Сервер организации — образы agctl-dsh-server* (guest с ax-runner и
 		// init-chat-home). Локальный режим (cfg.Local) собирает agctl-dsh* с
 		// локальным guest (только bridge): серверный guest туда попадать не должен.

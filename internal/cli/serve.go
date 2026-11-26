@@ -191,6 +191,8 @@ func Serve(args []string, opts ServeOptions) {
 		DevEnv:            SplitCSV(*devEnv),
 		BinDir:            FirstNonEmpty(*binDir, "dist"),
 		Version:           version,
+		Commit:            commit,
+		BuildDate:         buildDate,
 		Modules:           opts.Modules,
 		SecureCookies:     *secureCookies,
 		PublicURL:         DerivePublicURL(*publicURL, *addr),

@@ -49,6 +49,33 @@ func ImageID(ctx context.Context, ref string) (string, error) {
 	return insp.ID, nil
 }
 
+// ImageMeta — что лаунчер показывает об образе: метки (io.agctl.* —
+// версия dsh, сборка и уровень API guest, вид образа), дата и размер.
+type ImageMeta struct {
+	ID      string
+	Labels  map[string]string
+	Created string // время сборки по Docker (RFC 3339)
+	Size    int64  // байт
+}
+
+// ImageInfo — метаданные локального образа ref (ошибка, если его нет).
+func ImageInfo(ctx context.Context, ref string) (ImageMeta, error) {
+	cli, err := localClient()
+	if err != nil {
+		return ImageMeta{}, err
+	}
+	defer cli.Close()
+	insp, err := cli.ImageInspect(ctx, ref)
+	if err != nil {
+		return ImageMeta{}, err
+	}
+	m := ImageMeta{ID: insp.ID, Created: insp.Created, Size: insp.Size}
+	if insp.Config != nil {
+		m.Labels = insp.Config.Labels
+	}
+	return m, nil
+}
+
 // PullImage тянет ref из реестра (учётные данные — docker login на хосте).
 func PullImage(ctx context.Context, ref string) error {
 	cli, err := localClient()

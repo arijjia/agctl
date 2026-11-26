@@ -1,5 +1,10 @@
 # agctl-dsh: рабочее место агента (dsh web на eth0 + agctl-бинарь).
-# Слои: base (node+тулчейн) → dsh (npm, pinned) → MCP-прогрев → runtime.
+# Слои от редких изменений к частым: base (node+тулчейн) → tools (офис, CLI
+# разработчика, kubectl) → MCP-кэш → dsh (npm, pinned) → файлы agctl → метки.
+# Новая версия dsh пересобирает и перекачивает только слой dsh и выше:
+# апгрейд рабочего места — маленький pull, а не весь образ заново.
+# Метки io.agctl.* (версия dsh, сборка guest, уровень API guest) читает
+# лаунчер: что внутри образа и не устарел ли он для этой сборки agctl.
 # DSH_HOME — ТОЛЬКО volume в рантайме (сессии/креды никогда не в слоях).
 # Секреты (LLM-токен) — только env/файл в volume, никогда в образе.
 # Linux-сборка agctl кладётся в контекст сборки файлом ./agctl (make image).
@@ -14,26 +19,10 @@ RUN apt-get update \
 # python3+pytest+pip — тулзы доменных шаблонов (например 1c-vibe) и надстроек
 # профилей: пакеты организации ставятся в её image/Dockerfile (FROM agctl-dsh).
 
-FROM base AS dsh
-# Пин dsh — дефолт ARG DSH_VERSION, его двигает bin/dsh-bump.sh --update.
-# Оверрайд --build-arg DSH_VERSION=<ver> собирает тот же образ на версии
-# другого канала (workflow dsh-bump так проверяет свежий dist-tag next).
-ARG DSH_VERSION=0.2.2-rc.3
-# идентичность git для агента (в любом репо контейнера)
-RUN git config --system user.name "agent" \
-  && git config --system user.email "agent@workspace.local" \
-  && git config --system init.defaultBranch main \
-  && git config --system --add safe.directory '*' \
-  && npm config set allow-scripts \
-      @deepseek-ai/dsh-subprocess-local,koffi,node-pty,fsevents,protobufjs,esbuild \
-      --location=user \
-  && npm install -g --no-audit --no-fund @deepseek-ai/dsh@${DSH_VERSION} \
-  && dsh --version
-ENV PATH="/opt/dsh/bin:${PATH}"
-
-FROM dsh AS mcp-warm
+FROM base AS mcp-warm
 # Прогрев npx-кэша MCP-серверов каталога (provision.PlatformMcpServers): первая
-# сессия не тянет сеть. Успех — пакет лёг в кэш: серверы без конфига (токен
+# сессия не тянет сеть. Стадия от base: npx не нужен dsh, и смена версии dsh
+# не перекачивает кэш. Успех — пакет лёг в кэш: серверы без конфига (токен
 # GitLab и т.п.) сразу выходят с ошибкой, это не провал прогрева.
 ENV NPM_MCP_CACHE=/opt/npm-mcp
 RUN mkdir -p "$NPM_MCP_CACHE" \
@@ -46,21 +35,19 @@ RUN mkdir -p "$NPM_MCP_CACHE" \
      done \
   && du -sh "$NPM_MCP_CACHE"
 
-FROM dsh AS runtime
-COPY --from=mcp-warm /opt/npm-mcp /opt/npm-mcp
+FROM base AS tools
 # Office-превью в контейнере: кит @deepseek-ai/libreoffice-kit (движок превью
 # dsh) не поставляет Linux-сборки (карточка office-preview-in-container), поэтому
 # конвертацию в PDF делает системный LibreOffice — только impress (pptx-кейс,
 # бюджет образа ~300-400 МиБ; writer/calc для docx/xlsx — отдельное решение).
-# Слой в runtime, а не в base: apt-изменение не инвалидирует npm-слои dsh/mcp.
+# Слой в tools, ниже dsh: смена версии dsh его не пересобирает.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends libreoffice-impress \
   && rm -rf /var/lib/apt/lists/*
 # Инструменты разработчика (локальный режим, роль developer): поиск, JSON,
 # клиенты БД, CLI GitLab (glab) и Jira (jira-cli), uv/uvx (Python-проекты и
 # MCP Jira через uvx). Архитектура — из dpkg: собирается и BuildKit, и
-# классическим билдером (agctl serve EnsureImage). Слой после LibreOffice:
-# смена версий не инвалидирует dsh/MCP.
+# классическим билдером (agctl serve EnsureImage).
 ARG GLAB_VERSION=1.130.0
 ARG JIRA_CLI_VERSION=1.7.0
 ARG UV_VERSION=0.13.8
@@ -80,6 +67,36 @@ RUN apt-get update \
   && install -m 0755 "/tmp/uv-${uarch}-unknown-linux-gnu/uv" "/tmp/uv-${uarch}-unknown-linux-gnu/uvx" /usr/local/bin/ \
   && rm -rf /tmp/uv-* \
   && glab --version && jira version && uv --version
+# kubectl — работа агента с кластером (kubeconfig — доступ разработчика, в
+# образе его нет). Пин версии и SHA-256 обеих архитектур: сборка без сети к
+# реестрам пакетов кластера и без доверия к файлу суммы рядом с бинарём.
+ARG KUBECTL_VERSION=1.37.3
+ARG KUBECTL_SHA256_ARM64=da160b41491cc5c5e575d78bb665810fb900f70fad666d834094b24ec56d304f
+ARG KUBECTL_SHA256_AMD64=9a1b55af2795b25dd288dbef62387db9b5530087ab918d28c6ad067f2e3cb07c
+RUN arch="$(dpkg --print-architecture)" \
+  && sum="$([ "$arch" = amd64 ] && echo "$KUBECTL_SHA256_AMD64" || echo "$KUBECTL_SHA256_ARM64")" \
+  && curl -fsSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/${arch}/kubectl" \
+  && echo "${sum}  /usr/local/bin/kubectl" | sha256sum -c - \
+  && chmod 0755 /usr/local/bin/kubectl \
+  && kubectl version --client
+
+FROM tools AS runtime
+COPY --from=mcp-warm /opt/npm-mcp /opt/npm-mcp
+# Пин dsh — дефолт ARG DSH_VERSION, его двигает bin/dsh-bump.sh --update.
+# Оверрайд --build-arg DSH_VERSION=<ver> собирает тот же образ на версии
+# другого канала (workflow dsh-bump так проверяет свежий dist-tag next).
+ARG DSH_VERSION=0.2.2-rc.3
+# идентичность git для агента (в любом репо контейнера)
+RUN git config --system user.name "agent" \
+  && git config --system user.email "agent@workspace.local" \
+  && git config --system init.defaultBranch main \
+  && git config --system --add safe.directory '*' \
+  && npm config set allow-scripts \
+      @deepseek-ai/dsh-subprocess-local,koffi,node-pty,fsevents,protobufjs,esbuild \
+      --location=user \
+  && npm install -g --no-audit --no-fund @deepseek-ai/dsh@${DSH_VERSION} \
+  && dsh --version
+ENV PATH="/opt/dsh/bin:${PATH}"
 ENV NPM_MCP_CACHE=/opt/npm-mcp
 ENV DSH_HOME=/home/dsh
 # Вариант образа «без SSH» (лаунчер developer'а): собирается с
@@ -114,3 +131,24 @@ EXPOSE 3080 2222
 HEALTHCHECK --interval=30s --timeout=6s --start-period=150s --retries=3 \
   CMD node /usr/local/bin/agctl-dsh-net health
 ENTRYPOINT ["agctl-entrypoint"]
+
+# Метки — последний слой метаданных: сборка agctl меняется каждый раз, а
+# кэш слоёв выше не страдает. io.agctl.guest.api — уровень возможностей
+# guest (2: presets-sync в entrypoint); лаунчер сверяет его со своим.
+ARG AGCTL_VERSION=dev
+ARG AGCTL_COMMIT=unknown
+ARG AGCTL_BUILD_DATE=
+ARG AGCTL_GUEST_API=2
+LABEL org.opencontainers.image.title="agctl-dsh" \
+      org.opencontainers.image.description="Рабочее место агента: dsh web и guest agctl" \
+      org.opencontainers.image.source="https://github.com/arijjia/agctl" \
+      org.opencontainers.image.version="${DSH_VERSION}" \
+      org.opencontainers.image.revision="${AGCTL_COMMIT}" \
+      org.opencontainers.image.created="${AGCTL_BUILD_DATE}" \
+      io.agctl.image.variant="full" \
+      io.agctl.dsh.version="${DSH_VERSION}" \
+      io.agctl.guest.version="${AGCTL_VERSION}" \
+      io.agctl.guest.revision="${AGCTL_COMMIT}" \
+      io.agctl.guest.flavor="${GUEST_FLAVOR}" \
+      io.agctl.guest.api="${AGCTL_GUEST_API}" \
+      io.agctl.no-sshd="${AGCTL_NO_SSHD}"
