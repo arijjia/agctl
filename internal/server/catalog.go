@@ -11,6 +11,7 @@ package server
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -167,4 +168,38 @@ func (s *Server) handleProjectPromptPut(w http.ResponseWriter, r *http.Request, 
 // promptPath — путь системного промта воркспейса.
 func promptPath(dir string) string {
 	return dir + string(os.PathSeparator) + "AGENTS.md"
+}
+
+// mcpCatalog — MCP-серверы, доступные рабочему месту: каталог платформы плюс
+// серверы, объявленные пакетами профиля (manifest.json: mcp). При совпадении
+// id сервер платформы главнее; пакет с ошибкой в описании пропускается с
+// записью в лог.
+func (s *Server) mcpCatalog() []provision.McpServerSpec {
+	out := append([]provision.McpServerSpec(nil), provision.PlatformMcpServers...)
+	for _, pkg := range s.catalogPackages() {
+		spec, ok, err := pkg.McpSpec()
+		if err != nil {
+			log.Printf("[catalog] %v", err)
+			continue
+		}
+		if !ok {
+			continue
+		}
+		if _, clash := provision.PlatformMcpServer(spec.ID); clash {
+			log.Printf("[catalog] пакет %s: id занят MCP-сервером платформы — MCP пакета пропущен", pkg.ID)
+			continue
+		}
+		out = append(out, spec)
+	}
+	return out
+}
+
+// mcpSpec — сервер каталога (платформа + профиль) по id.
+func (s *Server) mcpSpec(id string) (provision.McpServerSpec, bool) {
+	for _, spec := range s.mcpCatalog() {
+		if spec.ID == id {
+			return spec, true
+		}
+	}
+	return provision.McpServerSpec{}, false
 }

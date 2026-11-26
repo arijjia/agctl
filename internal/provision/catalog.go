@@ -28,6 +28,42 @@ type CatalogPackage struct {
 	Description string   `json:"description"`
 	Schema      int      `json:"schema"`
 	Files       []string `json:"files"` // относительные пути внутри воркспейса
+	// Mcp — MCP-сервер, который объявляет пакет (необязательно): появляется
+	// в конструкторе пресетов и в консоли воркспейса рядом с серверами
+	// платформы. Пакет может нести и скиллы (files/.dsh/skills), и MCP.
+	Mcp *CatalogMcp `json:"mcp,omitempty"`
+}
+
+// CatalogMcp — описание MCP-сервера в manifest.json пакета профиля.
+type CatalogMcp struct {
+	// ServerName — имя сервера в dsh: инструменты видны агенту как
+	// mcp__<server_name>__<tool>. Строчная латиница, цифры, дефис.
+	ServerName string `json:"server_name"`
+	// Command и Args — как запустить сервер по stdio внутри контейнера
+	// рабочего места (npx/uvx/бинарь из образа профиля).
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
+	// Env — имена переменных доступа, которые нужны серверу. Значения задаёт
+	// разработчик в лаунчере («Доступ»), в профиле их нет.
+	Env []string `json:"env"`
+}
+
+// McpSpec — запись каталога MCP из пакета профиля; ok=false — пакет без MCP.
+func (p CatalogPackage) McpSpec() (McpServerSpec, bool, error) {
+	if p.Mcp == nil {
+		return McpServerSpec{}, false, nil
+	}
+	if !validCatalogID(p.Mcp.ServerName) {
+		return McpServerSpec{}, false, fmt.Errorf("пакет %s: mcp.server_name %q — нужны строчная латиница, цифры, дефис", p.ID, p.Mcp.ServerName)
+	}
+	if strings.TrimSpace(p.Mcp.Command) == "" {
+		return McpServerSpec{}, false, fmt.Errorf("пакет %s: mcp.command не задан", p.ID)
+	}
+	return McpServerSpec{
+		ID: p.ID, Title: p.Title, Description: p.Description,
+		ServerName: p.Mcp.ServerName, Command: p.Mcp.Command,
+		Args: append([]string(nil), p.Mcp.Args...), PassEnv: append([]string(nil), p.Mcp.Env...),
+	}, true, nil
 }
 
 const catalogManifest = "manifest.json"
