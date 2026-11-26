@@ -3,6 +3,7 @@ package provision
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -62,7 +63,8 @@ func TestSyncPresetPatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o600 {
+	// Права 0600 проверяемы только на POSIX: Windows отдаёт -rw-rw-rw-.
+	if fi, _ := os.Stat(path); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("права патча %v, нужно 0600", fi.Mode().Perm())
 	}
 	text := string(raw)
