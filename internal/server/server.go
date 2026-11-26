@@ -396,6 +396,7 @@ func (s *Server) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.handleMe)
 	mux.HandleFunc("GET /api/config", s.handleConfig)
+	s.registerWebAppRoutes(mux)
 	mux.HandleFunc("GET /api/projects", s.requireUser(s.handleProjectsList))
 	mux.HandleFunc("POST /api/projects", s.requireUser(s.handleProjectCreate))
 	// Удаление воркспейса вместе с каталогом на диске (нативное удаление dsh

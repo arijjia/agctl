@@ -109,6 +109,8 @@ export type LocalUI = {
   runtime: { state: string; image?: string };
   task: { state: string; image: string; log: string[]; error: string; restartNeeded: boolean };
   llmKeySet: boolean;
+  runtimeKind?: string;
+  runtimes?: RuntimeOption[];
 };
 export const local = {
   ui: () => req<LocalUI>("GET", "/api/local/ui"),
@@ -225,4 +227,78 @@ export const providers = {
   update: (name: string, p: Omit<ProviderInput, "name">) =>
     req<{ providers: Provider[] }>("PUT", `/api/local/ui/providers/${encodeURIComponent(name)}`, p),
   remove: (name: string) => req<{ providers: Provider[] }>("DELETE", `/api/local/ui/providers/${encodeURIComponent(name)}`),
+};
+
+// ── единое веб-приложение: профиль, скачивание, пути ─────────────────────────
+
+// raw — запрос с телом «как есть» (текст profile.yaml, PNG логотипа).
+async function raw<T>(method: string, url: string, body: BodyInit, type: string): Promise<T> {
+  const res = await fetch(url, { method, credentials: "same-origin", headers: { "Content-Type": type }, body });
+  const text = await res.text();
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    /* не JSON */
+  }
+  if (!res.ok) throw new Error(data?.error || text || res.statusText);
+  return data as T;
+}
+
+// profileApi — исходник профиля организации (profile.yaml в каталоге профиля).
+export type ProfileSource = {
+  id: string;
+  dir: string;
+  realDir?: string;
+  writable: boolean;
+  reason?: string;
+  yaml: string;
+  files: string[];
+};
+export const profileApi = {
+  get: () => req<ProfileSource>("GET", "/api/profile/source"),
+  check: (yaml: string) => raw<{ ok: boolean; error?: string }>("POST", "/api/profile/source/check", yaml, "text/yaml"),
+  save: (yaml: string) => raw<{ saved: boolean; restartNeeded: boolean; path: string }>("PUT", "/api/profile/source", yaml, "text/yaml"),
+  logo: (file: Blob) => raw<{ saved: boolean; path: string }>("PUT", "/api/profile/logo", file, "image/png"),
+};
+
+// downloads — страница «Скачать»: версия, репозитории и файлы с этого сервера.
+export type Downloads = {
+  version: string;
+  profile: string;
+  coreRepo: string;
+  kitRepo: string;
+  files: { name: string; size: number; url: string }[];
+  downloadsDir: string;
+  local: boolean;
+};
+export const downloadsApi = { get: () => req<Downloads>("GET", "/api/downloads") };
+
+// paths — отчёт agctl dev paths (локальный режим): всё, что agctl держит на машине.
+export type PathItem = { name: string; path: string; purpose: string; exists: boolean };
+export type PathsReport = {
+  root: { path: string; source: string; exists: boolean };
+  binaries: PathItem[];
+  executable: string;
+  guest: { dir: string; files: PathItem[] };
+  profile: { id?: string; dir?: string; source?: string; profilesDir: string; available: string[]; error?: string; [k: string]: any };
+  home: { id: string; dir: string; source: string; initialized: boolean; files: PathItem[]; others: string[] };
+  workdir: string;
+  ui: { addr: string; url: string; running: boolean; pid?: number };
+  bridge: { port: string; url: string; listen: string; tools: number; journal: string };
+  image: { ref: string; source: string; previous?: string };
+  docker: {
+    containers: { name: string; purpose: string }[];
+    egressNetwork: string;
+    egressEnabled: boolean;
+    mounts: { host: string; container: string; purpose: string }[];
+  };
+  secrets: { backend: string; service?: string; legacy?: string; file?: string; names: string[] };
+};
+export const pathsApi = { get: () => req<PathsReport>("GET", "/api/local/ui/paths") };
+
+// runtimeApi — рантайм рабочего места локального режима: docker или sbx.
+export type RuntimeOption = { id: string; title: string; available: boolean; detail?: string };
+export const runtimeApi = {
+  set: (runtime: string) => req<{ runtime: string; restartNeeded: boolean }>("PUT", "/api/local/ui/runtime", { runtime }),
 };

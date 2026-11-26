@@ -4,7 +4,7 @@ import { LogsPanel } from "./LogsPanel";
 
 // PlacesView — рабочие места на этой машине: у каждого свой контейнер, свои
 // папки хоста (одна → /workspace, несколько → /workspace/<имя>), свой образ и
-// свой dsh-home (сессии не смешиваются). Основное место — прежнее из dev.yaml.
+// свой dsh-home (сессии не смешиваются). Основное место — из config.yaml дома.
 
 const stateTitle: Record<Place["state"], string> = {
   running: "работает",

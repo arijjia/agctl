@@ -166,3 +166,8 @@ func (h *devHooks) EnsureImage(ctx context.Context, ref string, logf func(string
 func (h *devHooks) SetWorkDir(dir string) (string, error) {
 	return localmode.SetWorkDir(h.home, dir)
 }
+
+// PathsReport — отчёт agctl dev paths для страницы «Где что лежит».
+func (h *devHooks) PathsReport() any {
+	return devPathsReport(localmode.Home{ID: localmode.HomeID(h.home), Dir: h.home, Source: "запущенный дом"})
+}

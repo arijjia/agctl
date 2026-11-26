@@ -85,6 +85,12 @@ type Data struct {
 		Subtitle string `yaml:"subtitle"`
 	} `yaml:"login"`
 
+	// Install — откуда разработчик ставит agctl с этим профилем (страница
+	// «Скачать»): репозиторий GitHub с комплектами организации.
+	Install struct {
+		Repo string `yaml:"repo"`
+	} `yaml:"install"`
+
 	LLM llm `yaml:"llm"`
 
 	// Egress — куда контейнеру рабочего места можно ходить при включённом
@@ -119,7 +125,8 @@ type Data struct {
 	Source string `yaml:"-"`
 
 	logo []byte
-	fsys fs.FS // корень профиля (catalog/, image/, assets/)
+	fsys fs.FS  // корень профиля (catalog/, image/, assets/)
+	dir  string // каталог дискового профиля ("" — встроенный)
 }
 
 // EmbeddedNames — имена профилей, встроенных в бинарь.
@@ -162,6 +169,7 @@ func LoadDir(dir string) (*Data, error) {
 		return nil, err
 	}
 	d.fsys = os.DirFS(abs)
+	d.dir = abs
 	if p := d.Brand.Logo; p != "" {
 		logo, err := os.ReadFile(filepath.Join(abs, filepath.FromSlash(p)))
 		if err != nil {
@@ -408,4 +416,57 @@ func (v View) ImageContext() (ctx fs.FS, dockerfile string, ok bool) {
 		return nil, "", false
 	}
 	return sub, file, true
+}
+
+// SourceDir — каталог профиля на диске; "" — профиль встроен в бинарь и
+// из интерфейса не редактируется.
+func (d *Data) SourceDir() string {
+	if d == nil {
+		return ""
+	}
+	return d.dir
+}
+
+// MaxLogoBytes — предел размера логотипа профиля.
+const MaxLogoBytes = 512 << 10
+
+// CheckSource проверяет текст profile.yaml для каталога dir теми же
+// правилами, что и загрузка: схема, обязательные поля, сценарии, логотип
+// на месте. id менять нельзя — на нём держатся имена каталогов и образов.
+func CheckSource(dir, wantID string, raw []byte) (*Data, error) {
+	d := &Data{}
+	if err := yaml.Unmarshal(raw, d); err != nil {
+		return nil, fmt.Errorf("profile.yaml: %w", err)
+	}
+	if err := d.finalize("dir:" + dir); err != nil {
+		return nil, err
+	}
+	if wantID != "" && d.ID != wantID {
+		return nil, fmt.Errorf("id: менять нельзя (сейчас %q) — от него зависят каталог профиля, дом и имена образов", wantID)
+	}
+	if p := d.Brand.Logo; p != "" {
+		if strings.Contains(p, "..") || filepath.IsAbs(p) {
+			return nil, fmt.Errorf("brand.logo: путь внутри профиля, без «..»")
+		}
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(p))); err != nil {
+			return nil, fmt.Errorf("brand.logo: файла %s нет в профиле", p)
+		}
+	}
+	return d, nil
+}
+
+// WriteSource атомарно заменяет profile.yaml каталога dir, оставляя прежний
+// текст рядом (profile.yaml.bak). Текст должен пройти CheckSource.
+func WriteSource(dir string, raw []byte) error {
+	target := filepath.Join(dir, "profile.yaml")
+	if prev, err := os.ReadFile(target); err == nil {
+		if err := os.WriteFile(target+".bak", prev, 0o644); err != nil {
+			return err
+		}
+	}
+	tmp := target + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, target)
 }
