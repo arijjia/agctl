@@ -3,6 +3,7 @@ package dockerrt
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,8 +98,18 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 			}
 		}
 	}
-	if _, err := provision.EnsureDefaultWorkspace(dshHome, defaultWS); err != nil {
-		return agctlrt.ChatHandle{}, fmt.Errorf("dockerrt: воркспейс dsh по умолчанию: %w", err)
+	// Воркспейс dsh по умолчанию — на хостовом пути; без него — вернуть
+	// /workspace, только если по умолчанию стоял хостовый воркспейс agctl
+	// (выбор владельца не трогаем). Не фатально: незнакомый формат реестра
+	// (новая версия dsh) не должен закрывать место.
+	var wsErr error
+	if defaultWS != "/workspace" {
+		_, wsErr = provision.EnsureDefaultWorkspace(dshHome, defaultWS)
+	} else {
+		_, wsErr = provision.ReleaseHostWorkspace(dshHome, defaultWS)
+	}
+	if wsErr != nil {
+		log.Printf("[dockerrt] %s: воркспейс dsh по умолчанию (%s) не выставлен: %v", spec.RuntimeID, defaultWS, wsErr)
 	}
 	// Идемпотентная перезапись настроек провайдера на каждом ленивом старте:
 	// DSH_HOME мог быть засеян до появления платформенного провайдера, а

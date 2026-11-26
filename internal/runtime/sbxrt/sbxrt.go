@@ -352,6 +352,11 @@ func (rt *Runtime) prepareDshHome(dshHome string, spec agctlrt.ChatSpec, provide
 	if err := provision.EnsurePermissionDefaults(dshHome, spec.DefaultFullAccess); err != nil {
 		return fmt.Errorf("sbxrt: permission defaults: %w", err)
 	}
+	// Место могло жить в Docker с «путями как на хосте» (воркспейс dsh по
+	// умолчанию — хостовый путь); в песочнице sbx папка проектов — /workspace.
+	if _, err := provision.ReleaseHostWorkspace(dshHome, "/workspace"); err != nil {
+		log.Printf("[sbxrt] %s: воркспейс dsh по умолчанию: %v", spec.RuntimeID, err)
+	}
 	return nil
 }
 
