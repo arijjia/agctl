@@ -99,7 +99,7 @@ func TestProviderConfigPayloadKeysFollowInjectionMode(t *testing.T) {
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.APIKey != "unit-key" || payload.Alias != "agctl" || payload.Model != "m" {
+	if payload.APIKey != "unit-key" || payload.Alias != "llm.example.invalid" || payload.Model != "m" {
 		t.Fatalf("payload: %+v", payload)
 	}
 	if len(payload.Extras) != 1 || payload.Extras[0].APIKey != "corp-key" {

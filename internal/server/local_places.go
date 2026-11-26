@@ -200,7 +200,6 @@ func (s *Server) registerLocalPlaceRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/local/ui/fs", s.requireLocalOwner(s.handleLocalFS))
 	mux.HandleFunc("POST /api/local/ui/fs/dialog", s.requireLocalOwner(s.handleLocalFSDialog))
 	mux.HandleFunc("POST /api/local/ui/reveal", s.requireLocalOwner(s.handleLocalReveal))
-	mux.HandleFunc("GET /api/local/ui/models", s.requireLocalOwner(s.handleLocalModels))
 	mux.HandleFunc("GET /api/local/ui/events", s.requireLocalOwner(s.handleLocalEvents))
 	// Страницы лаунчера в локальном режиме (серверный модуль launcher здесь не
 	// подключён): полный лаунчер и встроенный режим для табов правой панели dsh.
@@ -995,36 +994,6 @@ func revealCommand(app, p string) (*exec.Cmd, error) {
 		return nil, errors.New("не найдена команда code (VS Code → Shell Command: Install 'code' command in PATH)")
 	}
 	return nil, fmt.Errorf("неизвестное приложение %q", app)
-}
-
-// ── модели ──────────────────────────────────────────────────────────────────
-
-type modelProviderView struct {
-	ID           string   `json:"id"`
-	BaseURLs     []string `json:"baseUrls"`
-	Models       []string `json:"models"`
-	DefaultModel string   `json:"defaultModel"`
-	KeyEnv       string   `json:"keyEnv"`
-	KeySet       bool     `json:"keySet"`
-	Primary      bool     `json:"primary"`
-}
-
-// handleLocalModels — GET /api/local/ui/models: провайдеры и модели
-// платформы (профиль + доступы) и статус ключа каждого. Ключ меняется
-// через /api/local/ui/secrets/{keyEnv}. Индекс умности по уровням усилий —
-// следующий этап (поле intelligence зарезервировано).
-func (s *Server) handleLocalModels(w http.ResponseWriter, r *http.Request, id identity) {
-	p := s.defaultLLM()
-	out := []modelProviderView{}
-	if p.BaseURL != "" || len(p.AllModels()) > 0 {
-		out = append(out, modelProviderView{ID: p.Alias(), BaseURLs: p.AllBaseURLs(), Models: p.AllModels(),
-			DefaultModel: p.DefaultModel(), KeyEnv: "AGCTL_LLM_API_KEY", KeySet: p.APIKey != "", Primary: true})
-	}
-	for _, e := range p.Extras {
-		out = append(out, modelProviderView{ID: e.Alias(), BaseURLs: []string{e.BaseURL}, Models: e.AllModels(),
-			DefaultModel: e.DefaultModel(), KeyEnv: e.KeyEnv(), KeySet: e.APIKey != ""})
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"providers": out, "intelligence": nil})
 }
 
 // ── события ─────────────────────────────────────────────────────────────────

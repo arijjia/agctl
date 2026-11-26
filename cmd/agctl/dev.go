@@ -648,11 +648,13 @@ func devServe(home string, args []string) {
 	if len(missing) > 0 {
 		log.Printf("dev: доступы не заданы: %s (agctl dev secrets set …)", strings.Join(missing, ", "))
 	}
-	// Секреты (в т.ч. личные ключи доп. провайдеров) — в env этого процесса:
-	// serve-ребёнок наследует окружение, и cli.ProfExtraProviders читает ключ
-	// доп. провайдера через os.Getenv; хранилище ОС хоста он не видит.
-	for _, kv := range env {
-		if k, v, ok := strings.Cut(kv, "="); ok && k != "AGCTL_LLM_API_KEY" {
+	// Ключи доп. провайдеров профиля — в env этого процесса: cli.Serve читает
+	// их через os.Getenv по api_key_env профиля (хранилище ОС ему не видно).
+	// В env контейнера они не попадают: рабочему месту уходит только
+	// ContainerEnv, а он ключи моделей пропускает. Ключи личных провайдеров
+	// сервер берёт через хуки лаунчера.
+	for k, v := range localmode.ModelKeys(cfg, store, devProfileKeyEnvs(cfg)...) {
+		if k != "AGCTL_LLM_API_KEY" {
 			_ = os.Setenv(k, v)
 		}
 	}
@@ -1332,4 +1334,20 @@ func devEgressArgs(cfg *localmode.Config) []string {
 		"--egress-allowlist=" + strconv.FormatBool(cfg.EgressAllowlist),
 		"--egress-allow=" + strings.Join(cfg.EgressAllow, ","),
 	}
+}
+
+// devProfileKeyEnvs — имена переменных с ключами доп. провайдеров профиля
+// (llm.extra_providers[].api_key_env).
+func devProfileKeyEnvs(cfg *localmode.Config) []string {
+	prof, err := devResolveProfile(cfg)
+	if err != nil || prof == nil {
+		return nil
+	}
+	var out []string
+	for _, p := range prof.LLM.ExtraProviders {
+		if env := strings.TrimSpace(p.APIKeyEnv); env != "" {
+			out = append(out, env)
+		}
+	}
+	return out
 }

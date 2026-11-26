@@ -183,17 +183,7 @@ func (s *Server) afterLocalSecretChange(name, value string) {
 		s.setDefaultLLMExtraKey(name, value)
 	}
 	// Доступы общие для всех рабочих мест: каждое работающее — на старых.
-	s.chatMu.Lock()
-	var running []int
-	for k := range s.chats {
-		if k.uid == s.local.ownerID {
-			running = append(running, k.slot)
-		}
-	}
-	s.chatMu.Unlock()
-	for _, slot := range running {
-		s.placeTask(slot).markPending()
-	}
+	s.markLocalPlacesPending()
 	s.local.events.publish("secrets")
 	s.local.events.publish("places")
 }

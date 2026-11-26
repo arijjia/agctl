@@ -75,9 +75,41 @@ func (h *devHooks) DeleteValue(name string) error {
 	return localmode.DeleteValue(h.home, h.store, name)
 }
 
+// ContainerEnv — env рабочего места без ключей моделей: кроме имён по
+// соглашению (localmode.IsModelKeyEnv) отсекаются api_key_env провайдеров
+// профиля с произвольными именами.
 func (h *devHooks) ContainerEnv() []string {
 	env, _ := localmode.ContainerEnv(h.cfg(), h.store)
-	return env
+	skip := map[string]bool{}
+	if h.prof != nil {
+		for _, p := range h.prof.LLM.ExtraProviders {
+			skip[strings.TrimSpace(p.APIKeyEnv)] = true
+		}
+	}
+	out := env[:0]
+	for _, kv := range env {
+		if k, _, _ := strings.Cut(kv, "="); !skip[k] {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
+// Providers — личные провайдеры моделей из настроек дома.
+func (h *devHooks) Providers() []localmode.Provider { return h.cfg().Providers }
+
+func (h *devHooks) SaveProvider(p localmode.Provider, key *string) error {
+	return localmode.SaveProvider(h.home, h.store, p, key)
+}
+
+func (h *devHooks) DeleteProvider(name string) error {
+	return localmode.DeleteProvider(h.home, h.store, name)
+}
+
+// ModelKey — ключ модели из хранилища секретов по имени.
+func (h *devHooks) ModelKey(env string) string {
+	v, _ := h.store.Get(env)
+	return v
 }
 
 func (h *devHooks) LLMKey() string {

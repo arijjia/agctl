@@ -26,7 +26,7 @@ import (
 // Provider — настройки LLM-провайдера воркспейса (из личного кабинета).
 type Provider struct {
 	// Name — алиас провайдера в dsh (llm-pi-ai.providers.<Name>, имя в
-	// выпадающем списке моделей); пусто = agctl.
+	// выпадающем списке моделей); пусто = хост BaseURL.
 	Name     string
 	BaseURL  string   // primary/legacy base URL (первый элемент BaseURLs)
 	BaseURLs []string // несколько provider endpoints с общим списком Models
@@ -93,8 +93,22 @@ func (p Provider) AllModels() []string {
 	return nil
 }
 
-// Alias — безопасный алиас основного провайдера в dsh (zai-coding-cn, agctl).
-func (p Provider) Alias() string { return providerAlias(p.Name, "agctl") }
+// Alias — имя основного провайдера в dsh. Имя не задано — берётся хост его
+// API (api.z.ai): провайдер виден под своим именем, а не под именем
+// платформы.
+func (p Provider) Alias() string { return providerAlias(p.Name, hostAlias(p.BaseURL, "provider")) }
+
+// hostAlias — имя провайдера из хоста адреса API; адреса нет — fallback.
+func hostAlias(baseURL, fallback string) string {
+	raw := strings.TrimSpace(baseURL)
+	if i := strings.Index(raw, "://"); i >= 0 {
+		raw = raw[i+3:]
+	}
+	if i := strings.IndexAny(raw, "/:?#"); i >= 0 {
+		raw = raw[:i]
+	}
+	return providerAlias(raw, fallback)
+}
 
 // AllProviderURLs — все эндпоинты всех провайдеров: основной (со всеми
 // BaseURLs-алиасами) и дополнительные. Нужен сетевому слою для DNS-пинов.
@@ -176,8 +190,8 @@ func (e ExtraProvider) DefaultModel() string {
 	return ""
 }
 
-// Alias — безопасный алиас провайдера в dsh.
-func (e ExtraProvider) Alias() string { return providerAlias(e.Name, "provider") }
+// Alias — безопасный алиас провайдера в dsh; имя не задано — хост API.
+func (e ExtraProvider) Alias() string { return providerAlias(e.Name, hostAlias(e.BaseURL, "provider")) }
 
 // KeyEnv — имя env-переменной с ключом (реф в .credentials.yaml).
 func (e ExtraProvider) KeyEnv() string {
@@ -752,7 +766,7 @@ func RefreshProvider(home string, p Provider) error {
 				"\n          contextWindow: 262144\n          maxTokens: 65536\n")
 		}
 	}
-	defaultAlias, defaultModel := "agctl", p.DefaultModel()
+	defaultAlias, defaultModel := p.Alias(), p.DefaultModel()
 	for _, block := range blocks {
 		if block.primary {
 			defaultAlias, defaultModel = block.alias, block.defaultModel

@@ -446,3 +446,12 @@ button.small { padding: 4px 10px; font-size: 12.5px; }
 .check-row input[type="checkbox"] { flex: 0 0 auto; width: 15px; height: 15px; margin: 2px 0 0; padding: 0; }
 .embed-foot { margin-top: 16px; }
 a.button[aria-disabled="true"] { opacity: .5; pointer-events: none; }
+
+/* Вкладка «Доступ»: карточки провайдеров моделей */
+.provider-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px; margin: 0 0 12px; }
+.provider-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.provider-name { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.provider-form { display: flex; flex-direction: column; gap: 10px; }
+.provider-form label { display: flex; flex-direction: column; gap: 4px; }
+.provider-form input, .provider-form textarea, .provider-form select { width: 100%; }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
