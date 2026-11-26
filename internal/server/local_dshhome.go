@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/arijjia/agctl/internal/provision"
 	"github.com/arijjia/agctl/internal/store"
@@ -230,6 +231,19 @@ func (s *Server) handlePlaceClone(w http.ResponseWriter, r *http.Request, id ide
 		writeErr(w, http.StatusConflict, "исходное место сейчас запускается — дождитесь и повторите")
 		return
 	}
+	// Копия — при остановленном источнике и под его замком первого старта:
+	// открытая вкладка чата не поднимет место посреди копирования (её запрос
+	// подождёт), иначе SQLite и сессии dsh скопировались бы рваными.
+	srcLock := s.chatStartLock(srcKey)
+	srcLock.Lock()
+	locked := true
+	unlock := func() {
+		if locked {
+			locked = false
+			srcLock.Unlock()
+		}
+	}
+	defer unlock()
 	s.chatMu.Lock()
 	wasRunning := s.chats[srcKey] != nil
 	s.chatMu.Unlock()
@@ -240,6 +254,7 @@ func (s *Server) handlePlaceClone(w http.ResponseWriter, r *http.Request, id ide
 		}
 	}
 	restartSrc := func() {
+		unlock()
 		if wasRunning {
 			s.startPlaceRuntime(id.ID, srcSlot, false)
 		}
@@ -306,4 +321,19 @@ func (s *Server) handlePlaceClone(w http.ResponseWriter, r *http.Request, id ide
 	s.local.events.publish("places")
 	s.local.events.publish("presets")
 	writeJSON(w, http.StatusCreated, s.viewOf(id.ID, rec, false))
+}
+
+// chatStartLock — замок первого старта слота (тот же, что у ensureChat).
+func (s *Server) chatStartLock(key chatKey) *sync.Mutex {
+	s.chatMu.Lock()
+	defer s.chatMu.Unlock()
+	if s.chatLocks == nil {
+		s.chatLocks = make(map[chatKey]*sync.Mutex)
+	}
+	lock := s.chatLocks[key]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		s.chatLocks[key] = lock
+	}
+	return lock
 }
