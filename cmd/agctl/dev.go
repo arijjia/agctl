@@ -169,15 +169,22 @@ func devInit(h localmode.Home, args []string) error {
 	cliWizard := fs.Bool("cli", false, "спросить образ и доступы в терминале (по умолчанию — в браузере, в лаунчере)")
 	addr := fs.String("addr", "", "адрес UI (только 127.0.0.1:PORT), по умолчанию "+localmode.DefaultAddr)
 	runtimeFlag := fs.String("runtime", "", "рантайм рабочего места: docker (по умолчанию) | sbx (Docker Sandboxes)")
+	hostPaths := fs.Bool("host-paths", runtime.GOOS != "windows", "пути как на хосте: папки проектов видны в контейнере по тем же путям (новый дом — включено, кроме Windows)")
 	_ = fs.Parse(args)
+	hostPathsSet := false
+	fs.Visit(func(f *flag.Flag) { hostPathsSet = hostPathsSet || f.Name == "host-paths" })
 
 	h = devInitHome(h, *prof, *profDir)
 	home := h.Dir
 	cfg, err := localmode.Load(home)
 	if errors.Is(err, localmode.ErrNotInitialized) {
-		cfg = &localmode.Config{}
+		// Новый дом: «пути как на хосте» по умолчанию (агент и вы видите
+		// одни и те же пути); прежние дома не меняются без явного флага.
+		cfg = &localmode.Config{HostPaths: *hostPaths && runtime.GOOS != "windows"}
 	} else if err != nil {
 		return err
+	} else if hostPathsSet {
+		cfg.HostPaths = *hostPaths && runtime.GOOS != "windows"
 	}
 	in := bufio.NewReader(os.Stdin)
 	ask := func(q, def string) string {
