@@ -69,6 +69,17 @@ if [ -n "$LAUNCHER" ] && [ -d "$HOME" ] && [ -z "${DSH_PERMISSION_MODE:-}" ]; th
   fi
 fi
 
+# Пресеты agctl (лаунчер, MCP-наборы воркспейсов): dsh читает пресеты только
+# как строки-декларации в патче, каталог .agent-presets он не сканирует.
+# guest собирает патч-слой из $DSH_HOME/.agent-presets/agctl-*/ поверх состава
+# штатного пресета standard этой версии dsh. Сбой сборки старт не срывает —
+# dsh поднимется со штатными пресетами, причина будет в логе.
+PRESET_PATCH="$(agctl presets-sync 2>/tmp/agctl-presets-sync.log || true)"
+sed 's/^/[agctl-entrypoint] /' /tmp/agctl-presets-sync.log 2>/dev/null || true
+
 BIND_IP="$(node /usr/local/bin/agctl-dsh-net print)"
 echo "[agctl-entrypoint] dsh web на ${BIND_IP}:${DSH_PORT:-3080}"
+if [ -n "$PRESET_PATCH" ] && [ -f "$PRESET_PATCH" ]; then
+  exec dsh web --patch "$PRESET_PATCH" --host "$BIND_IP" --port "${DSH_PORT:-3080}" --no-open "$@"
+fi
 exec dsh web --host "$BIND_IP" --port "${DSH_PORT:-3080}" --no-open "$@"

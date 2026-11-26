@@ -87,27 +87,29 @@ type mcpCordisRow struct {
 // (истина — файл, повторный вызов идемпотентен). secretEnv несёт значения
 // секретных env-переменных выбранного состава. Пустой выбор снимает пресет.
 func EnsureWorkspaceMcpPreset(dshHome, project string, specs []McpServerSpec, secretEnv map[string]string) error {
-	return EnsureMcpPreset(dshHome, WorkspaceMcpPresetID(project), "agctl-ws: "+project,
+	return EnsureMcpPreset(dshHome, WorkspaceMcpPresetID(project), "Воркспейс "+project,
 		fmt.Sprintf("MCP-набор воркспейса %q из консоли agctl — не редактируйте вручную, выбор в консоли перезаписывает файл.", project),
 		specs, secretEnv)
 }
 
-// EnsureMcpPreset — общий писатель agctl-пресетов dsh (managed): пресет
-// .agent-presets/<presetID>/agent.cordis.yml с выбранными MCP-рядами.
-// metaName — метка источника в preset.yml (история: «agctl-ws: <проект>» у
-// консоли воркспейса, «agctl: <id>» у пресетов лаунчера). Префикс «agctl-»
-// в presetID — марка управляемого пресета: ручные пресеты dsh agctl не
-// трогает никогда. Идемпотентно; пустой выбор снимает пресет.
-func EnsureMcpPreset(dshHome, presetID, metaName, description string, specs []McpServerSpec, secretEnv map[string]string) error {
-	dir := filepath.Join(dshHome, ".agent-presets", presetID)
+// EnsureMcpPreset — писатель MCP-пресета воркспейса: пустой выбор снимает
+// пресет (сессии воркспейса больше не должны видеть MCP-ряды), иначе —
+// EnsureAgentPreset.
+func EnsureMcpPreset(dshHome, presetID, name, description string, specs []McpServerSpec, secretEnv map[string]string) error {
 	if len(specs) == 0 {
-		// Снятие пресета: при повторном PUT с пустым выбором сессии воркспейса
-		// больше не должны видеть MCP-ряды. Ошибки отсутствия каталога — норма.
-		if err := os.RemoveAll(dir); err != nil {
-			return fmt.Errorf("mcp preset remove: %w", err)
-		}
-		return nil
+		return RemoveMcpPreset(dshHome, presetID)
 	}
+	return EnsureAgentPreset(dshHome, presetID, name, description, specs, secretEnv)
+}
+
+// EnsureAgentPreset — общий писатель управляемых пресетов agctl: каталог
+// .agent-presets/<presetID>/ с preset.yml (имя и описание в ростере dsh) и
+// agent.cordis.yml (MCP-ряды; пустой список — пресет только со скиллами).
+// Сам dsh этот каталог не читает: перед стартом guest собирает из него
+// патч-слой (preset_patch.go). Префикс «agctl-» в presetID — марка
+// управляемого пресета: ручные пресеты dsh agctl не трогает. Идемпотентно.
+func EnsureAgentPreset(dshHome, presetID, name, description string, specs []McpServerSpec, secretEnv map[string]string) error {
+	dir := filepath.Join(dshHome, ".agent-presets", presetID)
 	rows := make([]mcpCordisRow, 0, len(specs))
 	for _, s := range specs {
 		env := map[string]string{"npm_config_cache": "/opt/npm-mcp"}
@@ -149,8 +151,13 @@ func EnsureMcpPreset(dshHome, presetID, metaName, description string, specs []Mc
 	if err := os.WriteFile(filepath.Join(dir, "agent.cordis.yml"), composition, 0o600); err != nil {
 		return fmt.Errorf("mcp preset write: %w", err)
 	}
-	meta := fmt.Sprintf("name: %s\ndescription: %s\n", metaName, description)
-	if err := os.WriteFile(filepath.Join(dir, "preset.yml"), []byte(meta), 0o644); err != nil {
+	// yaml.Marshal, а не Sprintf: имя и описание задаёт пользователь, в них
+	// бывают «: », кавычки и переводы строк.
+	meta, err := yaml.Marshal(presetMeta{Name: name, Description: description})
+	if err != nil {
+		return fmt.Errorf("mcp preset metadata: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "preset.yml"), meta, 0o644); err != nil {
 		return fmt.Errorf("mcp preset metadata: %w", err)
 	}
 	return nil

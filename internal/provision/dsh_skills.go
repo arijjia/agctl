@@ -42,7 +42,12 @@ func SkillPackageFiles(pkg CatalogPackage) []string {
 // Существующие файлы перезаписываются (переустановка = обновление до версии
 // каталога). Идемпотентно.
 func InstallSkillPackageToDshHome(dshHome string, catalogFS fs.FS, pkg CatalogPackage) error {
-	skillsRoot := filepath.Join(dshHome, "skills")
+	return InstallSkillPackageTo(filepath.Join(dshHome, "skills"), catalogFS, pkg)
+}
+
+// InstallSkillPackageTo копирует скиллы пакета в произвольный корень скиллов
+// (каталог скиллов пресета — PresetSkillsRoot). Идемпотентно.
+func InstallSkillPackageTo(skillsRoot string, catalogFS fs.FS, pkg CatalogPackage) error {
 	for _, rel := range pkg.Files {
 		target, ok := skillTargetRel(rel)
 		if !ok {
