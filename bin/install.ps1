@@ -214,7 +214,7 @@ try {
     } elseif ($profileId) {
         Write-Host "Дальше: agctl dev --home $profileId init --profile $profileId [--flavor …] [--workdir C:\src\...], затем agctl dev --home $profileId up"
     } else {
-        Write-Host 'Дальше: agctl dev init, затем agctl dev up   (где что лежит — agctl dev paths)'
+        Write-Host 'Дальше: agctl dev up — первый запуск настроит дом сам (папка проектов ~/src); тонкая настройка — agctl dev init; где что лежит — agctl dev paths'
     }
     if (Get-ChildItem -Force -Directory $env:USERPROFILE -Filter '.agctl-dev*' -ErrorAction SilentlyContinue) {
         Write-Host "ℹ найдены прежние дома ~\.agctl-dev* — перенос в $root\homes: agctl dev migrate (план), agctl dev migrate --apply"

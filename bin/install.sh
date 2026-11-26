@@ -216,7 +216,7 @@ if [ -n "$profile_id" ] && [ -z "${AGCTL_NO_INIT:-}" ]; then
 elif [ -n "$profile_id" ]; then
   say "Дальше: agctl dev --home $profile_id init --profile $profile_id [--flavor …] [--workdir …], затем agctl dev --home $profile_id up"
 else
-  say "Дальше: agctl dev init, затем agctl dev up   (где что лежит — agctl dev paths)"
+  say "Дальше: agctl dev up — первый запуск настроит дом сам (папка проектов ~/src); тонкая настройка — agctl dev init; где что лежит — agctl dev paths"
 fi
 case "$(ls -d "$HOME"/.agctl-dev "$HOME"/.agctl-dev-* 2>/dev/null | head -1)" in
   "") ;;
