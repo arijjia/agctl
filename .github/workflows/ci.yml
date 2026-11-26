@@ -33,6 +33,7 @@ jobs:
         working-directory: web
         run: |
           npm ci
+          npx tsc --noEmit -p .
           npm run build
 
   gitleaks:
