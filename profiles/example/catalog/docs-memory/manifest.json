@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "id": "docs-memory",
+  "title": "Память агента (MCP)",
+  "description": "MCP-сервер: агент запоминает факты о проекте между сессиями. Пример подключения своего MCP-сервера.",
+  "mcp": {
+    "server_name": "docs-memory",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-memory"],
+    "env": []
+  }
+}

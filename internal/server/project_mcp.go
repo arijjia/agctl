@@ -64,8 +64,9 @@ func (s *Server) handleProjectMcpGet(w http.ResponseWriter, r *http.Request, id 
 			keySet = true
 		}
 	}
-	servers := make([]map[string]any, 0, len(provision.PlatformMcpServers))
-	for _, spec := range provision.PlatformMcpServers {
+	catalog := s.mcpCatalog()
+	servers := make([]map[string]any, 0, len(catalog))
+	for _, spec := range catalog {
 		if spec.LocalOnly && !s.isLocal() {
 			continue
 		}
@@ -109,7 +110,7 @@ func (s *Server) handleProjectMcpPut(w http.ResponseWriter, r *http.Request, id 
 	specs := make([]provision.McpServerSpec, 0, len(selected))
 	needSecret := false
 	for _, sid := range selected {
-		spec, ok := provision.PlatformMcpServer(sid)
+		spec, ok := s.mcpSpec(sid)
 		if ok && spec.LocalOnly && !s.isLocal() {
 			ok = false
 		}

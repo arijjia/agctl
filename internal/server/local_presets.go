@@ -87,10 +87,10 @@ func sortedPresetIDs(m map[string]*localPreset) []string {
 // ── материализация ──────────────────────────────────────────────────────────
 
 // presetSpecs — спецификации MCP выбранного состава (валидация уже сделана).
-func presetSpecs(p *localPreset) []provision.McpServerSpec {
+func (s *Server) presetSpecs(p *localPreset) []provision.McpServerSpec {
 	specs := make([]provision.McpServerSpec, 0, len(p.MCP))
 	for _, id := range p.MCP {
-		if spec, ok := provision.PlatformMcpServer(id); ok {
+		if spec, ok := s.mcpSpec(id); ok {
 			specs = append(specs, spec)
 		}
 	}
@@ -112,7 +112,7 @@ func (s *Server) applyPresetAt(owner int64, p *localPreset, placeID string) erro
 		desc = "Набор из лаунчера agctl"
 	}
 	if err := provision.EnsureAgentPreset(dshHome, presetManagedID(p.ID), p.Name, desc,
-		presetSpecs(p), secretEnv); err != nil {
+		s.presetSpecs(p), secretEnv); err != nil {
 		return err
 	}
 	// Скиллы пресета живут в его каталоге и видны только сессиям с этим
@@ -243,7 +243,7 @@ func (s *Server) validatePresetReq(req presetReq) (localPreset, error) {
 	out.Skills = dedupeIDs(req.Skills)
 	out.Places = dedupeIDs(req.Places)
 	for _, sid := range out.MCP {
-		if _, ok := provision.PlatformMcpServer(sid); !ok {
+		if _, ok := s.mcpSpec(sid); !ok {
 			return localPreset{}, fmt.Errorf("неизвестный MCP-сервер: %s", sid)
 		}
 	}
@@ -293,13 +293,16 @@ func (s *Server) handlePresetsList(w http.ResponseWriter, r *http.Request, id id
 		out = append(out, presets[pid])
 	}
 	mcp := []map[string]any{}
-	for _, spec := range provision.PlatformMcpServers {
+	for _, spec := range s.mcpCatalog() {
 		mcp = append(mcp, map[string]any{
 			"id": spec.ID, "title": spec.Title, "description": spec.Description, "secretEnv": spec.SecretEnv,
 		})
 	}
 	skills := []map[string]any{}
 	for _, pkg := range s.catalogPackages() {
+		if len(provision.SkillPackageFiles(pkg)) == 0 {
+			continue // пакет без скиллов (только MCP или файлы воркспейса)
+		}
 		skills = append(skills, map[string]any{"id": pkg.ID, "title": pkg.Title, "description": pkg.Description})
 	}
 	views, err := s.placeViews(id.ID)
