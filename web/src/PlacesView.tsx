@@ -336,7 +336,17 @@ function PlaceEditor({
           (по умолчанию)
         </label>
         <label className="inline">
-          <input type="radio" name="dsh-home" checked={dshCustom} onChange={() => setDshCustom(true)} /> своя папка — станет
+          <input
+            type="radio"
+            name="dsh-home"
+            checked={dshCustom}
+            onChange={() => {
+              setDshCustom(true);
+              // дефолт — рядом с проектами: <папка проектов>/ag_dsh (основное место) или ag_dsh-<id>
+              if (!dshHome) setDshHome(`${ui.workdir}/ag_dsh${isMain ? "" : "-" + (place?.id || "new")}`);
+            }}
+          />{" "}
+          своя папка — станет
           git-репозиторием конфигурации агента
         </label>
         {dshCustom && (
