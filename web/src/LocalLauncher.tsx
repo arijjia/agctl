@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { local, onLocalEvents, type LocalUI, type User } from "./api";
-import ModelsView from "./ModelsView";
 import PlacesView from "./PlacesView";
 import PresetsView from "./PresetsView";
-import SecretsView from "./SecretsView";
+import AccessView from "./AccessView";
 import { applyTheme, currentTheme, toggleTheme, type Theme } from "./theme";
 
 // LocalLauncher — лаунчер локального режима (agctl dev), v2: рабочие места
@@ -14,16 +13,16 @@ import { applyTheme, currentTheme, toggleTheme, type Theme } from "./theme";
 //
 // Встроенный режим /launcher/embed/<раздел>?ws=<id> — тот же интерфейс без
 // шапки, для табов правой панели dsh: раздел places (текущее рабочее место),
-// models, secrets.
+// presets, secrets.
 
 const brand = (window as any).__AGCTL_BRAND__?.name || "agctl";
 
-type Tab = "places" | "presets" | "models" | "secrets";
+type Tab = "places" | "presets" | "secrets";
 
 export type EmbedTarget = { section: Tab; ws: string };
 
 export function embedTarget(): EmbedTarget | null {
-  const m = window.location.pathname.match(/^\/launcher\/embed\/(places|presets|models|secrets)\/?$/);
+  const m = window.location.pathname.match(/^\/launcher\/embed\/(places|presets|secrets)\/?$/);
   if (!m) return null;
   return { section: m[1] as Tab, ws: new URLSearchParams(window.location.search).get("ws") || "" };
 }
@@ -71,7 +70,7 @@ export default function LocalLauncher({ user, initial, embed }: { user: User; in
           Ключ модели не задан — агент не сможет отвечать.
           {!embed && (
             <button className="primary small" onClick={() => setTab("secrets")}>
-              Задать во «Доступах»
+              Задать во вкладке «Доступ»
             </button>
           )}
         </div>
@@ -80,8 +79,7 @@ export default function LocalLauncher({ user, initial, embed }: { user: User; in
       {err && <div className="error">{err}</div>}
       {tab === "places" && <PlacesView ui={ui} note={note} refreshKey={refreshKey} only={embed?.ws || undefined} />}
       {tab === "presets" && <PresetsView note={note} refreshKey={refreshKey} />}
-      {tab === "models" && <ModelsView note={note} refreshKey={refreshKey} />}
-      {tab === "secrets" && <SecretsView ui={ui} note={note} />}
+      {tab === "secrets" && <AccessView ui={ui} note={note} refreshKey={refreshKey} />}
     </>
   );
 
@@ -122,11 +120,8 @@ export default function LocalLauncher({ user, initial, embed }: { user: User; in
         <button className={tab === "presets" ? "tab active" : "tab"} onClick={() => setTab("presets")}>
           Пресеты
         </button>
-        <button className={tab === "models" ? "tab active" : "tab"} onClick={() => setTab("models")}>
-          Модели
-        </button>
         <button className={tab === "secrets" ? "tab active" : "tab"} onClick={() => setTab("secrets")}>
-          Доступы{!ui.llmKeySet && " ⚠"}
+          Доступ{!ui.llmKeySet && " ⚠"}
         </button>
       </nav>
       <main className="admin-main">{body}</main>

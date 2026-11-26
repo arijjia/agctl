@@ -55,6 +55,10 @@ type localState struct {
 	placeTasks map[int]*localTask
 	events     *localEvents
 	mainRev    int64
+
+	// profileExtras — доп. провайдеры профиля (снимок на старте); личные
+	// провайдеры разработчика добавляются поверх (local_providers.go).
+	profileExtras []provision.ExtraProvider
 }
 
 // mainRevision — ревизия основного рабочего места (папка и образ из dev.yaml).
@@ -112,6 +116,8 @@ func (s *Server) initLocal() error {
 	}
 	s.local = &localState{ownerID: id, bridge: b, task: &localTask{state: "idle"}, workDir: lm.WorkDir,
 		events: &localEvents{}, mainRev: 1}
+	s.local.profileExtras = append([]provision.ExtraProvider(nil), s.cfg.DefaultLLM.Extras...)
+	s.syncLocalProviders()
 	provision.SetLocalWorkRoot(s.cfg.Home, id, lm.WorkDir)
 	// Источник правды об образе — dev.yaml (его меняют и лаунчер, и CLI).
 	if lm.Hooks != nil {
@@ -133,6 +139,7 @@ func (s *Server) registerLocalRoutes(mux *http.ServeMux) {
 	s.registerLocalUIRoutes(mux)
 	s.registerLocalPlaceRoutes(mux)
 	s.registerLocalPresetRoutes(mux)
+	s.registerLocalProviderRoutes(mux)
 }
 
 func bearer(r *http.Request) string {

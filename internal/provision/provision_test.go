@@ -31,9 +31,10 @@ func TestRefreshProviderWritesMultipleBaseURLAliases(t *testing.T) {
 	}
 	text := string(settings)
 	for _, want := range []string{
-		"    agctl:", "baseURL: \"https://corp-a.example/v1\"",
-		"    agctl-2:", "baseURL: \"https://corp-b.example/v1\"",
-		"provider: agctl", "model: \"qwen-fast\"", "id: \"qwen-deep\"",
+		// имя не задано — провайдер назван хостом своего API, не «agctl»
+		"    corp-a.example:", "baseURL: \"https://corp-a.example/v1\"",
+		"    corp-a.example-2:", "baseURL: \"https://corp-b.example/v1\"",
+		"provider: corp-a.example", "model: \"qwen-fast\"", "id: \"qwen-deep\"",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("settings.yaml lacks %q:\n%s", want, text)

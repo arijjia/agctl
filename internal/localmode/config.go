@@ -52,7 +52,11 @@ type Config struct {
 	Env map[string]string `yaml:"env,omitempty"`
 	// Secrets — имена секретов в хранилище ОС (значения там, не здесь).
 	Secrets []string `yaml:"secrets,omitempty"`
-	Bridge  struct {
+	// Providers — личные провайдеры моделей разработчика поверх провайдеров
+	// профиля (лаунчер → «Доступ»). Ключ — в хранилище секретов под именем
+	// ProviderKeyEnv(name).
+	Providers []Provider `yaml:"providers,omitempty"`
+	Bridge    struct {
 		Tools []localbridge.Tool `yaml:"tools,omitempty"`
 	} `yaml:"bridge,omitempty"`
 	// PreviousImage — образ до последнего update (для rollback).

@@ -147,15 +147,6 @@ export type FsListing = {
   selectable: boolean;
   reason: string;
 };
-export type ModelProvider = {
-  id: string;
-  baseUrls: string[];
-  models: string[];
-  defaultModel: string;
-  keyEnv: string;
-  keySet: boolean;
-  primary: boolean;
-};
 export const places = {
   list: () => req<{ places: Place[] }>("GET", "/api/local/ui/places"),
   create: (p: { name: string; id?: string; image?: string; mounts: PlaceMount[] }) =>
@@ -171,7 +162,6 @@ export const places = {
     req<FsListing>("GET", `/api/local/ui/fs?path=${encodeURIComponent(path)}${hidden ? "&hidden=1" : ""}`),
   fsDialog: () => req<{ cancelled: boolean; path?: string }>("POST", "/api/local/ui/fs/dialog", {}),
   reveal: (path: string, app: "finder" | "vscode") => req<any>("POST", "/api/local/ui/reveal", { path, app }),
-  models: () => req<{ providers: ModelProvider[] }>("GET", "/api/local/ui/models"),
 };
 
 // presets — пресеты возможностей: наборы MCP и скиллов контейнера, применяемые
@@ -214,3 +204,25 @@ export function onLocalEvents(cb: (topic: string) => void): () => void {
   });
   return () => es.close();
 }
+
+// providers — провайдеры моделей во вкладке «Доступ»: заданные профилем
+// организации (source: profile — меняется только ключ) и личные (source: own).
+// Значение ключа сервер не возвращает — только keySet.
+export type Provider = {
+  name: string;
+  baseUrls: string[];
+  models: string[];
+  defaultModel: string;
+  keyEnv: string;
+  keySet: boolean;
+  source: "profile" | "own";
+  primary: boolean;
+};
+export type ProviderInput = { name: string; baseURL: string; models: string[]; defaultModel?: string; key?: string };
+export const providers = {
+  list: () => req<{ providers: Provider[]; canAdd: boolean }>("GET", "/api/local/ui/providers"),
+  create: (p: ProviderInput) => req<{ providers: Provider[] }>("POST", "/api/local/ui/providers", p),
+  update: (name: string, p: Omit<ProviderInput, "name">) =>
+    req<{ providers: Provider[] }>("PUT", `/api/local/ui/providers/${encodeURIComponent(name)}`, p),
+  remove: (name: string) => req<{ providers: Provider[] }>("DELETE", `/api/local/ui/providers/${encodeURIComponent(name)}`),
+};

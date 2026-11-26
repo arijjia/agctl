@@ -219,19 +219,23 @@ func (s *Store) writeFile(all map[string]string) error {
 
 // ContainerEnv собирает KEY=VALUE для контейнера: несекретные значения из
 // dev.yaml + секреты из хранилища + производные имена для штатных
-// инструментов (glab, jira-cli, MCP GitLab/Jira, тулкиты доменов). Ключ LLM
-// в контейнер env не попадает — его получает сервер как провайдера.
+// инструментов (glab, jira-cli, MCP GitLab/Jira, тулкиты доменов). Ключи
+// моделей (IsModelKeyEnv: основной, доп. провайдеров профиля, личных
+// провайдеров) в env контейнера не попадают — их получает сервер.
 func ContainerEnv(cfg *Config, store *Store) ([]string, []string) {
 	vals := map[string]string{}
 	for k, v := range cfg.Env {
+		if IsModelKeyEnv(k) {
+			continue
+		}
 		if ValidEnvName(k) && strings.TrimSpace(v) != "" {
 			vals[k] = strings.TrimSpace(v)
 		}
 	}
 	var missing []string
 	for _, name := range cfg.Secrets {
-		if name == "AGCTL_LLM_API_KEY" {
-			continue
+		if IsModelKeyEnv(name) {
+			continue // ключи моделей — серверу как ключ провайдера, не в env контейнера
 		}
 		v, err := store.Get(name)
 		if err != nil || v == "" {
@@ -273,4 +277,28 @@ func ContainerEnv(cfg *Config, store *Store) ([]string, []string) {
 		out = append(out, k+"="+vals[k])
 	}
 	return out, missing
+}
+
+// ModelKeys — значения ключей моделей из хранилища по именам из настроек
+// дома и переданным дополнительно (api_key_env провайдеров профиля).
+func ModelKeys(cfg *Config, store *Store, extraNames ...string) map[string]string {
+	out := map[string]string{}
+	names := append([]string{"AGCTL_LLM_API_KEY"}, extraNames...)
+	for _, n := range cfg.Secrets {
+		if IsModelKeyEnv(n) {
+			names = append(names, n)
+		}
+	}
+	for _, p := range cfg.Providers {
+		names = append(names, ProviderKeyEnv(p.Name))
+	}
+	for _, n := range names {
+		if _, done := out[n]; done || n == "" {
+			continue
+		}
+		if v, err := store.Get(n); err == nil && v != "" {
+			out[n] = v
+		}
+	}
+	return out
 }
