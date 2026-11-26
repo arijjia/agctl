@@ -1343,7 +1343,7 @@ git-хуками и npm-скриптами. dsh читает ключ из `.cre
 | Стадия | Содержимое |
 |---|---|
 | `base` | `node:22-bookworm-slim`, python3, pip, pytest, make, g++, git, openssh-server, iptables |
-| `dsh` | `@deepseek-ai/dsh` закреплённой версии (сейчас 0.2.2-rc.3, тег образа `0.2.2`), git-идентификатор агента |
+| `dsh` | `@deepseek-ai/dsh` закреплённой версии (сейчас 0.2.2-rc.5, тег образа `0.2.2`), git-идентификатор агента |
 | `mcp-warm` | прогретый кэш npx для MCP-серверов DuckDuckGo, Context7, GitLab, Playwright |
 | `runtime` | кэш MCP, LibreOffice Impress (превью презентаций), ripgrep, fd, jq, sqlite3, клиенты БД, `glab`, `jira-cli`, `uv`/`uvx`, бинарь `agctl-guest` своего варианта как `/usr/local/bin/agctl` (build-arg `GUEST_FLAVOR`), скелет домашнего каталога, `entrypoint.sh`, обёртка `ax-task-runner` (только серверный вариант), `HEALTHCHECK` (`agctl-dsh-net health` раз в 30 секунд) |
 | `flavors/web` | `FROM agctl-dsh` + Chromium через Playwright |
