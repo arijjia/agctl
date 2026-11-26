@@ -1,6 +1,7 @@
 #!/bin/bash
 # e2e-local-mode: живой прогон локального режима (agctl dev) на изолированном
-# доме: init → secrets → up → вход по токену → рабочее место с родной папкой
+# корне (AGCTL_ROOT во временном каталоге, дом homes/agctl; ~/.agctl не
+# трогается): init → paths → secrets → up → вход по токену → рабочее место с родной папкой
 # и env доступов → мост к хосту (вызов, подтверждение, MCP) → update на другой
 # тег с бэкапом → rollback → down. Секреты — в файловом хранилище (хранилище ОС
 # не трогаем), значения тестовые. Образ должен быть собран (make img_build).
@@ -10,7 +11,7 @@
 # Переменные: IMG (образ), AGCTL_BIN (готовый бинарь; по умолчанию свежая
 # сборка ./cmd/agctl во временный каталог — устаревший dist/ гонял бы старый код),
 # E2E_ADDR (адрес UI, по умолчанию 127.0.0.1:18940), KEEP=1 — не чистить дом,
-# EGRESS=1 — рабочее место с egress-allowlist (dev.yaml egress_allowlist):
+# EGRESS=1 — рабочее место с egress-allowlist (config.yaml egress_allowlist):
 # разрешённый IP доступен, прочий интернет нет, мост к хосту работает из
 # выделенной сети (карточка dockerrt-egress-flag-key-proxy).
 set -u
@@ -31,11 +32,15 @@ say()  { printf '\n=== %s ===\n' "$*"; }
 docker image inspect "$IMG" >/dev/null 2>&1 || { echo "нет образа $IMG — make img_build"; exit 2; }
 
 RUN="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/agctl-e2e-local.XXXXXX")" && pwd -P)"  # канонический путь: маунты Docker его и показывают
-export AGCTL_DEV_HOME="$RUN/home"
+# Изолированный корень: бинари/профили/дома этого прогона — только здесь.
+export AGCTL_ROOT="$RUN/root"
+unset AGCTL_DEV_HOME AGCTL_HOME_ID
+HOME_DIR="$AGCTL_ROOT/homes/agctl"
+CONFIG="$HOME_DIR/config.yaml"
 export AGCTL_DEV_SECRETS=file
 WORK="$RUN/work"
 mkdir -p "$WORK/demo-repo" && echo "hello" > "$WORK/demo-repo/README.md"
-IMG_B="${IMG%%:*}:e2e-local-b"
+IMG_B="${IMG%%:*}:e2e-local-b-$$" # уникальный тег: параллельные прогоны не делят его
 docker tag "$IMG" "$IMG_B"
 
 cleanup() {
@@ -48,7 +53,7 @@ cleanup() {
   done
   docker rmi "$IMG_B" >/dev/null 2>&1
   if [ "${EGRESS:-0}" = 1 ]; then
-    for n in $(docker network ls -q --filter "label=agctl.home=$AGCTL_DEV_HOME/data"); do
+    for n in $(docker network ls -q --filter "label=agctl.home=$HOME_DIR/data"); do
       chain="AGCTL-EGRESS-$(docker network inspect "$n" --format '{{.Name}}' | sed 's/^agctl-egress-//' | tr a-z A-Z)"
       docker run --rm --network host --cap-add NET_ADMIN --entrypoint sh "$IMG" -c \
         "while iptables -D DOCKER-USER -j $chain 2>/dev/null; do :; done; iptables -F $chain 2>/dev/null; iptables -X $chain 2>/dev/null" >/dev/null 2>&1
@@ -66,8 +71,13 @@ say "init (без вопросов) и доступы"
   && pass "dev init" || fail "dev init"
 # адрес UI и белый список моста (go_env — бинарь go есть у разработчика платформы;
 # echo_note — с подтверждением)
-grep -q '^bridge:' "$AGCTL_DEV_HOME/dev.yaml" && { echo "dev.yaml уже с bridge"; exit 2; }
-cat >> "$AGCTL_DEV_HOME/dev.yaml" <<EOF
+[ -f "$CONFIG" ] && pass "дом создан под корнем: homes/agctl/config.yaml" || fail "нет $CONFIG"
+[ ! -e "$HOME_DIR/dev.yaml" ] && pass "прежнего dev.yaml нет" || fail "создан dev.yaml"
+grep -q '^# image — ' "$CONFIG" && grep -q '^#   откуда: ' "$CONFIG" && pass "config.yaml: комментарии к полям" || fail "config.yaml без комментариев"
+# bridge — последнее поле config.yaml: заменяем пустой список своим.
+grep -q '^  tools: \[\]$' "$CONFIG" || { echo "config.yaml: bridge.tools не пуст"; exit 2; }
+sed -i.bak -e '/^bridge:$/,$d' "$CONFIG" && rm -f "$CONFIG.bak"
+cat >> "$CONFIG" <<EOF
 bridge:
   tools:
     - name: host_uname
@@ -81,10 +91,8 @@ bridge:
       confirm: true
 EOF
 if [ "${EGRESS:-0}" = 1 ]; then
-  cat >> "$AGCTL_DEV_HOME/dev.yaml" <<EOF
-egress_allowlist: true
-egress_allow: ["1.1.1.1"]
-EOF
+  sed -i.bak -e 's/^egress_allowlist: false$/egress_allowlist: true/' -e 's/^egress_allow: \[\]$/egress_allow: ["1.1.1.1"]/' "$CONFIG" && rm -f "$CONFIG.bak"
+  grep -q '^egress_allowlist: true$' "$CONFIG" || { echo "config.yaml: egress не включился"; exit 2; }
 fi
 printf 'e2e-gitlab-token\n' | "$BIN" dev secrets set GITLAB_TOKEN --stdin >/dev/null && pass "secret GITLAB_TOKEN" || fail "secret"
 printf 'https://gitlab.example.org\n' | "$BIN" dev secrets set GITLAB_URL --stdin >/dev/null && pass "GITLAB_URL (несекретная)" || fail "GITLAB_URL"
@@ -92,12 +100,22 @@ printf 'https://gitlab.example.org\n' | "$BIN" dev secrets set GITLAB_URL --stdi
 # (образ и доступы — в браузере). Значение тестовое; в env контейнера его быть
 # не должно (проверка ниже) — его получает сервер как провайдер.
 printf 'e2e-fake-llm-key-not-a-secret\n' | "$BIN" dev secrets set AGCTL_LLM_API_KEY --stdin >/dev/null && pass "ключ модели" || fail "ключ модели"
-grep -q "e2e-gitlab-token" "$AGCTL_DEV_HOME/dev.yaml" && fail "секрет утёк в dev.yaml" || pass "секрета нет в dev.yaml"
-grep -q "e2e-gitlab-token" "$AGCTL_DEV_HOME/secrets.enc" 2>/dev/null && fail "секрет в открытом виде" || pass "secrets.enc зашифрован"
+grep -q "e2e-gitlab-token" "$CONFIG" && fail "секрет утёк в config.yaml" || pass "секрета нет в config.yaml"
+"$BIN" dev bridge list | grep -q "host_uname" && pass "dev bridge list: личные инструменты" || fail "dev bridge list"
+
+say "paths (до запуска)"
+"$BIN" dev paths > "$RUN/paths.txt" 2>&1 && pass "dev paths" || { fail "dev paths"; cat "$RUN/paths.txt"; }
+grep -q "$AGCTL_ROOT" "$RUN/paths.txt" && grep -q "$HOME_DIR/config.yaml" "$RUN/paths.txt" && grep -q "$WORK" "$RUN/paths.txt" \
+  && pass "paths: корень, дом, папка проектов" || fail "paths: нет корня/дома/папки"
+grep -q "e2e-gitlab-token\|e2e-fake-llm-key" "$RUN/paths.txt" && fail "paths печатает значения секретов" || pass "paths без значений секретов"
+"$BIN" dev paths --json > "$RUN/paths.json" 2>/dev/null && pass "dev paths --json" || fail "dev paths --json"
+WANT_CNAME=$(sed -n 's/.*"name": "\(agctl-chat-[0-9a-f]*-u1\)".*/\1/p' "$RUN/paths.json" | head -1)
+[ -n "$WANT_CNAME" ] && pass "paths: имя контейнера $WANT_CNAME" || fail "paths: нет имени контейнера"
+grep -q "e2e-gitlab-token" "$HOME_DIR/secrets.enc" 2>/dev/null && fail "секрет в открытом виде" || pass "secrets.enc зашифрован"
 
 say "up"
-"$BIN" dev up --no-open >"$RUN/up.log" 2>&1 && pass "dev up" || { fail "dev up"; cat "$RUN/up.log"; tail -30 "$AGCTL_DEV_HOME/logs/serve.log"; exit 1; }
-STATE="$AGCTL_DEV_HOME/run/state.json"
+"$BIN" dev up --no-open >"$RUN/up.log" 2>&1 && pass "dev up" || { fail "dev up"; cat "$RUN/up.log"; tail -30 "$HOME_DIR/logs/serve.log"; exit 1; }
+STATE="$HOME_DIR/run/state.json"
 LOGIN=$(sed -n 's/.*"loginToken": "\([^"]*\)".*/\1/p' "$STATE")
 CTL=$(sed -n 's/.*"controlToken": "\([^"]*\)".*/\1/p' "$STATE")
 [ -n "$LOGIN" ] && [ -n "$CTL" ] && pass "файл состояния с токенами" || fail "state.json"
@@ -122,11 +140,15 @@ for i in $(seq 1 90); do
   echo "$st" | grep -q '"state":"running"' && break
   sleep 2
 done
-echo "$st" | grep -q '"state":"running"' && pass "рабочее место поднято" || { fail "runtime: $st"; tail -20 "$AGCTL_DEV_HOME/logs/serve.log"; }
+echo "$st" | grep -q '"state":"running"' && pass "рабочее место поднято" || { fail "runtime: $st"; tail -20 "$HOME_DIR/logs/serve.log"; }
 for c in $(docker ps -q); do
   if docker inspect "$c" --format '{{range .Mounts}}{{.Source}} {{end}}' | grep -q "$RUN"; then CID=$c; fi
 done
 [ -n "$CID" ] && pass "контейнер найден" || fail "контейнер не найден"
+if [ -n "$CID" ]; then
+  got=$(docker inspect "$CID" --format '{{.Name}}' | sed 's|^/||')
+  [ "$got" = "$WANT_CNAME" ] && pass "имя контейнера совпало с dev paths" || fail "контейнер $got, dev paths обещал $WANT_CNAME"
+fi
 
 say "пресет лаунчера виден харнессу"
 # dsh читает пресеты только строками-декларациями патча: guest собирает патч
@@ -207,18 +229,18 @@ if [ -n "$CID" ]; then
   mcp=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
     | docker exec -i "$CID" agctl bridge mcp 2>&1)
   echo "$mcp" | grep -q '"agctl-host-bridge"' && echo "$mcp" | grep -q host_uname && pass "MCP моста: initialize + tools/list" || fail "mcp: $mcp"
-  test -f "$AGCTL_DEV_HOME/data/chats/u1/dsh-home/skills/agctl-host-bridge/SKILL.md" && pass "скилл моста в dsh-home" || fail "скилл"
-  grep -q '"tool":"host_uname"' "$AGCTL_DEV_HOME/logs/bridge.log" && pass "журнал моста" || fail "журнал"
+  test -f "$HOME_DIR/data/chats/u1/dsh-home/skills/agctl-host-bridge/SKILL.md" && pass "скилл моста в dsh-home" || fail "скилл"
+  grep -q '"tool":"host_uname"' "$HOME_DIR/logs/bridge.log" && pass "журнал моста" || fail "журнал"
 fi
 "$BIN" dev status | grep -q "запущено" && pass "dev status" || fail "dev status"
 
 say "update на другой тег (бэкап) и rollback"
 "$BIN" dev update --image "$IMG_B" >"$RUN/update.log" 2>&1 && pass "dev update" || { fail "dev update"; cat "$RUN/update.log"; }
-ls "$AGCTL_DEV_HOME"/backups/dsh-home-*.tar.gz >/dev/null 2>&1 && pass "бэкап dsh-home создан" || fail "бэкап"
-grep -q "image: $IMG_B" "$AGCTL_DEV_HOME/dev.yaml" && grep -q "previous_image: $IMG" "$AGCTL_DEV_HOME/dev.yaml" \
-  && pass "dev.yaml: новый образ + предыдущий" || fail "dev.yaml после update"
+ls "$HOME_DIR"/backups/dsh-home-*.tar.gz >/dev/null 2>&1 && pass "бэкап dsh-home создан" || fail "бэкап"
+grep -q "^image: $IMG_B\$" "$CONFIG" && grep -q "^previous_image: $IMG\$" "$CONFIG" \
+  && pass "config.yaml: новый образ + предыдущий" || fail "config.yaml после update"
 "$BIN" dev rollback >"$RUN/rollback.log" 2>&1 && pass "dev rollback" || { fail "rollback"; cat "$RUN/rollback.log"; }
-grep -q "^image: $IMG\$" "$AGCTL_DEV_HOME/dev.yaml" && pass "образ возвращён" || fail "образ после rollback"
+grep -q "^image: $IMG\$" "$CONFIG" && pass "образ возвращён" || fail "образ после rollback"
 "$BIN" dev status | grep -q "запущено" && pass "после rollback запущено" || fail "status после rollback"
 
 say "down"

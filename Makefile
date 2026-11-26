@@ -12,6 +12,12 @@ LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.bui
 -include .env
 export
 
+# Корень на машине разработчика — тот же, что у agctl dev и установщиков
+# (internal/localmode/layout.go): бинари в bin/, профили организаций в
+# profiles/<id> (единственный экземпляр), дома локального режима в homes/<id>.
+AGCTL_ROOT ?= $(HOME)/.agctl
+PROFILES_DIR ?= $(AGCTL_ROOT)/profiles
+
 # Общий каталог runtime-артефактов make (pid/логи инстансов up/corp/demo).
 RUNTIME_DIR := .runtime
 

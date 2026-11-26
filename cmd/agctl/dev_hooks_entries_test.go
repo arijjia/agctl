@@ -14,6 +14,7 @@ import (
 // (extra_providers с api_key_env) видны в «Доступах» даже без заданного
 // значения: подписка «провайдер + ключ».
 func TestDevHooksEntriesExtraProviders(t *testing.T) {
+	t.Setenv("AGCTL_DEV_SECRETS", "file") // тест не трогает хранилище ОС
 	home := t.TempDir()
 	dir := filepath.Join(home, "profiles", "corp")
 	if err := os.MkdirAll(dir, 0o755); err != nil {

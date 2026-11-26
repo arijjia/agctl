@@ -363,7 +363,7 @@ func SkillMarkdown(tools []Tool) string {
 	sb.WriteString("---\nname: agctl-host-bridge\ndescription: Запуск разрешённых команд на компьютере пользователя (вне контейнера) через мост agctl. Используй, когда нужна программа хоста, которой нет в контейнере.\n---\n\n")
 	sb.WriteString("# Мост к хосту\n\nТы работаешь в контейнере. Команды на компьютере пользователя доступны только\nчерез мост и только из белого списка ниже. Вызов:\n\n```\nagctl bridge call <инструмент> имя=значение ...\nagctl bridge list            # актуальный список\n```\n\nОтвет — JSON с exitCode, stdout, stderr. Инструменты с пометкой «нужно\nподтверждение» ждут, пока человек одобрит вызов на своей машине — скажи ему\nоб этом. Не пытайся обойти мост.\n\n## Инструменты\n\n")
 	if len(tools) == 0 {
-		sb.WriteString("Белый список пуст: владелец ещё не разрешил ни одной команды\n(`agctl dev bridge` на хосте, раздел bridge.tools в dev.yaml).\n")
+		sb.WriteString("Белый список пуст: владелец ещё не разрешил ни одной команды\n(`agctl dev bridge` на хосте, раздел bridge.tools в config.yaml дома).\n")
 	}
 	for _, t := range tools {
 		fmt.Fprintf(&sb, "### %s\n\n%s\n", t.Name, t.Description)

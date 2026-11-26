@@ -32,34 +32,15 @@ func writeDevProfile(t *testing.T, bridge string) *profile.Data {
 
 func TestProfileBridgeTools(t *testing.T) {
 	p := writeDevProfile(t, "tools:\n  - name: onec_config_check\n    description: check\n    command: [ibcmd, infobase, config, check, \"--db-path={{db}}\"]\n    args:\n      db: {required: true}\n")
-	tools, err := profileBridgeTools(p)
+	tools, err := localmode.ProfileBridgeTools(p)
 	if err != nil || len(tools) != 1 || tools[0].Name != "onec_config_check" {
 		t.Fatalf("%+v %v", tools, err)
 	}
-	if tools, err := profileBridgeTools(writeDevProfile(t, "")); err != nil || len(tools) != 0 {
+	if tools, err := localmode.ProfileBridgeTools(writeDevProfile(t, "")); err != nil || len(tools) != 0 {
 		t.Fatal("без файла — пустой список без ошибки")
 	}
-	if _, err := profileBridgeTools(writeDevProfile(t, "tools:\n  - name: Bad\n    command: [x]\n")); err == nil {
+	if _, err := localmode.ProfileBridgeTools(writeDevProfile(t, "tools:\n  - name: Bad\n    command: [x]\n")); err == nil {
 		t.Fatal("невалидный белый список профиля — ошибка")
-	}
-}
-
-// Реальный белый список профиля utmn (если профиль подтянут в ./profiles).
-func TestUtmnBridgeToolsValid(t *testing.T) {
-	if _, err := os.Stat(filepath.Join("..", "..", "profiles", "utmn", "local", "bridge-tools.yaml")); err != nil {
-		t.Skip("профиль utmn не подтянут")
-	}
-	p, err := profile.Resolve("", filepath.Join("..", "..", "profiles", "utmn"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	tools, err := profileBridgeTools(p)
-	if err != nil || len(tools) == 0 {
-		t.Fatalf("%v %v", tools, err)
-	}
-	argv, err := tools[1].Expand(map[string]string{"db": `C:\1c\ib`, "dir": `C:\src\proj\dump`})
-	if err != nil || argv[len(argv)-1] != `C:\src\proj\dump` {
-		t.Fatalf("%q %v", argv, err)
 	}
 }
 
@@ -132,11 +113,12 @@ func TestDevDefaultProfile(t *testing.T) {
 	})
 }
 
-// TestDevResolveProfileFindsDataDir — профиль из каталога данных (куда его
-// кладёт установщик комплекта) разрешается по имени без --profile-dir.
-func TestDevResolveProfileFindsDataDir(t *testing.T) {
-	dataDir := t.TempDir()
-	dir := filepath.Join(dataDir, "utmn")
+// TestDevResolveProfileFindsRootProfiles — профиль из <корень>/profiles/<id>
+// (куда его кладёт установщик комплекта) разрешается по имени без
+// --profile-dir.
+func TestDevResolveProfileFindsRootProfiles(t *testing.T) {
+	t.Setenv("AGCTL_ROOT", t.TempDir())
+	dir := filepath.Join(localmode.ProfilesDir(), "utmn")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -144,14 +126,15 @@ func TestDevResolveProfileFindsDataDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "profile.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// devResolveProfile зовёт profile.DataDir() — окружение подменить нельзя,
-	// поэтому проверяем сам поиск Resolve с тем же списком каталогов.
-	p, err := profile.Resolve("utmn", "", "profiles", filepath.Join("нет", "profiles"), dataDir)
+	p, err := devResolveProfile(&localmode.Config{Profile: "utmn"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if p.ID != "utmn" {
 		t.Fatalf("id = %q, ждём utmn", p.ID)
+	}
+	if got := devDefaultProfile(localmode.ProfilesDir()); got != "utmn" {
+		t.Fatalf("дефолт init: %q", got)
 	}
 }
 
@@ -178,7 +161,7 @@ func TestDevStale(t *testing.T) {
 	}
 }
 
-// TestDevEgressArgs — egress-allowlist из dev.yaml всегда уходит в serve
+// TestDevEgressArgs — egress-allowlist из config.yaml всегда уходит в serve
 // явными флагами (и выключенный тоже): env машины его не перекрывает.
 func TestDevEgressArgs(t *testing.T) {
 	got := strings.Join(devEgressArgs(&localmode.Config{}), " ")

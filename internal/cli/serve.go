@@ -59,6 +59,10 @@ type ServeOptions struct {
 	Modules []server.Module
 	// Runtime — флаги и сборка бэкенда; nil = Docker на этой машине.
 	Runtime RuntimeFlags
+	// Profile — уже разрешённый профиль (локальный режим: его разрешает
+	// localmode.ResolveProfile — один порядок для CLI и serve). nil = serve
+	// разрешает сам по --profile/--profile-dir (сервер организации).
+	Profile *profile.Data
 }
 
 // DockerRuntime — бэкенд по умолчанию: контейнеры на локальном Docker.
@@ -98,9 +102,13 @@ func Serve(args []string, opts ServeOptions) {
 	// затем в ./profiles и $AGCTL_HOME/profiles (make profile-fetch).
 	profileName := PrescanFlag(args, "profile", EnvOr("AGCTL_PROFILE", FirstNonEmpty(cfg.Profile, "agctl")))
 	profileDir := PrescanFlag(args, "profile-dir", FirstNonEmpty(os.Getenv("AGCTL_PROFILE_DIR"), cfg.ProfileDir))
-	prof, err := profile.Resolve(profileName, profileDir, "profiles", filepath.Join(DefaultHome(), "profiles"))
-	if err != nil {
-		log.Fatal(err)
+	prof := opts.Profile
+	if prof == nil {
+		var err error
+		prof, err = profile.Resolve(profileName, profileDir, "profiles", filepath.Join(DefaultHome(), "profiles"))
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 	log.Printf("profile: %s (%s)", prof.ID, prof.Source)
 

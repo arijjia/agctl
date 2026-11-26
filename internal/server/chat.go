@@ -71,6 +71,24 @@ func chatContainerNamePrefix(home string) string {
 	return "agctl-" + chatNamePrefix + "-" + chatHomeHash(home) + "-"
 }
 
+// ChatContainerPrefix — префикс имён Docker-контейнеров рабочих мест дома
+// данных home (для agctl dev paths и agctl dev migrate): имя зависит от
+// sha256 пути дома, перенос дома меняет имена контейнеров.
+func ChatContainerPrefix(home string) string { return chatContainerNamePrefix(home) }
+
+// ChatContainerName — имя Docker-контейнера рабочего места пользователя
+// userID в слоте slot (0 — основное) для дома данных home.
+func ChatContainerName(home string, userID int64, slot int) string {
+	name := fmt.Sprintf("%su%d", chatContainerNamePrefix(home), userID)
+	if slot > 0 {
+		name += fmt.Sprintf("-s%d", slot)
+	}
+	return name
+}
+
+// LocalOwnerID — ID владельца локального режима на новой установке.
+const LocalOwnerID = localOwnerID
+
 // chatRuntimeID namespaces resource names by agctl home, so deployments sharing
 // a Docker daemon or Kubernetes namespace do not collide. Слот 0 — основной
 // рантайм с историческим именем (совместимость: существующие установки не

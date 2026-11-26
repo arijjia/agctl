@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// seedProjectFixture — imитация содержимого клона 1c-vibe в каталоге проекта.
+// seedProjectFixture — imитация содержимого клона репозитория-донора в каталоге проекта.
 func seedProjectFixture(t *testing.T, dir string) {
 	t.Helper()
 	write := func(rel, body string) {
@@ -20,7 +20,7 @@ func seedProjectFixture(t *testing.T, dir string) {
 			t.Fatal(err)
 		}
 	}
-	write("skills/1c-vibe-demo/SKILL.md", "---\nname: 1C Vibe\ndescription: полный цикл 1С-разработки\n---\n")
+	write("skills/demo-cycle/SKILL.md", "---\nname: Demo Cycle\ndescription: полный цикл 1С-разработки\n---\n")
 	write("skills/backlog/SKILL.md", "# backlog\n")
 	write("scripts/publish.py", "\"\"\"Publish branch as MR.\"\"\"\n")
 	write("scripts/main.py", "#!/usr/bin/env python3\n")
@@ -84,8 +84,8 @@ func TestProjectComponentsAPI(t *testing.T) {
 			Title   string
 		}{comp.Enabled, comp.Locked, comp.Title}
 	}
-	skill, ok := byID["skill:1c-vibe-demo"]
-	if !ok || !skill.Enabled || skill.Title != "1C Vibe" {
+	skill, ok := byID["skill:demo-cycle"]
+	if !ok || !skill.Enabled || skill.Title != "Demo Cycle" {
 		t.Fatalf("skill entry: %+v (body %s)", skill, body)
 	}
 	agents, ok := byID["docs:AGENTS.md"]
@@ -95,14 +95,14 @@ func TestProjectComponentsAPI(t *testing.T) {
 
 	// Выключение скилла: уходит в stash, exclude получает правило.
 	code, body = e.do(e.admin, "PUT", "/api/projects/vibe/components",
-		map[string]any{"disabled": []string{"skill:1c-vibe-demo"}})
+		map[string]any{"disabled": []string{"skill:demo-cycle"}})
 	if code != 200 {
 		t.Fatalf("PUT %d %s", code, body)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "skills", "1c-vibe-demo")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, "skills", "demo-cycle")); !os.IsNotExist(err) {
 		t.Fatalf("skill still in tree: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".agctl", "stash", "skill", "1c-vibe-demo", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, ".agctl", "stash", "skill", "demo-cycle", "SKILL.md")); err != nil {
 		t.Fatalf("skill not stashed: %v", err)
 	}
 	exclude, err := os.ReadFile(filepath.Join(dir, ".git", "info", "exclude"))
@@ -113,14 +113,14 @@ func TestProjectComponentsAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, comp := range listing.Components {
-		if comp.ID == "skill:1c-vibe-demo" && comp.Enabled {
+		if comp.ID == "skill:demo-cycle" && comp.Enabled {
 			t.Fatalf("catalog still enabled after PUT: %s", body)
 		}
 	}
 
 	// Выбор сохраняется в KV (аудит/реаплай).
 	raw, err := e.db.SettingGet("project-components-u1-vibe")
-	if err != nil || !strings.Contains(raw, "skill:1c-vibe-demo") {
+	if err != nil || !strings.Contains(raw, "skill:demo-cycle") {
 		t.Fatalf("state not persisted: %q %v", raw, err)
 	}
 
@@ -143,7 +143,7 @@ func TestProjectComponentsAPI(t *testing.T) {
 		map[string]any{"disabled": []string{}}); code != 200 {
 		t.Fatalf("re-enable = %d", code)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "skills", "1c-vibe-demo", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "skills", "demo-cycle", "SKILL.md")); err != nil {
 		t.Fatalf("skill not restored: %v", err)
 	}
 }

@@ -34,7 +34,7 @@ type LocalMode struct {
 	BridgeLog    string             // журнал вызовов моста
 	Env          []string           // KEY=VALUE в контейнер (секреты из хранилища ОС)
 	Shutdown     func()             // остановка процесса (POST /api/local/shutdown)
-	// Hooks — хост для лаунчера: доступы (хранилище ОС), образы (dev.yaml,
+	// Hooks — хост для лаунчера: доступы (хранилище ОС), образы (config.yaml,
 	// pull/сборка). nil — лаунчер без раздела локального режима, env из Env.
 	Hooks LocalHooks
 }
@@ -61,7 +61,7 @@ type localState struct {
 	profileExtras []provision.ExtraProvider
 }
 
-// mainRevision — ревизия основного рабочего места (папка и образ из dev.yaml).
+// mainRevision — ревизия основного рабочего места (папка и образ из config.yaml).
 func (l *localState) mainRevision() int64 {
 	l.placeMu.Lock()
 	defer l.placeMu.Unlock()
@@ -119,7 +119,7 @@ func (s *Server) initLocal() error {
 	s.local.profileExtras = append([]provision.ExtraProvider(nil), s.cfg.DefaultLLM.Extras...)
 	s.syncLocalProviders()
 	provision.SetLocalWorkRoot(s.cfg.Home, id, lm.WorkDir)
-	// Источник правды об образе — dev.yaml (его меняют и лаунчер, и CLI).
+	// Источник правды об образе — config.yaml (его меняют и лаунчер, и CLI).
 	if lm.Hooks != nil {
 		if err := s.db.SettingSet(chatImageSettingKey(id, 0), lm.Hooks.CurrentImage()); err != nil {
 			return err
@@ -282,7 +282,7 @@ type localExtras struct {
 }
 
 // localChatExtras дополняет спецификацию рабочего места владельца в локальном
-// режиме: папки хоста (слот 0 — папка проектов из dev.yaml, остальные —
+// режиме: папки хоста (слот 0 — папка проектов из config.yaml, остальные —
 // из таблицы places), секреты из хранилища ОС, адрес моста. ok=false — не
 // локальный режим или не владелец; ошибка — у слота нет рабочего места.
 func (s *Server) localChatExtras(key chatKey) (localExtras, bool, error) {

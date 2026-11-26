@@ -22,9 +22,9 @@ import (
 
 // DevBuild — что собрать.
 type DevBuild struct {
-	Target  string // образ из dev.yaml (что должно получиться)
+	Target  string // целевой образ (явный выбор из config.yaml или образ профиля)
 	Flavor  string // web | вкус профиля | ""
-	BinDir  string // где искать linux-сборку agctl (плюс рядом с бинарём)
+	BinDir  string // где искать linux-сборку agctl-guest (<корень>/bin/guest; плюс рядом с бинарём)
 	ImageFS fs.FS  // встроенный контекст (префикс "image")
 	SkelFS  fs.FS  // скелет DSH_HOME (префикс "dsh-skel")
 
@@ -85,7 +85,7 @@ func BuildDevImage(ctx context.Context, b DevBuild) error {
 	}
 	defer cli.Close()
 	// GuestServer не ставим (false): локальному режиму нужен guest только с
-	// bridge — бинарь dist/agctl-guest-linux-<arch>.
+	// bridge — бинарь agctl-guest-linux-<arch> из BinDir.
 	rt := &Runtime{cli: cli, cfg: Config{BinDir: b.BinDir, DshSkel: b.SkelFS}, imageFS: b.ImageFS}
 	log := b.Log
 	if log == nil {
@@ -93,7 +93,7 @@ func BuildDevImage(ctx context.Context, b DevBuild) error {
 	}
 	plan := DevBuildPlan(b)
 	if last := plan[len(plan)-1]; last != b.Target {
-		return fmt.Errorf("образ %s так не собрать: из профиля %q и вкуса %q получается %s — проверьте image/flavor в dev.yaml или возьмите образ из реестра", b.Target, b.ProfileID, b.Flavor, last)
+		return fmt.Errorf("образ %s так не собрать: из профиля %q и вкуса %q получается %s — проверьте image/flavor в config.yaml дома или возьмите образ из реестра", b.Target, b.ProfileID, b.Flavor, last)
 	}
 	exists := func(ref string) bool {
 		_, err := cli.ImageInspect(ctx, ref)

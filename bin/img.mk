@@ -26,10 +26,12 @@ IMG_BUILD_ARGS ?=
 # Надстройка образа профиля организации (images.dockerfile в profile.yaml):
 # собирается поверх базовых вариантов как agctl-dsh-<id>:<тег> (локальные) и
 # agctl-dsh-server-<id>:<тег> (серверные) — те же имена выводит agctl serve.
-PROFILE_DOCKERFILE = $(if $(wildcard profiles/$(PROFILE)/profile.yaml),$(shell sed -n 's/^  dockerfile: *//p' profiles/$(PROFILE)/profile.yaml | head -1))
-# Вкусы профиля: каталоги profiles/<id>/image/flavors/<вкус>/Dockerfile
+# Профиль читается из $(PROFILES_DIR)/<id> — <корень>/profiles/<id>, оттуда
+# же его берёт agctl dev (один экземпляр на машине).
+PROFILE_DOCKERFILE = $(if $(wildcard $(PROFILES_DIR)/$(PROFILE)/profile.yaml),$(shell sed -n 's/^  dockerfile: *//p' "$(PROFILES_DIR)/$(PROFILE)/profile.yaml" | head -1))
+# Вкусы профиля: каталоги <профиль>/image/flavors/<вкус>/Dockerfile
 # (FROM ${BASE} = надстройка профиля) → agctl-dsh-<id>-<вкус>:<тег>.
-PROFILE_FLAVORS = $(notdir $(patsubst %/,%,$(dir $(wildcard profiles/$(PROFILE)/image/flavors/*/Dockerfile))))
+PROFILE_FLAVORS = $(notdir $(patsubst %/,%,$(dir $(wildcard $(PROFILES_DIR)/$(PROFILE)/image/flavors/*/Dockerfile))))
 flavor_tag = $(call overlay_tag,$(IMG:%:$(lastword $(subst :, ,$(IMG)))=%))-$1:$(lastword $(subst :, ,$(IMG)))
 overlay_tag = $(shell printf '%s' '$1' | sed -E 's|^(.*/)?([^/:]+)(:[^/]*)?$$|\1\2-$(PROFILE)\3|')
 
@@ -69,8 +71,8 @@ PIP_INDEX_ARG = $(if $(PIP_INDEX_URL),--build-arg PIP_INDEX_URL=$(PIP_INDEX_URL)
 img_profile:
 	@if [ -z "$(PROFILE_DOCKERFILE)" ]; then \
 	  echo "образ: профиль $(PROFILE) без надстройки — рабочие места на $(IMG) / $(IMG_SERVER)"; exit 0; fi; \
-	ctx=profiles/$(PROFILE)/$$(dirname "$(PROFILE_DOCKERFILE)"); \
-	f=profiles/$(PROFILE)/$(PROFILE_DOCKERFILE); \
+	ctx="$(PROFILES_DIR)/$(PROFILE)/$$(dirname "$(PROFILE_DOCKERFILE)")"; \
+	f="$(PROFILES_DIR)/$(PROFILE)/$(PROFILE_DOCKERFILE)"; \
 	docker build $(PIP_INDEX_ARG) --build-arg BASE=$(IMG) -t $(call overlay_tag,$(IMG)) -f "$$f" "$$ctx" && \
 	docker build $(PIP_INDEX_ARG) --build-arg BASE=$(IMG_NOSSH) -t $(call overlay_tag,$(IMG_NOSSH)) -f "$$f" "$$ctx" && \
 	docker build $(PIP_INDEX_ARG) --build-arg BASE=$(IMG_SERVER) -t $(call overlay_tag,$(IMG_SERVER)) -f "$$f" "$$ctx" && \
@@ -79,7 +81,7 @@ img_profile:
 	  docker build $(PIP_INDEX_ARG) --build-arg BASE=$(IMG_WEB) -t $(call overlay_tag,$(IMG_WEB)) -f "$$f" "$$ctx"; fi && \
 	for fl in $(PROFILE_FLAVORS); do \
 	  docker build $(PIP_INDEX_ARG) --build-arg BASE=$(call overlay_tag,$(IMG)) -t "$(call flavor_tag,$$fl)" \
-	    -f "profiles/$(PROFILE)/image/flavors/$$fl/Dockerfile" "profiles/$(PROFILE)/image/flavors/$$fl" || exit 1; done && \
+	    -f "$(PROFILES_DIR)/$(PROFILE)/image/flavors/$$fl/Dockerfile" "$(PROFILES_DIR)/$(PROFILE)/image/flavors/$$fl" || exit 1; done && \
 	echo "✓ образы профиля $(PROFILE): local $(call overlay_tag,$(IMG)), $(call overlay_tag,$(IMG_NOSSH)); server $(call overlay_tag,$(IMG_SERVER)), $(call overlay_tag,$(IMG_SERVER_NOSSH))$(if $(PROFILE_FLAVORS), + вкусы профиля: $(PROFILE_FLAVORS))"
 
 # img_build_nossh: пересобрать только вариант «без SSH» (контекст уже собран

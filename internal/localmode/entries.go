@@ -15,16 +15,16 @@ type Entry struct {
 	Title  string `json:"title"`
 	Hint   string `json:"hint,omitempty"`
 	Group  string `json:"group"`  // llm | gitlab | jira | other
-	Secret bool   `json:"secret"` // true — хранилище ОС; false — dev.yaml
+	Secret bool   `json:"secret"` // true — хранилище ОС; false — config.yaml
 	Set    bool   `json:"set"`
 	Value  string `json:"value,omitempty"` // только у несекретных (URL, логин)
 	Known  bool   `json:"known"`           // из манифеста (не удаляется из списка)
 }
 
-// editMu — правки dev.yaml из лаунчера и CLI в одном процессе не пересекаются.
+// editMu — правки config.yaml из лаунчера и CLI в одном процессе не пересекаются.
 var editMu sync.Mutex
 
-// Entries — манифест + всё, что задано в dev.yaml/хранилище, по группам.
+// Entries — манифест + всё, что задано в config.yaml/хранилище, по группам.
 func Entries(cfg *Config, store *Store) []Entry {
 	seen := map[string]bool{}
 	var out []Entry
@@ -62,8 +62,8 @@ func Entries(cfg *Config, store *Store) []Entry {
 	return out
 }
 
-// SetValue сохраняет доступ: секрет — в хранилище ОС (имя — в dev.yaml),
-// несекретное — в dev.yaml. plain учитывается только для имён вне манифеста.
+// SetValue сохраняет доступ: секрет — в хранилище ОС (имя — в config.yaml),
+// несекретное — в config.yaml. plain учитывается только для имён вне манифеста.
 func SetValue(home string, store *Store, name, value string, plain bool) error {
 	editMu.Lock()
 	defer editMu.Unlock()
@@ -104,7 +104,7 @@ func SetValue(home string, store *Store, name, value string, plain bool) error {
 	return cfg.Save(home)
 }
 
-// DeleteValue убирает доступ отовсюду (хранилище ОС и dev.yaml).
+// DeleteValue убирает доступ отовсюду (хранилище ОС и config.yaml).
 func DeleteValue(home string, store *Store, name string) error {
 	editMu.Lock()
 	defer editMu.Unlock()
@@ -129,7 +129,7 @@ func DeleteValue(home string, store *Store, name string) error {
 	return cfg.Save(home)
 }
 
-// SetImage — образ рабочего места в dev.yaml (выбор в лаунчере).
+// SetImage — образ рабочего места в config.yaml (выбор в лаунчере).
 func SetImage(home, image, flavor string) error {
 	editMu.Lock()
 	defer editMu.Unlock()
@@ -144,9 +144,9 @@ func SetImage(home, image, flavor string) error {
 	return cfg.Save(home)
 }
 
-// SetWorkDir — папка проектов на хосте (→ /workspace) в dev.yaml и в файле
+// SetWorkDir — папка проектов на хосте (→ /workspace) в config.yaml и в файле
 // состояния запущенного процесса (выбор в лаунчере): `agctl dev up` без
-// аргумента сверяет папку из dev.yaml с папкой живого процесса. Возвращает
+// аргумента сверяет папку из config.yaml с папкой живого процесса. Возвращает
 // проверенный абсолютный путь.
 func SetWorkDir(home, dir string) (string, error) {
 	abs, err := ValidateWorkDir(dir)

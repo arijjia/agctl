@@ -5,7 +5,7 @@ package server
 // (с отметкой «есть на этой машине»; недостающий скачивается или собирается
 // здесь же) и управляет доступами — ключ модели, GitLab, Jira. Значения
 // секретов в браузер не возвращаются никогда, только «задан / не задан».
-// Всё, что касается хоста (хранилище ОС, dev.yaml, docker pull/build), —
+// Всё, что касается хоста (хранилище ОС, config.yaml, docker pull/build), —
 // за интерфейсом LocalHooks, его реализует cmd/agctl.
 
 import (
@@ -39,7 +39,7 @@ type LocalHooks interface {
 	SetImage(ref string) error
 	// EnsureImage: docker pull, а нет в реестре — сборка цепочки на машине.
 	EnsureImage(ctx context.Context, ref string, logf func(string)) error
-	// SetWorkDir — папка проектов на хосте (dev.yaml + файл состояния);
+	// SetWorkDir — папка проектов на хосте (config.yaml + файл состояния);
 	// возвращает проверенный абсолютный путь.
 	SetWorkDir(dir string) (string, error)
 }

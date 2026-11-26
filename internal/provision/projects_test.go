@@ -243,11 +243,11 @@ func TestValidCloneURL(t *testing.T) {
 
 func TestProjectNameFromCloneURL(t *testing.T) {
 	for raw, want := range map[string]string{
-		"https://github.com/arijjia/1c-vibe":      "1c-vibe",
-		"https://github.com/arijjia/1c-vibe.git":  "1c-vibe",
-		"https://github.com/arijjia/1c-vibe/":     "1c-vibe",
-		"https://github.com/arijjia/My_Repo.v2":   "My_Repo.v2",
-		"https://github.com/arijjia/demo-project": "demo-project",
+		"https://github.com/arijjia/sample-kit":     "sample-kit",
+		"https://github.com/arijjia/sample-kit.git": "sample-kit",
+		"https://github.com/arijjia/sample-kit/":    "sample-kit",
+		"https://github.com/arijjia/My_Repo.v2":     "My_Repo.v2",
+		"https://github.com/arijjia/demo-project":   "demo-project",
 	} {
 		got, err := ProjectNameFromCloneURL(raw)
 		if err != nil || got != want {
