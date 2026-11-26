@@ -670,13 +670,11 @@ func (s *Server) startPlaceRuntime(owner int64, slot int, restart bool) bool {
 			t.mu.Unlock()
 		}
 		t.logf("запускаю рабочее место " + pid + " на " + ref)
-		if _, err := s.ensureChat(owner, slot); err != nil {
+		// Пресеты места кладутся в dsh-home до entrypoint (local_presets.go).
+		if err := s.ensureChatWithPresets(owner, slot, t.logf); err != nil {
 			fail(err)
 			return
 		}
-		// Пресеты накатываются на каждое место при его старте: файлы пресета
-		// могли появиться, когда контейнер ещё не был создан.
-		s.applyAllPresetsAt(owner, slot)
 		t.logf("рабочее место запущено")
 		t.mu.Lock()
 		t.state, t.pending = "idle", false

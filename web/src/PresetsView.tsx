@@ -61,10 +61,10 @@ function PresetEditor({
     try {
       if (preset) {
         await presets.update(preset.id, { name, description, mcp, skills, places, revision: preset.revision });
-        onSaved(`Пресет «${name}» сохранён`);
+        onSaved(`Пресет «${name}» сохранён — работающие места подхватят его после перезапуска`);
       } else {
         await presets.create({ name, description, mcp, skills, places });
-        onSaved(`Пресет «${name}» собран — выберите его при создании сессии в dsh`);
+        onSaved(`Пресет «${name}» собран — после перезапуска места выберите его при создании сессии в dsh`);
       }
       onClose();
     } catch (e: any) {
@@ -140,7 +140,8 @@ export default function PresetsView({ note, refreshKey }: { note: (m: string, er
     <>
       <p className="muted small">
         Пресет — набор MCP-серверов и скиллов контейнера. Соберите его до запуска сессии: в dsh остаётся выбрать
-        пресет по имени. Изменения пресета применяются к выбранным местам сами.
+        пресет по имени. Пресет ложится в выбранные места сразу, а dsh видит пресеты со старта: работающее
+        место покажет кнопку «Перезапустить».
       </p>
       <div className="preset-list">
         {cat.presets.map((p) => (

@@ -17,6 +17,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -169,20 +170,21 @@ func (s *Server) placeDshHome(owner int64, placeID string) (string, error) {
 // applyAllPresetsAt — при старте слота: накатить все пресеты, куда входит
 // его рабочее место (ошибки в лог — старт не срываем, пресет можно
 // пересохранить).
-func (s *Server) applyAllPresetsAt(owner int64, slot int) {
+func (s *Server) applyAllPresetsAt(owner int64, slot int) int {
 	placeID := mainPlaceID
 	if slot != 0 {
 		p, err := s.db.PlaceBySlot(owner, slot)
 		if err != nil {
-			return
+			return 0
 		}
 		placeID = p.ID
 	}
 	presets, err := s.loadLocalPresets()
 	if err != nil {
 		log.Printf("[presets] место %s: не прочитаны: %v", placeID, err)
-		return
+		return 0
 	}
+	applied := 0
 	for _, id := range sortedPresetIDs(presets) {
 		p := presets[id]
 		contains := false
@@ -194,8 +196,62 @@ func (s *Server) applyAllPresetsAt(owner int64, slot int) {
 		}
 		if err := s.applyPresetAt(owner, p, placeID); err != nil {
 			log.Printf("[presets] %s → %s: %v", id, placeID, err)
+			continue
+		}
+		applied++
+	}
+	return applied
+}
+
+// ensureChatWithPresets — старт контейнера слота так, чтобы пресеты места
+// лежали в dsh-home ДО entrypoint: там `agctl presets-sync` собирает из них
+// патч для `dsh web --patch`, а работающий dsh каталог .agent-presets не
+// перечитывает. Существующий dsh-home получает пресеты до старта; новый
+// dsh-home сеет рантайм при первом старте — тогда пресеты кладутся после, и
+// место один раз перезапускается (сессий у нового места ещё нет).
+func (s *Server) ensureChatWithPresets(owner int64, slot int, logf func(string)) error {
+	key := chatKey{uid: owner, slot: slot}
+	seeded := dshHomeSeeded(s.dshHomeFor(key))
+	if seeded {
+		s.applyAllPresetsAt(owner, slot)
+	}
+	if _, err := s.ensureChat(owner, slot); err != nil {
+		return err
+	}
+	if n := s.applyAllPresetsAt(owner, slot); n > 0 && !seeded {
+		logf(fmt.Sprintf("пресетов места: %d — первый старт, перезапускаю, чтобы dsh их увидел", n))
+		if err := s.stopPlace(key); err != nil {
+			return err
+		}
+		if _, err := s.ensureChat(owner, slot); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+// dshHomeSeeded — dsh-home уже засеян (тот же признак, что у рантайма).
+func dshHomeSeeded(home string) bool {
+	_, err := os.Stat(filepath.Join(home, "profiles", "web", "package.json"))
+	return err == nil
+}
+
+// markPresetPlacesPending — работающие места, чей набор пресетов изменился,
+// показывают «нужен перезапуск»: dsh видит пресеты только со старта.
+func (s *Server) markPresetPlacesPending(owner int64, placeIDs ...[]string) {
+	seen := map[string]bool{}
+	for _, ids := range placeIDs {
+		for _, pid := range ids {
+			if seen[pid] {
+				continue
+			}
+			seen[pid] = true
+			if slot, ok := s.placeSlot(owner, pid); ok {
+				s.markPlacePending(chatKey{uid: owner, slot: slot})
+			}
+		}
+	}
+	s.local.events.publish("places")
 }
 
 // ── API ─────────────────────────────────────────────────────────────────────
@@ -426,6 +482,7 @@ func (s *Server) handlePresetCreate(w http.ResponseWriter, r *http.Request, id i
 		return
 	}
 	_ = s.db.Audit(id.Login, "local.preset.create", p.ID, fmt.Sprintf("mcp=%s skills=%s places=%s", joinIDs(p.MCP), joinIDs(p.Skills), joinIDs(p.Places)))
+	s.markPresetPlacesPending(id.ID, p.Places)
 	s.local.events.publish("presets")
 	writeJSON(w, http.StatusCreated, p)
 }
@@ -472,6 +529,7 @@ func (s *Server) handlePresetUpdate(w http.ResponseWriter, r *http.Request, id i
 		return
 	}
 	_ = s.db.Audit(id.Login, "local.preset.update", pid, fmt.Sprintf("rev=%d mcp=%s skills=%s places=%s", cur.Revision, joinIDs(cur.MCP), joinIDs(cur.Skills), joinIDs(cur.Places)))
+	s.markPresetPlacesPending(id.ID, old.Places, cur.Places)
 	s.local.events.publish("presets")
 	writeJSON(w, http.StatusOK, cur)
 }
@@ -500,6 +558,7 @@ func (s *Server) handlePresetDelete(w http.ResponseWriter, r *http.Request, id i
 		return
 	}
 	_ = s.db.Audit(id.Login, "local.preset.delete", pid, "")
+	s.markPresetPlacesPending(id.ID, old.Places)
 	s.local.events.publish("presets")
 	resp := map[string]any{"id": pid, "deleted": true}
 	if len(errs) > 0 {
