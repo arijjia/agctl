@@ -195,7 +195,14 @@ func TestDevPathsReport(t *testing.T) {
 
 	var text bytes.Buffer
 	devPathsPrint(&text, rep)
-	for _, want := range []string{"КОРЕНЬ", "БИНАРИ", "GUEST", "ПРОФИЛЬ", "ДОМ", "ПАПКА ПРОЕКТОВ", "СЕТЬ", "ОБРАЗ", "DOCKER", "СЕКРЕТЫ", root, repo, work, "/workspace", "/home/dsh", "GITLAB_TOKEN"} {
+	// Цель симлинка отчёт печатает через EvalSymlinks: на Windows короткое
+	// имя каталога (RUNNER~1) раскрывается в длинное, на macOS /var — в
+	// /private/var. Сверяем с той же канонической формой.
+	repoShown := repo
+	if r, err := filepath.EvalSymlinks(repo); err == nil {
+		repoShown = r
+	}
+	for _, want := range []string{"КОРЕНЬ", "БИНАРИ", "GUEST", "ПРОФИЛЬ", "ДОМ", "ПАПКА ПРОЕКТОВ", "СЕТЬ", "ОБРАЗ", "DOCKER", "СЕКРЕТЫ", root, repoShown, work, "/workspace", "/home/dsh", "GITLAB_TOKEN"} {
 		if !strings.Contains(text.String(), want) {
 			t.Errorf("в выводе нет %q", want)
 		}
