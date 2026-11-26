@@ -72,10 +72,80 @@ func (s *Server) defaultDshHome(key chatKey) string {
 	return filepath.Join(s.cfg.Home, "chats", chatStorageID(key.uid, key.slot), "dsh-home")
 }
 
-// validateDshHomeDir — явная папка dsh-home: абсолютный путь, не корень и
+// validateDshHomeDir — явная папка dsh-home места slot (-1 — нового) с
+// папками проектов mounts: проверка пути (validateDshHomePath) и
+// пересечений. Папка проектов не может лежать внутри dsh-home (git
+// конфигурации забрал бы проекты); папка не занята другим местом (два dsh на
+// одном каталоге портят друг другу сессии и пресеты); непустая папка —
+// только уже засеянный dsh-home или его репозиторий.
+func (s *Server) validateDshHomeDir(owner int64, slot int, dir string, mounts []placeMount) (string, error) {
+	abs, err := s.validateDshHomePath(dir)
+	if err != nil || abs == "" {
+		return abs, err
+	}
+	projects := func(ms []placeMount) error {
+		for _, m := range ms {
+			mh := canonicalPath(filepath.Clean(m.Host))
+			if mh == abs || pathUnder(abs, mh) {
+				return fmt.Errorf("папка dsh-home: папка проектов %s оказалась бы внутри неё (git конфигурации забрал бы проекты) — возьмите отдельную, например %s", mh, filepath.Join(mh, "ag_dsh"))
+			}
+		}
+		return nil
+	}
+	if err := projects(mounts); err != nil {
+		return "", err
+	}
+	views, err := s.placeViews(owner)
+	if err != nil {
+		return "", err
+	}
+	for _, v := range views {
+		if v.Slot == slot {
+			continue // папки этого места — из запроса (выше)
+		}
+		if err := projects(v.Mounts); err != nil {
+			return "", err
+		}
+		if !v.DshHomeCustom {
+			continue
+		}
+		other := canonicalPath(filepath.Clean(v.DshHome))
+		if other == abs || pathUnder(abs, other) || pathUnder(other, abs) {
+			return "", fmt.Errorf("папка dsh-home: %s уже занята местом «%s» — у каждого места своя (копия места — «Клонировать»)", other, v.Name)
+		}
+	}
+	if !dshHomeDirUsable(abs) {
+		return "", fmt.Errorf("папка dsh-home: %s не пуста и не похожа на dsh-home — нужна пустая папка, dsh-home или его репозиторий (git clone)", abs)
+	}
+	return abs, nil
+}
+
+// dshHomeDirUsable — папка пуста (или её нет), уже засеянный dsh-home или
+// репозиторий dsh-home (.gitignore agctl). Чужой проект с кодом — нет:
+// первый коммит конфигурации забрал бы его незакоммиченные правки.
+func dshHomeDirUsable(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return os.IsNotExist(err)
+	}
+	empty := true
+	for _, e := range entries {
+		if e.Name() != ".DS_Store" {
+			empty = false
+			break
+		}
+	}
+	if empty || dshHomeSeeded(dir) {
+		return true
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, ".gitignore")) // #nosec G304 -- папка владельца
+	return err == nil && strings.HasPrefix(string(raw), provision.DshHomeGitignoreHeader)
+}
+
+// validateDshHomePath — путь явной папки dsh-home: абсолютный, не корень и
 // не домашний каталог целиком, не внутри данных agctl (там dsh-home мест по
 // умолчанию). Папки может не быть — создастся.
-func (s *Server) validateDshHomeDir(dir string) (string, error) {
+func (s *Server) validateDshHomePath(dir string) (string, error) {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
 		return "", nil

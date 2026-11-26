@@ -20,7 +20,11 @@ import (
 )
 
 // DshHomeGitignore — что из dsh-home не идёт в git.
-const DshHomeGitignore = `# agctl: dsh-home как git-репозиторий конфигурации агента — скиллы,
+// DshHomeGitignoreHeader — начало .gitignore dsh-home: по нему папка
+// узнаётся как репозиторий dsh-home (в том числе после git clone).
+const DshHomeGitignoreHeader = "# agctl: dsh-home как git-репозиторий"
+
+const DshHomeGitignore = DshHomeGitignoreHeader + ` конфигурации агента — скиллы,
 # пресеты, плагины (package.json), настройки. Секреты, сессии, кэши и то,
 # что agctl пересобирает на каждом старте, — вне git.
 

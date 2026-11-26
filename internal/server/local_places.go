@@ -399,7 +399,7 @@ func (s *Server) handlePlaceCreate(w http.ResponseWriter, r *http.Request, id id
 	}
 	dshHome := ""
 	if req.DshHome != nil {
-		if dshHome, err = s.validateDshHomeDir(*req.DshHome); err != nil {
+		if dshHome, err = s.validateDshHomeDir(id.ID, -1, *req.DshHome, mounts); err != nil {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -470,7 +470,12 @@ func (s *Server) handlePlaceUpdate(w http.ResponseWriter, r *http.Request, id id
 	}
 	var dshHome *string
 	if req.DshHome != nil {
-		abs, err := s.validateDshHomeDir(*req.DshHome)
+		slot, ok := s.placeSlot(id.ID, pid)
+		if !ok {
+			writeErr(w, http.StatusNotFound, "рабочее место не найдено")
+			return
+		}
+		abs, err := s.validateDshHomeDir(id.ID, slot, *req.DshHome, mounts)
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
