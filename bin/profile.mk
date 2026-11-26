@@ -9,9 +9,9 @@
 # своим профилем без пересборки бинаря.
 
 PROFILES_DIR ?= $(HOME)/.agctl/profiles
-# Локальный сиблинг для пилота; для CI/релиза задай PROFILE_REPO=<git-URL>
+# Локальный сиблинг ../agctl-profile-<PROFILE>; для CI/релиза задай PROFILE_REPO=<git-URL>
 # (можно с pinned-версией: <url>#refs/tags/v1 резолвится git clone'ом ветки).
-PROFILE_REPO ?= ../agctl-profile-utmn
+PROFILE_REPO ?= ../agctl-profile-$(PROFILE)
 # Имя каталога профиля: по умолчанию — из имени репо/каталога без префикса
 # agctl-profile- (agctl-profile-rshb → rshb); явно — PROFILE_NAME=<id>.
 PROFILE_NAME ?= $(patsubst agctl-profile-%,%,$(basename $(notdir $(patsubst %/,%,$(PROFILE_REPO)))))

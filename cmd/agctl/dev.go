@@ -162,7 +162,7 @@ func devInit(h localmode.Home, args []string) error {
 	prof := fs.String("profile", "", "профиль организации: id из <корень>/profiles (agctl — встроенный нейтральный)")
 	profDir := fs.String("profile-dir", "", "явный каталог профиля вместо <корень>/profiles/<id>")
 	image := fs.String("image", "", "образ рабочего места (из реестра организации); пусто — по профилю")
-	flavor := fs.String("flavor", "", "вкус образа из профиля (web, 1c…)")
+	flavor := fs.String("flavor", "", "вкус образа: web, min или вкус профиля организации")
 	workdir := fs.String("workdir", "", "папка проектов по умолчанию (→ /workspace)")
 	nonInteractive := fs.Bool("yes", false, "не спрашивать (только флаги)")
 	noPull := fs.Bool("no-pull", false, "не тянуть образ сейчас (с --cli)")

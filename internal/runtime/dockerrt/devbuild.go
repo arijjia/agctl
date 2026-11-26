@@ -40,7 +40,7 @@ type DevBuild struct {
 	Log func(string)
 }
 
-// imageTag — тег ссылки ("0.2.2" из "agctl-dsh-utmn:0.2.2"; без тега — latest).
+// imageTag — тег ссылки ("0.2.2" из "agctl-dsh-org:0.2.2"; без тега — latest).
 func imageTag(ref string) string {
 	slash := strings.LastIndex(ref, "/")
 	if i := strings.LastIndex(ref, ":"); i > slash {
@@ -49,7 +49,7 @@ func imageTag(ref string) string {
 	return "latest"
 }
 
-// withSuffix — "agctl-dsh:0.2.2" + "utmn" → "agctl-dsh-utmn:0.2.2"
+// withSuffix — "agctl-dsh:0.2.2" + "org" → "agctl-dsh-org:0.2.2"
 // (те же имена, что make overlay_tag/flavor_tag и profile.OverlayImage).
 func withSuffix(ref, suffix string) string {
 	slash := strings.LastIndex(ref, "/")

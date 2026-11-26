@@ -27,7 +27,7 @@ const DefaultAddr = "127.0.0.1:8930"
 // конфиг ничего не копируется: образ по умолчанию и белый список моста
 // профиля читаются из профиля на каждом старте.
 type Config struct {
-	Profile    string  `yaml:"profile,omitempty"`     // id профиля (agctl, utmn…)
+	Profile    string  `yaml:"profile,omitempty"`     // id профиля (agctl или id профиля организации)
 	ProfileDir string  `yaml:"profile_dir,omitempty"` // явный каталог профиля
 	Image      string  `yaml:"image,omitempty"`       // образ — только явный выбор; пусто = по профилю
 	Flavor     string  `yaml:"flavor,omitempty"`      // вкус образа (web, …)
