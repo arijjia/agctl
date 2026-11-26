@@ -6,6 +6,8 @@ package server
 // и системный диалог выбора папки (подмена в тестах).
 
 import (
+	"gopkg.in/yaml.v3"
+
 	"net/http"
 	"os"
 	"path/filepath"
@@ -109,6 +111,25 @@ func TestLocalPresetsCRUDAndMaterialization(t *testing.T) {
 func TestLocalPresetRejectsUnknownSkill(t *testing.T) {
 	env, _ := newLocalUIEnv(t)
 	c := loginOwner(t, env)
+	mainHome := env.srv.dshHomeFor(userKey(env.srv.local.ownerID))
+	// Кириллическое имя без MCP: id транслитерируется (раньше выходило
+	// «folder»), а каталог пресета создаётся и без MCP-рядов (раньше пресет
+	// только со скиллами в dsh не попадал вовсе).
+	ruCode, ruBody := env.do(c, "POST", "/api/local/ui/presets", map[string]any{"name": "Аналитика: отчёты", "places": []string{"main"}})
+	ru := decode[localPreset](t, ruBody)
+	if ruCode != http.StatusCreated || ru.ID != "analitika-otchety" {
+		t.Fatalf("кириллический пресет: %d %s", ruCode, ruBody)
+	}
+	meta, err := os.ReadFile(filepath.Join(mainHome, ".agent-presets", "agctl-"+ru.ID, "preset.yml"))
+	if err != nil {
+		t.Fatalf("пресет без MCP не материализован: %v", err)
+	}
+	var parsed struct {
+		Name string `yaml:"name"`
+	}
+	if err := yaml.Unmarshal(meta, &parsed); err != nil || parsed.Name != "Аналитика: отчёты" {
+		t.Fatalf("preset.yml: %v %q\n%s", err, parsed.Name, meta)
+	}
 	if code, _ := env.do(c, "POST", "/api/local/ui/presets", map[string]any{"name": "X", "skills": []string{"нет-пакета"}}); code != http.StatusBadRequest {
 		t.Fatalf("неизвестный скилл: %d", code)
 	}

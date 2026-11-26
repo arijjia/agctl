@@ -127,6 +127,31 @@ for c in $(docker ps -q); do
   if docker inspect "$c" --format '{{range .Mounts}}{{.Source}} {{end}}' | grep -q "$RUN"; then CID=$c; fi
 done
 [ -n "$CID" ] && pass "контейнер найден" || fail "контейнер не найден"
+
+say "пресет лаунчера виден харнессу"
+# dsh читает пресеты только строками-декларациями патча: guest собирает патч
+# из dsh-home при старте контейнера, entrypoint отдаёт его в `dsh web --patch`.
+# Смена формата пресетов в новой версии dsh ловится здесь, а не у пользователя.
+code=$(curl -s -b "$JAR" -o "$RUN/preset.json" -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+  -d '{"name":"Поиск: веб","mcp":["ddg"],"places":["main"]}' "http://$ADDR/api/local/ui/presets")
+[ "$code" = "201" ] && grep -q '"id":"poisk-veb"' "$RUN/preset.json" && pass "пресет создан (id из кириллицы)" || fail "создание пресета: $code $(cat "$RUN/preset.json")"
+code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' -X POST "http://$ADDR/api/local/ui/places/main/restart")
+[ "$code" = "200" ] || [ "$code" = "202" ] || [ "$code" = "204" ] && pass "перезапуск места принят ($code)" || fail "restart: $code"
+CID=""
+for i in $(seq 1 90); do
+  for c in $(docker ps -q); do
+    if docker inspect "$c" --format '{{range .Mounts}}{{.Source}} {{end}}' | grep -q "$RUN"; then CID=$c; fi
+  done
+  [ -n "$CID" ] && docker exec "$CID" sh -c 'grep -q "preset-agctl-poisk-veb" /home/dsh/.agctl/presets.patch.yml 2>/dev/null' && break
+  CID=""; sleep 2
+done
+[ -n "$CID" ] && pass "патч пресетов собран в контейнере" || fail "нет /home/dsh/.agctl/presets.patch.yml с пресетом"
+if [ -n "$CID" ]; then
+  docker exec "$CID" sh -c 'tr "\0" " " < /proc/1/cmdline' | grep -q -- '--patch /home/dsh/.agctl/presets.patch.yml' \
+    && pass "dsh web запущен с патчем пресетов" || fail "dsh web без --patch: $(docker exec "$CID" sh -c 'tr "\0" " " < /proc/1/cmdline')"
+  docker exec -e DSH_HOME=/home/dsh "$CID" sh -c 'dsh web --patch /home/dsh/.agctl/presets.patch.yml --dump-config 2>/dev/null | grep -q "id: agctl-poisk-veb"' \
+    && pass "dsh принимает декларацию пресета" || fail "dsh не видит пресет agctl-poisk-veb"
+fi
 if [ "${EGRESS:-0}" = 1 ] && [ -n "$CID" ]; then
   say "egress-allowlist"
   docker inspect "$CID" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' | grep -q '^agctl-egress-' \

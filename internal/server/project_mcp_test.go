@@ -90,7 +90,7 @@ func TestProjectMcpAPI(t *testing.T) {
 			t.Fatalf("в пресете нет %q:\n%s", want, composition)
 		}
 	}
-	if meta, err := os.ReadFile(filepath.Join(dshHome, ".agent-presets", "agctl-ws-vibe", "preset.yml")); err != nil || !strings.Contains(string(meta), "agctl-ws: vibe") {
+	if meta, err := os.ReadFile(filepath.Join(dshHome, ".agent-presets", "agctl-ws-vibe", "preset.yml")); err != nil || !strings.Contains(string(meta), "name: Воркспейс vibe") {
 		t.Fatalf("metadata пресета повреждена: %v %s", err, meta)
 	}
 	// Файл с секретом — 0600 (конвенция .credentials.yaml); unix-права на

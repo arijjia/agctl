@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -106,10 +107,19 @@ func (s *Server) applyPresetAt(owner int64, p *localPreset, placeID string) erro
 	// env серверов — доступы этой машины (хранилище ОС, мост); значения
 	// секретов в KV и ответы API не попадают — только в файл пресета 0600.
 	secretEnv := s.containerEnvMap(owner)
-	if err := provision.EnsureMcpPreset(dshHome, presetManagedID(p.ID),
-		"agctl: "+presetManagedID(p.ID),
-		p.Name+": набор из лаунчера agctl — не редактируйте вручную, пересобирается при каждом изменении пресета.",
+	desc := strings.TrimSpace(p.Description)
+	if desc == "" {
+		desc = "Набор из лаунчера agctl"
+	}
+	if err := provision.EnsureAgentPreset(dshHome, presetManagedID(p.ID), p.Name, desc,
 		presetSpecs(p), secretEnv); err != nil {
+		return err
+	}
+	// Скиллы пресета живут в его каталоге и видны только сессиям с этим
+	// пресетом (guest подключает каталог в skill-filesystem пресета). Каталог
+	// пересобирается целиком: снятый с пресета скилл исчезает.
+	skillsRoot := provision.PresetSkillsRoot(dshHome, presetManagedID(p.ID))
+	if err := os.RemoveAll(skillsRoot); err != nil {
 		return err
 	}
 	for _, sid := range p.Skills {
@@ -117,7 +127,7 @@ func (s *Server) applyPresetAt(owner int64, p *localPreset, placeID string) erro
 		if err != nil {
 			return err
 		}
-		if err := provision.InstallSkillPackageToDshHome(dshHome, s.brand.FS, pkg); err != nil {
+		if err := provision.InstallSkillPackageTo(skillsRoot, s.brand.FS, pkg); err != nil {
 			return err
 		}
 	}
@@ -138,8 +148,10 @@ func (s *Server) unapplyPresetAt(owner int64, p *localPreset, placeID string) er
 		if err != nil {
 			return err // каталог профиля мог измениться — сообщаем
 		}
+		// Прежние сборки ставили скиллы пресета в общий <dshHome>/skills —
+		// подчищаем этот след; изменённый пользователем файл остаётся.
 		if err := provision.RemoveSkillPackageFromDshHome(dshHome, s.brand.FS, pkg); err != nil {
-			return err
+			log.Printf("[presets] %s: общий skills/: %v", p.ID, err)
 		}
 	}
 	return nil
@@ -214,11 +226,14 @@ func (s *Server) validatePresetReq(req presetReq) (localPreset, error) {
 	}
 	pid := strings.TrimSpace(req.ID)
 	if pid == "" {
-		pid = slugName(name)
+		pid = slugName(translitRu(name))
 		if len(pid) > 32 {
 			pid = strings.Trim(pid[:32], "-._")
 		}
 		pid = strings.NewReplacer(".", "-", "_", "-").Replace(pid)
+		for strings.Contains(pid, "--") {
+			pid = strings.ReplaceAll(pid, "--", "-")
+		}
 	}
 	if !presetIDRe.MatchString(pid) {
 		return localPreset{}, errors.New("id пресета: строчные латинские буквы, цифры и дефис, до 32 символов")
@@ -472,4 +487,25 @@ func (s *Server) handlePresetDelete(w http.ResponseWriter, r *http.Request, id i
 		resp["warning"] = strings.Join(errs, "; ")
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// translitRu — латиница вместо кириллицы для id пресета: «Аналитика 1С» →
+// «analitika 1s». Без неё кириллическое имя давало id «folder», и второй
+// такой пресет упирался в «уже есть».
+func translitRu(s string) string {
+	table := map[rune]string{
+		'а': "a", 'б': "b", 'в': "v", 'г': "g", 'д': "d", 'е': "e", 'ё': "e", 'ж': "zh",
+		'з': "z", 'и': "i", 'й': "y", 'к': "k", 'л': "l", 'м': "m", 'н': "n", 'о': "o",
+		'п': "p", 'р': "r", 'с': "s", 'т': "t", 'у': "u", 'ф': "f", 'х': "h", 'ц': "ts",
+		'ч': "ch", 'ш': "sh", 'щ': "sch", 'ъ': "", 'ы': "y", 'ь': "", 'э': "e", 'ю': "yu", 'я': "ya",
+	}
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if t, ok := table[r]; ok {
+			b.WriteString(t)
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }

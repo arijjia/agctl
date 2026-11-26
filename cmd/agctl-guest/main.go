@@ -11,6 +11,7 @@
 // (`agctl bridge …`, `agctl ax-runner …`) не меняются.
 //
 //	agctl bridge list | call ИНСТРУМЕНТ k=v … | mcp — мост к хосту (локальный)
+//	agctl presets-sync — патч пресетов agctl для dsh (оба варианта, entrypoint)
 //	agctl ax-runner — PID 1 песочницы AX / Agent Substrate (серверный)
 //	agctl init-chat-home — init-контейнер пода k8s (серверный)
 //	agctl version   — версия, сборка и вариант (guest local | guest server)
@@ -36,7 +37,8 @@ var help = cli.Usage{
 	Tagline: "бинарь внутри образа рабочего места (agctl-guest " + guestVariant + ")",
 	Sections: []cli.UsageSection{{
 		Title: "Команды",
-		Rows: append(modeRows(),
+		Rows: append(append(modeRows(),
+			cli.UsageRow{Name: "presets-sync", Desc: []string{"собрать патч пресетов agctl для dsh (entrypoint образа)"}}),
 			cli.UsageRow{Name: "version", Desc: []string{"версия и сборка"}},
 			cli.UsageRow{Name: "help", Desc: []string{"эта справка"}},
 		),
@@ -53,6 +55,8 @@ func main() {
 	switch os.Args[1] {
 	case "bridge":
 		cmdBridge(os.Args[2:])
+	case "presets-sync":
+		cmdPresetsSync(os.Args[2:])
 	case "ax-runner":
 		cmdAXRunner(os.Args[2:])
 	case "init-chat-home": // initContainer пода k8s (k8srt), серверный образ
