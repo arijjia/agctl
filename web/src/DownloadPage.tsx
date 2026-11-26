@@ -115,8 +115,10 @@ export default function DownloadPage() {
 ├─ profiles/<id>/     профиль организации — единственный экземпляр
 └─ homes/<id>/        дом: config.yaml, data/, logs/, run/, backups/`}</pre>
           <p className="muted small">
-            Больше нигде agctl файлов не создаёт. Секреты хранятся в хранилище ОС, по записи на дом. Агент видит только
-            папку проектов, которую вы выберете.
+            Кроме этого agctl пишет только в папки, которые вы выберете: папку проектов (первый{" "}
+            <span className="mono">agctl dev up</span> без настроенного дома берёт <span className="mono">~/src</span>) и
+            свою папку dsh-home, если вы её зададите. Секреты хранятся в хранилище ОС, по записи на дом. Агент видит
+            только папки своего рабочего места.
           </p>
         </Panel>
         <p className="muted small">Версия на этом сервере: <span className="mono">{d.version || "dev"}</span></p>
