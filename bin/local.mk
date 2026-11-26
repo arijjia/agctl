@@ -1,14 +1,15 @@
 # ── local: локальный режим (agctl dev) из исходников, по дому на профиль ────
-# Логика — bin/local.sh. Профиль задаётся явно в командной строке
-# (make local_up PROFILE=<id>); без него — нейтральный agctl (дом ~/.agctl-dev,
-# порт 8930). Профиль организации берётся из сиблинга ../agctl-profile-<id>,
-# дом — ~/.agctl-dev-<id>, порт выбирается один раз и живёт в dev.yaml.
-# Бинарь не качается из релиза: local_up сначала делает make install.
+# Логика — bin/local.sh. Всё под корнем $(AGCTL_ROOT) (~/.agctl): бинарь
+# bin/agctl, профиль profiles/<id> (ссылка на сиблинг ../agctl-profile-<id>),
+# дом homes/<id>. Профиль задаётся явно в командной строке
+# (make local_up PROFILE=<id>); без него — нейтральный agctl (дом homes/agctl,
+# порт 8930). Порт дома организации выбирается один раз и живёт в его
+# config.yaml. Бинарь не качается из релиза: local_up сначала делает make install.
 
 LOCAL_PROFILE := $(if $(filter command line,$(origin PROFILE)),$(PROFILE),agctl)
 LOCAL_SH      := bin/local.sh
 
-.PHONY: local_up local_init local_down local_status local_logs local_open local_doctor local_img local_list
+.PHONY: local_up local_init local_down local_status local_paths local_logs local_open local_doctor local_img local_list
 
 ## local_up: make install + init (если нужно) + agctl dev up для PROFILE (по умолчанию agctl); LOCAL_WORKDIR — папка при первом init
 local_up: install
@@ -23,6 +24,9 @@ local_down:
 	@$(LOCAL_SH) down $(LOCAL_PROFILE)
 local_status:
 	@$(LOCAL_SH) status $(LOCAL_PROFILE)
+## local_paths: где что лежит у дома PROFILE (agctl dev paths): корень, профиль, дом, порты, контейнеры, маунты, секреты
+local_paths:
+	@$(LOCAL_SH) paths $(LOCAL_PROFILE)
 local_logs:
 	@$(LOCAL_SH) logs $(LOCAL_PROFILE)
 local_open:

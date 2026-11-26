@@ -16,15 +16,24 @@ import (
 	"github.com/arijjia/agctl/internal/secrets"
 )
 
-// KeyringService — имя сервиса записей в хранилище ОС.
-const KeyringService = "agctl-dev"
+// LegacyKeyringService — прежний общий сервис записей в хранилище ОС (одна
+// запись на все дома). Теперь только читается: значение, которого нет в
+// сервисе дома, берётся отсюда.
+const LegacyKeyringService = "agctl-dev"
+
+// KeyringService — сервис записей дома в хранилище ОС: agctl:<id дома>.
+func KeyringService(homeID string) string { return "agctl:" + homeID }
+
+// keyringTombstone — пометка «удалено в этом доме»: без неё значение из
+// легаси-сервиса всплывало бы снова после agctl dev secrets rm.
+const keyringTombstone = "__agctl_removed__"
 
 // Var — переменная манифеста: что спросить у разработчика и как она
 // называется в контейнере.
 type Var struct {
 	Name   string // имя env в контейнере
 	Title  string // подпись в мастере
-	Secret bool   // значение — в хранилище ОС; иначе — в dev.yaml
+	Secret bool   // значение — в хранилище ОС; иначе — в config.yaml
 	Hint   string // подсказка (где взять)
 	Group  string // llm | gitlab | jira | confluence
 }
@@ -66,8 +75,9 @@ func ValidEnvName(name string) bool { return envNameRe.MatchString(name) }
 // Secret Service, WSL, контейнер) — зашифрованный файл в доме (AES-GCM,
 // мастер-ключ 0600 рядом). Значения не логируются.
 type Store struct {
-	home string
-	mu   sync.Mutex
+	home    string
+	service string // сервис дома в хранилище ОС
+	mu      sync.Mutex
 	// fallback — true, если хранилище ОС недоступно и используется файл.
 	fallback bool
 }
@@ -76,20 +86,57 @@ type Store struct {
 var ErrSecretNotFound = errors.New("секрет не задан")
 
 // OpenStore проверяет хранилище ОС пробной записью; при недоступности —
-// файловый запасной вариант. AGCTL_DEV_SECRETS=file форсирует файл.
+// файловый запасной вариант. AGCTL_DEV_SECRETS=file форсирует файл. Сервис
+// хранилища ОС свой у каждого дома (agctl:<id>, id — HomeID(home)).
 func OpenStore(home string) *Store {
-	s := &Store{home: home}
+	s := &Store{home: home, service: KeyringService(HomeID(home))}
 	if strings.EqualFold(os.Getenv("AGCTL_DEV_SECRETS"), "file") {
 		s.fallback = true
 		return s
 	}
 	probe := "__agctl_probe__"
-	if err := keyring.Set(KeyringService, probe, "1"); err != nil {
+	if err := keyring.Set(s.service, probe, "1"); err != nil {
 		s.fallback = true
 		return s
 	}
-	_ = keyring.Delete(KeyringService, probe)
+	_ = keyring.Delete(s.service, probe)
 	return s
+}
+
+// Service — имя сервиса дома в хранилище ОС.
+func (s *Store) Service() string { return s.service }
+
+// Fallback — true, если секреты лежат в зашифрованном файле дома.
+func (s *Store) Fallback() bool { return s.fallback }
+
+// FilePath — путь зашифрованного файла секретов (используется при Fallback).
+func (s *Store) FilePath() string { return filepath.Join(s.home, "secrets.enc") }
+
+// ImportLegacy копирует в сервис дома значения прежнего общего сервиса
+// agctl-dev для перечисленных имён (agctl dev migrate). Легаси-записи не
+// удаляются. Возвращает перенесённые имена.
+func (s *Store) ImportLegacy(names []string) ([]string, error) {
+	if s.fallback {
+		return nil, nil
+	}
+	var moved []string
+	for _, name := range names {
+		if _, err := keyring.Get(s.service, name); err == nil {
+			continue
+		}
+		v, err := keyring.Get(LegacyKeyringService, name)
+		if errors.Is(err, keyring.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return moved, err
+		}
+		if err := keyring.Set(s.service, name, v); err != nil {
+			return moved, err
+		}
+		moved = append(moved, name)
+	}
+	return moved, nil
 }
 
 // Backend — человекочитаемое имя хранилища.
@@ -97,7 +144,7 @@ func (s *Store) Backend() string {
 	if s.fallback {
 		return "зашифрованный файл " + filepath.Join(s.home, "secrets.enc")
 	}
-	return "хранилище ОС (" + keyringName() + ")"
+	return "хранилище ОС (" + keyringName() + "), сервис " + s.service
 }
 
 // Set сохраняет значение.
@@ -108,8 +155,11 @@ func (s *Store) Set(name, value string) error {
 	if strings.ContainsAny(value, "\r\n\x00") {
 		return errors.New("значение должно быть одной строкой")
 	}
+	if value == keyringTombstone {
+		return errors.New("значение зарезервировано")
+	}
 	if !s.fallback {
-		return keyring.Set(KeyringService, name, value)
+		return keyring.Set(s.service, name, value)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -124,8 +174,15 @@ func (s *Store) Set(name, value string) error {
 // Get читает значение; нет — ErrSecretNotFound.
 func (s *Store) Get(name string) (string, error) {
 	if !s.fallback {
-		v, err := keyring.Get(KeyringService, name)
+		v, err := keyring.Get(s.service, name)
 		if errors.Is(err, keyring.ErrNotFound) {
+			// Фолбэк чтения: запись прежнего общего сервиса agctl-dev.
+			v, err = keyring.Get(LegacyKeyringService, name)
+			if errors.Is(err, keyring.ErrNotFound) {
+				return "", ErrSecretNotFound
+			}
+		}
+		if err == nil && v == keyringTombstone {
 			return "", ErrSecretNotFound
 		}
 		return v, err
@@ -146,7 +203,12 @@ func (s *Store) Get(name string) (string, error) {
 // Delete удаляет значение (отсутствие — не ошибка).
 func (s *Store) Delete(name string) error {
 	if !s.fallback {
-		err := keyring.Delete(KeyringService, name)
+		// Легаси-запись общая для всех домов — её не трогаем; чтобы она не
+		// всплывала в этом доме, оставляем пометку удаления.
+		if _, lerr := keyring.Get(LegacyKeyringService, name); lerr == nil {
+			return keyring.Set(s.service, name, keyringTombstone)
+		}
+		err := keyring.Delete(s.service, name)
 		if errors.Is(err, keyring.ErrNotFound) {
 			return nil
 		}
@@ -218,7 +280,7 @@ func (s *Store) writeFile(all map[string]string) error {
 }
 
 // ContainerEnv собирает KEY=VALUE для контейнера: несекретные значения из
-// dev.yaml + секреты из хранилища + производные имена для штатных
+// config.yaml + секреты из хранилища + производные имена для штатных
 // инструментов (glab, jira-cli, MCP GitLab/Jira, тулкиты доменов). Ключ LLM
 // в контейнер env не попадает — его получает сервер как провайдера.
 func ContainerEnv(cfg *Config, store *Store) ([]string, []string) {

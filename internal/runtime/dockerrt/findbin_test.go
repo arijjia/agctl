@@ -31,13 +31,19 @@ func TestFindLinuxBinaryPicksDaemonArch(t *testing.T) {
 	}
 }
 
-// Сборка единого бинаря до разделения (agctl-linux-<arch>) подходит, но
-// agctl-guest предпочтительнее.
-func TestFindLinuxBinaryPrefersGuestOverLegacy(t *testing.T) {
+// Имя guest одно — agctl-guest-linux-<arch>; прежние имена (единый бинарь
+// agctl-linux-<arch>, имя из релиз-архива agctl-guest_linux_<arch>) больше
+// не подхватываются. Раскладка корня: рядом с бинарём — каталог guest/.
+func TestFindLinuxBinaryIgnoresLegacyNames(t *testing.T) {
 	dir := t.TempDir()
 	touch(t, dir, "agctl-linux-arm64")
-	if got, err := findLinuxBinary(dir, "arm64"); err != nil || filepath.Base(got) != "agctl-linux-arm64" {
-		t.Fatalf("legacy: %s %v", got, err)
+	touch(t, dir, "agctl-guest_linux_arm64")
+	if p, err := findLinuxBinary(dir, "arm64"); err == nil && filepath.Dir(p) == dir {
+		t.Fatalf("взято прежнее имя: %s", p)
+	}
+	touch(t, dir, "agctl-guest-server_linux_arm64")
+	if p, err := findServerLinuxBinary(dir, "arm64"); err == nil && filepath.Dir(p) == dir {
+		t.Fatalf("взято прежнее имя серверного guest: %s", p)
 	}
 	touch(t, dir, "agctl-guest-linux-arm64")
 	if got, err := findLinuxBinary(dir, "arm64"); err != nil || filepath.Base(got) != "agctl-guest-linux-arm64" {

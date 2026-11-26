@@ -103,7 +103,7 @@ func (f *fakeHooks) EnsureImage(ctx context.Context, ref string, logf func(strin
 	return nil
 }
 
-// SetWorkDir — как localmode.SetWorkDir без dev.yaml: только проверка пути.
+// SetWorkDir — как localmode.SetWorkDir без config.yaml: только проверка пути.
 func (f *fakeHooks) SetWorkDir(dir string) (string, error) {
 	return localmode.ValidateWorkDir(dir)
 }

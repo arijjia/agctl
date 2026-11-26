@@ -1,10 +1,14 @@
 # ── profile: профиль организации (данные отдельно от ядра) ──────────────────
-# Профиль — отдельное репо-данные (profile.yaml + assets/logo.png), которые
-# подключаются в ./profiles/<имя>. Ядро agctl организаций не содержит
+# Профиль — отдельное репо-данные (profile.yaml + assets/logo.png). На машине
+# он лежит в одном месте — $(PROFILES_DIR)/<id> = <корень>/profiles/<id>
+# (~/.agctl/profiles/<id>): оттуда его читают agctl dev, agctl-server
+# (make up PROFILE=<id>) и сборка образов (make img_profile). Это клон,
+# копия (profile-fetch) или ссылка на сиблинг-репо (make local_up). В
+# репозитории ядра профилей нет. Ядро agctl организаций не содержит
 # (guard-тест TestCoreIsOrganizationFree); любая организация подключается
 # своим профилем без пересборки бинаря.
 
-PROFILES_DIR ?= profiles
+PROFILES_DIR ?= $(HOME)/.agctl/profiles
 # Локальный сиблинг для пилота; для CI/релиза задай PROFILE_REPO=<git-URL>
 # (можно с pinned-версией: <url>#refs/tags/v1 резолвится git clone'ом ветки).
 PROFILE_REPO ?= ../agctl-profile-utmn
@@ -14,9 +18,12 @@ PROFILE_NAME ?= $(patsubst agctl-profile-%,%,$(basename $(notdir $(patsubst %/,%
 
 .PHONY: profile-fetch
 
-## profile-fetch: подтянуть профиль организации в ./profiles/<PROFILE_NAME> (локальный каталог или git-URL PROFILE_REPO)
+## profile-fetch: подтянуть профиль организации в <корень>/profiles/<PROFILE_NAME> (локальный каталог или git-URL PROFILE_REPO)
 profile-fetch:
 	@test -n "$(PROFILE_NAME)" || { echo "✗ не удалось вывести имя профиля из $(PROFILE_REPO) — задай PROFILE_NAME=<id>"; exit 1; }
+	@if [ -L "$(PROFILES_DIR)/$(PROFILE_NAME)" ]; then \
+	  echo "✓ $(PROFILES_DIR)/$(PROFILE_NAME) — ссылка на $$(cd "$(PROFILES_DIR)/$(PROFILE_NAME)" && pwd -P): профиль читается прямо из репозитория, копировать нечего"; exit 0; fi; \
+	mkdir -p "$(PROFILES_DIR)"
 	@if [ -f "$(PROFILE_REPO)/profile.yaml" ]; then \
 	  mkdir -p "$(PROFILES_DIR)/$(PROFILE_NAME)" && cp -R "$(PROFILE_REPO)/." "$(PROFILES_DIR)/$(PROFILE_NAME)/" 2>/dev/null; \
 	  rm -rf "$(PROFILES_DIR)/$(PROFILE_NAME)/.git" && \

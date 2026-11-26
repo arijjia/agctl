@@ -12,38 +12,46 @@
 #     AGCTL_REPO=<org>/agctl-profile-<id>: zip agctl-<id>-<версия>-<os>-<arch>.zip
 #     (agctl + agctl-guest-linux-<arch> + agctl-guest-server-linux-<arch> +
 #     profile/) + checksums-<версия>.txt; нужен авторизованный gh и unzip.
-#     Профиль кладётся в ~/.local/share/agctl/profiles/<id>; в конце скрипт
-#     сам подключает профиль (agctl dev init --profile-dir … --yes;
-#     AGCTL_NO_INIT=1 — не подключать, напечатать команду).
+#
+# Всё ставится под один корень — ~/.agctl (переменная AGCTL_ROOT); раскладка
+# та же, что в internal/localmode/layout.go:
+#
+#   <корень>/bin/agctl                              бинарь (этот каталог — в PATH)
+#   <корень>/bin/guest/agctl-guest-linux-<arch>     guest локального образа agctl-dsh*
+#   <корень>/bin/guest/agctl-guest-server-linux-<arch>  guest серверного образа
+#   <корень>/profiles/<id>/                         профиль комплекта организации
+#   <корень>/homes/<id>/                            дом (создаёт agctl dev init)
 #
 # Что делает: определяет ОС и архитектуру, скачивает архив и контрольные
 # суммы (через gh, если он есть и авторизован, иначе curl), сверяет SHA-256,
-# кладёт бинарь в ~/.local/bin, снимает карантин macOS, кладёт оба agctl-guest
-# — linux-бинари образа рабочего места своего режима (локальный agctl-dsh* /
-# серверный agctl-dsh-server*) — в ~/.local/lib/agctl (нужны только для
-# самосборки образа без реестра), печатает agctl version. Сервер организации
-# (agctl-server) этот скрипт не ставит: он в архивах agctl-server_<os>_<arch>.
+# кладёт бинарь и оба agctl-guest (нужны только для самосборки образа без
+# реестра), снимает карантин macOS, печатает agctl version. Комплект
+# организации: профиль кладётся в <корень>/profiles/<id>, и скрипт сам
+# создаёт для него СВОЙ дом homes/<id> (agctl dev --home <id> init --profile
+# <id> --yes) — дом по умолчанию и другие дома не трогаются; AGCTL_NO_INIT=1
+# — не создавать, напечатать команду. Сервер организации (agctl-server) этот
+# скрипт не ставит: он в архивах agctl-server_<os>_<arch>.
 #
 # Переменные окружения:
 #   AGCTL_REPO         репозиторий GitHub (по умолчанию arijjia/agctl;
 #                      <org>/agctl-profile-<id> — комплект организации)
 #   AGCTL_VERSION      тег релиза (по умолчанию последний)
-#   AGCTL_INSTALL_DIR  куда ставить бинарь (по умолчанию ~/.local/bin)
-#   AGCTL_LIB_DIR      куда класть agctl-guest (по умолчанию <INSTALL_DIR>/../lib/agctl)
-#   AGCTL_PROFILE_DIR  куда класть профиль комплекта (по умолчанию
-#                      ${XDG_DATA_HOME:-~/.local/share}/agctl/profiles/<id>)
+#   AGCTL_ROOT         корень установки (по умолчанию ~/.agctl)
 #   AGCTL_WORKDIR      папка проектов для авто-init комплекта (по умолчанию ~/src)
 #   AGCTL_RELEASE_DIR  локальная папка с архивами релиза — ничего не скачивать
 #   AGCTL_NO_LINUX=1   не ставить agctl-guest (образы берутся из реестра)
-#   AGCTL_NO_INIT=1    не подключать профиль комплекта самим — напечатать команду
+#   AGCTL_NO_INIT=1    не создавать дом комплекта самим — напечатать команду
 #
 # Windows — bin/install.ps1.
 set -eu
 
 REPO="${AGCTL_REPO:-arijjia/agctl}"
 VERSION="${AGCTL_VERSION:-}"
-INSTALL_DIR="${AGCTL_INSTALL_DIR:-$HOME/.local/bin}"
-LIB_DIR="${AGCTL_LIB_DIR:-$INSTALL_DIR/../lib/agctl}"
+ROOT="${AGCTL_ROOT:-$HOME/.agctl}"
+mkdir -p "$ROOT" && ROOT=$(cd "$ROOT" && pwd)
+export AGCTL_ROOT="$ROOT" # agctl ниже работает с этим же корнем
+BIN_DIR="$ROOT/bin"
+GUEST_DIR="$BIN_DIR/guest"
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'install: %s\n' "$*" >&2; exit 1; }
@@ -65,7 +73,7 @@ profile_id=""
 case "${REPO##*/}" in
   agctl-profile-?*) profile_id="${REPO##*/agctl-profile-}" ;;
 esac
-PROFILE_DIR="${AGCTL_PROFILE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/agctl/profiles/$profile_id}"
+PROFILE_DIR="$ROOT/profiles/$profile_id"
 
 gh_ok=0
 if have gh && gh auth status >/dev/null 2>&1; then gh_ok=1; fi
@@ -125,7 +133,7 @@ if [ -z "$VERSION" ]; then
   [ -n "$VERSION" ] || die "не удалось определить последний релиз $REPO (релизов ещё нет?)"
 fi
 case "$VERSION" in v*) ver=${VERSION#v} ;; *) ver=$VERSION ;; esac
-say "agctl: $os/$arch · $REPO · релиз $VERSION · каталог $INSTALL_DIR"
+say "agctl: $os/$arch · $REPO · релиз $VERSION · корень $ROOT"
 
 if [ -n "$profile_id" ]; then
   # ── комплект организации ────────────────────────────────────────────────
@@ -138,28 +146,31 @@ if [ -n "$profile_id" ]; then
   unzip -q "$bundle"
   top="${bundle%.zip}"
   [ -d "$top" ] || die "в $bundle нет каталога $top"
-  install_bin "$top/agctl" "$INSTALL_DIR/agctl"
+  install_bin "$top/agctl" "$BIN_DIR/agctl"
   if [ -z "${AGCTL_NO_LINUX:-}" ]; then
-    mkdir -p "$LIB_DIR" && LIB_DIR=$(cd "$LIB_DIR" && pwd)
-    # Комплекты до разделения по режимам несут agctl-linux-<arch> (единый бинарь,
-    # надмножество команд); findLinuxBinary понимает оба имени.
     guest="agctl-guest-linux-$arch"
-    [ -f "$top/$guest" ] || guest="agctl-linux-$arch"
-    install_bin "$top/$guest" "$LIB_DIR/$guest"
-    say "✓ бинарь образа локального режима: $LIB_DIR/$guest"
-    # Серверный guest (agctl-dsh-server*) — в новых комплектах; его отсутствие
-    # не фатально: образы можно брать из реестра (findServerLinuxBinary скажет,
-    # чего не хватает).
+    if [ -f "$top/$guest" ]; then
+      install_bin "$top/$guest" "$GUEST_DIR/$guest"
+      say "✓ бинарь образа локального режима: $GUEST_DIR/$guest"
+    else
+      say "ℹ в комплекте нет $guest — образ рабочего места только из реестра"
+    fi
+    # Серверный guest (agctl-dsh-server*); его отсутствие не фатально.
     if [ -f "$top/agctl-guest-server-linux-$arch" ]; then
-      install_bin "$top/agctl-guest-server-linux-$arch" "$LIB_DIR/agctl-guest-server-linux-$arch"
-      say "✓ бинарь образа серверного режима: $LIB_DIR/agctl-guest-server-linux-$arch"
+      install_bin "$top/agctl-guest-server-linux-$arch" "$GUEST_DIR/agctl-guest-server-linux-$arch"
+      say "✓ бинарь образа серверного режима: $GUEST_DIR/agctl-guest-server-linux-$arch"
     fi
   fi
   [ -f "$top/profile/profile.yaml" ] || die "в комплекте нет profile/profile.yaml"
-  mkdir -p "$(dirname "$PROFILE_DIR")"
-  rm -rf "$PROFILE_DIR"
-  cp -R "$top/profile" "$PROFILE_DIR"
-  say "✓ профиль $profile_id: $PROFILE_DIR"
+  mkdir -p "$ROOT/profiles"
+  if [ -L "$PROFILE_DIR" ]; then
+    # Работа из исходников: profiles/<id> — ссылка на репозиторий профиля.
+    say "ℹ $PROFILE_DIR — ссылка на $(cd "$PROFILE_DIR" 2>/dev/null && pwd -P || echo '?'); профиль комплекта не распакован, ссылка оставлена"
+  else
+    rm -rf "$PROFILE_DIR"
+    cp -R "$top/profile" "$PROFILE_DIR"
+    say "✓ профиль $profile_id: $PROFILE_DIR"
+  fi
 else
   # ── публичный релиз goreleaser ──────────────────────────────────────────
   main_archive="agctl_${os}_${arch}.tar.gz"
@@ -167,7 +178,7 @@ else
   fetch "$main_archive"
   verify "$main_archive" checksums.txt
   tar xzf "$main_archive" agctl
-  install_bin agctl "$INSTALL_DIR/agctl"
+  install_bin agctl "$BIN_DIR/agctl"
   # Бинари образа рабочего места — agctl-guest (linux), по одному на режим,
   # на любой ОС хоста.
   if [ -z "${AGCTL_NO_LINUX:-}" ]; then
@@ -175,35 +186,39 @@ else
     fetch "$guest_archive"
     verify "$guest_archive" checksums.txt
     tar xzf "$guest_archive" agctl-guest
-    mkdir -p "$LIB_DIR" && LIB_DIR=$(cd "$LIB_DIR" && pwd)
-    install_bin agctl-guest "$LIB_DIR/agctl-guest-linux-$arch"
-    rm -f "$LIB_DIR/agctl-linux-$arch"
-    say "✓ бинарь образа локального режима: $LIB_DIR/agctl-guest-linux-$arch"
+    install_bin agctl-guest "$GUEST_DIR/agctl-guest-linux-$arch"
+    say "✓ бинарь образа локального режима: $GUEST_DIR/agctl-guest-linux-$arch"
     server_archive="agctl-guest-server_linux_${arch}.tar.gz"
     fetch "$server_archive"
     verify "$server_archive" checksums.txt
     tar xzf "$server_archive" agctl-guest
-    install_bin agctl-guest "$LIB_DIR/agctl-guest-server-linux-$arch"
-    say "✓ бинарь образа серверного режима: $LIB_DIR/agctl-guest-server-linux-$arch"
+    install_bin agctl-guest "$GUEST_DIR/agctl-guest-server-linux-$arch"
+    say "✓ бинарь образа серверного режима: $GUEST_DIR/agctl-guest-server-linux-$arch"
   fi
 fi
 
 if [ "$os" = darwin ]; then
-  xattr -d com.apple.quarantine "$INSTALL_DIR/agctl" 2>/dev/null || true
+  xattr -d com.apple.quarantine "$BIN_DIR/agctl" 2>/dev/null || true
 fi
-say "✓ бинарь: $INSTALL_DIR/agctl"
-say "✓ $("$INSTALL_DIR/agctl" version)"
+say "✓ бинарь: $BIN_DIR/agctl"
+say "✓ $("$BIN_DIR/agctl" version)"
 case ":$PATH:" in
-  *":$INSTALL_DIR:"*) ;;
-  *) say "ℹ $INSTALL_DIR нет в PATH — добавьте в профиль оболочки, например: export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
+  *":$BIN_DIR:"*) ;;
+  *) say "ℹ $BIN_DIR нет в PATH — добавьте в профиль оболочки: export PATH=\"$BIN_DIR:\$PATH\"  (fish: fish_add_path $BIN_DIR)" ;;
 esac
 if [ -n "$profile_id" ] && [ -z "${AGCTL_NO_INIT:-}" ]; then
-  # Подключить профиль самим (--yes — не спрашивать; доступы спросит лаунчер).
-  set -- dev init --profile-dir "$PROFILE_DIR" --yes
+  # Свой дом комплекта — homes/<id>; дом по умолчанию и чужие дома не
+  # трогаются (--yes — не спрашивать; доступы спросит лаунчер).
+  set -- dev --home "$profile_id" init --profile "$profile_id" --yes
   if [ -n "${AGCTL_WORKDIR:-}" ]; then set -- "$@" --workdir "$AGCTL_WORKDIR"; fi
-  "$INSTALL_DIR/agctl" "$@" || say "⚠ agctl dev init не удался — подключите профиль сами: agctl dev init --profile-dir \"$PROFILE_DIR\""
+  "$BIN_DIR/agctl" "$@" || say "⚠ agctl dev init не удался — создайте дом сами: agctl dev --home $profile_id init --profile $profile_id"
+  say "Дальше: agctl dev --home $profile_id up   (где что лежит — agctl dev --home $profile_id paths)"
 elif [ -n "$profile_id" ]; then
-  say "Дальше: agctl dev init --profile-dir \"$PROFILE_DIR\" [--flavor …] [--workdir …], затем agctl dev up"
+  say "Дальше: agctl dev --home $profile_id init --profile $profile_id [--flavor …] [--workdir …], затем agctl dev --home $profile_id up"
 else
-  say "Дальше: agctl dev init, затем agctl dev up"
+  say "Дальше: agctl dev init, затем agctl dev up   (где что лежит — agctl dev paths)"
 fi
+case "$(ls -d "$HOME"/.agctl-dev "$HOME"/.agctl-dev-* 2>/dev/null | head -1)" in
+  "") ;;
+  *) say "ℹ найдены прежние дома ~/.agctl-dev* — перенос в $ROOT/homes: agctl dev migrate (план), agctl dev migrate --apply" ;;
+esac

@@ -9,7 +9,7 @@ project_name: agctl
 #                         (в образе /usr/local/bin/agctl: только bridge);
 #   agctl-guest-server  — linux-бинарь образа agctl-dsh-server* серверного
 #                         режима (-tags server: ax-runner, init-chat-home);
-#                         install.sh кладёт оба варианта в ~/.local/lib/agctl
+#                         install.sh кладёт оба варианта в ~/.agctl/bin/guest
 #                         для самосборки образов без реестра.
 builds:
   - id: agctl

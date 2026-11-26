@@ -2,7 +2,7 @@ package server
 
 // local_places.go — лаунчер v2 (docs/architecture.md, раздел 6.9):
 // несколько рабочих мест владельца в локальном режиме. Основное рабочее
-// место (id "main") — прежнее: папка и образ из dev.yaml, адрес /chat/.
+// место (id "main") — прежнее: папка и образ из config.yaml, адрес /chat/.
 // Дополнительные места хранятся в таблице places: своя папка (или несколько
 // папок), свой образ, свой dsh-home и свой адрес /p/<id>/. Писать состояние
 // может только сервер: изменение места передаёт ревизию, устаревшее
@@ -50,7 +50,7 @@ type placeMount struct {
 }
 
 // localPlaceRec — рабочее место в памяти сервера: запись places + образ
-// слота из settings (слот 0 — основное место из dev.yaml).
+// слота из settings (слот 0 — основное место из config.yaml).
 type localPlaceRec struct {
 	ID       string
 	Slot     int
@@ -476,7 +476,7 @@ func (s *Server) handlePlaceUpdate(w http.ResponseWriter, r *http.Request, id id
 	writeJSON(w, http.StatusOK, s.viewOf(id.ID, rec, false))
 }
 
-// updateMainPlace — основное место: папка и образ живут в dev.yaml, у него
+// updateMainPlace — основное место: папка и образ живут в config.yaml, у него
 // одна папка; ревизия — счётчик изменений в памяти процесса.
 func (s *Server) updateMainPlace(w http.ResponseWriter, id identity, expect int64, image string, mounts []placeMount) {
 	if expect != s.local.mainRevision() {

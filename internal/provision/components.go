@@ -16,7 +16,7 @@ import (
 // components.go — каталог компонентов воркспейса-проекта (скиллы, инструменты,
 // промпты) и серверное включение/выключение компонентов после клонирования.
 //
-// Сценарий 1c-vibe: репка-донор клонится всем одинаковая, а «что из неё
+// Сценарий «репозиторий-донор»: репка-донор клонится всем одинаковая, а «что из неё
 // доступно агенту» — решение платформы на сервере, не правка репозитория.
 // Выключенный компонент физически переносится в управляемый stash
 // `<project>/.agctl/stash/<kind>/<id>` и исключается из git локально — через
@@ -43,7 +43,7 @@ type ProjectComponent struct {
 	Name        string `json:"name"` // имя каталога/файла без kind-префикса
 	Title       string `json:"title"`
 	Description string `json:"description,omitempty"`
-	Path        string `json:"path"`    // путь в воркспейсе («skills/1c-vibe-demo»)
+	Path        string `json:"path"`    // путь в воркспейсе («skills/demo-cycle»)
 	Enabled     bool   `json:"enabled"` // false = ушел в stash, агенту не виден
 	Locked      bool   `json:"locked"`  // true = переключать нельзя (базовый промпт)
 }

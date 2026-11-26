@@ -171,11 +171,14 @@ func New(db *store.DB, sec *secrets.Manager, cfg Config) (*Server, error) {
 		Home:              cfg.Home,
 		DshSkel:           assetsSkel,
 		Version:           cfg.Version,
-		GuestServer:       true, // образы agctl-dsh-server*: guest с ax-runner/init-chat-home
-		ContainerRuntime:  cfg.DockerRuntime,
-		PidsLimit:         cfg.DockerPidsLimit,
-		NoHardening:       cfg.DockerNoHardening,
-		EgressAllow:       cfg.EgressAllow,
+		// Сервер организации — образы agctl-dsh-server* (guest с ax-runner и
+		// init-chat-home). Локальный режим (cfg.Local) собирает agctl-dsh* с
+		// локальным guest (только bridge): серверный guest туда попадать не должен.
+		GuestServer:      cfg.Local == nil,
+		ContainerRuntime: cfg.DockerRuntime,
+		PidsLimit:        cfg.DockerPidsLimit,
+		NoHardening:      cfg.DockerNoHardening,
+		EgressAllow:      cfg.EgressAllow,
 	}, assets.Image)
 	if err != nil {
 		return nil, err

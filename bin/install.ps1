@@ -9,29 +9,35 @@
 #   • комплект организации — релиз приватного репозитория профиля
 #     $env:AGCTL_REPO = '<org>/agctl-profile-<id>': zip agctl-<id>-<версия>-windows-<arch>.zip
 #     (agctl.exe + agctl-guest-linux-<arch> + agctl-guest-server-linux-<arch> + profile\) +
-#     checksums-<версия>.txt; нужен авторизованный gh. Профиль кладётся в
-#     %LOCALAPPDATA%\agctl\profiles\<id>; в конце скрипт сам подключает
-#     профиль (agctl dev init --profile-dir …
-#     --yes; AGCTL_NO_INIT=1 — не подключать, напечатать команду).
+#     checksums-<версия>.txt; нужен авторизованный gh.
+#
+# Всё ставится под один корень — %USERPROFILE%\.agctl (переменная AGCTL_ROOT);
+# раскладка та же, что на macOS/Linux (internal/localmode/layout.go):
+#
+#   <корень>\bin\agctl.exe                            бинарь (этот каталог — в PATH)
+#   <корень>\bin\guest\agctl-guest-linux-<arch>       guest локального образа agctl-dsh*
+#   <корень>\bin\guest\agctl-guest-server-linux-<arch> guest серверного образа
+#   <корень>\profiles\<id>\                           профиль комплекта организации
+#   <корень>\homes\<id>\                              дом (создаёт agctl dev init)
 #
 # Что делает: скачивает архив и контрольные суммы (через gh, если он есть и
-# авторизован, иначе Invoke-WebRequest), сверяет SHA-256, кладёт agctl.exe в
-# %LOCALAPPDATA%\agctl, снимает отметку «скачано из интернета», рядом кладёт
-# оба agctl-guest — linux-бинари образа рабочего места своего режима
-# (локальный agctl-dsh* / серверный agctl-dsh-server*; нужны только для
-# самосборки образа без реестра), добавляет каталог в PATH пользователя,
-# печатает agctl version.
+# авторизован, иначе Invoke-WebRequest), сверяет SHA-256, кладёт agctl.exe и
+# оба agctl-guest (нужны только для самосборки образа без реестра), снимает
+# отметку «скачано из интернета», добавляет <корень>\bin в PATH пользователя,
+# печатает agctl version. Комплект организации: профиль кладётся в
+# <корень>\profiles\<id>, и скрипт сам создаёт для него СВОЙ дом homes\<id>
+# (agctl dev --home <id> init --profile <id> --yes) — дом по умолчанию и
+# другие дома не трогаются; AGCTL_NO_INIT=1 — не создавать, напечатать команду.
 #
 # Переменные окружения:
 #   AGCTL_REPO         репозиторий GitHub (по умолчанию arijjia/agctl;
 #                      <org>/agctl-profile-<id> — комплект организации)
 #   AGCTL_VERSION      тег релиза (по умолчанию последний)
-#   AGCTL_INSTALL_DIR  куда ставить (по умолчанию %LOCALAPPDATA%\agctl)
-#   AGCTL_PROFILE_DIR  куда класть профиль комплекта (по умолчанию <INSTALL_DIR>\profiles\<id>)
+#   AGCTL_ROOT         корень установки (по умолчанию %USERPROFILE%\.agctl)
 #   AGCTL_WORKDIR      папка проектов для авто-init комплекта (по умолчанию ~\src)
 #   AGCTL_RELEASE_DIR  локальная папка с архивами релиза — ничего не скачивать
 #   AGCTL_NO_LINUX=1   не ставить agctl-guest (образы берутся из реестра)
-#   AGCTL_NO_INIT=1    не подключать профиль комплекта самим — напечатать команду
+#   AGCTL_NO_INIT=1    не создавать дом комплекта самим — напечатать команду
 #
 # macOS и Linux — bin/install.sh.
 $ErrorActionPreference = 'Stop'
@@ -39,11 +45,14 @@ $ErrorActionPreference = 'Stop'
 
 $repo = if ($env:AGCTL_REPO) { $env:AGCTL_REPO } else { 'arijjia/agctl' }
 $version = $env:AGCTL_VERSION
-$installDir = if ($env:AGCTL_INSTALL_DIR) { $env:AGCTL_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'agctl' }
+$root = if ($env:AGCTL_ROOT) { $env:AGCTL_ROOT } else { Join-Path $env:USERPROFILE '.agctl' }
+$env:AGCTL_ROOT = $root   # agctl ниже работает с этим же корнем
+$installDir = Join-Path $root 'bin'
+$guestDir = Join-Path $installDir 'guest' 
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
 $repoName = $repo.Split('/')[-1]
 $profileId = if ($repoName -like 'agctl-profile-?*') { $repoName.Substring('agctl-profile-'.Length) } else { '' }
-$profileDir = if ($env:AGCTL_PROFILE_DIR) { $env:AGCTL_PROFILE_DIR } else { Join-Path (Join-Path $installDir 'profiles') $profileId }
+$profileDir = Join-Path (Join-Path $root 'profiles') $profileId
 
 # Invoke-Native: внешняя программа без превращения stderr в исключение
 # (PowerShell 5.1); возвращает код выхода, вывод — в $script:nativeOut.
@@ -102,7 +111,8 @@ function Verify([string]$Name, [string]$Sums) {
 }
 
 function Install-LinuxBuild([string]$Source, [string]$Name) {
-    $linux = Join-Path $installDir $Name
+    New-Item -ItemType Directory -Force $guestDir | Out-Null
+    $linux = Join-Path $guestDir $Name
     Move-Item -Force $Source $linux
     Write-Host "✓ бинарь образа для самосборки: $linux"
 }
@@ -116,7 +126,7 @@ try {
         if (-not $version) { throw "не удалось определить последний релиз $repo (релизов ещё нет?)" }
     }
     $ver = $version -replace '^v', ''
-    Write-Host "agctl: windows/$arch · $repo · релиз $version · каталог $installDir"
+    Write-Host "agctl: windows/$arch · $repo · релиз $version · корень $root"
     New-Item -ItemType Directory -Force $installDir | Out-Null
     $exe = Join-Path $installDir 'agctl.exe'
 
@@ -132,11 +142,12 @@ try {
         if (-not (Test-Path (Join-Path $top 'agctl.exe'))) { throw "в $bundle нет $top\agctl.exe" }
         Move-Item -Force (Join-Path $top 'agctl.exe') $exe
         if (-not $env:AGCTL_NO_LINUX) {
-            # Комплекты до разделения по режимам несут agctl-linux-<arch> (единый
-            # бинарь, надмножество команд); findLinuxBinary понимает оба имени.
             $guest = "agctl-guest-linux-$arch"
-            if (-not (Test-Path (Join-Path $top $guest))) { $guest = "agctl-linux-$arch" }
-            Install-LinuxBuild (Join-Path $top $guest) $guest
+            if (Test-Path (Join-Path $top $guest)) {
+                Install-LinuxBuild (Join-Path $top $guest) $guest
+            } else {
+                Write-Host "ℹ в комплекте нет $guest — образ рабочего места только из реестра"
+            }
             $guestServer = "agctl-guest-server-linux-$arch"
             if (Test-Path (Join-Path $top $guestServer)) {
                 Install-LinuxBuild (Join-Path $top $guestServer) $guestServer
@@ -144,9 +155,15 @@ try {
         }
         if (-not (Test-Path (Join-Path $top 'profile\profile.yaml'))) { throw 'в комплекте нет profile\profile.yaml' }
         New-Item -ItemType Directory -Force (Split-Path $profileDir -Parent) | Out-Null
-        if (Test-Path $profileDir) { Remove-Item -Recurse -Force $profileDir }
-        Move-Item -Force (Join-Path $top 'profile') $profileDir
-        Write-Host "✓ профиль ${profileId}: $profileDir"
+        $existing = Get-Item $profileDir -Force -ErrorAction SilentlyContinue
+        if ($existing -and $existing.LinkType) {
+            # Работа из исходников: profiles\<id> — ссылка на репозиторий профиля.
+            Write-Host "ℹ $profileDir — ссылка; профиль комплекта не распакован, ссылка оставлена"
+        } else {
+            if ($existing) { Remove-Item -Recurse -Force $profileDir }
+            Move-Item -Force (Join-Path $top 'profile') $profileDir
+            Write-Host "✓ профиль ${profileId}: $profileDir"
+        }
     } else {
         # ── публичный релиз goreleaser ──────────────────────────────────────
         $mainArchive = "agctl_windows_$arch.zip"
@@ -162,8 +179,6 @@ try {
                 Verify $guestArchive 'checksums.txt'
                 if ((Invoke-Native 'tar' @('xzf', $guestArchive, 'agctl-guest')) -ne 0) { throw "tar не распаковал $guestArchive" }
                 Install-LinuxBuild 'agctl-guest' "agctl-guest-linux-$arch"
-                $legacy = Join-Path $installDir "agctl-linux-$arch"
-                if (Test-Path $legacy) { Remove-Item -Force $legacy }
                 $serverArchive = "agctl-guest-server_linux_$arch.tar.gz"
                 Fetch $serverArchive
                 Verify $serverArchive 'checksums.txt'
@@ -187,17 +202,22 @@ try {
 
     Write-Host ('✓ ' + ((& $exe version) -join ' '))
     if ($profileId -and -not $env:AGCTL_NO_INIT) {
-        # Подключить профиль самим (--yes — не спрашивать; доступы спросит лаунчер).
-        $initArgs = @('dev', 'init', '--profile-dir', $profileDir, '--yes')
+        # Свой дом комплекта — homes\<id>; дом по умолчанию и чужие дома не
+        # трогаются (--yes — не спрашивать; доступы спросит лаунчер).
+        $initArgs = @('dev', '--home', $profileId, 'init', '--profile', $profileId, '--yes')
         if ($env:AGCTL_WORKDIR) { $initArgs += @('--workdir', $env:AGCTL_WORKDIR) }
         & $exe @initArgs
         if ($LASTEXITCODE -ne 0) {
-            Write-Warning "agctl dev init не удался — подключите профиль сами: agctl dev init --profile-dir `"$profileDir`""
+            Write-Warning "agctl dev init не удался — создайте дом сами: agctl dev --home $profileId init --profile $profileId"
         }
+        Write-Host "Дальше: agctl dev --home $profileId up   (где что лежит — agctl dev --home $profileId paths)"
     } elseif ($profileId) {
-        Write-Host "Дальше: agctl dev init --profile-dir `"$profileDir`" [--flavor …] [--workdir C:\src\...], затем agctl dev up"
+        Write-Host "Дальше: agctl dev --home $profileId init --profile $profileId [--flavor …] [--workdir C:\src\...], затем agctl dev --home $profileId up"
     } else {
-        Write-Host 'Дальше: agctl dev init, затем agctl dev up'
+        Write-Host 'Дальше: agctl dev init, затем agctl dev up   (где что лежит — agctl dev paths)'
+    }
+    if (Get-ChildItem -Force -Directory $env:USERPROFILE -Filter '.agctl-dev*' -ErrorAction SilentlyContinue) {
+        Write-Host "ℹ найдены прежние дома ~\.agctl-dev* — перенос в $root\homes: agctl dev migrate (план), agctl dev migrate --apply"
     }
 } finally {
     Pop-Location

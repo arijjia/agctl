@@ -11,7 +11,7 @@ func TestUsageListsDeveloperCommands(t *testing.T) {
 	var buf bytes.Buffer
 	help.Render(&buf, false)
 	out := buf.String()
-	for _, name := range []string{"dev init", "dev up", "backlog", "completion fish", "version", "help", "AGCTL_DEV_HOME"} {
+	for _, name := range []string{"dev init", "dev up", "backlog", "completion fish", "version", "help", "dev paths", "dev migrate", "AGCTL_ROOT", "AGCTL_HOME_ID", "AGCTL_DEV_HOME"} {
 		if !strings.Contains(out, name) {
 			t.Errorf("справка не содержит %q", name)
 		}

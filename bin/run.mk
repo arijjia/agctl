@@ -11,14 +11,18 @@ RUN_UP_PID := $(RUNTIME_DIR)/up.pid
 RUN_CORP_LOG := $(RUNTIME_DIR)/corp.log
 RUN_CORP_PID := $(RUNTIME_DIR)/corp.pid
 
-# Профиль платформы (--profile): единственный профиль организации из
-# ./profiles/<id> (make profile-fetch), если он там один; при нескольких
+# Профиль платформы: единственный профиль организации из
+# $(PROFILES_DIR)/<id> — <корень>/profiles/<id> (make profile-fetch,
+# make local_up), если он там один; при нескольких
 # (например rshb и utmn) профиль задаётся явно — make up PROFILE=<id>, иначе
 # нейтральный agctl. Встроенного профиля организации в бинаре нет.
 # Ключ провайдера — в .env (AGCTL_LLM_API_KEY); сами дефолты LLM из профиля,
 # точечные переопределения — CORP_LLM_* (пусто = брать из профиля).
-PROFILE_DIRS := $(notdir $(patsubst %/,%,$(dir $(wildcard profiles/*/profile.yaml))))
+PROFILE_DIRS := $(notdir $(patsubst %/,%,$(dir $(wildcard $(PROFILES_DIR)/*/profile.yaml))))
 PROFILE ?= $(if $(filter 1,$(words $(PROFILE_DIRS))),$(PROFILE_DIRS),agctl)
+# Серверу профиль из корня передаётся каталогом (--profile-dir): он не
+# зависит ни от текущего каталога, ни от RUN_HOME; встроенный — по имени.
+PROFILE_ARG = $(if $(wildcard $(PROFILES_DIR)/$(PROFILE)/profile.yaml),--profile-dir "$(PROFILES_DIR)/$(PROFILE)",--profile "$(PROFILE)")
 # Каталог образов лаунчера developer'а (карточка developer-launcher-images):
 # по умолчанию — images.dev профиля (пара «с SSH» / «без SSH», её собирает
 # img_build); DEV_IMAGES=… перекрывает профиль.
@@ -36,11 +40,11 @@ CORP_LLM_ARGS = $(if $(CORP_LLM_BASE_URL),--llm-base-url "$(CORP_LLM_BASE_URL)")
 # profile_check: подсказка, если выбранный профиль не найден (встроен только agctl)
 define profile_check
 @echo "профиль: $(PROFILE) (доступны: agctl $(PROFILE_DIRS) — make $1 PROFILE=<id>, список: make profiles)"
-@if [ "$(PROFILE)" != "agctl" ] && [ ! -f "profiles/$(PROFILE)/profile.yaml" ]; then \
-  echo "⚠ профиль $(PROFILE) не найден в profiles/ (встроен только agctl)."; \
+@if [ "$(PROFILE)" != "agctl" ] && [ ! -f "$(PROFILES_DIR)/$(PROFILE)/profile.yaml" ]; then \
+  echo "⚠ профиль $(PROFILE) не найден в $(PROFILES_DIR) (встроен только agctl)."; \
   echo "  Сделай make profile-fetch (PROFILE_REPO=…) или запусти make $1 PROFILE=agctl."; fi
 @if [ "$(PROFILE)" = "agctl" ] && [ $(words $(PROFILE_DIRS)) -gt 1 ]; then \
-  echo "ℹ в profiles/ несколько профилей ($(PROFILE_DIRS)) — запущен нейтральный agctl; выбери явно: make $1 PROFILE=<id>"; fi
+  echo "ℹ в $(PROFILES_DIR) несколько профилей ($(PROFILE_DIRS)) — запущен нейтральный agctl; выбери явно: make $1 PROFILE=<id>"; fi
 endef
 
 .PHONY: up corp stop down restart logs status demo-users
@@ -62,7 +66,7 @@ up: web_build go_build img_build | $(RUNTIME_DIR)
 	@port=$$(printf '%s' "$(RUN_ADDR)" | awk -F: '{print $$NF}'); \
 	if lsof -nP -ti "tcp:$$port" -sTCP:LISTEN >/dev/null 2>&1; then \
 	  echo "✗ порт $(RUN_ADDR) уже занят (инстанс вне make?) — сделай make stop и повтори up"; exit 1; fi
-	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl-server serve --addr "$(RUN_ADDR)" --profile "$(PROFILE)" $(if $(DEV_IMAGES),--dev-images "$(DEV_IMAGES)") >>"$(RUN_UP_LOG)" 2>&1 & echo $$! > "$(RUN_UP_PID)"
+	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl-server serve --addr "$(RUN_ADDR)" $(PROFILE_ARG) $(if $(DEV_IMAGES),--dev-images "$(DEV_IMAGES)") >>"$(RUN_UP_LOG)" 2>&1 & echo $$! > "$(RUN_UP_PID)"
 	@sleep 1
 	@if kill -0 "$$(cat $(RUN_UP_PID))" 2>/dev/null; then \
 	  echo "✓ agctl: http://$(RUN_ADDR) (дом: $(RUN_HOME))"; \
@@ -82,7 +86,7 @@ corp: web_build go_build img_build | $(RUNTIME_DIR)
 	@if [ -z "$$(printenv AGCTL_LLM_API_KEY)" ]; then \
 	  echo "⚠ AGCTL_LLM_API_KEY пуст — скопируй .env.example в .env и впиши ключи провайдеров."; \
 	  echo "  Сервер стартует и без него: у пользователей с личным секретом чат работает."; fi
-	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl-server serve --addr "$(RUN_ADDR)" --profile "$(PROFILE)" $(CORP_LLM_ARGS) \
+	@AGCTL_HOME="$(RUN_HOME)" nohup ./dist/agctl-server serve --addr "$(RUN_ADDR)" $(PROFILE_ARG) $(CORP_LLM_ARGS) \
 	  >>"$(RUN_CORP_LOG)" 2>&1 & echo $$! > "$(RUN_CORP_PID)"
 	@sleep 1
 	@if kill -0 "$$(cat $(RUN_CORP_PID))" 2>/dev/null; then \

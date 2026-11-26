@@ -3,7 +3,7 @@
 // agctl-server), но серверные модули, админка и бэкенды k8s/ax сюда не
 // входят: только Docker на этой машине.
 //
-//	agctl dev init | up | down | status | open | logs | secrets | bridge | update | rollback | doctor
+//	agctl dev [--home <id>] init | up | down | status | paths | open | logs | secrets | bridge | update | rollback | doctor | migrate
 //	agctl backlog … — CLI ведения бэклогов (формат v1, gitctl-совместимый)
 //	agctl version   — версия и сборка
 package main

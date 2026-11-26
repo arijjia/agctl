@@ -11,7 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-// seedVibeProject — скелет проекта в духе клона 1c-vibe: скилл, инструменты,
+// seedVibeProject — скелет проекта в духе клона репозитория-донора: скилл, инструменты,
 // демо-данные, инструкции и git-репа (как делает CloneProject).
 func seedVibeProject(t *testing.T) string {
 	t.Helper()
@@ -25,7 +25,7 @@ func seedVibeProject(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	write("skills/1c-vibe-demo/SKILL.md", "---\nname: 1C Vibe\n---\n# Цикл Jira → ветка → MR\n\ndescription: полный цикл 1С-разработки\n")
+	write("skills/demo-cycle/SKILL.md", "---\nname: Demo Cycle\n---\n# Цикл Jira → ветка → MR\n\ndescription: полный цикл 1С-разработки\n")
 	write("skills/backlog/SKILL.md", "# backlog\n")
 	write("scripts/publish.py", "#!/usr/bin/env python3\n\"\"\"Publish branch as MR.\"\"\"\n")
 	write("scripts/lint.py", "#!/usr/bin/env python3\n'''BSL lint runner.'''\n")
@@ -65,8 +65,8 @@ func TestScanProjectComponentsCatalog(t *testing.T) {
 	dir := seedVibeProject(t)
 	components := ScanProjectComponents(dir)
 
-	skill := findComponent(t, components, "skill:1c-vibe-demo")
-	if !skill.Enabled || skill.Title != "1C Vibe" || skill.Description != "полный цикл 1С-разработки" {
+	skill := findComponent(t, components, "skill:demo-cycle")
+	if !skill.Enabled || skill.Title != "Demo Cycle" || skill.Description != "полный цикл 1С-разработки" {
 		t.Fatalf("skill meta: %+v", skill)
 	}
 	if comp := findComponent(t, components, "tool:publish.py"); comp.Title != "publish" || comp.Description != "Publish branch as MR." {
@@ -98,13 +98,13 @@ func TestApplyProjectComponentsToggleRoundtrip(t *testing.T) {
 	dir := seedVibeProject(t)
 
 	// 1. Выключить скилл и инструмент.
-	if err := ApplyProjectComponents(dir, []string{"skill:1c-vibe-demo", "tool:lint.py"}); err != nil {
+	if err := ApplyProjectComponents(dir, []string{"skill:demo-cycle", "tool:lint.py"}); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "skills", "1c-vibe-demo")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, "skills", "demo-cycle")); !os.IsNotExist(err) {
 		t.Fatalf("скилл остался в дереве: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, stashRel, "skill", "1c-vibe-demo", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, stashRel, "skill", "demo-cycle", "SKILL.md")); err != nil {
 		t.Fatalf("скилл не в stash: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "scripts", "lint.py")); !os.IsNotExist(err) {
@@ -116,7 +116,7 @@ func TestApplyProjectComponentsToggleRoundtrip(t *testing.T) {
 		t.Fatalf("exclude: %q %v", exclude, err)
 	}
 	// Каталог показывает компонент выключенным.
-	if comp := findComponent(t, ScanProjectComponents(dir), "skill:1c-vibe-demo"); comp.Enabled {
+	if comp := findComponent(t, ScanProjectComponents(dir), "skill:demo-cycle"); comp.Enabled {
 		t.Fatalf("каталог должен показывать выключенным: %+v", comp)
 	}
 	// git не видит stash как untracked при autosave-исключении: go-git прячет
@@ -142,7 +142,7 @@ func TestApplyProjectComponentsToggleRoundtrip(t *testing.T) {
 	}
 
 	// 2. Повторное применение того же состояния — идемпотентно.
-	if err := ApplyProjectComponents(dir, []string{"skill:1c-vibe-demo", "tool:lint.py"}); err != nil {
+	if err := ApplyProjectComponents(dir, []string{"skill:demo-cycle", "tool:lint.py"}); err != nil {
 		t.Fatalf("idempotent disable: %v", err)
 	}
 
@@ -150,13 +150,13 @@ func TestApplyProjectComponentsToggleRoundtrip(t *testing.T) {
 	if err := ApplyProjectComponents(dir, []string{}); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "skills", "1c-vibe-demo", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "skills", "demo-cycle", "SKILL.md")); err != nil {
 		t.Fatalf("скилл не вернулся: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "scripts", "lint.py")); err != nil {
 		t.Fatalf("инструмент не вернулся: %v", err)
 	}
-	if comp := findComponent(t, ScanProjectComponents(dir), "skill:1c-vibe-demo"); !comp.Enabled || comp.Title != "1C Vibe" {
+	if comp := findComponent(t, ScanProjectComponents(dir), "skill:demo-cycle"); !comp.Enabled || comp.Title != "Demo Cycle" {
 		t.Fatalf("метаданные потеряны после stash: %+v", comp)
 	}
 }
@@ -170,7 +170,7 @@ func TestApplyProjectComponentsRejectsUnknownAndLocked(t *testing.T) {
 	if err := ValidateComponentSelection(components, []string{"docs:AGENTS.md"}); err == nil {
 		t.Fatal("залоченный компонент должен отклоняться")
 	}
-	if err := ValidateComponentSelection(components, []string{"skill:1c-vibe-demo", "skill:1c-vibe-demo"}); err == nil {
+	if err := ValidateComponentSelection(components, []string{"skill:demo-cycle", "skill:demo-cycle"}); err == nil {
 		t.Fatal("дубликат должен отклоняться")
 	}
 }

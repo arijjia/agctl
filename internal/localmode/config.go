@@ -1,10 +1,12 @@
 // Package localmode — локальный режим agctl (agctl dev): однопользовательская
-// платформа на машине разработчика. Здесь — конфиг dev.yaml, секреты
-// (хранилище ОС), файл состояния запущенного процесса и бэкапы dsh-home.
-// Сам сервер — обычный internal/server с Config.Local.
+// платформа на машине разработчика. Здесь — раскладка путей (layout.go),
+// конфиг дома config.yaml, разрешение профиля, секреты (хранилище ОС), файл
+// состояния запущенного процесса и бэкапы dsh-home. Сам сервер — обычный
+// internal/server с Config.Local.
 package localmode
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -17,28 +19,18 @@ import (
 	"github.com/arijjia/agctl/internal/localbridge"
 )
 
-// DefaultAddr — адрес локального UI (не совпадает с серверным 8929, чтобы
-// оба режима уживались на одной машине).
+// DefaultAddr — адрес локального UI (не совпадает с серверным 8929 и
+// демо-стендом 8928, чтобы все уживались на одной машине).
 const DefaultAddr = "127.0.0.1:8930"
 
-// Home — дом локального режима: $AGCTL_DEV_HOME или ~/.agctl-dev. Отдельно от
-// серверного ~/.agctl: данные режимов не смешиваются.
-func Home() string {
-	if h := strings.TrimSpace(os.Getenv("AGCTL_DEV_HOME")); h != "" {
-		return h
-	}
-	if h, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(h, ".agctl-dev")
-	}
-	return ".agctl-dev"
-}
-
-// Config — ~/.agctl-dev/dev.yaml. Секретов здесь нет: только имена.
+// Config — <дом>/config.yaml. Секретов здесь нет: только имена. Из профиля в
+// конфиг ничего не копируется: образ по умолчанию и белый список моста
+// профиля читаются из профиля на каждом старте.
 type Config struct {
 	Profile    string  `yaml:"profile,omitempty"`     // id профиля (agctl, utmn…)
-	ProfileDir string  `yaml:"profile_dir,omitempty"` // каталог профиля с диска
-	Image      string  `yaml:"image,omitempty"`       // образ рабочего места
-	Flavor     string  `yaml:"flavor,omitempty"`      // вкус образа (web, 1c…) — для справки
+	ProfileDir string  `yaml:"profile_dir,omitempty"` // явный каталог профиля
+	Image      string  `yaml:"image,omitempty"`       // образ — только явный выбор; пусто = по профилю
+	Flavor     string  `yaml:"flavor,omitempty"`      // вкус образа (web, …)
 	WorkDir    string  `yaml:"workdir,omitempty"`     // папка проектов → /workspace
 	Addr       string  `yaml:"addr,omitempty"`        // адрес UI (loopback)
 	MemGB      float64 `yaml:"mem_gb,omitempty"`
@@ -52,35 +44,42 @@ type Config struct {
 	Env map[string]string `yaml:"env,omitempty"`
 	// Secrets — имена секретов в хранилище ОС (значения там, не здесь).
 	Secrets []string `yaml:"secrets,omitempty"`
-	Bridge  struct {
+	// Bridge.Tools — ЛИЧНЫЙ белый список моста; объединяется с
+	// local/bridge-tools.yaml профиля (MergeBridgeTools).
+	Bridge struct {
 		Tools []localbridge.Tool `yaml:"tools,omitempty"`
 	} `yaml:"bridge,omitempty"`
 	// PreviousImage — образ до последнего update (для rollback).
 	PreviousImage string `yaml:"previous_image,omitempty"`
 }
 
-// Path — путь dev.yaml в доме.
-func Path(home string) string { return filepath.Join(home, "dev.yaml") }
+// Path — путь config.yaml в доме (сюда пишет Save).
+func Path(home string) string { return filepath.Join(home, ConfigName) }
 
-// ErrNotInitialized — dev.yaml ещё нет (нужен agctl dev init).
+// LegacyPath — прежний dev.yaml: читается, если config.yaml ещё нет.
+func LegacyPath(home string) string { return filepath.Join(home, LegacyConfigName) }
+
+// ErrNotInitialized — конфига дома ещё нет (нужен agctl dev init).
 var ErrNotInitialized = errors.New("локальный режим не настроен — выполните agctl dev init")
 
-// Load читает dev.yaml; отсутствие файла — ErrNotInitialized.
+// Load читает config.yaml (или прежний dev.yaml); нет ни того, ни другого —
+// ErrNotInitialized.
 func Load(home string) (*Config, error) {
-	raw, err := os.ReadFile(Path(home))
-	if os.IsNotExist(err) {
+	path, ok := existingConfig(home)
+	if !ok {
 		return nil, ErrNotInitialized
 	}
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 	var c Config
 	if err := yaml.Unmarshal(raw, &c); err != nil {
-		return nil, fmt.Errorf("dev.yaml: %w", err)
+		return nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
 	}
 	c.defaults()
 	if err := localbridge.Validate(c.Bridge.Tools); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
 	}
 	return &c, nil
 }
@@ -100,22 +99,138 @@ func (c *Config) defaults() {
 	}
 }
 
-// Save пишет dev.yaml атомарно (0600: там пути и URL, не секреты, но
-// конфиг личный).
+// Save пишет config.yaml атомарно (0600: там пути и URL, не секреты, но
+// конфиг личный). Прежний dev.yaml после первой записи уходит в
+// dev.yaml.migrated — источник правды один.
 func (c *Config) Save(home string) error {
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return err
 	}
-	raw, err := yaml.Marshal(c)
+	raw, err := c.Render(HomeID(home))
 	if err != nil {
 		return err
 	}
-	head := []byte("# agctl dev — локальный режим. Секретов здесь нет: значения в хранилище ОС\n# (agctl dev secrets). Белый список моста к хосту — bridge.tools.\n")
 	tmp := Path(home) + ".tmp"
-	if err := os.WriteFile(tmp, append(head, raw...), 0o600); err != nil {
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, Path(home))
+	if err := os.Rename(tmp, Path(home)); err != nil {
+		return err
+	}
+	if _, err := os.Stat(LegacyPath(home)); err == nil {
+		_ = os.Rename(LegacyPath(home), LegacyPath(home)+".migrated")
+	}
+	return nil
+}
+
+// fieldDoc — стандартизированный комментарий к полю config.yaml: что это,
+// откуда значение, кто меняет.
+type fieldDoc struct {
+	key, what, from, who string
+}
+
+// configDocs — поля config.yaml в порядке записи. Каждое поле Config обязано
+// быть здесь (TestConfigRenderDocumentsEveryField); bridge — последним
+// (самый длинный блок, его удобно дописывать в конец).
+var configDocs = []fieldDoc{
+	{"profile", "профиль организации: id каталога <корень>/profiles/<id>; agctl — нейтральный, встроен в бинарь",
+		"agctl dev init --profile <id> или установщик комплекта организации",
+		"вы — agctl dev init --profile <id>"},
+	{"profile_dir", "явный каталог профиля (сильнее profile); пусто — <корень>/profiles/<id>, затем встроенный",
+		"agctl dev init --profile-dir <путь>",
+		"вы; обычно пусто"},
+	{"image", "образ рабочего места — только ваш явный выбор; пусто — образ по умолчанию из профиля (images.dev)",
+		"лаунчер («Образ»), agctl dev init --image, agctl dev update --image",
+		"вы через лаунчер или CLI; agctl dev update и rollback"},
+	{"flavor", "вкус образа (web, вкус профиля) — по нему образ собирается на этой машине, если его нет в реестре",
+		"выводится из выбранного образа или agctl dev init --flavor",
+		"agctl вместе с image; вы через --flavor"},
+	{"previous_image", "образ до последнего обновления — цель agctl dev rollback",
+		"записывает agctl dev update и смена образа в лаунчере",
+		"agctl; руками не править"},
+	{"workdir", "папка проектов на этой машине; агент видит только её (в контейнере — /workspace)",
+		"agctl dev init --workdir, agctl dev up <папка>, лаунчер",
+		"вы"},
+	{"addr", "адрес веб-интерфейса и моста к хосту; только loopback (127.0.0.1:ПОРТ)",
+		"agctl dev init --addr; по умолчанию " + DefaultAddr,
+		"вы; применяется после agctl dev down && agctl dev up"},
+	{"mem_gb", "лимит памяти контейнера рабочего места, ГБ",
+		"по умолчанию 4",
+		"вы (правка файла)"},
+	{"cpus", "лимит CPU контейнера рабочего места",
+		"по умолчанию min(4, число ядер)",
+		"вы (правка файла)"},
+	{"egress_allowlist", "true — контейнер на выделенной docker-сети: наружу только DNS, хост, провайдеры модели и белый список",
+		"по умолчанию false",
+		"вы (правка файла)"},
+	{"egress_allow", "белый список egress сверх профиля (egress.allow): хосты, IPv4, CIDR; действует при egress_allowlist: true",
+		"пусто по умолчанию",
+		"вы (правка файла)"},
+	{"env", "несекретные переменные контейнера: адреса GitLab/Jira/Confluence, логины",
+		"лаунчер («Доступы»), agctl dev secrets set ИМЯ --plain",
+		"вы через лаунчер или CLI"},
+	{"secrets", "ИМЕНА секретов; значения — в хранилище ОС (сервис agctl:<id дома>), в этом файле их нет",
+		"лаунчер («Доступы»), agctl dev secrets set ИМЯ",
+		"вы через лаунчер или CLI"},
+	{"bridge", "личный белый список моста к хосту (bridge.tools); объединяется с local/bridge-tools.yaml профиля — тот читается из профиля на каждом старте, одноимённый личный инструмент перекрывает профильный",
+		"пусто по умолчанию; формат — docs/architecture.md, раздел 6.6",
+		"вы (правка файла); список целиком — agctl dev bridge list"},
+}
+
+// values — значения полей в порядке и под ключами configDocs. Пустые
+// значения пишутся явно: файл показывает все настройки дома.
+func (c *Config) values() map[string]any {
+	tools := c.Bridge.Tools
+	if tools == nil {
+		tools = []localbridge.Tool{}
+	}
+	env := c.Env
+	if env == nil {
+		env = map[string]string{}
+	}
+	secrets := c.Secrets
+	if secrets == nil {
+		secrets = []string{}
+	}
+	allow := c.EgressAllow
+	if allow == nil {
+		allow = []string{}
+	}
+	return map[string]any{
+		"profile": c.Profile, "profile_dir": c.ProfileDir,
+		"image": c.Image, "flavor": c.Flavor, "previous_image": c.PreviousImage,
+		"workdir": c.WorkDir, "addr": c.Addr, "mem_gb": c.MemGB, "cpus": c.CPUs,
+		"egress_allowlist": c.EgressAllowlist, "egress_allow": allow,
+		"env": env, "secrets": secrets,
+		"bridge": map[string]any{"tools": tools},
+	}
+}
+
+// Render — текст config.yaml: шапка и комментарий к каждому полю.
+func (c *Config) Render(homeID string) ([]byte, error) {
+	var b bytes.Buffer
+	fmt.Fprintf(&b, `# agctl — локальный режим, дом «%s».
+# Этот файл — настройки дома: <корень>/homes/%s/config.yaml (корень — ~/.agctl
+# или AGCTL_ROOT). Его пишут agctl dev init, лаунчер и CLI; править руками
+# можно — комментарии при следующей записи восстановятся, значения сохранятся.
+# Секретов здесь нет: значения лежат в хранилище ОС (agctl dev secrets).
+# Из профиля сюда ничего не копируется: образ по умолчанию и инструменты моста
+# профиля читаются из профиля на каждом старте.
+# Где что лежит на этой машине — agctl dev paths.
+`, homeID, homeID)
+	vals := c.values()
+	for _, d := range configDocs {
+		fmt.Fprintf(&b, "\n# %s — %s.\n#   откуда: %s\n#   меняет: %s\n", d.key, d.what, d.from, d.who)
+		enc := yaml.NewEncoder(&b)
+		enc.SetIndent(2)
+		if err := enc.Encode(map[string]any{d.key: vals[d.key]}); err != nil {
+			return nil, err
+		}
+		if err := enc.Close(); err != nil {
+			return nil, err
+		}
+	}
+	return b.Bytes(), nil
 }
 
 // ValidateWorkDir — папка проектов: существующий абсолютный каталог.

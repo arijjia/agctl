@@ -17,7 +17,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -175,9 +174,10 @@ func LoadDir(dir string) (*Data, error) {
 
 // Resolve — порядок разрешения профиля: явный каталог (--profile-dir)
 // сильнее имени; имя ищется во встроенных профилях, затем в searchDirs
-// (обычно ./profiles, дома agctl и каталог данных DataDir — там живут
-// профили организаций, полученные `make profile-fetch`, установщиком
-// комплекта или положенные вручную). Ошибка перечисляет доступные варианты.
+// (сервер организации: ./profiles и $AGCTL_HOME/profiles). Локальный режим
+// сюда не ходит: у него свой порядок — localmode.ResolveProfile
+// (profile_dir > <корень>/profiles/<id> > встроенный). Ошибка перечисляет
+// доступные варианты.
 func Resolve(name, dir string, search ...string) (*Data, error) {
 	if dir != "" {
 		return LoadDir(dir)
@@ -210,38 +210,6 @@ func nonEmpty(in []string) []string {
 		}
 	}
 	return out
-}
-
-// DataDir — каталог данных пользователя agctl: куда установочные скрипты
-// комплекта организации (bin/install.sh, bin/install.ps1) кладут профили
-// (<data>/agctl/profiles/<id>) и который учитывается в поиске Resolve.
-// Источник истины для скриптов и Go один — эта функция и её зеркало в
-// скриптах: unix (включая macOS) ${XDG_DATA_HOME:-~/.local/share}/agctl,
-// Windows %LOCALAPPDATA%\agctl (fallback ~/AppData/Local/agctl).
-func DataDir() string {
-	return dataDir(runtime.GOOS, os.Getenv, os.UserHomeDir)
-}
-
-// dataDir — тестируемая основа DataDir: goos, getenv и home подставляются.
-func dataDir(goos string, getenv func(string) string, home func() (string, error)) string {
-	if goos == "windows" {
-		if l := getenv("LOCALAPPDATA"); l != "" {
-			return filepath.Join(l, "agctl", "profiles")
-		}
-		h, err := home()
-		if err != nil {
-			return ""
-		}
-		return filepath.Join(h, "AppData", "Local", "agctl", "profiles")
-	}
-	if x := getenv("XDG_DATA_HOME"); x != "" {
-		return filepath.Join(x, "agctl", "profiles")
-	}
-	h, err := home()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(h, ".local", "share", "agctl", "profiles")
 }
 
 // loadFS читает профиль из embed-FS: profile.yaml + опциональный логотип

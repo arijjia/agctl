@@ -366,7 +366,7 @@ func ProjectNameFromCloneURL(raw string) (string, error) {
 // No credentials are used or stored — only public/pre-authorized URLs; the
 // remote origin is configured by the clone itself, while autosave stays
 // local-only. Existing directories are never overwritten or adopted.
-// An empty name is derived from the repository URL (1c-vibe scenario:
+// An empty name is derived from the repository URL (donor-repository scenario:
 // клонирование преднастроенной репки не должно требовать придумывания имени).
 func CloneProject(home string, userID int64, name, cloneURL string) (Project, error) {
 	cloneURL = strings.TrimSpace(cloneURL)

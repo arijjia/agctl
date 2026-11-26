@@ -55,6 +55,10 @@ func egressNetworkName(home string) string {
 	return egressNetworkPrefix + egressHomeTag(home)
 }
 
+// EgressNetworkName — имя выделенной docker-сети egress-allowlist для дома
+// данных home (для agctl dev paths).
+func EgressNetworkName(home string) string { return egressNetworkName(home) }
+
 // egressChainName — имя iptables-цепочки правил для дома agctl.
 func egressChainName(home string) string {
 	return egressChainPrefix + strings.ToUpper(egressHomeTag(home))

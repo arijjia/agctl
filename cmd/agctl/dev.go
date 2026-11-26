@@ -35,15 +35,15 @@ import (
 	"github.com/arijjia/agctl/internal/runtime/dockerrt"
 	"github.com/arijjia/agctl/internal/server"
 	"golang.org/x/term"
-	"gopkg.in/yaml.v3"
 )
 
 const devUsage = `agctl dev — локальный режим: платформа на этой машине (один пользователь)
 
-  init      настроить: профиль и папка проектов (образ и доступы — в лаунчере; --cli — в терминале)
+  init      настроить дом: профиль и папка проектов (образ и доступы — в лаунчере; --cli — в терминале)
   up [DIR]  поднять платформу и рабочее место (DIR → /workspace), открыть браузер
   down      остановить (данные и сессии сохраняются)
   status    состояние: адрес, образ, папка, рабочее место, мост
+  paths     где что лежит: корень, бинари, профиль, дом и его файлы, порты, контейнеры, маунты, секреты [--json]
   open      открыть браузер (новая ссылка входа)
   logs [-f] лог фонового процесса
   secrets   доступы в хранилище ОС: list | set ИМЯ [--stdin] | rm ИМЯ
@@ -51,26 +51,44 @@ const devUsage = `agctl dev — локальный режим: платформ�
   update    обновить образ рабочего места (бэкап, проверка, откат при сбое)
   rollback  вернуть предыдущий образ [--restore-data]
   doctor    самодиагностика: docker, образ, доступы, сеть, мост
+  migrate   перенести прежние дома ~/.agctl-dev[-<id>] в <корень>/homes/<id> (план; --apply — выполнить)
 
-Дом режима: $AGCTL_DEV_HOME (по умолчанию ~/.agctl-dev), конфиг — dev.yaml.
+Всё лежит под одним корнем — ~/.agctl (переменная AGCTL_ROOT):
+  bin/            бинари agctl, agctl-server; bin/guest/ — guest для сборки образа
+  profiles/<id>/  профиль организации
+  homes/<id>/     дом: config.yaml, data/, logs/, run/, backups/
+
+Дом выбирается так: agctl dev --home <id> … > AGCTL_HOME_ID > единственный
+существующий дом > agctl. Подробно — agctl dev paths.
 `
 
 func cmdDev(args []string) {
+	homeFlag, args, err := devSplitHomeFlag(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "agctl dev: %v\n", err)
+		os.Exit(2)
+	}
 	if len(args) == 0 {
 		fmt.Print(devUsage)
 		os.Exit(2)
 	}
-	home := localmode.Home()
-	var err error
+	h, err := localmode.SelectHome(homeFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "agctl dev: %v\n", err)
+		os.Exit(2)
+	}
+	home := h.Dir
 	switch args[0] {
 	case "init":
-		err = devInit(home, args[1:])
+		err = devInit(h, args[1:])
 	case "up":
 		err = devUp(home, args[1:])
 	case "down":
 		err = devDown(home)
 	case "status":
 		err = devStatus(home)
+	case "paths":
+		err = devPaths(h, args[1:])
 	case "open":
 		err = devOpen(home, args[1:])
 	case "logs":
@@ -85,6 +103,8 @@ func cmdDev(args []string) {
 		err = devRollback(home, args[1:])
 	case "doctor":
 		err = devDoctor(home)
+	case "migrate":
+		err = devMigrate(args[1:])
 	case "serve": // внутренняя: фоновый процесс, который запускает up
 		devServe(home, args[1:])
 		return
@@ -97,16 +117,48 @@ func cmdDev(args []string) {
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "agctl dev %s: %v\n", args[0], err)
+		if errors.Is(err, localmode.ErrNotInitialized) {
+			if ids := localmode.ListHomes(); len(ids) > 0 && h.Source == localmode.HomeFromDefault {
+				fmt.Fprintf(os.Stderr, "  дом «%s» (%s) не настроен; настроенные дома: %s — выберите: agctl dev --home <id> %s\n",
+					h.ID, h.Dir, strings.Join(ids, ", "), args[0])
+			}
+		}
 		os.Exit(1)
 	}
 }
 
+// devSplitHomeFlag вынимает глобальный флаг выбора дома (--home <id>,
+// --home=<id>) из аргументов dev: он действует для любой подкоманды и может
+// стоять до или после неё.
+func devSplitHomeFlag(args []string) (string, []string, error) {
+	id := ""
+	rest := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--home" || a == "-home":
+			if i+1 >= len(args) {
+				return "", nil, errors.New("--home: нужен id дома (agctl dev --home <id> …)")
+			}
+			id = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--home="):
+			id = strings.TrimPrefix(a, "--home=")
+		case strings.HasPrefix(a, "-home="):
+			id = strings.TrimPrefix(a, "-home=")
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return id, rest, nil
+}
+
 // ── init ───────────────────────────────────────────────────────────────────
 
-func devInit(home string, args []string) error {
+func devInit(h localmode.Home, args []string) error {
 	fs := flag.NewFlagSet("dev init", flag.ExitOnError)
-	prof := fs.String("profile", "", "профиль организации (agctl, utmn…)")
-	profDir := fs.String("profile-dir", "", "каталог профиля с диска")
+	prof := fs.String("profile", "", "профиль организации: id из <корень>/profiles (agctl — встроенный нейтральный)")
+	profDir := fs.String("profile-dir", "", "явный каталог профиля вместо <корень>/profiles/<id>")
 	image := fs.String("image", "", "образ рабочего места (из реестра организации); пусто — по профилю")
 	flavor := fs.String("flavor", "", "вкус образа из профиля (web, 1c…)")
 	workdir := fs.String("workdir", "", "папка проектов по умолчанию (→ /workspace)")
@@ -116,6 +168,8 @@ func devInit(home string, args []string) error {
 	addr := fs.String("addr", "", "адрес UI (только 127.0.0.1:PORT), по умолчанию "+localmode.DefaultAddr)
 	_ = fs.Parse(args)
 
+	h = devInitHome(h, *prof, *profDir)
+	home := h.Dir
 	cfg, err := localmode.Load(home)
 	if errors.Is(err, localmode.ErrNotInitialized) {
 		cfg = &localmode.Config{}
@@ -138,7 +192,7 @@ func devInit(home string, args []string) error {
 		}
 		return def
 	}
-	fmt.Printf("Локальный режим agctl. Дом: %s\n\n", home)
+	fmt.Printf("Локальный режим agctl. Дом «%s»: %s (%s)\n\n", h.ID, home, h.Source)
 	if *prof != "" {
 		cfg.Profile, cfg.ProfileDir = *prof, ""
 	}
@@ -156,32 +210,32 @@ func devInit(home string, args []string) error {
 	if cfg.ProfileDir == "" {
 		def := cfg.Profile
 		if def == "" {
-			// Единственный профиль в каталоге данных (так оставляет
+			// Единственный профиль в <корень>/profiles (так оставляет
 			// установщик комплекта) — разумный дефолт: init без флагов
 			// подхватывает организацию.
-			def = devDefaultProfile(profile.DataDir())
+			def = devDefaultProfile(localmode.ProfilesDir())
 		}
 		cfg.Profile = ask("Профиль организации", def)
 	}
-	p, err := devResolveProfile(cfg)
+	p, pref, err := localmode.ResolveProfile(cfg)
 	if err != nil {
 		return err
 	}
+	fmt.Printf("Профиль: %s — %s\n", p.ID, devProfileWhere(pref))
 	if *flavor != "" {
 		cfg.Flavor = *flavor
 	}
-	if len(cfg.Bridge.Tools) == 0 {
-		if tools, err := profileBridgeTools(p); err != nil {
-			fmt.Printf("  ⚠ белый список моста из профиля: %v\n", err)
-		} else if len(tools) > 0 {
-			cfg.Bridge.Tools = tools
-			fmt.Printf("Мост к хосту: из профиля взято инструментов — %d (правка — %s, раздел bridge.tools)\n", len(tools), localmode.Path(home))
-		}
+	// Из профиля в дом ничего не копируется: белый список моста профиля
+	// читается на каждом старте, образ по умолчанию — тоже из профиля.
+	if tools, err := localmode.ProfileBridgeTools(p); err != nil {
+		fmt.Printf("  ⚠ белый список моста профиля: %v\n", err)
+	} else if len(tools) > 0 {
+		fmt.Printf("Мост к хосту: инструментов профиля — %d (читаются из профиля на каждом старте; личные — %s, раздел bridge.tools)\n", len(tools), localmode.Path(home))
 	}
 	if *image != "" {
 		cfg.Image = *image
 	} else if cfg.Image == "" {
-		cfg.Image = devDefaultImage(p, cfg.Flavor)
+		// В config.yaml — только явный выбор; без него действует образ профиля.
 		if len(p.Images.Dev) > 1 && !*nonInteractive && *cliWizard {
 			fmt.Println("Образы профиля:")
 			for i, ref := range p.Images.Dev {
@@ -265,17 +319,54 @@ func devInit(home string, args []string) error {
 	}
 	fmt.Printf("\n✓ настройки: %s\n", localmode.Path(home))
 
-	if *cliWizard && !*noPull && cfg.Image != "" {
-		if err := devPull(cfg.Image); err != nil {
-			fmt.Printf("  ⚠ образ %s: %v\n    Если образа нет в реестре, его соберёт лаунчер (agctl dev up → «Запустить») — или выполните docker login в реестр организации и повторите agctl dev update.\n", cfg.Image, err)
+	if ref := cli.FirstNonEmpty(cfg.Image, devDefaultImage(p, cfg.Flavor)); *cliWizard && !*noPull && ref != "" {
+		if err := devPull(ref); err != nil {
+			fmt.Printf("  ⚠ образ %s: %v\n    Если образа нет в реестре, его соберёт лаунчер (agctl dev up → «Запустить») — или выполните docker login в реестр организации и повторите agctl dev update.\n", ref, err)
 		}
 	}
+	up := "agctl dev up"
+	if ids := localmode.ListHomes(); len(ids) > 1 || h.Source == localmode.HomeFromFlag {
+		up = "agctl dev --home " + h.ID + " up"
+	}
 	if *cliWizard {
-		fmt.Println("\nДальше: agctl dev up   (или agctl dev up ~/src/проект)")
+		fmt.Printf("\nДальше: %s   (или … up ~/src/проект); где что лежит — agctl dev paths\n", up)
 	} else {
-		fmt.Println("\nДальше: agctl dev up — откроется лаунчер: там образ рабочего места и доступы (ключ модели, GitLab, Jira).")
+		fmt.Printf("\nДальше: %s — откроется лаунчер: там образ рабочего места и доступы (ключ модели, GitLab, Jira). Где что лежит — agctl dev paths.\n", up)
 	}
 	return nil
+}
+
+// devInitHome — дом для init. Если дом не выбран явно (флаг, переменные,
+// единственный существующий) и дом по умолчанию ещё не настроен, а профиль
+// задан флагом, id дома = id профиля: один дом на организацию.
+func devInitHome(h localmode.Home, profID, profDir string) localmode.Home {
+	if h.Source != localmode.HomeFromDefault {
+		return h
+	}
+	if _, err := localmode.Load(h.Dir); !errors.Is(err, localmode.ErrNotInitialized) {
+		return h
+	}
+	id := strings.TrimSpace(profID)
+	if profDir != "" {
+		if p, err := profile.LoadDir(profDir); err == nil {
+			id = p.ID
+		}
+	}
+	if id == "" || id == h.ID || !localmode.ValidID(id) {
+		return h
+	}
+	return localmode.Home{ID: id, Dir: localmode.HomeDir(id), Source: "по профилю " + id}
+}
+
+// devProfileWhere — человекочитаемое «где лежит профиль и чем разрешён».
+func devProfileWhere(ref localmode.ProfileRef) string {
+	switch {
+	case ref.Dir == "":
+		return ref.Origin
+	case ref.Link != "":
+		return fmt.Sprintf("%s → %s (%s)", ref.Dir, ref.Link, ref.Origin)
+	}
+	return fmt.Sprintf("%s (%s)", ref.Dir, ref.Origin)
 }
 
 func readSecretLine(in *bufio.Reader) (string, error) {
@@ -300,20 +391,16 @@ func addName(list []string, name string) []string {
 	return append(list, name)
 }
 
+// devResolveProfile — профиль дома. Порядок один для CLI и serve
+// (localmode.ResolveProfile): profile_dir из config.yaml >
+// <корень>/profiles/<id> > встроенный.
 func devResolveProfile(cfg *localmode.Config) (*profile.Data, error) {
-	// Каталог данных пользователя (DataDir) — последний в поиске: туда
-	// кладёт профиль установщик комплекта организации; явный --profile-dir
-	// и дома разработчика сильнее.
-	return profile.Resolve(cli.FirstNonEmpty(cfg.Profile, "agctl"), cfg.ProfileDir,
-		"profiles",
-		filepath.Join(localmode.Home(), "profiles"),
-		filepath.Join(cli.DefaultHome(), "profiles"),
-		profile.DataDir(),
-	)
+	p, _, err := localmode.ResolveProfile(cfg)
+	return p, err
 }
 
 // devDefaultProfile — имя профиля по умолчанию для мастера init: если в
-// каталоге данных пользователя лежит ровно один профиль организации (так
+// <корень>/profiles лежит ровно один профиль организации (так
 // оставляет установщик комплекта), он и есть разумный дефолт; иначе —
 // нейтральный agctl.
 func devDefaultProfile(dataDir string) string {
@@ -340,16 +427,6 @@ func devDefaultProfile(dataDir string) string {
 	return found
 }
 
-// devServeHooks — хуки лаунчера; профиль не разрешился — без них (CLI-режим).
-func devServeHooks(home string, cfg *localmode.Config, store *localmode.Store) server.LocalHooks {
-	p, err := devResolveProfile(cfg)
-	if err != nil || p == nil {
-		log.Printf("dev: профиль: %v — лаунчер без выбора образа и доступов", err)
-		return nil
-	}
-	return &devHooks{home: home, store: store, prof: p}
-}
-
 func devPrepareImage(ctx context.Context, p *profile.Data, target, flavor string, logf func(string)) error {
 	pctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
@@ -359,7 +436,7 @@ func devPrepareImage(ctx context.Context, p *profile.Data, target, flavor string
 		return nil
 	}
 	b := dockerrt.DevBuild{
-		Target: target, Flavor: flavor, BinDir: "dist",
+		Target: target, Flavor: flavor, BinDir: localmode.GuestDir(),
 		ImageFS: assets.Image, SkelFS: assets.DshSkel,
 		Log: func(m string) { logf("  " + m) },
 	}
@@ -381,7 +458,7 @@ func devPrepareImage(ctx context.Context, p *profile.Data, target, flavor string
 	return nil
 }
 
-// devFlavorOf — вкус образа: из dev.yaml, иначе по имени образа (-web, -<вкус профиля>).
+// devFlavorOf — вкус образа: из config.yaml, иначе по имени образа (-web, -<вкус профиля>).
 func devFlavorOf(cfg *localmode.Config, p *profile.Data, image string) string {
 	if cfg.Flavor != "" {
 		return cfg.Flavor
@@ -505,6 +582,8 @@ func devUp(home string, args []string) error {
 	defer logf.Close()
 	localmode.ClearState(home)
 	cmd := exec.Command(self, serveArgs...)
+	// Фоновый процесс работает ровно с этим домом, как бы его ни выбрали здесь.
+	cmd.Env = append(os.Environ(), "AGCTL_DEV_HOME="+home)
 	cmd.Stdout, cmd.Stderr, cmd.Stdin = logf, logf, nil
 	detach(cmd)
 	if err := cmd.Start(); err != nil {
@@ -629,7 +708,28 @@ func devAlive(st *localmode.State) bool {
 	return devControl(st, http.MethodGet, "/api/local/status", nil) == nil
 }
 
-// devServe — фоновый процесс: читает dev.yaml и секреты, поднимает сервер в
+// devForeignEnv — переменные окружения серверного режима, которые не должны
+// влиять на локальный: их снимает dev serve до того, как выставит свои из
+// дома. Сюда попадает всё, что make экспортирует из .env репозитория
+// (AGCTL_LLM_*, AGCTL_EGRESS_*, адреса и CORS сервера организации).
+func devForeignEnv(environ []string) []string {
+	exact := map[string]bool{
+		"AGCTL_PROFILE": true, "AGCTL_PROFILE_DIR": true, "AGCTL_ADDR": true,
+		"AGCTL_DEV_ENV": true, "AGCTL_DEV_IMAGES": true, "AGCTL_HOME": true,
+		"AGCTL_PUBLIC_URL": true, "AGCTL_CORS_ORIGINS": true, "AGCTL_CONFIG": true,
+	}
+	var out []string
+	for _, kv := range environ {
+		k, _, _ := strings.Cut(kv, "=")
+		if exact[k] || strings.HasPrefix(k, "AGCTL_LLM_") || strings.HasPrefix(k, "AGCTL_EGRESS_") {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// devServe — фоновый процесс: читает config.yaml и секреты, поднимает сервер в
 // локальном режиме, пишет файл состояния.
 func devServe(home string, args []string) {
 	fs := flag.NewFlagSet("dev serve", flag.ExitOnError)
@@ -643,6 +743,14 @@ func devServe(home string, args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// Изоляция от серверного режима: ни ~/.config/agctl/config.yaml, ни env
+	// серверного запуска (.env make) не влияют на локальный. Снимаем ДО того,
+	// как выставим значения дома (ключи доп. провайдеров могут называться
+	// AGCTL_LLM_*).
+	for _, k := range devForeignEnv(os.Environ()) {
+		_ = os.Unsetenv(k)
+	}
+	_ = os.Setenv("AGCTL_CONFIG", filepath.Join(home, "serve-config.yaml"))
 	store := localmode.OpenStore(home)
 	env, missing := localmode.ContainerEnv(cfg, store)
 	if len(missing) > 0 {
@@ -656,12 +764,6 @@ func devServe(home string, args []string) {
 			_ = os.Setenv(k, v)
 		}
 	}
-	// Изоляция от серверного режима: ни ~/.config/agctl/config.yaml, ни env
-	// серверного запуска (.env make) не влияют на локальный.
-	_ = os.Setenv("AGCTL_CONFIG", filepath.Join(home, "serve-config.yaml"))
-	for _, k := range []string{"AGCTL_PROFILE", "AGCTL_PROFILE_DIR", "AGCTL_ADDR", "AGCTL_DEV_ENV", "AGCTL_DEV_IMAGES", "AGCTL_HOME"} {
-		_ = os.Unsetenv(k)
-	}
 	if key, err := store.Get("AGCTL_LLM_API_KEY"); err == nil && key != "" {
 		_ = os.Setenv("AGCTL_LLM_API_KEY", key)
 	} else {
@@ -674,6 +776,19 @@ func devServe(home string, args []string) {
 	if !cli.IsLoopbackAddr(cfg.Addr) {
 		log.Fatalf("dev: локальный режим слушает только loopback, а не %s", cfg.Addr)
 	}
+	// Профиль разрешается один раз и уходит в serve готовым: порядок поиска
+	// один для CLI и сервера (localmode.ResolveProfile).
+	prof, pref, err := localmode.ResolveProfile(cfg)
+	if err != nil {
+		log.Fatalf("dev: %v", err)
+	}
+	log.Printf("dev: дом %s (%s); профиль %s — %s", localmode.HomeID(home), home, prof.ID, devProfileWhere(pref))
+	// Белый список моста: профиль (читается сейчас) + личные из config.yaml.
+	tools, err := localmode.EffectiveBridgeTools(cfg, prof)
+	if err != nil {
+		log.Printf("dev: белый список моста профиля не читается: %v — действуют только личные инструменты из config.yaml", err)
+		tools = cfg.Bridge.Tools
+	}
 	local := &server.LocalMode{
 		OwnerLogin:   "owner",
 		WorkDir:      workdir,
@@ -681,11 +796,14 @@ func devServe(home string, args []string) {
 		ControlToken: localmode.NewToken(),
 		BridgeToken:  localmode.NewToken(),
 		BridgeURL:    "http://host.docker.internal:" + port,
-		BridgeTools:  cfg.Bridge.Tools,
+		BridgeTools:  tools,
 		BridgeLog:    localmode.BridgeJournalPath(home),
 		Env:          env,
-		Hooks:        devServeHooks(home, cfg, store),
+		Hooks:        &devHooks{home: home, store: store, prof: prof},
 	}
+	// Образ: явный выбор из config.yaml, иначе образ профиля (в конфиг не
+	// копируется — смена images.dev в профиле действует со следующего старта).
+	image := cli.FirstNonEmpty(cfg.Image, devDefaultImage(prof, cfg.Flavor))
 	serveArgs := []string{
 		"--home", localmode.ServerHome(home),
 		"--addr", cfg.Addr,
@@ -693,22 +811,15 @@ func devServe(home string, args []string) {
 		"--cpus", strconv.FormatFloat(cfg.CPUs, 'f', -1, 64),
 		"--chat-ttl-min", "720", // рабочий день: не усыплять контейнер на обеде
 		"--dev-env=",
+		"--bin-dir", localmode.GuestDir(), // guest для сборки образа — <корень>/bin/guest, не ./dist
+		"--image", image, "--dev-images", image,
 	}
 	serveArgs = append(serveArgs, devEgressArgs(cfg)...)
-	if cfg.ProfileDir != "" {
-		serveArgs = append(serveArgs, "--profile-dir", cfg.ProfileDir)
-	} else {
-		serveArgs = append(serveArgs, "--profile", cli.FirstNonEmpty(cfg.Profile, "agctl"))
-	}
-	image := cfg.Image
-	if image != "" {
-		serveArgs = append(serveArgs, "--image", image, "--dev-images", image)
-	}
 	onReady := func(ctx context.Context, h http.Handler) {
 		devBridgeListener(ctx, port, h)
 		st := localmode.State{
 			PID: os.Getpid(), Addr: cfg.Addr, ControlToken: local.ControlToken, LoginToken: local.LoginToken,
-			Image: cli.FirstNonEmpty(image, "по профилю"), WorkDir: workdir, Started: time.Now(), Version: version, Build: devBuildID(),
+			Image: image, WorkDir: workdir, Started: time.Now(), Version: version, Build: devBuildID(),
 		}
 		if err := localmode.WriteState(home, st); err != nil {
 			log.Printf("dev: файл состояния: %v", err)
@@ -718,7 +829,7 @@ func devServe(home string, args []string) {
 			localmode.ClearOwnState(home, os.Getpid())
 		}()
 	}
-	cli.Serve(serveArgs, cli.ServeOptions{Local: local, OnReady: onReady})
+	cli.Serve(serveArgs, cli.ServeOptions{Local: local, OnReady: onReady, Profile: prof})
 	localmode.ClearOwnState(home, os.Getpid())
 }
 
@@ -805,9 +916,17 @@ func devStatus(home string) error {
 	if cfgErr != nil {
 		return cfgErr
 	}
-	fmt.Printf("дом:      %s\n", home)
-	fmt.Printf("профиль:  %s\n", cli.FirstNonEmpty(cfg.ProfileDir, cfg.Profile))
-	fmt.Printf("образ:    %s\n", cli.FirstNonEmpty(cfg.Image, "по профилю"))
+	fmt.Printf("дом:      %s (%s)\n", localmode.HomeID(home), home)
+	image := cli.FirstNonEmpty(cfg.Image, "по профилю")
+	if p, pref, err := localmode.ResolveProfile(cfg); err != nil {
+		fmt.Printf("профиль:  ✗ %v\n", err)
+	} else {
+		fmt.Printf("профиль:  %s — %s\n", p.ID, devProfileWhere(pref))
+		if cfg.Image == "" {
+			image = devDefaultImage(p, cfg.Flavor) + " (по профилю)"
+		}
+	}
+	fmt.Printf("образ:    %s\n", image)
 	fmt.Printf("папка:    %s\n", cli.FirstNonEmpty(cfg.WorkDir, "(не задана — agctl dev up DIR)"))
 	if st == nil || !devAlive(st) {
 		fmt.Println("статус:   остановлено (agctl dev up)")
@@ -927,7 +1046,7 @@ func devSecrets(home string, args []string) error {
 	case "set":
 		fs := flag.NewFlagSet("dev secrets set", flag.ExitOnError)
 		stdin := fs.Bool("stdin", false, "значение из stdin (для скриптов)")
-		plain := fs.Bool("plain", false, "несекретное значение (URL, логин) — в dev.yaml")
+		plain := fs.Bool("plain", false, "несекретное значение (URL, логин) — в config.yaml")
 		if len(args) < 2 {
 			return errors.New("использование: agctl dev secrets set ИМЯ [--stdin] [--plain]")
 		}
@@ -1010,16 +1129,29 @@ func devBridge(home string, args []string) error {
 		if err != nil {
 			return err
 		}
-		if len(cfg.Bridge.Tools) == 0 {
-			fmt.Printf("Белый список пуст. Добавьте инструменты в %s, раздел bridge.tools (пример — local/bridge-tools.yaml профиля, описание — docs/architecture.md, раздел 6.6).\n", localmode.Path(home))
+		p, err := devResolveProfile(cfg)
+		if err != nil {
+			return err
+		}
+		fromProfile, err := localmode.ProfileBridgeTools(p)
+		if err != nil {
+			fmt.Printf("⚠ белый список моста профиля не читается: %v\n", err)
+		}
+		tools := localmode.MergeBridgeTools(fromProfile, cfg.Bridge.Tools)
+		if len(tools) == 0 {
+			fmt.Printf("Белый список пуст. Личные инструменты — %s, раздел bridge.tools; инструменты организации — local/bridge-tools.yaml профиля (описание — docs/architecture.md, раздел 6.6).\n", localmode.Path(home))
 			return nil
 		}
-		for _, t := range cfg.Bridge.Tools {
+		for _, t := range tools {
 			conf := ""
 			if t.Confirm {
 				conf = " [подтверждение]"
 			}
-			fmt.Printf("  %-24s %s%s\n      %s\n", t.Name, t.Description, conf, strings.Join(t.Command, " "))
+			src := "профиль " + p.ID
+			if t.Personal {
+				src = "config.yaml"
+			}
+			fmt.Printf("  %-24s %s%s  (%s)\n      %s\n", t.Name, t.Description, conf, src, strings.Join(t.Command, " "))
 		}
 		return nil
 	case "log":
@@ -1113,18 +1245,23 @@ func devUpdate(home string, args []string) error {
 	if backup != "" {
 		fmt.Printf("    %s\n", backup)
 	}
+	// В config.yaml — только явный выбор: обновление «того же тега по
+	// профилю» оставляет image пустым (образ и дальше следует профилю).
+	explicit := cfg.Image
 	cfg.PreviousImage = current
-	cfg.Image = target
+	if *image != "" || explicit != "" {
+		cfg.Image = target
+	}
 	if err := cfg.Save(home); err != nil {
 		return err
 	}
 	fmt.Println("4/5 запуск на новом образе (управляемые слои dsh перезасеваются, ваши — не трогаются)")
 	if err := devUp(home, []string{"--no-open", workdir}); err != nil {
-		return devAutoRollback(home, cfg, current, backup, err)
+		return devAutoRollback(home, cfg, explicit, current, backup, err)
 	}
 	fmt.Println("5/5 проверка рабочего места")
 	if err := devVerify(home); err != nil {
-		return devAutoRollback(home, cfg, current, backup, err)
+		return devAutoRollback(home, cfg, explicit, current, backup, err)
 	}
 	fmt.Printf("✓ обновлено: %s (откат — agctl dev rollback)\n", target)
 	if !wasRunning {
@@ -1160,7 +1297,9 @@ func devVerify(home string) error {
 	return errors.New("рабочее место не поднялось за 5 минут")
 }
 
-func devAutoRollback(home string, cfg *localmode.Config, previous, backup string, cause error) error {
+// devAutoRollback возвращает прежний образ: explicit — что стояло в
+// config.yaml до обновления (пусто = образ по профилю), previous — сам образ.
+func devAutoRollback(home string, cfg *localmode.Config, explicit, previous, backup string, cause error) error {
 	fmt.Printf("✗ сбой: %v\n↩ откат на %s\n", cause, previous)
 	_ = devDown(home)
 	if backup != "" {
@@ -1168,7 +1307,7 @@ func devAutoRollback(home string, cfg *localmode.Config, previous, backup string
 			fmt.Printf("  ⚠ восстановление данных: %v (архив цел: %s)\n", err, backup)
 		}
 	}
-	cfg.Image, cfg.PreviousImage = previous, ""
+	cfg.Image, cfg.PreviousImage = explicit, ""
 	if err := cfg.Save(home); err != nil {
 		return err
 	}
@@ -1229,14 +1368,15 @@ func devDoctor(home string) error {
 		fmt.Printf("✓ %-22s %s\n", name, okMsg)
 	}
 	cfg, err := localmode.Load(home)
+	check("корень", nil, localmode.Root()+" — "+localmode.RootSource())
 	check("настройки", err, localmode.Path(home))
 	if err != nil {
 		return errors.New("сначала agctl dev init")
 	}
 	api, err := dockerrt.PingDaemon(context.Background())
 	check("docker", err, "API "+api)
-	p, perr := devResolveProfile(cfg)
-	check("профиль", perr, cli.FirstNonEmpty(cfg.ProfileDir, cfg.Profile))
+	p, pref, perr := localmode.ResolveProfile(cfg)
+	check("профиль", perr, devProfileWhere(pref))
 	if err == nil && perr == nil {
 		ref := cli.FirstNonEmpty(cfg.Image, devDefaultImage(p, cfg.Flavor))
 		_, ierr := dockerrt.ImageID(context.Background(), ref)
@@ -1272,10 +1412,12 @@ func devDoctor(home string) error {
 			check("сеть: "+strings.ToLower(strings.TrimSuffix(k, "_URL")), devReach(u), u)
 		}
 	}
-	if err := localbridge.Validate(cfg.Bridge.Tools); err != nil {
-		check("мост", err, "")
-	} else {
-		check("мост", nil, fmt.Sprintf("инструментов в белом списке: %d", len(cfg.Bridge.Tools)))
+	if perr == nil {
+		if tools, err := localmode.EffectiveBridgeTools(cfg, p); err != nil {
+			check("мост", err, "")
+		} else {
+			check("мост", nil, fmt.Sprintf("инструментов в белом списке: %d (личных в config.yaml: %d, остальные — из профиля)", len(tools), len(cfg.Bridge.Tools)))
+		}
 	}
 	if st, _ := localmode.ReadState(home); st != nil && devAlive(st) {
 		check("платформа", nil, "запущена: http://"+st.Addr)
@@ -1299,33 +1441,7 @@ func devReach(url string) error {
 	return nil
 }
 
-// profileBridgeTools — белый список моста по умолчанию из профиля
-// организации (local/bridge-tools.yaml, ключ tools). Нет файла — пусто.
-func profileBridgeTools(p *profile.Data) ([]localbridge.Tool, error) {
-	fsys := p.View().FS
-	if fsys == nil {
-		return nil, nil
-	}
-	raw, err := fs.ReadFile(fsys, "local/bridge-tools.yaml")
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var doc struct {
-		Tools []localbridge.Tool `yaml:"tools"`
-	}
-	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return nil, err
-	}
-	if err := localbridge.Validate(doc.Tools); err != nil {
-		return nil, err
-	}
-	return doc.Tools, nil
-}
-
-// devEgressArgs — egress-allowlist из dev.yaml в флаги serve. Явно и в обе
+// devEgressArgs — egress-allowlist из config.yaml в флаги serve. Явно и в обе
 // стороны: серверные env AGCTL_EGRESS_* машины на локальный режим не влияют.
 func devEgressArgs(cfg *localmode.Config) []string {
 	return []string{

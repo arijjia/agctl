@@ -88,7 +88,7 @@ agctl решает задачи, которых у самого dsh нет:
 | Вход | одноразовая ссылка из CLI, без регистрации и пароля | регистрация и пароль (argon2id), cookie-сессия | как в серверном |
 | Рабочее место | контейнер в локальном Docker на каждое рабочее место лаунчера (основное + до 7 дополнительных) | контейнер на пользователя в Docker хоста шлюза (developer — до 3 слотов) | под Kubernetes или актор Agent Substrate на пользователя |
 | `/workspace` | папка проектов разработчика или папки места (bind mount) | `$AGCTL_HOME/chats/u<ID>/work` | подкаталог общего RWX-тома, PVC или том актора |
-| Дом данных | `~/.agctl-dev` | `~/.agctl` (`AGCTL_HOME`) | том шлюза `/var/lib/agctl` |
+| Дом данных | `~/.agctl/homes/<id>` (корень `~/.agctl`, `AGCTL_ROOT`) | `~/.agctl` (`AGCTL_HOME`) | том шлюза `/var/lib/agctl` |
 | Адрес UI | `127.0.0.1:8930`, только loopback | `127.0.0.1:8929`; наружу через обратный прокси с TLS | Service `agctl` (порт 80 → 8929); Ingress настраивает оператор |
 | Секреты | хранилище ОС (Keychain, Credential Manager, Secret Service) или зашифрованный файл | `.env` хоста и SQLite (AES-256-GCM) | Kubernetes Secret или подстановка ключа на egress-шлюзе Substrate |
 | Автосохранение проектов в git | выключено (это настоящие репозитории) | раз в 2 минуты, локальный коммит без push | как в серверном |
@@ -322,8 +322,11 @@ AX и другие чувствительные настройки.
 режима). Встроенный нейтральный профиль `agctl` лежит в
 `internal/profile/profiles/agctl`; профили организаций живут в отдельных
 приватных репозиториях `agctl-profile-<id>` и подключаются каталогом
-(`--profile-dir`) или по имени из `./profiles` и `$AGCTL_HOME/profiles`
-(`make profile-fetch`). Профиль задаёт:
+(`--profile-dir`) или по имени. На машине профиль лежит в одном месте —
+`~/.agctl/profiles/<id>` (установщик комплекта, `make profile-fetch`,
+ссылка на репозиторий от `make local_up`): локальный режим ищет его только
+там (раздел 6.1), сервер — в `./profiles` и `$AGCTL_HOME/profiles`, а
+`make up PROFILE=<id>` передаёт каталог из корня через `--profile-dir`. Профиль задаёт:
 
 - брендинг: передаётся в браузер единственным каналом — объектом
   `window.__AGCTL_BRAND__`, который сервер встраивает в `<head>`;
@@ -440,7 +443,7 @@ Entrypoint работает от root (chown на томах хоста, sshd с
 **Egress-allowlist** (`internal/runtime/dockerrt/egress.go`; флаг
 `--egress-allowlist`, env `AGCTL_EGRESS_ALLOWLIST=1`, config
 `serve.egress_allowlist`, в локальном режиме `egress_allowlist: true` в
-`dev.yaml`; по умолчанию выключен). Контейнеры переводятся в выделенную
+`config.yaml`; по умолчанию выключен). Контейнеры переводятся в выделенную
 сеть `agctl-egress-<хеш дома>`, а в цепочку `DOCKER-USER` вставляется
 собственная цепочка правил. Из подсети разрешены:
 
@@ -451,7 +454,7 @@ Entrypoint работает от root (chown на томах хоста, sshd с
 - IPv4 провайдеров модели — те же адреса, что закреплены в `/etc/hosts`
   контейнера;
 - белый список `egress.allow` профиля организации и флага `--egress-allow`
-  (env `AGCTL_EGRESS_ALLOW`, `egress_allow` в `dev.yaml`): хосты, IPv4 или
+  (env `AGCTL_EGRESS_ALLOW`, `egress_allow` в `config.yaml`): хосты, IPv4 или
   CIDR. Хосты разрешаются на хосте при старте контейнера и тоже
   закрепляются в `/etc/hosts`.
 
@@ -508,7 +511,7 @@ LiteLLM через его admin-API и подставляет этот ключ 
 Из исходников: `make up PROFILE=<id>` собирает SPA, бинари и образ и
 поднимает `agctl-server serve` в фоне на `127.0.0.1:8929` с домом
 `~/.agctl`; `make corp` — то же с корпоративным LiteLLM (ключ в `.env`);
-`make demo` — изолированный демонстрационный стенд в `/tmp` на порту 8930
+`make demo` — изолированный демонстрационный стенд в `/tmp` на порту 8928
 (конфликтует с локальным режимом); `make stop`, `make down`,
 `make logs`, `make status` управляют этими экземплярами. В
 производственной установке перед сервером ставится обратный прокси с TLS,
@@ -678,12 +681,12 @@ gRPC через `ax-server` (`--ax-server`, по умолчанию
 Машина разработчика
 │
 ├─ agctl dev <команда>             кратковременный CLI (init, up, status, secrets, bridge …)
-│      │  читает ~/.agctl-dev/dev.yaml и run/state.json
+│      │  выбирает дом ~/.agctl/homes/<id>, читает его config.yaml и run/state.json
 │      │  управляет фоновым процессом по HTTP с токеном управления
 │      ▼
 ├─ agctl dev serve  (фоновый Go-процесс, 127.0.0.1:8930)
 │      ├─ internal/server с Config.Local: владелец без учётной записи, /local/login, /launcher
-│      ├─ ~/.agctl-dev/data: agctl.db (settings, аудит), local-sessions.json, chats/u1/dsh-home
+│      ├─ <дом>/data: agctl.db (settings, аудит), local-sessions.json, chats/u1/dsh-home
 │      ├─ мост к хосту: белый список argv, подтверждения, журнал logs/bridge.log
 │      ├─ Linux: второй слушатель на IP docker0, только пути моста
 │      └─ Docker Engine API (тот же internal/runtime/dockerrt, что на сервере)
@@ -691,8 +694,8 @@ gRPC через `ax-server` (`--ax-server`, по умолчанию
 │             ▼
 ├─ контейнер рабочего места (agctl-dsh[-web|-<профиль>[-<вкус>]])
 │      ├─ dsh web на eth0:3080, опубликован на 127.0.0.1:<свободный порт>
-│      ├─ /workspace  ◀── bind ── папка проектов (dev.yaml: workdir или аргумент up)
-│      ├─ /home/dsh   ◀── bind ── ~/.agctl-dev/data/chats/u1/dsh-home
+│      ├─ /workspace  ◀── bind ── папка проектов (config.yaml: workdir или аргумент up)
+│      ├─ /home/dsh   ◀── bind ── <дом>/data/chats/u1/dsh-home
 │      ├─ agctl bridge … ──HTTP + токен моста──▶ http://host.docker.internal:8930/api/local/bridge/*
 │      └─ ──HTTPS──▶ модель (LiteLLM организации или публичный провайдер), GitLab, Jira
 │
@@ -705,24 +708,74 @@ gRPC через `ax-server` (`--ax-server`, по умолчанию
 Мост к хосту не держит процессов: вызов агента превращается в однократный
 запуск одной команды из белого списка.
 
-Дом режима `~/.agctl-dev` (переопределяет `AGCTL_DEV_HOME`,
-`internal/localmode.Home`):
+**Раскладка на машине.** Всё, что локальный режим держит на хосте, лежит
+под одним корнем; единственный источник путей в коде —
+`internal/localmode/layout.go` (`Root`, `BinDir`, `GuestDir`, `ProfilesDir`,
+`HomeDir`), скрипты установки её зеркалят:
+
+| Путь | Содержимое | Кто кладёт |
+|---|---|---|
+| `~/.agctl/` | корень; Windows — `%USERPROFILE%\.agctl`; переопределяется `AGCTL_ROOT` | — |
+| `bin/agctl`, `bin/agctl-server` | бинари; каталог должен быть в `PATH` | `bin/install.sh`, `bin/install.ps1`, `make install` |
+| `bin/guest/agctl-guest[-server]-linux-<arch>` | guest для сборки образа рабочего места на машине | те же |
+| `profiles/<id>/` | профиль организации, единственный экземпляр: распакованный комплект, клон или ссылка на репозиторий `agctl-profile-<id>` | установщик комплекта, `make profile-fetch`, `bin/local.sh` (ссылка) |
+| `homes/<id>/` | дом — одна установка локального режима | `agctl dev init` |
+
+**Выбор дома** (`localmode.SelectHome`): флаг `agctl dev --home <id>`
+(действует на любую подкоманду) > `AGCTL_DEV_HOME` (абсолютный путь дома
+вне корня, для тестов и e2e) > `AGCTL_HOME_ID` > единственный существующий
+дом > `agctl`. `dev init --profile <id>` на машине без домов создаёт дом с
+id профиля. `dev up` передаёт выбранный дом фоновому процессу переменной
+`AGCTL_DEV_HOME`.
+
+**Разрешение профиля** (`localmode.ResolveProfile`) — одна функция для CLI
+и для `serve` внутри `dev` (готовый профиль уходит в `cli.Serve` через
+`ServeOptions.Profile`): `profile_dir` из `config.yaml` >
+`<корень>/profiles/<id>` > встроенный в бинарь. Путей относительно текущего
+каталога нет.
+
+Дом `~/.agctl/homes/<id>`:
 
 | Путь | Содержимое | Кто пишет |
 |---|---|---|
-| `dev.yaml` | профиль или `profile_dir`, `image`, `flavor`, `workdir`, `addr`, `mem_gb`, `cpus`, `egress_allowlist` и `egress_allow`, несекретные `env` (адреса, логины), **имена** секретов, `bridge.tools`, `previous_image` | `dev init`, `dev secrets`, лаунчер, `dev update` |
-| `data/` | дом сервера: `agctl.db` (SQLite WAL), `secrets.key`, `local-sessions.json` (0600), `chats/u1/dsh-home` (сессии и настройки dsh) | `agctl dev serve` |
+| `config.yaml` | `profile`, `profile_dir`, `image` (только явный выбор; пусто — образ профиля), `flavor`, `previous_image`, `workdir`, `addr`, `mem_gb`, `cpus`, `egress_allowlist` и `egress_allow`, несекретные `env` (адреса, логины), **имена** секретов, личные `bridge.tools`. В файле шапка и комментарий к каждому полю: что это, откуда значение, кто меняет (`localmode.Config.Render`). Прежний `dev.yaml` читается и при первой записи заменяется | `dev init`, `dev secrets`, лаунчер, `dev update` |
+| `data/` | дом сервера: `agctl.db` (SQLite WAL), `secrets.key`, `local-sessions.json` (0600), `chats/u1/dsh-home` (сессии и настройки dsh). От пути `data/` зависят имена контейнеров и сети egress | `agctl dev serve` |
 | `run/state.json` (0600) | PID, адрес, токен управления, токен входа, образ, папка, время старта, версия и сборка | `dev serve` при готовности; удаляется при выходе |
 | `logs/serve.log` | вывод фонового процесса | `dev up` открывает, `dev serve` пишет |
 | `logs/bridge.log` | журнал вызовов моста (JSON lines, без вывода команд) | `internal/localbridge` |
 | `backups/` | три последних tar-архива домашнего каталога dsh, создаются перед `update` | `localmode.Backup` |
 | `secrets.enc` и ключ | запасное зашифрованное хранилище секретов | `localmode.Store` |
-| `serve-config.yaml` | пустая заглушка: на неё указывает `AGCTL_CONFIG`, чтобы серверный `~/.config/agctl/config.yaml` не влиял на локальный режим | — |
+| `serve-config.yaml` | не создаётся: на этот путь указывает `AGCTL_CONFIG`, чтобы серверный `~/.config/agctl/config.yaml` не влиял на локальный режим | — |
 
-Перед стартом `devServe` удаляет из окружения процесса `AGCTL_PROFILE`,
-`AGCTL_PROFILE_DIR`, `AGCTL_ADDR`, `AGCTL_DEV_ENV`, `AGCTL_DEV_IMAGES`,
-`AGCTL_HOME`, поэтому серверные настройки машины на локальный режим не
-влияют.
+Из профиля в дом ничего не копируется: образ по умолчанию
+(`images.dev`) и инструменты моста профиля (`local/bridge-tools.yaml`)
+читаются из профиля на каждом старте.
+
+**`agctl dev paths`** (`cmd/agctl/dev_paths.go`) — витрина всего
+перечисленного для конкретной машины: корень, бинари, guest, профиль (путь
+и чем разрешён), дом и каждый его файл с назначением, папка проектов,
+адрес UI и порт моста, имена контейнеров, образ и его источник,
+docker-сеть egress, bind-маунты хост → контейнер, место хранения секретов;
+`--json` — тот же отчёт для скриптов. Значения секретов команда не читает.
+
+**`agctl dev migrate`** (`cmd/agctl/dev_migrate.go`) переносит прежние дома
+`~/.agctl-dev[-<id>]` в `homes/<id>` (id дома = id профиля). Без `--apply`
+печатает план; с ним — переименовывает каталог, превращает `dev.yaml` в
+`config.yaml`, заменяет явный `profile_dir` ссылкой
+`<корень>/profiles/<id>`, убирает из конфига скопированные из профиля образ
+и инструменты моста, копирует секреты из общего сервиса `agctl-dev` в
+сервис дома. Запущенный дом не переносится. Имена контейнеров
+(`agctl-chat-<sha256 пути data/>-u1…`) и сети egress после переноса другие:
+рабочие места пересоздаются при первом `dev up` (данные на маунтах), а
+команду удаления старых контейнеров `migrate` печатает.
+
+Перед стартом `devServe` удаляет из окружения процесса серверные переменные
+(`devForeignEnv`): `AGCTL_PROFILE`, `AGCTL_PROFILE_DIR`, `AGCTL_ADDR`,
+`AGCTL_DEV_ENV`, `AGCTL_DEV_IMAGES`, `AGCTL_HOME`, `AGCTL_PUBLIC_URL`,
+`AGCTL_CORS_ORIGINS`, `AGCTL_CONFIG` и все `AGCTL_LLM_*` и `AGCTL_EGRESS_*`
+— поэтому ни серверные настройки машины, ни `.env` репозитория (его
+экспортирует `make`) на локальный режим не влияют. Значения дома (ключ
+модели, ключи дополнительных провайдеров) выставляются после очистки.
 
 ### 6.2 Три токена
 
@@ -744,15 +797,17 @@ gRPC через `ax-server` (`--ax-server`, по умолчанию
 
 **`agctl dev init`** (`devInit` в `cmd/agctl/dev.go`):
 
-1. профиль: `--profile ID` (встроенный `agctl`, `profiles/<id>` из
-   исходников, `~/.agctl-dev/profiles/<id>`, `~/.agctl/profiles/<id>` или
-   каталог данных пользователя, куда установщик кладёт профиль комплекта;
-   если там ровно один профиль организации, он предлагается по умолчанию)
-   или `--profile-dir DIR` (сохраняется абсолютным путём);
-2. белый список моста: если в `dev.yaml` его нет, берётся
-   `local/bridge-tools.yaml` профиля;
-3. образ: `--image`, иначе `--flavor` (первый образ профиля с этим вкусом в
-   имени), иначе первый из `images.dev` профиля, иначе `agctl-dsh:0.2.2`;
+1. дом: выбранный (раздел 6.1); без явного выбора и с `--profile ID` на
+   машине без дома по умолчанию — дом с id профиля;
+2. профиль: `--profile ID` (`<корень>/profiles/<id>`, иначе встроенный;
+   если в корне ровно один профиль организации, он предлагается по
+   умолчанию) или `--profile-dir DIR` (сохраняется абсолютным путём в
+   `profile_dir`);
+3. образ: в `config.yaml` пишется только явный `--image` (или выбор в
+   мастере `--cli`); без него действует образ профиля — `--flavor` (первый
+   образ профиля с этим вкусом в имени), иначе первый из `images.dev`,
+   иначе `agctl-dsh:0.2.2` (`devDefaultImage`). Белый список моста профиля
+   не копируется;
 4. папка проектов: `--workdir` или вопрос; весь `$HOME` и корень `/`
    запрещены (`localmode.ValidateWorkDir`);
 5. с `--cli` — мастер в терминале (образ, доступы, `docker pull`); без
@@ -760,7 +815,7 @@ gRPC через `ax-server` (`--ax-server`, по умолчанию
 
 **`agctl dev up [DIR]`** (`devUp`):
 
-1. читает `dev.yaml` и проверяет папку. Если фоновый процесс уже работает,
+1. читает `config.yaml` дома и проверяет папку. Если фоновый процесс уже работает,
    но собран другой версией бинаря (поле `build` в `run/state.json`), он
    перезапускается, чтобы применились исправления новой версии; процесс
    той же сборки с той же папкой просто получает новое окно браузера;
@@ -774,16 +829,21 @@ gRPC через `ax-server` (`--ax-server`, по умолчанию
 
 **`agctl dev serve`** (`devServe`, внутренняя команда):
 
-1. читает `dev.yaml`, открывает хранилище секретов, собирает окружение
+1. читает `config.yaml`, снимает серверное окружение (раздел 6.1),
+   разрешает профиль, открывает хранилище секретов, собирает окружение
    контейнера (`localmode.ContainerEnv`), кладёт ключ модели в окружение
    процесса как `AGCTL_LLM_API_KEY` (его получает сервер как провайдера;
    в контейнер ключ попадает только файлом, раздел 8.4);
 2. собирает `server.LocalMode` (имя владельца, папка, три токена, адрес
-   моста `http://host.docker.internal:<порт>`, белый список, журнал,
+   моста `http://host.docker.internal:<порт>`, белый список (профиль +
+   личные инструменты, `localmode.EffectiveBridgeTools`), журнал,
    окружение, обработчики лаунчера `devHooks`);
-3. вызывает общий `cli.Serve` с флагами `--home ~/.agctl-dev/data`,
-   `--addr`, `--mem-gb`, `--cpus`, `--chat-ttl-min 720`, `--dev-env=`
-   (пусто: окружение хоста не пробрасывается) и профилем;
+3. вызывает общий `cli.Serve` с флагами `--home <дом>/data`, `--addr`,
+   `--mem-gb`, `--cpus`, `--chat-ttl-min 720`, `--dev-env=` (пусто:
+   окружение хоста не пробрасывается), `--bin-dir <корень>/bin/guest`,
+   `--image` (явный выбор или образ профиля) и уже разрешённым профилем
+   (`ServeOptions.Profile`). Docker-бэкенд в локальном режиме создаётся с
+   `GuestServer: false`: образ собирается только с локальным guest;
 4. в `OnReady` на Linux поднимает слушатель моста на IP `docker0`, пишет
    `run/state.json` и удаляет его при завершении.
 
@@ -796,7 +856,7 @@ gRPC через `ax-server` (`--ax-server`, по умолчанию
 - сессии браузера хранятся в `data/local-sessions.json` (0600): sha256
   токенов и сроки действия; файл переживает перезапуск процесса;
 - создаётся мост (`localbridge.New`), рабочий корень владельца
-  переключается на его папку, текущий образ из `dev.yaml` записывается в
+  переключается на его папку, текущий образ из `config.yaml` записывается в
   настройку лаунчера.
 
 **Вход** (`handleLocalLogin`): проверка токена входа, выдача cookie-сессии,
@@ -806,7 +866,7 @@ gRPC через `ax-server` (`--ax-server`, по умолчанию
 **Лаунчер** (`web/src/LocalLauncher.tsx`, подробно — раздел 6.9):
 
 - «Рабочие места»: карточки мест (основное — папка проектов из
-  `dev.yaml`, дополнительные — свои папки и образ), мастер с деревом папок
+  `config.yaml`, дополнительные — свои папки и образ), мастер с деревом папок
   и системным диалогом, каталог образов профиля с отметкой «есть на
   машине», «Запустить», «Перезапустить», «Остановить», логи, Finder и
   VS Code, ход подготовки образа;
@@ -842,7 +902,7 @@ gRPC через `ax-server` (`--ax-server`, по умолчанию
    локальный; если ID образа не изменился — «уже актуально»;
 3. останавливает платформу, делает резервную копию домашнего каталога dsh
    (`backups/dsh-home-<время>-before-<образ>.tar.gz`, хранятся три
-   последних) и записывает в `dev.yaml` `previous_image` и `image`;
+   последних) и записывает в `config.yaml` `previous_image` и `image`;
 4. поднимает платформу с той же папкой;
 5. проверяет, что рабочее место перешло в состояние `running` (до 5 минут).
 
@@ -857,15 +917,23 @@ gRPC через `ax-server` (`--ax-server`, по умолчанию
 ### 6.5 Доступы и секреты разработчика
 
 Секреты хранит `internal/localmode/secrets.go` через
-`github.com/zalando/go-keyring` (сервис `agctl-dev`): Keychain на macOS,
+`github.com/zalando/go-keyring`: Keychain на macOS,
 Диспетчер учётных данных на Windows, Secret Service на Linux. При открытии
 выполняется пробная запись; если хранилища ОС нет (Linux без
 gnome-keyring, WSL, CI) или задано `AGCTL_DEV_SECRETS=file`, используется
 файл `secrets.enc`, зашифрованный AES-GCM. Несекретные значения
 (`GITLAB_URL`, `JIRA_URL`, `JIRA_USER` и любые с `--plain`) хранятся в
-`dev.yaml`.
+`config.yaml`.
 
-Контейнер получает все `env` из `dev.yaml` и все секреты, кроме ключа
+У каждого дома свой сервис хранилища ОС — `agctl:<id дома>`
+(`localmode.KeyringService`), поэтому ключи разных организаций не
+смешиваются. Прежний общий сервис `agctl-dev` только читается: значение,
+которого нет в сервисе дома, берётся оттуда; запись и удаление идут в
+сервис дома (удалённое в доме значение помечается, чтобы не всплыть из
+общего сервиса). `agctl dev migrate --apply` копирует значения в сервис
+дома.
+
+Контейнер получает все `env` из `config.yaml` и все секреты, кроме ключа
 модели, плюс производные имена для штатных инструментов:
 
 | Исходная переменная | Производные |
@@ -917,9 +985,12 @@ gnome-keyring, WSL, CI) или задано `AGCTL_DEV_SECRETS=file`, испол
   stdio. Адрес и токен берутся из окружения или из `bridge.json`. Скилл
   `agctl-host-bridge` описывает агенту доступные инструменты.
 
-Белый список по умолчанию даёт профиль организации
-(`local/bridge-tools.yaml`); `dev init` копирует его в `dev.yaml`, дальше
-разработчик правит свой файл.
+Белый список складывается на каждом старте из двух источников
+(`localmode.MergeBridgeTools`): инструменты организации из
+`local/bridge-tools.yaml` профиля (в дом не копируются — обновление профиля
+действует со следующего `dev up`) и личные из `bridge.tools` в
+`config.yaml` дома; личный инструмент с тем же именем заменяет профильный.
+`agctl dev bridge list` показывает итог с источником каждого инструмента.
 
 ### 6.7 Чем локальный режим отличается от серверного
 
@@ -936,7 +1007,7 @@ autosave. Остальные отличия — проверки
 | `project_files.go`, `/api/me` | файлы проекта не отдаются (404): они и так на машине; консоль «Возможности» прячет блок «Файлы» |
 | `launcher.go`, `slotLimit` | лимит слотов по умолчанию 8 (на сервере 3) — все слоты владельца стали рабочими местами |
 | `chat.go` | в страницы SPA встраивается `window.__AGCTL_LOCAL__` (экран «выполните `agctl dev open`» вместо формы логина) |
-| `local_ui.go`, `localHooks` | обработчики лаунчера из `cmd/agctl` (образ, доступы, `dev.yaml`) |
+| `local_ui.go`, `localHooks` | обработчики лаунчера из `cmd/agctl` (образ, доступы, `config.yaml`) |
 | `server.go` | регистрация локальных маршрутов |
 
 Вне `internal/server` отличия задаются данными: `ChatSpec.Local` убирает
@@ -973,7 +1044,7 @@ autosave. Остальные отличия — проверки
 хоста — таблица `places` (миграция `014`, ключ `(user_id, id)`, слот
 уникален у пользователя, без внешнего ключа на `users`).
 
-**Основное** место (`main` в API) — слот 0: папка и образ из `dev.yaml`,
+**Основное** место (`main` в API) — слот 0: папка и образ из `config.yaml`,
 адрес `/chat/`, имена контейнера и хранилища прежние. **Дополнительные**
 места занимают младший свободный слот 1…N−1. При удалении места слот
 освобождается, а его данные (`data/chats/u1s<N>`: dsh-home с сессиями,
@@ -986,7 +1057,7 @@ autosave. Остальные отличия — проверки
 | Ключ рантайма (`chatKey`) | `{owner, 0}` | `{owner, N}` |
 | Контейнер | `agctl-chat-<хеш>-u1` | `agctl-chat-<хеш>-u1-s<N>` |
 | dsh-home | `data/chats/u1/dsh-home` | `data/chats/u1s<N>/dsh-home` |
-| Образ | `dev.yaml` (копия в `settings`, `chat-image-u1`) | `settings`, `chat-image-u1-s<N>` |
+| Образ | `config.yaml` (копия в `settings`, `chat-image-u1`) | `settings`, `chat-image-u1-s<N>` |
 | Адрес чата | `/chat/` | `/p/<id>/` (тот же шлюз `chatProxyAt` с другим префиксом; ресурсы dsh относительные, поэтому работают под любым префиксом) |
 | Папки | одна → `/workspace` | одна → `/workspace`; несколько → `/workspace` — служебный каталог agctl, каждая папка → `/workspace/<имя>` (точки монтирования в папках пользователя не создаются) |
 
@@ -1000,7 +1071,7 @@ API лаунчера (`internal/server/local_places.go`, только владе
 |---|---|
 | `GET /api/local/ui/places` | все места: состояние, образ, папки и куда они видны в контейнере, ревизия, адрес чата, dsh-home, ход подготовки |
 | `POST /api/local/ui/places` | создать: имя, id (иначе из имени), образ, папки (проверка как у папки проектов: существует, не `$HOME` целиком, не корень) |
-| `PUT /api/local/ui/places/{id}` | изменить с ревизией (тело `revision` или `If-Match`); устаревшая — 409. У основного места меняются папка и образ в `dev.yaml` |
+| `PUT /api/local/ui/places/{id}` | изменить с ревизией (тело `revision` или `If-Match`); устаревшая — 409. У основного места меняются папка и образ в `config.yaml` |
 | `DELETE /api/local/ui/places/{id}` | остановить, удалить запись и образ слота; данные слота — в архив `u1s<N>.deleted-<время>` (путь в ответе `archived`) |
 | `POST /api/local/ui/places/{id}/start\|restart\|stop`, `GET …/logs` | управление контейнером места; логи без токенов загрузки dsh |
 | `GET /api/local/ui/fs?path=` | подкаталоги внутри домашнего каталога (дерево выбора папок), признак git, можно ли выбрать |
@@ -1092,7 +1163,7 @@ API лаунчера (`internal/server/local_places.go`, только владе
 Каталог `repos/` (bare-репозитории рабочих мест версии до 3) код больше не
 создаёт и не читает; на старых установках его можно удалить вручную.
 
-Локальный дом `~/.agctl-dev` описан в разделе 6.1.
+Корень `~/.agctl` и дома локального режима `homes/<id>` описаны в разделе 6.1.
 
 ### 8.3 Где живут секреты
 
@@ -1145,8 +1216,9 @@ git-хуками и npm-скриптами. dsh читает ключ из `.cre
 `make img_push REGISTRY=…`. На машине без исходников локальный режим
 сначала пробует `docker pull`, а если реестр образа не знает, собирает
 недостающие ступени (`dockerrt.BuildDevImage`); для этого нужен
-`agctl-guest-linux-<arch>` рядом с бинарём или в `../lib/agctl`
-(`findLinuxBinary`). Сервер тем же кодом (`dockerrt.EnsureImage`,
+`agctl-guest-linux-<arch>` в `<корень>/bin/guest` (или рядом с бинарём;
+`findLinuxBinary`, имя одно — прежние `agctl-linux-<arch>` и
+`agctl-guest_linux_<arch>` не подхватываются). Сервер тем же кодом (`dockerrt.EnsureImage`,
 `GuestServer`) собирает базовый образ и надстройку профиля, но ищет
 серверный бинарь `agctl-guest-server-linux-<arch>` — локальный он не
 подставит, чтобы не получить образ без `ax-runner`/`init-chat-home`
@@ -1174,7 +1246,7 @@ agctl/
 │   │   ├── dockerrt/     Docker                                                   ← сервер и локальный
 │   │   ├── k8srt/        Kubernetes                                               ← кластер
 │   │   └── axrt/         Google AX / Agent Substrate                              ← кластер
-│   ├── localmode/        dev.yaml, state.json, секреты ОС, резервные копии        ← локальный
+│   ├── localmode/        раскладка путей, config.yaml, профиль, state.json, секреты ОС, копии        ← локальный
 │   ├── localbridge/      мост к хосту                                             ← локальный
 │   ├── provision/        домашний каталог dsh, проекты, каталог, MCP              ← общее
 │   ├── store/            SQLite (или PostgreSQL для HA) и миграции                ← общее
@@ -1186,7 +1258,6 @@ agctl/
 │   └── backlog/          карточки задач (agctl backlog)                           ← инструмент
 ├── web/                  SPA (React) → web/dist → go:embed
 ├── dsh-plugins/          плагины dsh (копии в internal/assets/dsh-skel)
-├── profiles/             профили организаций (локальные клоны, вне ядра)
 ├── deploy/               k8s (kustomize), ax, serve.Dockerfile
 ├── system/map/           карты archify, встраиваются в /map
 ├── bin/                  make-модули, e2e-скрипты, установщики
@@ -1257,7 +1328,7 @@ agctl/
   `LiteLLMQuotas`, `LiteLLMAdminURL`, `LiteLLMAdminKey`. Так было и до
   разделения бинарей. В итоге в серверном режиме эти механизмы выключены
   без возможности включить их без изменения кода. (Egress-allowlist
-  подключён к `serve` и `dev.yaml` 2026-11-22.)
+  подключён к `serve` и `config.yaml` 2026-11-22.)
 - **Флаги, потерянные при переносе `serve`.** HA control plane (лидер
   фоновых циклов через Lease, PostgreSQL-бэкенд хранилища) и лимит слотов
   developer'а реализованы и покрыты тестами, но флаги `--ha-leader-lease`,
@@ -1310,7 +1381,7 @@ agctl/
 
 | Цель `make` | Что делает |
 |---|---|
-| `install` / `uninstall` | SPA, `agctl` и `agctl-server` в `~/.local/bin`, оба guest (`agctl-guest-linux-<arch>`, `agctl-guest-server-linux-<arch>`) в `~/.local/lib/agctl`, автодополнение fish |
+| `install` / `uninstall` | SPA, `agctl` и `agctl-server` в `~/.agctl/bin`, оба guest (`agctl-guest-linux-<arch>`, `agctl-guest-server-linux-<arch>`) в `~/.agctl/bin/guest`, автодополнение fish |
 | `go_build`, `go_linux`, `go_linux_server`, `go_test[_all]`, `go_vet[_all]`, `go_fmt` | бинари `dist/agctl` и `dist/agctl-server`, `dist/agctl-guest-linux-<arch>` (локальный) и `dist/agctl-guest-server-linux-<arch>` (серверный), тесты и vet в обоих вариантах guest |
 | `web_build` | Vite → `web/dist` (хранится в репозитории) |
 | `img_build [PROFILE=…]`, `img_build_server`, `img_profile`, `img_push REGISTRY=…` | образы рабочего места (локальные + серверные) и надстройки профиля |
@@ -1319,7 +1390,7 @@ agctl/
 | `up`, `corp`, `demo`, `stop`, `down`, `logs`, `status` | серверный режим на этой машине |
 | `k8s_render`, `k8s_apply`, `k8s_profile`, `k8s_secret`, `k8s_status`, `k8s_e2e_kind` | кластер |
 | `profile-fetch`, `profiles` | профили организаций |
-| `local_up`, `local_init`, `local_img`, `local_list`, `local_down`, `local_status`, `local_logs`, `local_open`, `local_doctor` | локальный режим из исходников, по дому `~/.agctl-dev[-<id>]` и порту на профиль (`bin/local.sh`) |
+| `local_up`, `local_init`, `local_img`, `local_list`, `local_down`, `local_status`, `local_paths`, `local_logs`, `local_open`, `local_doctor` | локальный режим из исходников, по дому `~/.agctl/homes/<id>` и порту на профиль (`bin/local.sh`) |
 | `map`, `map_build`, `map_check` | карты системы |
 | `hooks` | pre-commit: gofmt, vet, проверка синтаксиса JS, синхронизация плагинов, запрет `.env` |
 
@@ -1376,8 +1447,8 @@ v2 локального режима поверх слотов (нескольк
   организации;
 - Jira-MCP и `jira-cli` на реальной Jira организации;
 - первый выпуск релиза по тегу `v*`;
-- снятие совместимости со старым именем `agctl-linux-<arch>` после выхода
-  нового комплекта организации (карточка `profile-repos-agctl-guest`);
+- перенос домов `agctl dev migrate --apply` на машине с настоящими
+  данными (проверен тестами на временных каталогах);
 - вернуть в `serve` потерянные флаги `--ha-leader-lease`, `--store-dsn`,
   `--launcher-slots-max` (раздел 10.4);
 - подключение пула prewarm и квот LiteLLM к флагам `serve` (раздел 10.4);
