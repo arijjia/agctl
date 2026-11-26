@@ -460,9 +460,19 @@ func devPrepareImage(ctx context.Context, p *profile.Data, target, flavor string
 	pctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
 	logf(fmt.Sprintf("… образа %s нет локально — пробую docker pull", target))
-	if err := dockerrt.PullImage(pctx, target); err == nil {
+	pullErr := dockerrt.PullImage(pctx, target)
+	if pullErr == nil {
 		logf(fmt.Sprintf("✓ образ %s скачан", target))
 		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Образ реестра собирается на месте, только когда реестр сказал «нет
+	// такого» (или пакет закрыт); сбой связи — ошибка: иначе 10–20 минут
+	// сборки, и образ под именем реестра уже не скачается.
+	if dockerrt.LocalImageName(target) != target && !dockerrt.PullMissing(pullErr) {
+		return fmt.Errorf("образ %s не скачан: %v — похоже на сбой связи с реестром (сеть, VPN, прокси, docker login); повторите, когда связь будет, или выберите локальный образ (agctl dev images)", target, pullErr)
 	}
 	b := dockerrt.DevBuild{
 		Target: target, Flavor: flavor, BinDir: localmode.GuestDir(),
