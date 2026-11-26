@@ -106,6 +106,9 @@ func (s *Server) providerViews() []providerView {
 }
 
 func (s *Server) handleProvidersList(w http.ResponseWriter, r *http.Request, id identity) {
+	// Провайдер или ключ, заданный в настройках харнесса, виден в лаунчере
+	// при открытии вкладки — без перезапуска места.
+	s.pullHarnessLLMAll()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"providers": s.providerViews(),
 		"canAdd":    s.localProviderHooks() != nil,
@@ -194,6 +197,7 @@ func (s *Server) handleProviderDelete(w http.ResponseWriter, r *http.Request, id
 // рабочие места получат его после перезапуска.
 func (s *Server) afterLocalProvidersChange() {
 	s.syncLocalProviders()
+	s.pushLLMToPlaces()
 	s.markLocalPlacesPending()
 	s.local.events.publish("secrets")
 	s.local.events.publish("places")

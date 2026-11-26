@@ -187,6 +187,14 @@ func (s *Server) afterLocalSecretChange(name, value string) {
 	} else {
 		s.setDefaultLLMExtraKey(name, value)
 	}
+	if localmode.IsModelKeyEnv(name) {
+		// Ключ модели харнесс подхватывает сразу: .credentials.yaml он
+		// перечитывает сам, перезапуск места не нужен.
+		s.syncLocalProviders()
+		s.pushLLMToPlaces()
+		s.local.events.publish("secrets")
+		return
+	}
 	// Доступы общие для всех рабочих мест: каждое работающее — на старых.
 	s.markLocalPlacesPending()
 	s.local.events.publish("secrets")
