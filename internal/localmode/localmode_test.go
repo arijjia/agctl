@@ -56,17 +56,18 @@ func TestContainerEnvAliasesAndNoLLMKey(t *testing.T) {
 	s, _ := fileStore(t)
 	_ = s.Set("GITLAB_TOKEN", "gl-tok")
 	_ = s.Set("JIRA_API_TOKEN", "jira-tok")
+	_ = s.Set("CONFLUENCE_TOKEN", "conf-tok")
 	_ = s.Set("AGCTL_LLM_API_KEY", "llm-key")
 	cfg := &Config{
 		Env:     map[string]string{"GITLAB_URL": "https://gitlab.example.org/", "JIRA_URL": "https://jira.example.org", "JIRA_USER": "ivanov"},
-		Secrets: []string{"GITLAB_TOKEN", "JIRA_API_TOKEN", "AGCTL_LLM_API_KEY", "TAVILY_API_KEY"},
+		Secrets: []string{"GITLAB_TOKEN", "JIRA_API_TOKEN", "CONFLUENCE_TOKEN", "AGCTL_LLM_API_KEY", "TAVILY_API_KEY"},
 	}
 	env, missing := ContainerEnv(cfg, s)
 	got := strings.Join(env, "\n")
 	for _, want := range []string{
 		"GITLAB_TOKEN=gl-tok", "GITLAB_HOST=gitlab.example.org", "GITLAB_API_URL=https://gitlab.example.org/api/v4",
 		"GITLAB_PERSONAL_ACCESS_TOKEN=gl-tok", "JIRA_API_TOKEN=jira-tok", "JIRA_PERSONAL_TOKEN=jira-tok",
-		"JIRA_USERNAME=ivanov",
+		"JIRA_USERNAME=ivanov", "CONFLUENCE_PERSONAL_TOKEN=conf-tok",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("нет %s в\n%s", want, got)
