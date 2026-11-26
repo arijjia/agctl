@@ -329,6 +329,8 @@ func ContainerEnv(cfg *Config, store *Store) ([]string, []string) {
 	// jira-cli: JIRA_API_TOKEN; MCP Jira (mcp-atlassian): JIRA_URL + JIRA_PERSONAL_TOKEN
 	alias("JIRA_PERSONAL_TOKEN", "JIRA_API_TOKEN", nil)
 	alias("JIRA_USERNAME", "JIRA_USER", nil)
+	// MCP Confluence (mcp-atlassian): CONFLUENCE_URL + CONFLUENCE_PERSONAL_TOKEN
+	alias("CONFLUENCE_PERSONAL_TOKEN", "CONFLUENCE_TOKEN", nil)
 	names := make([]string, 0, len(vals))
 	for k := range vals {
 		names = append(names, k)
