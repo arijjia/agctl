@@ -63,6 +63,7 @@ func (p CatalogPackage) McpSpec() (McpServerSpec, bool, error) {
 		ID: p.ID, Title: p.Title, Description: p.Description,
 		ServerName: p.Mcp.ServerName, Command: p.Mcp.Command,
 		Args: append([]string(nil), p.Mcp.Args...), PassEnv: append([]string(nil), p.Mcp.Env...),
+		NeedEnv: append([]string(nil), p.Mcp.Env...),
 	}, true, nil
 }
 

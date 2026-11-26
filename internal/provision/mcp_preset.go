@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -32,7 +33,37 @@ type McpServerSpec struct {
 	PassEnv []string
 	// LocalOnly — только в локальном режиме (agctl dev): мост к хосту.
 	LocalOnly bool
+	// NeedEnv — доступы, без которых сервер не запустится: каждое значение
+	// должно быть задано; «A|B» — достаточно одного из вариантов. Без них
+	// строка пресета отключается (MissingEnv) — иначе dsh ждал бы сервер
+	// при старте и рабочее место не поднималось бы.
+	NeedEnv []string
 }
+
+// MissingEnv — каких доступов не хватает серверу (по NeedEnv и SecretEnv).
+func (s McpServerSpec) MissingEnv(env map[string]string) []string {
+	var out []string
+	need := append([]string(nil), s.NeedEnv...)
+	if s.SecretEnv != "" {
+		need = append(need, s.SecretEnv)
+	}
+	for _, alt := range need {
+		ok := false
+		for _, name := range strings.Split(alt, "|") {
+			ok = ok || strings.TrimSpace(env[strings.TrimSpace(name)]) != ""
+		}
+		if !ok {
+			out = append(out, alt)
+		}
+	}
+	return out
+}
+
+// mcpStartupTimeoutMs — предел на запуск MCP-сервера и первичную загрузку
+// его инструментов. dsh активирует пресеты при старте и без предела ждёт
+// зависший сервер бесконечно; по истечении сервер пропускается с ошибкой в
+// логе, остальное рабочее место работает.
+const mcpStartupTimeoutMs = 45000
 
 // PlatformMcpServers — каталог MCP-серверов платформы. Список согласован с
 // прогревом npx-кэша образа agctl-dsh (Dockerfile, слой mcp-warm): новый
@@ -42,14 +73,17 @@ var PlatformMcpServers = []McpServerSpec{
 	{ID: "context7", Title: "Context7", Description: "Документация библиотек, без ключа", ServerName: "context7", Args: []string{"@upstash/context7-mcp"}},
 	{ID: "tavily", Title: "Tavily", Description: "Веб-поиск, нужен ключ TAVILY_API_KEY", ServerName: "tavily", Args: []string{"tavily-mcp"}, SecretEnv: "TAVILY_API_KEY"},
 	{ID: "gitlab", Title: "GitLab", Description: "Задачи, MR, пайплайны, файлы репозиториев; доступ — личный токен GitLab разработчика", ServerName: "gitlab",
-		Args: []string{"@zereight/mcp-gitlab@2.3.27"}, PassEnv: []string{"GITLAB_PERSONAL_ACCESS_TOKEN", "GITLAB_API_URL"}},
+		Args: []string{"@zereight/mcp-gitlab@2.3.27"}, PassEnv: []string{"GITLAB_PERSONAL_ACCESS_TOKEN", "GITLAB_API_URL"},
+		NeedEnv: []string{"GITLAB_PERSONAL_ACCESS_TOKEN"}},
 	{ID: "jira", Title: "Jira", Description: "Задачи и комментарии Jira (Server/DC — личный токен, Cloud — логин+API-токен); ставится при первом запуске через uvx", ServerName: "jira",
 		Command: "uvx", Args: []string{"mcp-atlassian==0.24.4"},
-		PassEnv: []string{"JIRA_URL", "JIRA_PERSONAL_TOKEN", "JIRA_USERNAME", "JIRA_API_TOKEN", "UV_INDEX_URL"}},
+		PassEnv: []string{"JIRA_URL", "JIRA_PERSONAL_TOKEN", "JIRA_USERNAME", "JIRA_API_TOKEN", "UV_INDEX_URL"},
+		NeedEnv: []string{"JIRA_URL", "JIRA_PERSONAL_TOKEN|JIRA_API_TOKEN"}},
 	{ID: "playwright", Title: "Playwright", Description: "Браузер для агента: открыть страницу, кликнуть, скриншот, e2e; нужен образ с браузерами (вкус web)", ServerName: "playwright",
 		Args: []string{"@playwright/mcp@0.0.85", "--headless", "--isolated", "--no-sandbox", "--browser", "chromium"}},
 	{ID: "host-bridge", Title: "Мост к хосту", Description: "Разрешённые команды на компьютере разработчика (белый список agctl dev)", ServerName: "host-bridge",
-		Command: "agctl", Args: []string{"bridge", "mcp"}, PassEnv: []string{"AGCTL_BRIDGE_URL", "AGCTL_BRIDGE_TOKEN"}, LocalOnly: true},
+		Command: "agctl", Args: []string{"bridge", "mcp"}, PassEnv: []string{"AGCTL_BRIDGE_URL", "AGCTL_BRIDGE_TOKEN"}, LocalOnly: true,
+		NeedEnv: []string{"AGCTL_BRIDGE_URL", "AGCTL_BRIDGE_TOKEN"}},
 }
 
 // PlatformMcpServer — выбор записи каталога по id; ok=false для чужого id.
@@ -127,17 +161,23 @@ func EnsureAgentPreset(dshHome, presetID, name, description string, specs []McpS
 		if s.Command != "" {
 			command, args = s.Command, append([]string(nil), s.Args...)
 		}
-		rows = append(rows, mcpCordisRow{
+		row := mcpCordisRow{
 			ID:   "mcp-" + s.ServerName,
 			Name: "@deepseek-ai/dsh-mcp-client",
 			Config: map[string]any{
-				"serverName": s.ServerName,
-				"transport":  "stdio",
-				"command":    command,
-				"args":       args,
-				"env":        env,
+				"serverName":       s.ServerName,
+				"transport":        "stdio",
+				"command":          command,
+				"args":             args,
+				"env":              env,
+				"startupTimeoutMs": mcpStartupTimeoutMs,
 			},
-		})
+		}
+		if missing := s.MissingEnv(secretEnv); len(missing) > 0 {
+			off := true
+			row.Enabled = &off // поле yaml:"disabled": сервер без доступов не запускается
+		}
+		rows = append(rows, row)
 	}
 	composition, err := yaml.Marshal(rows)
 	if err != nil {

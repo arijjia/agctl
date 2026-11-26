@@ -158,7 +158,11 @@ export default function PresetsView({ note, refreshKey }: { note: (m: string, er
                 {p.mcp.length ? (
                   <span className="chips">
                     {p.mcp.map((id) => (
-                      <span key={id} className="chip" title={cat.mcp.find((m) => m.id === id)?.description}>
+                      <span
+                        key={id}
+                        className={p.missing?.[id] ? "chip chip-warn" : "chip"}
+                        title={p.missing?.[id] ? `Отключён: не задано ${p.missing[id].join(", ")}` : cat.mcp.find((m) => m.id === id)?.description}
+                      >
                         {titleOf(cat.mcp, id)}
                       </span>
                     ))}
@@ -181,6 +185,15 @@ export default function PresetsView({ note, refreshKey }: { note: (m: string, er
                   <span className="muted small">нет</span>
                 )}
               </div>
+              {p.missing && Object.keys(p.missing).length > 0 && (
+                <div className="notice small">
+                  Отключены до заполнения доступов во вкладке «Доступ»:{" "}
+                  {Object.entries(p.missing)
+                    .map(([id, names]) => `${titleOf(cat.mcp, id)} — ${names.map((n) => n.replace("|", " или ")).join(", ")}`)
+                    .join("; ")}
+                  . Остальные инструменты пресета работают.
+                </div>
+              )}
               <div className="preset-line">
                 <span className="muted small">Места:</span>
                 {p.places.length ? <span>{p.places.map(placeName).join(", ")}</span> : <span className="muted small">не применён</span>}
