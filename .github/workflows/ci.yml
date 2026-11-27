@@ -63,12 +63,14 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.27"
-      # Заметки к релизу — docs/releases/<тег>.md, если есть.
+      # Заметки к релизу — docs/releases/<тег>.md, обязательно: без них
+      # goreleaser собрал бы список из всей истории коммитов.
       - name: заметки к релизу
         id: notes
         run: |
           f="docs/releases/${GITHUB_REF_NAME}.md"
-          if [ -f "$f" ]; then echo "args=--release-notes $f" >> "$GITHUB_OUTPUT"; fi
+          if [ ! -f "$f" ]; then echo "::error::нет $f — заметки к релизу пишутся руками"; exit 1; fi
+          echo "args=--release-notes $f" >> "$GITHUB_OUTPUT"
       - uses: goreleaser/goreleaser-action@v7
         with:
           args: release --clean ${{ steps.notes.outputs.args }}
