@@ -62,3 +62,16 @@ func TestDevBuildStages(t *testing.T) {
 		t.Fatalf("минимальный: %+v %v", min, err)
 	}
 }
+
+// Переменные набора сертификатов: Node — всегда, остальные — для полного.
+func TestCAEnv(t *testing.T) {
+	if got := strings.Join(CAEnv(false), " "); got != "NODE_EXTRA_CA_CERTS="+ContainerCAFile {
+		t.Fatalf("неполный: %s", got)
+	}
+	full := strings.Join(CAEnv(true), " ")
+	for _, k := range []string{"SSL_CERT_FILE=", "REQUESTS_CA_BUNDLE=", "GIT_SSL_CAINFO=", "NODE_EXTRA_CA_CERTS="} {
+		if !strings.Contains(full, k+ContainerCAFile) {
+			t.Fatalf("полный без %s: %s", k, full)
+		}
+	}
+}

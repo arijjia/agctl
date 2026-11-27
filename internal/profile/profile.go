@@ -127,6 +127,14 @@ type Data struct {
 		Allow []string `yaml:"allow"`
 	} `yaml:"egress"`
 
+	// TLS — доверие рабочего места к серверам организации: CAHost — брать
+	// доверенные сертификаты машины разработчика (там уже стоят сертификаты
+	// организации), CAFiles — корневые сертификаты PEM внутри профиля.
+	TLS struct {
+		CAHost  bool     `yaml:"ca_host"`
+		CAFiles []string `yaml:"ca_files"`
+	} `yaml:"tls"`
+
 	Help struct {
 		CabinetTitle string `yaml:"cabinet_title"`
 	} `yaml:"help"`
@@ -460,6 +468,11 @@ func (d *Data) finalize(source string) error {
 	}
 	if p := d.Images.Dockerfile; p != "" && (strings.HasPrefix(p, "/") || strings.Contains(p, "..")) {
 		return fmt.Errorf("images.dockerfile: путь внутри профиля, без .. и абсолютных путей: %q", p)
+	}
+	for _, p := range d.TLS.CAFiles {
+		if p == "" || strings.HasPrefix(p, "/") || strings.Contains(p, "..") {
+			return fmt.Errorf("tls.ca_files: путь внутри профиля, без .. и абсолютных путей: %q", p)
+		}
 	}
 	for k, v := range d.Env {
 		if !envNameRe.MatchString(k) {

@@ -284,6 +284,16 @@ type localExtras struct {
 	DshHome string          // явная папка dsh-home места ("" — в доме agctl)
 	// HostPaths — «пути как на хосте» (config.yaml host_paths, рантайм docker).
 	HostPaths bool
+	// CAFile, CAFull — набор корневых сертификатов для контейнера (certs.go
+	// локального режима): путь на хосте и полный ли он.
+	CAFile string
+	CAFull bool
+}
+
+// LocalCAHooks — набор сертификатов организации для рабочих мест: хост
+// собирает его на каждом старте места ("" — не настроен).
+type LocalCAHooks interface {
+	CABundle() (path string, full bool, err error)
 }
 
 // localChatExtras дополняет спецификацию рабочего места владельца в локальном
@@ -306,6 +316,13 @@ func (s *Server) localChatExtras(key chatKey) (localExtras, bool, error) {
 	}
 	ex.DshHome = s.customDshHome(key)
 	ex.HostPaths = s.localHostPaths()
+	if h, ok := s.localHooks().(LocalCAHooks); ok {
+		path, full, err := h.CABundle()
+		if err != nil {
+			log.Printf("[local] сертификаты для рабочего места: %v — место стартует без них", err)
+		}
+		ex.CAFile, ex.CAFull = path, full
+	}
 	var env []string
 	if h := s.cfg.Local.Hooks; h != nil {
 		env = append(env, h.ContainerEnv()...)

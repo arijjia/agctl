@@ -69,6 +69,12 @@ type Config struct {
 	// EnvImport — agctl dev up подхватывает пустые доступы из окружения хоста
 	// (hostenv.go); nil — включено.
 	EnvImport *bool `yaml:"env_import,omitempty"`
+	// CAHost — класть в рабочее место доверенные сертификаты этой машины
+	// (certs.go); nil — как в профиле (tls.ca_host).
+	CAHost *bool `yaml:"ca_host,omitempty"`
+	// CAFiles — свои сертификаты PEM (путь от <дом>/ca или абсолютный):
+	// agctl dev certs fetch|add.
+	CAFiles []string `yaml:"ca_files,omitempty"`
 }
 
 // EnvImportOn — подхватывать ли доступы из окружения хоста.
@@ -108,6 +114,9 @@ func Load(home string) (*Config, error) {
 func (c *Config) defaults() {
 	if len(c.Providers) == 0 {
 		c.Providers = nil // «providers: []» в файле и отсутствие поля — одно и то же
+	}
+	if len(c.CAFiles) == 0 {
+		c.CAFiles = nil
 	}
 	if c.Addr == "" {
 		c.Addr = DefaultAddr
@@ -208,6 +217,12 @@ var configDocs = []fieldDoc{
 	{"secrets", "ИМЕНА секретов; значения — в хранилище ОС (сервис agctl:<id дома>), в этом файле их нет",
 		"лаунчер («Доступ»), agctl dev secrets set ИМЯ",
 		"вы через лаунчер или CLI"},
+	{"ca_host", "true — рабочее место доверяет тем же сертификатам, что эта машина (сертификаты организации, установленные администраторами); пусто — как в профиле (tls.ca_host)",
+		"agctl dev certs host on|off",
+		"вы через CLI; применяется при перезапуске места"},
+	{"ca_files", "свои сертификаты PEM для рабочего места (путь от каталога ca/ дома или абсолютный) — например корень шлюза моделей, полученный agctl dev certs fetch",
+		"agctl dev certs fetch <адрес> | add <файл>",
+		"вы через CLI; применяется при перезапуске места"},
 	{"env_import", "true — agctl dev up берёт пустые доступы из переменных окружения хоста (токены — в хранилище, адреса и логины — сюда); заданное в agctl не перезаписывается, удалённое берётся снова; какие имена — agctl dev secrets list",
 		"по умолчанию true",
 		"вы (правка файла)"},
@@ -242,12 +257,17 @@ func (c *Config) values() map[string]any {
 	if allow == nil {
 		allow = []string{}
 	}
+	caFiles := c.CAFiles
+	if caFiles == nil {
+		caFiles = []string{}
+	}
 	return map[string]any{
 		"profile": c.Profile, "profile_dir": c.ProfileDir,
 		"image": c.Image, "flavor": c.Flavor, "previous_image": c.PreviousImage,
 		"workdir": c.WorkDir, "dsh_home": c.DshHome, "host_paths": c.HostPaths, "addr": c.Addr, "mem_gb": c.MemGB, "cpus": c.CPUs,
 		"egress_allowlist": c.EgressAllowlist, "egress_allow": allow,
 		"env": env, "secrets": secrets, "env_import": c.EnvImportOn(),
+		"ca_host": c.CAHost, "ca_files": caFiles,
 		"runtime": c.Runtime, "providers": providers,
 		"bridge": map[string]any{"tools": tools},
 	}

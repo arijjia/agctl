@@ -110,6 +110,8 @@ complete -c agctl -n '__agctl_in dev paths' -l json -d 'машинный выв�
 complete -c agctl -n '__agctl_at dev' -x -a images -d 'образы каталога: версия dsh, сборка guest, устаревшие'
 complete -c agctl -n '__agctl_in dev images' -l json -d 'машинный вывод'
 complete -c agctl -n '__agctl_at dev' -x -a llm-check -d 'модели: ответ и вызов инструментов'
+complete -c agctl -n '__agctl_at dev' -x -a certs -d 'сертификаты организации для рабочих мест'
+complete -c agctl -n '__agctl_in dev certs' -x -a 'list host fetch add rm check'
 complete -c agctl -n '__agctl_in dev llm-check' -x -l model -d 'одна модель'
 complete -c agctl -n '__agctl_in dev llm-check' -x -l provider -d 'один провайдер'
 complete -c agctl -n '__agctl_in dev llm-check' -l insecure -d 'без проверки TLS (диагностика)'
