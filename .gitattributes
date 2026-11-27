@@ -1,0 +1,2 @@
+# fish читает комплишены только с LF; на Windows checkout не должен менять переводы строк
+completions/*.fish text eol=lf

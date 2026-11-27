@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -13,7 +14,8 @@ func TestCompletionFileInRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(raw) != fishCompletionScript {
+	// На Windows git может отдать файл с CRLF — сравниваем содержимое.
+	if strings.ReplaceAll(string(raw), "\r\n", "\n") != fishCompletionScript {
 		t.Fatal("completions/agctl.fish устарел — make completions")
 	}
 }
