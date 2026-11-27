@@ -43,7 +43,7 @@ const devUsage = `agctl dev — локальный режим: платформ�
 
   init      настроить дом: профиль и папка проектов (образ и доступы — в лаунчере; --cli — в терминале)
   up [DIR]  поднять платформу и рабочее место (DIR → /workspace), открыть браузер
-            --runtime docker|sbx — рантайм рабочего места (init и up; запоминается в dev.yaml)
+            --runtime docker|sbx — рантайм рабочего места (init и up; запоминается в config.yaml дома)
   down      остановить (данные и сессии сохраняются)
   status    состояние: адрес, образ, папка, рабочее место, мост
   paths     где что лежит: корень, бинари, профиль, дом и его файлы, порты, контейнеры, маунты, секреты [--json]
@@ -656,7 +656,7 @@ func devUpFlags(handling flag.ErrorHandling) (fs *flag.FlagSet, noOpen, foregrou
 	fs = flag.NewFlagSet("dev up", handling)
 	noOpen = fs.Bool("no-open", false, "не открывать браузер")
 	foreground = fs.Bool("foreground", false, "в текущем терминале (Ctrl+C — остановка)")
-	runtimeFlag = fs.String("runtime", "", "рантайм рабочего места: docker | sbx (запоминается в dev.yaml)")
+	runtimeFlag = fs.String("runtime", "", "рантайм рабочего места: docker | sbx (запоминается в config.yaml дома)")
 	return fs, noOpen, foreground, runtimeFlag
 }
 

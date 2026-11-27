@@ -2,7 +2,7 @@ package main
 
 // dev_runtime.go — рантайм рабочего места локального режима: docker
 // (контейнер, по умолчанию) или sbx (Docker Sandboxes, microVM). Выбор лежит
-// в dev.yaml (runtime) и перечитывается на каждый старт рабочего места:
+// в config.yaml дома (runtime) и перечитывается на каждый старт рабочего места:
 // смена в лаунчере или флагом --runtime действует со следующего перезапуска
 // места, без перезапуска платформы.
 
@@ -22,7 +22,7 @@ import (
 	"github.com/arijjia/agctl/internal/store"
 )
 
-// devRuntimeKind — рантайм из dev.yaml (нет файла или мусор — docker).
+// devRuntimeKind — рантайм из config.yaml дома (нет файла или мусор — docker).
 func devRuntimeKind(home string) string {
 	cfg, err := localmode.Load(home)
 	if err != nil {

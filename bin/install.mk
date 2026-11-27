@@ -20,6 +20,10 @@ FISH_COMPLETIONS ?= $(HOME)/.config/fish/completions
 LOCAL_BIN ?= $(HOME)/.local/bin
 relpath = $(shell python3 -c 'import os,sys;print(os.path.relpath(sys.argv[1],sys.argv[2]))' "$(1)" "$(2)")
 realpath_py = python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))'
+# Голый export в Makefile отдаёт рецептам все переменные; функцию relpath
+# make тогда раскрывает без аргументов на каждом рецепте — python падал с
+# «no path specified». Функции в окружение не нужны.
+unexport relpath realpath_py
 
 .PHONY: install uninstall completions link
 
