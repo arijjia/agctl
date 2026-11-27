@@ -47,7 +47,7 @@ export function SecretRow({ e, onSaved }: { e: LocalEntry; onSaved: (m: string, 
           <b>{e.title}</b> <span className="mono muted small">{e.name}</span>
         </span>
         <span className={`badge ${e.set ? "state-running" : "state-exited"}`}>
-          {e.set ? (e.secret ? "задан" : "задано") : "не задан"}
+          {e.set ? (e.source === "profile" ? "из профиля" : e.secret ? "задан" : "задано") : "не задан"}
         </span>
       </div>
       {e.hint && <div className="muted small">{e.hint}</div>}
@@ -69,7 +69,7 @@ export function SecretRow({ e, onSaved }: { e: LocalEntry; onSaved: (m: string, 
         <button className="primary" disabled={busy || !val.trim()}>
           Сохранить
         </button>
-        {e.set && (
+        {e.set && e.source !== "profile" && (
           <button type="button" className="ghost danger" disabled={busy} onClick={del}>
             Удалить
           </button>
@@ -307,7 +307,9 @@ export default function AccessView({
     <>
       <p className="muted small">
         Секреты хранятся в: {ui.storage}. Значения сюда не возвращаются — видно только, задан ли доступ. Доступ общий
-        для всех рабочих мест и попадает в рабочее место при его перезапуске.
+        для всех рабочих мест и попадает в рабочее место при его перезапуске. Пустые доступы <code>agctl dev up</code>{" "}
+        берёт из переменных окружения хоста (список — <code>agctl dev secrets list</code>); заданное здесь окружение не
+        перезаписывает, а удалённое снова берётся из окружения.
       </p>
       <section>
         <h2 className="small">Провайдеры моделей</h2>

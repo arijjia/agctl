@@ -98,6 +98,8 @@ export type LocalEntry = {
   set: boolean;
   value?: string;
   known: boolean;
+  // source — откуда значение, если не из дома: profile — по умолчанию из профиля.
+  source?: string;
 };
 // LocalImage — образ из каталога лаунчера: есть ли на машине и что внутри
 // (метки io.agctl.* образа; у собранных до меток — пусто, outdated).
