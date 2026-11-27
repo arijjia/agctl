@@ -236,5 +236,15 @@ func devCertsCheck(home string, cfg *localmode.Config, prof *profile.Data, addr 
 	if withBundle != nil {
 		return errors.New("рабочее место до этого адреса по TLS не дойдёт")
 	}
+	// С корнями машины набор — всё доверие рабочего места: проверяем им одним,
+	// как Node в контейнере. Иначе доверие машины, которого в наборе нет
+	// (сертификат в /etc/ssl/certs мимо общего файла), даёт ложный ✓.
+	if p.IsFull() {
+		inContainer := localmode.CheckTLSOnly(hp, p.PEM(), 15*time.Second)
+		show("как в рабочем месте (только набор agctl)", inContainer)
+		if inContainer != nil {
+			return errors.New("рабочее место до этого адреса по TLS не дойдёт")
+		}
+	}
 	return nil
 }

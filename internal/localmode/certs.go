@@ -48,12 +48,8 @@ func CABundlePath(home string) string { return filepath.Join(home, "run", "ca-bu
 var hostCAPEM = func() ([]byte, string, error) {
 	switch runtime.GOOS {
 	case "linux":
-		for _, p := range []string{"/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt", "/etc/ssl/cert.pem"} {
-			if b, err := os.ReadFile(p); err == nil && bytes.Contains(b, []byte("BEGIN CERTIFICATE")) {
-				return b, p, nil
-			}
-		}
-		return nil, "", errors.New("системный набор сертификатов не найден (/etc/ssl/certs/ca-certificates.crt)")
+		return linuxHostCAPEM(linuxCAFiles, linuxCADirs)
+
 	case "darwin":
 		var out []byte
 		for _, kc := range []string{"/System/Library/Keychains/SystemRootCertificates.keychain", "/Library/Keychains/System.keychain"} {
@@ -67,6 +63,90 @@ var hostCAPEM = func() ([]byte, string, error) {
 		return out, "связки ключей macOS (System, системные корни)", nil
 	}
 	return nil, "", fmt.Errorf("доверенные сертификаты этой машины на %s не выгружаются — добавьте нужные файлом (agctl dev certs add)", runtime.GOOS)
+}
+
+// Доверие Linux: системный набор и каталоги, откуда Go, curl и OpenSSL берут
+// сертификаты ещё и поштучно. Сертификат организации, положенный в
+// /etc/ssl/certs без update-ca-certificates, в общий файл не попадает: хост
+// ему доверяет, а Node в контейнере — нет (SELF_SIGNED_CERT_IN_CHAIN).
+var (
+	linuxCAFiles = []string{"/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt", "/etc/ssl/cert.pem"}
+	linuxCADirs  = []string{"/etc/ssl/certs", "/usr/local/share/ca-certificates", "/etc/pki/ca-trust/source/anchors"}
+)
+
+// linuxHostCAPEM — первый найденный системный набор плюс сертификаты из
+// каталогов (PEM или DER, без повторов).
+func linuxHostCAPEM(files, dirs []string) ([]byte, string, error) {
+	seen := map[[32]byte]bool{}
+	var out bytes.Buffer
+	add := func(data []byte) int {
+		n := 0
+		for _, der := range certsDER(data) {
+			sum := sha256.Sum256(der)
+			if seen[sum] {
+				continue
+			}
+			seen[sum] = true
+			_ = pem.Encode(&out, &pem.Block{Type: "CERTIFICATE", Bytes: der})
+			n++
+		}
+		return n
+	}
+	var from []string
+	for _, p := range files {
+		if b, err := os.ReadFile(p); err == nil && add(b) > 0 {
+			from = append(from, p)
+			break
+		}
+	}
+	for _, d := range dirs {
+		n := 0
+		_ = filepath.WalkDir(d, func(p string, e fs.DirEntry, err error) error {
+			if err != nil || e.IsDir() {
+				return nil
+			}
+			switch strings.ToLower(filepath.Ext(p)) {
+			case ".pem", ".crt", ".cer", ".der", ".0", ".1":
+			default:
+				return nil
+			}
+			if b, err := os.ReadFile(p); err == nil { // #nosec G304 -- системные каталоги доверия
+				n += add(b)
+			}
+			return nil
+		})
+		if n > 0 {
+			from = append(from, fmt.Sprintf("%s (+%d)", d, n))
+		}
+	}
+	if out.Len() == 0 {
+		return nil, "", errors.New("системный набор сертификатов не найден (/etc/ssl/certs/ca-certificates.crt)")
+	}
+	return out.Bytes(), strings.Join(from, ", "), nil
+}
+
+// certsDER — сертификаты из PEM (все блоки CERTIFICATE) или одного DER.
+func certsDER(data []byte) [][]byte {
+	var out [][]byte
+	rest := data
+	for {
+		var b *pem.Block
+		b, rest = pem.Decode(rest)
+		if b == nil {
+			break
+		}
+		if b.Type == "CERTIFICATE" {
+			if _, err := x509.ParseCertificate(b.Bytes); err == nil {
+				out = append(out, b.Bytes)
+			}
+		}
+	}
+	if len(out) == 0 {
+		if _, err := x509.ParseCertificate(data); err == nil {
+			out = append(out, data)
+		}
+	}
+	return out
 }
 
 // CASource — источник сертификатов набора (для agctl dev certs list).
@@ -310,6 +390,27 @@ func CheckTLS(hostport string, pemExtra []byte, timeout time.Duration) (withHost
 	withBundle = dial(pool)
 	return withHost, withBundle
 }
+
+// CheckTLSOnly — проверить TLS до host:port, доверяя только сертификатам
+// pemCerts: так видит сервер рабочее место с полным набором (Node в
+// контейнере не знает доверия машины, только набор agctl).
+func CheckTLSOnly(hostport string, pemCerts []byte, timeout time.Duration) error {
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		return err
+	}
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(pemCerts)
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", hostport, &tls.Config{ServerName: host, RootCAs: pool, MinVersion: tls.VersionTLS12})
+	if err != nil {
+		return err
+	}
+	return conn.Close()
+}
+
+// IsFull — в наборе корни этой машины (ca_host): тогда набор — это всё
+// доверие рабочего места, и проверка «как в контейнере» точна.
+func (p CAPlan) IsFull() bool { return p.Full }
 
 // PEM — собранный набор (для проверок на хосте: agctl dev llm-check, check).
 func (p CAPlan) PEM() []byte { return p.pem }
