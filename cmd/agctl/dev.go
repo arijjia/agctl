@@ -47,6 +47,8 @@ const devUsage = `agctl dev — локальный режим: платформ�
   status    состояние: адрес, образ, папка, рабочее место, мост
   paths     где что лежит: корень, бинари, профиль, дом и его файлы, порты, контейнеры, маунты, секреты [--json]
   images    образы каталога: есть ли на машине, версия dsh, сборка guest, дата, размер, устаревшие [--json]
+  llm-check модели профиля и личные: отвечают ли и вызывают ли инструменты (без этого агенту не работать)
+            [--model M] [--provider P] [--insecure] [--timeout 90s]
   open      открыть браузер (новая ссылка входа)
   logs [-f] лог фонового процесса
   secrets   доступы в хранилище ОС: list | set ИМЯ [--stdin] | rm ИМЯ
@@ -96,6 +98,8 @@ func cmdDev(args []string) {
 		err = devPaths(h, args[1:])
 	case "images":
 		err = devImages(home, args[1:])
+	case "llm-check":
+		err = devLLMCheck(home, args[1:])
 	case "open":
 		err = devOpen(home, args[1:])
 	case "logs":
