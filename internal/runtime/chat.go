@@ -59,6 +59,13 @@ type ChatSpec struct {
 	// хостовыми. /workspace остаётся (совместимость). Только Docker-бэкенд,
 	// пути вида /Users/…, /home/… (не Windows и не системные каталоги).
 	HostPaths bool
+	// CAFile — набор корневых сертификатов на хосте (PEM): монтируется в
+	// контейнер только для чтения, Node (dsh) доверяет им поверх своих.
+	// CAFull — в наборе полный список корней (доверенные сертификаты хоста):
+	// тогда он же — SSL_CERT_FILE и соседние для Python, uv, curl, git, Go.
+	// Только Docker-бэкенд.
+	CAFile string
+	CAFull bool
 }
 
 // Mount — папка хоста, подключаемая в /workspace/<Name> рабочего места.

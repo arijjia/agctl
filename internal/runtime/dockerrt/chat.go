@@ -98,6 +98,11 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 			}
 		}
 	}
+	// Сертификаты организации (локальный режим): набор хоста — в контейнер.
+	if spec.CAFile != "" {
+		extraBinds = append(extraBinds, spec.CAFile+":"+ContainerCAFile+":ro")
+		hostEnv = append(hostEnv, CAEnv(spec.CAFull)...)
+	}
 	// Воркспейс dsh по умолчанию — на хостовом пути; без него — вернуть
 	// /workspace, только если по умолчанию стоял хостовый воркспейс agctl
 	// (выбор владельца не трогаем). Не фатально: незнакомый формат реестра
@@ -183,4 +188,21 @@ func validMountName(name string) bool {
 		}
 	}
 	return true
+}
+
+// ContainerCAFile — путь набора сертификатов в контейнере рабочего места.
+const ContainerCAFile = "/etc/agctl/ca-bundle.pem"
+
+// CAEnv — переменные, по которым инструменты в контейнере находят набор:
+// Node (dsh, npx-серверы MCP) добавляет его к своим корням всегда; полный
+// набор (с корнями хоста) заменяет системный у Python (requests, httpx), uv,
+// pip, curl, git и Go.
+func CAEnv(full bool) []string {
+	env := []string{"NODE_EXTRA_CA_CERTS=" + ContainerCAFile}
+	if full {
+		for _, k := range []string{"SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "PIP_CERT"} {
+			env = append(env, k+"="+ContainerCAFile)
+		}
+	}
+	return env
 }

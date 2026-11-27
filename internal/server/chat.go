@@ -700,6 +700,7 @@ func (s *Server) ensureChat(userID int64, slot int) (*chatRuntime, error) {
 		spec.Mounts = ex.Mounts
 		spec.DshHome = ex.DshHome
 		spec.HostPaths = ex.HostPaths
+		spec.CAFile, spec.CAFull = ex.CAFile, ex.CAFull
 		spec.DevEnv = append(spec.DevEnv, ex.Env...)
 		spec.Local = true
 	}
