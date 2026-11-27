@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -288,6 +289,8 @@ type localExtras struct {
 	// локального режима): путь на хосте и полный ли он.
 	CAFile string
 	CAFull bool
+	// User — "uid:gid" процесса контейнера (localContainerUser).
+	User string
 }
 
 // LocalCAHooks — набор сертификатов организации для рабочих мест: хост
@@ -316,6 +319,7 @@ func (s *Server) localChatExtras(key chatKey) (localExtras, bool, error) {
 	}
 	ex.DshHome = s.customDshHome(key)
 	ex.HostPaths = s.localHostPaths()
+	ex.User = localContainerUser(runtime.GOOS, os.Getenv("AGCTL_CONTAINER_USER"), os.Getuid(), os.Getgid())
 	if h, ok := s.localHooks().(LocalCAHooks); ok {
 		path, full, err := h.CABundle()
 		if err != nil {

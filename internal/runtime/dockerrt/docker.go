@@ -482,6 +482,9 @@ type StartOpts struct {
 	// EgressAllowlist — посадить контейнер на выделенную сеть и запретить
 	// egress наружу, кроме DNS (карточка egress-allowlist; opt-in флаг serve).
 	EgressAllowlist bool
+	// User — "uid:gid" процесса контейнера ("" — пользователь образа);
+	// применяется, только если образ это умеет (imageRunsAsUser).
+	User string
 }
 
 // Start создаёт и запускает контейнер воркспейса с заданными портами.
@@ -538,10 +541,15 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		env = append(env, "AGCTL_SSH_PUBKEY="+opts.SSHPubKey)
 		portBindings[network.MustParsePort("2222/tcp")] = []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: fmt.Sprint(opts.SSHHostPort)}}
 	}
+	if opts.User != "" && !rt.imageRunsAsUser(ctx, desired) {
+		log.Printf("[dockerrt] %s: образ %s старее guest API %d — контейнер под root, как раньше (agctl dev update скачает новый)", wsID, desired, imageUserAPI)
+		opts.User = ""
+	}
 	cfg := client.ContainerCreateOptions{
 		Name: name,
 		Config: &container.Config{
 			Image:      desired,
+			User:       opts.User,
 			Env:        env,
 			WorkingDir: opts.WorkingDir,
 			Labels: map[string]string{

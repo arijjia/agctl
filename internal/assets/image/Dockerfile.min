@@ -44,7 +44,8 @@ COPY agctl /usr/local/bin/agctl
 COPY skel/ /opt/dsh-skel/
 COPY entrypoint.sh /usr/local/bin/agctl-entrypoint
 COPY dsh-net.mjs /usr/local/bin/agctl-dsh-net
-RUN chmod +x /usr/local/bin/agctl /usr/local/bin/agctl-entrypoint /usr/local/bin/agctl-dsh-net && mkdir -p /home/dsh /workspace
+RUN chmod +x /usr/local/bin/agctl /usr/local/bin/agctl-entrypoint /usr/local/bin/agctl-dsh-net && mkdir -p /home/dsh /workspace \
+  && mkdir -p /opt/npm-mcp && chmod 1777 /opt/npm-mcp
 # Google AX / Agent Substrate: PID 1 песочницы — /usr/local/bin/ax-task-runner
 # (контракт раннера AX); здесь это обёртка над `agctl ax-runner`: probes на
 # :80, прокси на dsh web :3080, хвост лога запуска для шлюза. Только серверный
@@ -64,11 +65,11 @@ ENTRYPOINT ["agctl-entrypoint"]
 
 # Метки — последний слой метаданных: сборка agctl меняется каждый раз, а
 # кэш слоёв выше не страдает. io.agctl.guest.api — уровень возможностей
-# guest (2: presets-sync в entrypoint); лаунчер сверяет его со своим.
+# guest (2: presets-sync в entrypoint; 3: не под root); лаунчер сверяет его со своим.
 ARG AGCTL_VERSION=dev
 ARG AGCTL_COMMIT=unknown
 ARG AGCTL_BUILD_DATE=
-ARG AGCTL_GUEST_API=2
+ARG AGCTL_GUEST_API=3
 LABEL org.opencontainers.image.title="agctl-dsh-min" \
       org.opencontainers.image.description="Минимальное рабочее место: dsh web и guest agctl" \
       org.opencontainers.image.source="https://github.com/arijjia/agctl" \

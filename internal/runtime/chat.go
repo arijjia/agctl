@@ -66,6 +66,11 @@ type ChatSpec struct {
 	// Только Docker-бэкенд.
 	CAFile string
 	CAFull bool
+	// User — "uid:gid" процесса контейнера (локальный режим на Linux: как у
+	// хостового пользователя, чтобы файлы в его папках и dsh-home оставались
+	// его, а не root). Пусто — пользователь образа (root). С User sshd не
+	// поднимается. Только Docker-бэкенд.
+	User string
 }
 
 // Mount — папка хоста, подключаемая в /workspace/<Name> рабочего места.

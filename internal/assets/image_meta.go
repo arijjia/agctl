@@ -15,11 +15,13 @@ import (
 // io.agctl.guest.api, ARG AGCTL_GUEST_API в Dockerfile):
 //
 //	1 — мост к хосту (bridge);
-//	2 — presets-sync в entrypoint: пресеты лаунчера видны в dsh.
+//	2 — presets-sync в entrypoint: пресеты лаунчера видны в dsh;
+//	3 — работает не под root: кэш npx MCP на запись любому uid, sshd только
+//	    под root (локальный режим на Linux — под uid:gid хоста).
 //
 // Повышается, когда платформе нужно новое от образа; образ ниже этого
 // уровня лаунчер помечает «устарел — пересоберите».
-const GuestAPI = 2
+const GuestAPI = 3
 
 // Метки образа рабочего места (Dockerfile, последний слой).
 const (

@@ -82,6 +82,10 @@ RUN arch="$(dpkg --print-architecture)" \
 
 FROM tools AS runtime
 COPY --from=mcp-warm /opt/npm-mcp /opt/npm-mcp
+# Кэш npx MCP-серверов — на запись любому пользователю: на Linux локальный
+# режим запускает контейнер под uid:gid хоста (guest API 3), npm пишет в кэш
+# и при попадании.
+RUN chmod -R a+rwX /opt/npm-mcp
 # Пин dsh — дефолт ARG DSH_VERSION, его двигает bin/dsh-bump.sh --update.
 # Оверрайд --build-arg DSH_VERSION=<ver> собирает тот же образ на версии
 # другого канала (workflow dsh-bump так проверяет свежий dist-tag next).
@@ -134,11 +138,11 @@ ENTRYPOINT ["agctl-entrypoint"]
 
 # Метки — последний слой метаданных: сборка agctl меняется каждый раз, а
 # кэш слоёв выше не страдает. io.agctl.guest.api — уровень возможностей
-# guest (2: presets-sync в entrypoint); лаунчер сверяет его со своим.
+# guest (2: presets-sync в entrypoint; 3: не под root); лаунчер сверяет его со своим.
 ARG AGCTL_VERSION=dev
 ARG AGCTL_COMMIT=unknown
 ARG AGCTL_BUILD_DATE=
-ARG AGCTL_GUEST_API=2
+ARG AGCTL_GUEST_API=3
 LABEL org.opencontainers.image.title="agctl-dsh" \
       org.opencontainers.image.description="Рабочее место агента: dsh web и guest agctl" \
       org.opencontainers.image.source="https://github.com/arijjia/agctl" \

@@ -98,6 +98,26 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 			}
 		}
 	}
+	// Хостовый пользователь (локальный режим на Linux): файлы dsh-home,
+	// оставшиеся от root, — владельцу (до любого чтения их на хосте), записи
+	// passwd/group, sshd не поднимается (ему нужен root).
+	if spec.User != "" {
+		uid, gid, err := parseUser(spec.User)
+		if err != nil {
+			return agctlrt.ChatHandle{}, err
+		}
+		img := spec.Image
+		if img == "" {
+			img = rt.cfg.Image
+		}
+		rt.chownTree(ctx, img, dshHome, uid, gid)
+		binds, err := writeUserFiles(filepath.Join(rt.cfg.Home, "chats", spec.StorageID, "etc"), uid, gid)
+		if err != nil {
+			return agctlrt.ChatHandle{}, fmt.Errorf("dockerrt: passwd пользователя контейнера: %w", err)
+		}
+		extraBinds = append(extraBinds, binds...)
+		spec.SSHPubKey = ""
+	}
 	// Сертификаты организации (локальный режим): набор хоста — в контейнер.
 	if spec.CAFile != "" {
 		extraBinds = append(extraBinds, spec.CAFile+":"+ContainerCAFile+":ro")
@@ -154,6 +174,7 @@ func (rt *Runtime) EnsureChat(ctx context.Context, spec agctlrt.ChatSpec) (agctl
 	opts.ExtraBinds = extraBinds
 	opts.WorkingDir = workingDir
 	opts.Env = hostEnv
+	opts.User = spec.User
 	res, err := rt.Start(ctx, layout, spec.RuntimeID, opts, spec.Provider)
 	if err != nil {
 		return agctlrt.ChatHandle{}, err
