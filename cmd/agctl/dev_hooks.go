@@ -206,6 +206,39 @@ func (h *devHooks) SetImage(ref string) error {
 	return localmode.SetImage(h.home, ref, devFlavorOf(&localmode.Config{}, h.prof, ref))
 }
 
+// ImagePlan — как образ ref попадает на машину: docker pull, при «нет
+// такого» — ступени сборки с Dockerfile, аргументами и тем, что качается
+// из сети (раздел «Образы» лаунчера).
+func (h *devHooks) ImagePlan(ref string) (server.LocalImagePlan, error) {
+	local := dockerrt.LocalImageName(ref)
+	b := devBuildSpec(h.prof, local, devFlavorOf(&localmode.Config{}, h.prof, ref))
+	if plan := dockerrt.DevBuildPlan(b); plan[len(plan)-1] != local {
+		return server.LocalImagePlan{}, fmt.Errorf("образ %s не из семейства agctl-dsh этого профиля (сборка дала бы %s) — его можно только скачать (docker pull)", ref, plan[len(plan)-1])
+	}
+	stages, err := dockerrt.DevBuildStages(b)
+	if err != nil {
+		return server.LocalImagePlan{}, err
+	}
+	out := server.LocalImagePlan{Ref: ref}
+	if local != ref {
+		out.Pull = "docker pull " + ref + "; реестр ответил «нет такого» или пакет закрыт — сборка ступеней ниже как " + local + " с тегом " + ref + "; при сбое связи — ошибка, без сборки"
+	} else {
+		out.Pull = "docker pull " + ref + " (локальное имя: в Docker Hub его обычно нет) — затем сборка ступеней ниже; готовые ступени не пересобираются"
+	}
+	for _, st := range stages {
+		out.Stages = append(out.Stages, server.LocalImageStage{
+			Ref: st.Ref, Kind: st.Kind, Title: st.Title, Source: st.Source, Dockerfile: st.Dockerfile,
+			Args: st.Args, Context: st.Context, From: st.From, Apt: st.Apt, Npm: st.Npm, Downloads: st.Downloads,
+		})
+	}
+	return out, nil
+}
+
+// RemoveImage — удалить тег образа из Docker этой машины.
+func (h *devHooks) RemoveImage(ctx context.Context, ref string) error {
+	return dockerrt.RemoveImage(ctx, ref)
+}
+
 func (h *devHooks) EnsureImage(ctx context.Context, ref string, logf func(string)) error {
 	if _, err := dockerrt.ImageID(ctx, ref); err == nil {
 		return nil

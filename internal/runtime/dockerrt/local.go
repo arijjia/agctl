@@ -51,6 +51,19 @@ func ImageID(ctx context.Context, ref string) (string, error) {
 	return insp.ID, nil
 }
 
+// RemoveImage — удалить тег образа ref из локального Docker. Слои уходят,
+// когда на них не ссылается ни один тег; образ контейнера (даже
+// остановленного) Docker удалить не даст — это ошибка, а не принуждение.
+func RemoveImage(ctx context.Context, ref string) error {
+	cli, err := localClient()
+	if err != nil {
+		return err
+	}
+	defer cli.Close()
+	_, err = cli.ImageRemove(ctx, ref, client.ImageRemoveOptions{PruneChildren: true})
+	return err
+}
+
 // ImageMeta — что лаунчер показывает об образе: метки (io.agctl.* —
 // версия dsh, сборка и уровень API guest, вид образа), дата и размер.
 type ImageMeta struct {
