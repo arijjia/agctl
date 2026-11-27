@@ -69,7 +69,7 @@ const devUsage = `agctl dev — локальный режим: платформ�
   homes/<id>/     дом: config.yaml, data/, logs/, run/, backups/
 
 Дом выбирается так: agctl dev --home <id> … > AGCTL_HOME_ID > единственный
-существующий дом > agctl. Подробно — agctl dev paths.
+существующий дом > последний запущенный (agctl dev up) > agctl. Подробно — agctl dev paths.
 `
 
 func cmdDev(args []string) {
@@ -93,7 +93,9 @@ func cmdDev(args []string) {
 		err = devInit(h, args[1:])
 	case "up":
 		if err = devAutoInit(h, args[1:]); err == nil {
-			err = devUp(home, args[1:])
+			if err = devUp(home, args[1:]); err == nil {
+				_ = localmode.RememberHome(h)
+			}
 		}
 	case "down":
 		err = devDown(home)
@@ -381,6 +383,10 @@ func devInit(h localmode.Home, args []string) error {
 // единственный существующий) и дом по умолчанию ещё не настроен, а профиль
 // задан флагом, id дома = id профиля: один дом на организацию.
 func devInitHome(h localmode.Home, profID, profDir string) localmode.Home {
+	if h.Source == localmode.HomeFromLast {
+		// init без --home настраивает новый дом, а не последний запущенный.
+		h = localmode.Home{ID: localmode.DefaultHomeID, Dir: localmode.HomeDir(localmode.DefaultHomeID), Source: localmode.HomeFromDefault}
+	}
 	if h.Source != localmode.HomeFromDefault {
 		return h
 	}

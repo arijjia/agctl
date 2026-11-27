@@ -101,6 +101,10 @@ func TestDevInitHomeFollowsProfile(t *testing.T) {
 	if h := devInitHome(flag, "utmn", ""); h.ID != "work" {
 		t.Fatalf("явный --home не переопределяется: %+v", h)
 	}
+	last := localmode.Home{ID: "work", Dir: localmode.HomeDir("work"), Source: localmode.HomeFromLast}
+	if h := devInitHome(last, "utmn", ""); h.ID != "utmn" {
+		t.Fatalf("init не перенастраивает последний запущенный дом: %+v", h)
+	}
 	if err := (&localmode.Config{}).Save(def.Dir); err != nil {
 		t.Fatal(err)
 	}

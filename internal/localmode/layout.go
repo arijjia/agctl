@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -91,12 +92,13 @@ const (
 	HomeFromDevHome = "переменная AGCTL_DEV_HOME (путь)"
 	HomeFromEnvID   = "переменная AGCTL_HOME_ID"
 	HomeFromSingle  = "единственный дом в homes/"
+	HomeFromLast    = "последний запущенный (agctl dev up)"
 	HomeFromDefault = "по умолчанию"
 )
 
 // SelectHome выбирает дом: флаг --home <id> > AGCTL_DEV_HOME (абсолютный путь
 // дома — переопределение для тестов и e2e) > AGCTL_HOME_ID > единственный
-// существующий дом > agctl.
+// существующий дом > последний запущенный (agctl dev up) > agctl.
 func SelectHome(flagID string) (Home, error) {
 	if id := strings.TrimSpace(flagID); id != "" {
 		if !ValidID(id) {
@@ -119,8 +121,35 @@ func SelectHome(flagID string) (Home, error) {
 	}
 	if ids := ListHomes(); len(ids) == 1 {
 		return Home{ID: ids[0], Dir: HomeDir(ids[0]), Source: HomeFromSingle}, nil
+	} else if last := LastHome(); last != "" && slices.Contains(ids, last) {
+		return Home{ID: last, Dir: HomeDir(last), Source: HomeFromLast}, nil
 	}
 	return Home{ID: DefaultHomeID, Dir: HomeDir(DefaultHomeID), Source: HomeFromDefault}, nil
+}
+
+// lastHomeFile — id последнего запущенного дома: им пользуются status, logs и
+// другие команды без --home, когда домов несколько.
+func lastHomeFile() string { return filepath.Join(HomesDir(), ".last") }
+
+// LastHome — id последнего запущенного дома ("" — нет или не корректный).
+func LastHome() string {
+	b, err := os.ReadFile(lastHomeFile())
+	if err != nil {
+		return ""
+	}
+	if id := strings.TrimSpace(string(b)); ValidID(id) {
+		return id
+	}
+	return ""
+}
+
+// RememberHome запоминает дом как последний запущенный; дом вне корня
+// (AGCTL_DEV_HOME) не запоминается.
+func RememberHome(h Home) error {
+	if !ValidID(h.ID) || filepath.Clean(h.Dir) != HomeDir(h.ID) {
+		return nil
+	}
+	return os.WriteFile(lastHomeFile(), []byte(h.ID+"\n"), 0o644)
 }
 
 // ListHomes — id настроенных домов (каталоги homes/<id> с конфигом), по

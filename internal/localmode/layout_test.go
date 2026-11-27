@@ -82,6 +82,22 @@ func TestSelectHomeOrder(t *testing.T) {
 	if got := ListHomes(); !reflect.DeepEqual(got, []string{"rshb", "utmn"}) {
 		t.Fatalf("ListHomes: %v", got)
 	}
+	// последний запущенный дом (agctl dev --home <id> up) — для status/logs без --home
+	if err := RememberHome(Home{ID: "utmn", Dir: HomeDir("utmn")}); err != nil {
+		t.Fatal(err)
+	}
+	if h := sel(""); h.ID != "utmn" || h.Source != HomeFromLast {
+		t.Fatalf("последний дом: %+v", h)
+	}
+	// дом вне корня не запоминается; запомненный, но не настроенный — не берётся
+	_ = RememberHome(Home{ID: "ext", Dir: t.TempDir()})
+	if LastHome() != "utmn" {
+		t.Fatalf("дом вне корня запомнен: %q", LastHome())
+	}
+	_ = RememberHome(Home{ID: "gone", Dir: HomeDir("gone")})
+	if h := sel(""); h.Source != HomeFromDefault {
+		t.Fatalf("ненастроенный последний дом: %+v", h)
+	}
 	// AGCTL_HOME_ID сильнее
 	t.Setenv("AGCTL_HOME_ID", "rshb")
 	if h := sel(""); h.ID != "rshb" || h.Source != HomeFromEnvID {
