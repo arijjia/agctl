@@ -65,7 +65,7 @@ function smoothPath(pts: { x: number; y: number }[]): string {
 // AreaChart — сглаженная область/линия с перекрестьем и тултипом.
 // second — необязательный второй ряд (нормируется к своему максимуму),
 // рисуется пунктиром (например, средняя задержка мс поверх числа запросов).
-export function AreaChart({ title, hint, data, color = "#58a6ff", second, secondColor = "#f06bb8", secondName }: {
+export function AreaChart({ title, hint, data, color = "#58a6ff", second, secondColor = "#9cc3ff", secondName }: {
   title: string;
   hint?: string;
   data: Point[];
@@ -158,7 +158,7 @@ export function AreaChart({ title, hint, data, color = "#58a6ff", second, second
 }
 
 // BarChart — столбцы с подсветкой и тултипом (дни, регистрации).
-export function BarChart({ title, hint, data, color = "#a99dff", valueName = "" }: {
+export function BarChart({ title, hint, data, color = "#4f8cff", valueName = "" }: {
   title: string;
   hint?: string;
   data: Point[];
@@ -246,7 +246,7 @@ export function HBarList({ title, hint, data }: {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  ok: "#2dd4e0",
+  ok: "#5cc8ff",
   redirect: "#58a6ff",
   clientError: "#d29922",
   serverError: "#f85149",

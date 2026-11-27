@@ -1,7 +1,8 @@
 /* ─────────────────────────────────────────────────────────────────────────────
-   Оформление единого веб-приложения: тёмная палитра — фиолетовый акцент
-   для действий и выбранного, голубой для данных, бирюзово-голубой для
-   состояния «работает», розовый — в знаке бренда; разделы — в панели слева;
+   Оформление единого веб-приложения: тёмная палитра только в синих тонах —
+   синий акцент для действий и выбранного, голубой для данных, небесный для
+   состояния «работает» (красный и оранжевый — только ошибки и предупреждения);
+   разделы — в панели слева;
    один системный шрифт на всё (SF Pro на macOS, Segoe UI Variable на Windows,
    Aptos, Inter, Roboto там, где они есть), моноширинный — только для кода и
    журналов (--code), прямые углы. Светлая тема — тот же строй.
@@ -16,29 +17,29 @@
   --text: #e3e5e8;
   --text-2: #c3cedf;
   --muted: #818a96;
-  --accent: #8b7cff;
-  --accent-dim: #6a5bd6;
-  --accent-glow: rgba(139, 124, 255, 0.14);
-  --data: #5aa9ff;
+  --accent: #4f8cff;
+  --accent-dim: #2f62c8;
+  --accent-glow: rgba(79, 140, 255, 0.14);
+  --data: #7cb4ff;
   --data-glow: rgba(90, 169, 255, 0.16);
-  --green: #2dd4e0;
-  --pink: #f06bb8;
+  --green: #5cc8ff;
+  --pink: #9cc3ff;
   --red: #d63031;
   --yellow: #d4760a;
   --info: #4589b2;
   --btn-bg: transparent;
   --input-bg: #161a1f;
   --log-bg: #07090b;
-  --primary: rgba(139, 124, 255, 0.14);
-  --primary-text: #a99dff;
+  --primary: rgba(79, 140, 255, 0.14);
+  --primary-text: #8fb5ff;
   --error-text: #ff9b96;
   /* подсветка кода (Dockerfile, shell): ключевые слова, комментарии, строки, переменные, флаги, операторы */
-  --hl-kw: #a99dff;
+  --hl-kw: #7aa7ff;
   --hl-com: #7d8794;
-  --hl-str: #f29bcd;
-  --hl-var: #5fd3e8;
+  --hl-str: #a9c9ff;
+  --hl-var: #5cc8ff;
   --hl-flag: #79a8d6;
-  --hl-op: #d0805a;
+  --hl-op: #4f8cff;
   --radius: 2px;
   --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", Aptos, Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
   /* моноширинный — только код и журналы: Dockerfile, логи, редактор, дерево */
@@ -54,28 +55,28 @@
   --text: #13171a;
   --text-2: #25292c;
   --muted: #64686b;
-  --accent: #5b4bd6;
-  --accent-dim: #4536b0;
-  --accent-glow: rgba(91, 75, 214, 0.12);
-  --data: #1f6fd1;
+  --accent: #1f5fd6;
+  --accent-dim: #174aa8;
+  --accent-glow: rgba(31, 95, 214, 0.12);
+  --data: #1d6fc4;
   --data-glow: rgba(31, 111, 209, 0.12);
-  --green: #0b8aa0;
-  --pink: #c2307f;
+  --green: #0a7fc0;
+  --pink: #3b7be0;
   --red: #b3261e;
   --yellow: #a85a05;
   --info: #2f6a8c;
   --btn-bg: transparent;
   --input-bg: #ffffff;
   --log-bg: #f9f9f9;
-  --primary: rgba(91, 75, 214, 0.12);
-  --primary-text: #4536b0;
+  --primary: rgba(31, 95, 214, 0.12);
+  --primary-text: #174aa8;
   --error-text: #b3261e;
-  --hl-kw: #5b4bd6;
+  --hl-kw: #1f5fd6;
   --hl-com: #6b7178;
-  --hl-str: #b0306f;
-  --hl-var: #0b7f94;
+  --hl-str: #2a6fb0;
+  --hl-var: #0a7fc0;
   --hl-flag: #2f5f8f;
-  --hl-op: #b0451f;
+  --hl-op: #174aa8;
 }
 * { box-sizing: border-box; }
 body {
@@ -386,7 +387,7 @@ button.small { padding: 1px 8px; font-size: 12px; }
 .chart-hbar { display: grid; grid-template-columns: 130px 1fr 52px; gap: 8px; align-items: center; font-size: 12.5px; }
 .chart-hbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chart-hbar-track { display: block; background: rgba(88, 166, 255, 0.12); border-radius: 6px; height: 14px; overflow: hidden; }
-.chart-hbar-fill { display: block; height: 100%; background: linear-gradient(90deg, #8b7cff, #5aa9ff); border-radius: 6px; }
+.chart-hbar-fill { display: block; height: 100%; background: linear-gradient(90deg, #2f62c8, #7cb4ff); border-radius: 6px; }
 .chart-hbar-value { text-align: right; font-variant-numeric: tabular-nums; }
 .chart-donut { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 4px 0; flex-wrap: wrap; }
 .chart-legend { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; }
@@ -540,8 +541,8 @@ button, .button {
 }
 button:hover, .button:hover { border-color: var(--muted); color: var(--text); }
 button:disabled { opacity: 0.45; cursor: default; }
-button.primary, .button.primary { background: var(--primary); border-color: rgba(139, 124, 255, 0.45); color: var(--primary-text); }
-button.primary:hover:not(:disabled) { background: rgba(139, 124, 255, 0.22); border-color: var(--accent); }
+button.primary, .button.primary { background: var(--primary); border-color: rgba(79, 140, 255, 0.45); color: var(--primary-text); }
+button.primary:hover:not(:disabled) { background: rgba(79, 140, 255, 0.22); border-color: var(--accent); }
 button.danger, button.ghost.danger { color: var(--red); border-color: rgba(214, 48, 49, 0.4); }
 button.small { padding: 4px 10px; font-size: 10px; }
 .tabs { gap: 4px; }
@@ -551,19 +552,24 @@ button.small { padding: 4px 10px; font-size: 10px; }
 /* Сообщения */
 .error { border-radius: var(--radius); background: rgba(214, 48, 49, 0.1); border: 1px solid rgba(214, 48, 49, 0.4); border-left-width: 3px; }
 .notice { border: 1px solid rgba(212, 118, 10, 0.45); border-left: 3px solid var(--yellow); background: rgba(212, 118, 10, 0.08); border-radius: var(--radius); padding: 9px 12px; margin: 0 0 12px; display: flex; gap: 12px; align-items: center; font-size: 13px; }
-.notice.ok { border-color: rgba(45, 212, 224, 0.45); border-left-color: var(--green); background: rgba(45, 212, 224, 0.08); }
+.notice.ok { border-color: rgba(92, 200, 255, 0.45); border-left-color: var(--green); background: rgba(92, 200, 255, 0.08); }
 
 /* Значки состояния */
 .badge { border-radius: var(--radius); padding: 1px 8px; font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; line-height: 16px; border-color: var(--border); color: var(--text-2); white-space: nowrap; }
-.badge.state-running, .badge-running { border-color: rgba(45, 212, 224, 0.6); color: var(--green); }
+.badge.state-running, .badge-running { border-color: rgba(92, 200, 255, 0.6); color: var(--green); }
 .badge.state-exited { border-color: var(--border); color: var(--muted); }
-.badge.role-admin { border-color: rgba(139, 124, 255, 0.6); color: var(--accent); }
+.badge.role-admin { border-color: rgba(79, 140, 255, 0.6); color: var(--accent); }
 .badge.role-developer { border-color: rgba(90, 169, 255, 0.6); color: var(--data); }
 .chip { border-radius: var(--radius); border-color: var(--border-subtle); background: var(--raised); font: 11.5px var(--sans); padding: 2px 8px; }
 .chip-on { border-color: rgba(90, 169, 255, 0.6); color: var(--data); background: var(--data-glow); }
 
 /* Оболочка: панель разделов слева, содержимое справа на всю оставшуюся ширину */
-.shell { min-height: 100vh; display: grid; grid-template-columns: 228px minmax(0, 1fr); }
+.shell { min-height: 100vh; display: grid; grid-template-columns: var(--side-w, 228px) minmax(0, 1fr); }
+/* граница панели тянется мышью (Shell.tsx, useSideWidth) */
+.shell-resize { position: absolute; top: 0; right: 0; width: 7px; height: 100%; cursor: col-resize; z-index: 60; touch-action: none; }
+.shell-resize::after { content: ""; position: absolute; top: 0; bottom: 0; right: 0; width: 2px; background: transparent; transition: background 0.15s; }
+.shell-resize:hover::after, .shell.resizing .shell-resize::after { background: var(--accent); }
+.shell.resizing { cursor: col-resize; user-select: none; }
 .shell-side {
   position: sticky; top: 0; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; gap: 18px;
   padding: 18px 12px 14px; background: var(--card); border-right: 1px solid var(--border-subtle); z-index: 50;
@@ -601,6 +607,7 @@ button.small { padding: 4px 10px; font-size: 10px; }
   .shell-nav a { white-space: nowrap; border-left: 0; }
   .shell-actions { margin: 0 0 0 auto; flex-direction: row; align-items: center; padding: 0; border-top: 0; }
   .shell-page { padding: 16px; }
+  .shell-resize { display: none; }
 }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; padding-bottom: 14px; margin-bottom: 18px; border-bottom: 1px solid var(--border-subtle); }
 .page-head p { margin: 0; }
