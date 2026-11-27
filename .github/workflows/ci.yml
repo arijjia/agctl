@@ -3,6 +3,8 @@ name: ci
 on:
   push:
     branches: [main]
+    # Тег v* — релиз: тесты, затем goreleaser (job release-snapshot).
+    tags: ["v*"]
   pull_request:
 
 jobs:
