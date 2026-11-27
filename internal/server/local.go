@@ -53,6 +53,7 @@ type localState struct {
 	// основного места.
 	placeMu    sync.Mutex
 	placeTasks map[int]*localTask
+	imageTask  *localTask // операция раздела «Образы» (local_images.go)
 	events     *localEvents
 	mainRev    int64
 
@@ -138,6 +139,7 @@ func (s *Server) registerLocalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+localbridge.PathCall, s.requireBridge(s.handleBridgeCall))
 	s.registerLocalUIRoutes(mux)
 	s.registerLocalPlaceRoutes(mux)
+	s.registerLocalImageRoutes(mux)
 	s.registerLocalPresetRoutes(mux)
 	s.registerLocalProviderRoutes(mux)
 }

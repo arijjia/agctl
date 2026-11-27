@@ -24,6 +24,22 @@ type fakeHooks struct {
 	hostPaths bool
 	// mainDshHome — config.yaml dsh_home (своя папка основного места).
 	mainDshHome string
+	removed     []string // RemoveImage
+}
+
+func (f *fakeHooks) ImagePlan(ref string) (LocalImagePlan, error) {
+	return LocalImagePlan{Ref: ref, Pull: "docker pull " + ref, Stages: []LocalImageStage{
+		{Ref: "agctl-dsh:0.2.2", Kind: "base", Dockerfile: "FROM node:22-bookworm-slim\n"},
+		{Ref: ref, Kind: "profile", Dockerfile: "ARG BASE\nFROM ${BASE}\n", Args: map[string]string{"BASE": "agctl-dsh:0.2.2"}},
+	}}, nil
+}
+
+func (f *fakeHooks) RemoveImage(ctx context.Context, ref string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.removed = append(f.removed, ref)
+	f.present[ref] = false
+	return nil
 }
 
 func (f *fakeHooks) MainDshHome() string {

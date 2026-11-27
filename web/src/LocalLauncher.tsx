@@ -7,6 +7,7 @@ import DownloadPage from "./DownloadPage";
 import PlacesView from "./PlacesView";
 import PresetsView from "./PresetsView";
 import AccessView from "./AccessView";
+import ImagesView from "./ImagesView";
 import { applyTheme, currentTheme, type Theme } from "./theme";
 
 // LocalLauncher — лаунчер локального режима (agctl dev), v2: рабочие места
@@ -21,10 +22,11 @@ import { applyTheme, currentTheme, type Theme } from "./theme";
 
 const brand = (window as any).__AGCTL_BRAND__?.name || "agctl";
 
-type Tab = "places" | "presets" | "secrets";
+type Tab = "places" | "images" | "presets" | "secrets";
 
 const SUBTITLE: Record<string, string> = {
   places: "Контейнеры с агентом на этой машине: папка проектов, образ, запуск.",
+  images: "Из чего собраны образы рабочих мест и чем отличаются; скачать, пересобрать, удалить.",
   presets: "Наборы инструментов агента: MCP-серверы и скиллы. Пресет выбирается в чате у поля ввода.",
   secrets: "Провайдеры моделей и доступы рабочего места. Значения хранятся в хранилище секретов.",
   profile: "Настройки организации: бренд, модели, инструменты. Тот же файл, что лежит в каталоге профиля.",
@@ -44,6 +46,7 @@ export default function LocalLauncher({ user, initial, embed }: { user: User; in
   const [ui, setUI] = useState<LocalUI>(initial);
   const NAV: NavItem[] = [
     { id: "places", label: "Рабочие места" },
+    { id: "images", label: "Образы" },
     { id: "presets", label: "Пресеты" },
     { id: "secrets", label: "Доступ", warn: !ui.llmKeySet },
     { id: "profile", label: "Профиль", group: "Организация" },
@@ -51,7 +54,7 @@ export default function LocalLauncher({ user, initial, embed }: { user: User; in
     { id: "download", label: "Скачать", group: "Система" },
   ];
   const [section, go] = useSection(NAV, initial.llmKeySet ? "places" : "secrets");
-  const tab: Tab = embed?.section || (section === "presets" || section === "secrets" ? section : "places");
+  const tab: Tab = embed?.section || (section === "images" || section === "presets" || section === "secrets" ? section : "places");
   const setTab = (t: Tab) => go(t);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -101,6 +104,7 @@ export default function LocalLauncher({ user, initial, embed }: { user: User; in
       {msg && <p className="muted small">{msg}</p>}
       {err && <div className="error">{err}</div>}
       {tab === "places" && <PlacesView ui={ui} note={note} refreshKey={refreshKey} only={embed?.ws || undefined} />}
+      {tab === "images" && <ImagesView note={note} refreshKey={refreshKey} />}
       {tab === "presets" && <PresetsView note={note} refreshKey={refreshKey} />}
       {tab === "secrets" && <AccessView ui={ui} note={note} refreshKey={refreshKey} />}
     </>
@@ -135,7 +139,7 @@ export default function LocalLauncher({ user, initial, embed }: { user: User; in
       {section === "profile" && <ProfilePage />}
       {section === "paths" && <PathsPage />}
       {section === "download" && <DownloadPage />}
-      {(section === "places" || section === "presets" || section === "secrets") && (
+      {(section === "places" || section === "images" || section === "presets" || section === "secrets") && (
         <>
           {section === "places" && <RuntimeSwitch ui={ui} note={note} />}
           {body}

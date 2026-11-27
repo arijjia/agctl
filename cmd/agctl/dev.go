@@ -461,6 +461,25 @@ func devDefaultProfile(dataDir string) string {
 	return found
 }
 
+// devBuildSpec — что и из чего собирать для образа target: встроенный
+// контекст, guest этой сборки, надстройка и вкус профиля.
+func devBuildSpec(p *profile.Data, target, flavor string) dockerrt.DevBuild {
+	b := dockerrt.DevBuild{
+		Target: target, Flavor: flavor, BinDir: localmode.GuestDir(),
+		ImageFS: assets.Image, SkelFS: assets.DshSkel,
+		Version: version, Commit: commit, BuildDate: buildDate,
+	}
+	if p != nil {
+		b.ProfileID = p.ID
+		v := p.View()
+		b.ProfileFS = v.FS
+		if ov, df, ok := v.ImageContext(); ok {
+			b.Overlay, b.OverlayDockerfile = ov, df
+		}
+	}
+	return b
+}
+
 func devPrepareImage(ctx context.Context, p *profile.Data, target, flavor string, logf func(string)) error {
 	pctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
@@ -479,20 +498,8 @@ func devPrepareImage(ctx context.Context, p *profile.Data, target, flavor string
 	if dockerrt.LocalImageName(target) != target && !dockerrt.PullMissing(pullErr) {
 		return fmt.Errorf("образ %s не скачан: %v — похоже на сбой связи с реестром (сеть, VPN, прокси, docker login); повторите, когда связь будет, или выберите локальный образ (agctl dev images)", target, pullErr)
 	}
-	b := dockerrt.DevBuild{
-		Target: target, Flavor: flavor, BinDir: localmode.GuestDir(),
-		ImageFS: assets.Image, SkelFS: assets.DshSkel,
-		Version: version, Commit: commit, BuildDate: buildDate,
-		Log: func(m string) { logf("  " + m) },
-	}
-	if p != nil {
-		b.ProfileID = p.ID
-		v := p.View()
-		b.ProfileFS = v.FS
-		if ov, df, ok := v.ImageContext(); ok {
-			b.Overlay, b.OverlayDockerfile = ov, df
-		}
-	}
+	b := devBuildSpec(p, target, flavor)
+	b.Log = func(m string) { logf("  " + m) }
 	logf(fmt.Sprintf("… в реестре его тоже нет — собираю на этой машине: %s (первый раз 10–20 минут: npm, apt, браузеры; дальше — из кэша Docker)",
 		strings.Join(dockerrt.DevBuildPlan(b), " → ")))
 	bctx, bcancel := context.WithTimeout(ctx, 90*time.Minute)
