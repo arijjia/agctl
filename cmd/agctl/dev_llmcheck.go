@@ -6,7 +6,7 @@ package main
 // агент dsh на модели работать не сможет, поэтому новый шлюз моделей
 // (корпоративный LiteLLM, vLLM) проверяется здесь до показа рабочего места.
 // Запросы идут с этой машины, не из контейнера; ключи — из хранилища дома
-// (перед проверкой пустые подхватываются из окружения), наружу не печатаются.
+// (пустые переносит из окружения agctl dev init|up), наружу не печатаются.
 
 import (
 	"bytes"
@@ -89,10 +89,6 @@ func devLLMCheck(home string, args []string) error {
 	_ = fs.Parse(args)
 	cfg, err := localmode.Load(home)
 	if err != nil {
-		return err
-	}
-	devImportHostEnv(home, cfg)
-	if cfg, err = localmode.Load(home); err != nil {
 		return err
 	}
 	prof, err := devResolveProfile(cfg)

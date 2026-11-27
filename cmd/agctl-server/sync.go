@@ -9,11 +9,24 @@ import (
 	"strings"
 )
 
+// syncUsage — справка agctl-server sync с метками инвазивности (cli-std).
+const syncUsage = `agctl-server sync — Mutagen-синхронизация локальной папки с /workspace контейнера
+
+  create --name N --local DIR --port P  ✏️ создать сессию синхронизации
+  list                                   🔍 сессии
+  pause ИМЯ                              ⚠️ пауза сессии
+  resume ИМЯ                             ⚠️ возобновить сессию
+  flush ИМЯ                              ✏️ сбросить изменения на диск
+  terminate ИМЯ                          ✏️ удалить сессию
+
+Метки: 🔍 читающая · ✏️ мутирующая · ⚠️ с побочным эффектом (демон, контейнер, браузер, сеть).
+`
+
 // cmdSync — agctl sync: диспетчер подкоманд Mutagen (create|list|pause|
 // resume|flush|terminate); без аргументов печатает usage.
 func cmdSync(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: agctl sync <create|list|pause|resume|flush|terminate> ...")
+		fmt.Fprint(os.Stderr, syncUsage)
 		os.Exit(2)
 	}
 	switch args[0] {

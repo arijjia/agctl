@@ -12,22 +12,23 @@ var help = cli.Usage{
 		{
 			Title: "Локальный режим",
 			Rows: []cli.UsageRow{
-				{Name: "dev init", Desc: []string{"настроить: профиль, образ, папка проектов, доступы Jira/GitLab/LLM"}},
+				{Name: "dev init", Desc: []string{"✏️ настроить: профиль, образ, папка проектов, доступы Jira/GitLab/LLM"}},
 				{Name: "dev up [DIR]", Desc: []string{
-					"поднять платформу и рабочее место (DIR → /workspace), открыть браузер",
-					"dev down · status · open · logs · secrets · bridge · update · rollback · doctor",
+					"⚠️ поднять платформу и рабочее место (DIR → /workspace), открыть браузер",
+					"ещё: ⚠️ down · 🔍 status · ⚠️ open · 🔍 logs · 🔍 images · ✏️ update · ✏️ rollback · ⚠️ doctor · ⚠️ llm-check",
+					"группы: secrets · bridge · certs — agctl dev help",
 				}},
-				{Name: "dev paths", Desc: []string{"где что лежит: корень, бинари, профиль, дом и его файлы, порты, контейнеры, маунты, секреты"}},
-				{Name: "dev migrate", Desc: []string{"перенести прежние дома ~/.agctl-dev[-<id>] в <корень>/homes/<id> (план; --apply — выполнить)"}},
+				{Name: "dev paths", Desc: []string{"🔍 где что лежит: корень, бинари, профиль, дом и его файлы, порты, контейнеры, маунты, секреты"}},
+				{Name: "dev migrate", Desc: []string{"✏️ перенести прежние дома ~/.agctl-dev[-<id>] в <корень>/homes/<id> (план; --apply — выполнить)"}},
 			},
 		},
 		{
 			Title: "Служебные",
 			Rows: []cli.UsageRow{
-				{Name: "backlog", Desc: []string{"карточки задач: new|list|top|check|start|done|cancel|note|migrate"}},
-				{Name: "completion fish", Desc: []string{"скрипт автодополнения для fish"}},
-				{Name: "version", Desc: []string{"версия и сборка"}},
-				{Name: "help", Desc: []string{"эта справка"}},
+				{Name: "backlog", Desc: []string{"карточки задач: 🔍 list · top · check | ✏️ new · start · done · cancel · note · migrate"}},
+				{Name: "completion fish", Desc: []string{"🔍 скрипт автодополнения для fish"}},
+				{Name: "version", Desc: []string{"🔍 версия и сборка"}},
+				{Name: "help", Desc: []string{"🔍 эта справка"}},
 			},
 		},
 	},
@@ -36,5 +37,5 @@ var help = cli.Usage{
 		{Name: "AGCTL_HOME_ID", Desc: []string{"id дома (то же, что agctl dev --home <id>); без него — единственный дом или agctl"}},
 		{Name: "AGCTL_DEV_HOME", Desc: []string{"абсолютный путь дома вне корня — для тестов и e2e"}},
 	},
-	Footer: "Сервер организации — отдельный бинарь agctl-server.",
+	Footer: cli.MarksLegend + " Сервер организации — отдельный бинарь agctl-server.",
 }
