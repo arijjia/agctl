@@ -347,6 +347,7 @@ func devInit(h localmode.Home, args []string) error {
 		return err
 	}
 	fmt.Printf("\n✓ настройки: %s\n", localmode.Path(home))
+	devImportHostEnv(home, cfg)
 
 	if ref := cli.FirstNonEmpty(cfg.Image, devDefaultImage(p, cfg.Flavor)); *cliWizard && !*noPull && ref != "" {
 		if err := devPull(ref); err != nil {
@@ -589,6 +590,9 @@ func devUp(home string, args []string) error {
 	if _, err := localmode.ParseRuntime(cfg.Runtime); err != nil {
 		return fmt.Errorf("%s: %w", localmode.Path(home), err)
 	}
+	// Пустые доступы — из окружения хоста (токены, адреса): до старта, чтобы
+	// и уже запущенная платформа взяла их при следующем запуске места.
+	devImportHostEnv(home, cfg)
 	if cfg.RuntimeKind() == localmode.RuntimeSbx {
 		// Явная ошибка до старта, а не при первом открытии рабочего места.
 		if _, err := sbxrt.Probe(context.Background(), ""); err != nil {
@@ -827,7 +831,7 @@ func devServe(home string, args []string) {
 	}
 	_ = os.Setenv("AGCTL_CONFIG", filepath.Join(home, "serve-config.yaml"))
 	store := localmode.OpenStore(home)
-	env, missing := localmode.ContainerEnv(cfg, store)
+	env, missing := localmode.ContainerEnv(cfg, store, devProfileEnv(cfg))
 	if len(missing) > 0 {
 		log.Printf("dev: доступы не заданы: %s (agctl dev secrets set …)", strings.Join(missing, ", "))
 	}
@@ -1091,7 +1095,15 @@ func devSecrets(home string, args []string) error {
 	store := localmode.OpenStore(home)
 	if len(args) == 0 || args[0] == "list" {
 		fmt.Printf("хранилище: %s\n\n", store.Backend())
+		prof, _ := devResolveProfile(cfg)
+		var profEnv map[string]string
+		if prof != nil {
+			profEnv = prof.View().Env
+		}
 		names := map[string]bool{}
+		for n := range profEnv {
+			names[n] = true
+		}
 		for _, v := range localmode.Manifest {
 			names[v.Name] = true
 		}
@@ -1116,12 +1128,17 @@ func devSecrets(home string, args []string) error {
 				fmt.Printf("  %-28s %s%s\n", n, val, title)
 				continue
 			}
+			if val, ok := profEnv[n]; ok {
+				fmt.Printf("  %-28s %s (из профиля)%s\n", n, val, title)
+				continue
+			}
 			state := "—"
 			if _, err := store.Get(n); err == nil {
 				state = "задан (скрыт)"
 			}
 			fmt.Printf("  %-28s %s%s\n", n, state, title)
 		}
+		devPrintHostEnvSources(cfg, prof)
 		return nil
 	}
 	switch args[0] {
@@ -1546,6 +1563,15 @@ func devEgressArgs(cfg *localmode.Config) []string {
 
 // devProfileKeyEnvs — имена переменных с ключами доп. провайдеров профиля
 // (llm.extra_providers[].api_key_env).
+// devProfileEnv — несекретные значения профиля по умолчанию (env профиля).
+func devProfileEnv(cfg *localmode.Config) map[string]string {
+	prof, err := devResolveProfile(cfg)
+	if err != nil || prof == nil {
+		return nil
+	}
+	return prof.View().Env
+}
+
 func devProfileKeyEnvs(cfg *localmode.Config) []string {
 	prof, err := devResolveProfile(cfg)
 	if err != nil || prof == nil {

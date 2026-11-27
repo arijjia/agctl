@@ -54,6 +54,11 @@ func ResolveProfile(cfg *Config) (*profile.Data, ProfileRef, error) {
 		return nil, ProfileRef{}, fmt.Errorf("профиль %q: id — строчные латинские буквы, цифры, «.», «_», «-»", id)
 	}
 	dir := filepath.Join(ProfilesDir(), id)
+	if _, err := os.Stat(filepath.Join(dir, "profile.yaml")); err != nil {
+		if v, ok := profileVariants(ProfilesDir())[id]; ok {
+			dir = v // вариант внутри каталога базового профиля (org/dev → org-dev)
+		}
+	}
 	if _, err := os.Stat(filepath.Join(dir, "profile.yaml")); err == nil {
 		p, err := profile.LoadDir(dir)
 		if err != nil {
@@ -69,19 +74,62 @@ func ResolveProfile(cfg *Config) (*profile.Data, ProfileRef, error) {
 		ProfilesDir(), orDash(strings.Join(DiskProfiles(), ", ")))
 }
 
-// DiskProfiles — id профилей в <корень>/profiles (каталоги с profile.yaml).
+// DiskProfiles — id профилей в <корень>/profiles: каталоги с profile.yaml и
+// варианты во вложенных каталогах (profileVariants).
 func DiskProfiles() []string {
 	entries, err := os.ReadDir(ProfilesDir())
 	if err != nil {
 		return nil
 	}
+	seen := map[string]bool{}
 	var out []string
 	for _, e := range entries {
 		if _, err := os.Stat(filepath.Join(ProfilesDir(), e.Name(), "profile.yaml")); err == nil {
+			seen[e.Name()] = true
 			out = append(out, e.Name())
 		}
 	}
+	for id := range profileVariants(ProfilesDir()) {
+		if !seen[id] {
+			out = append(out, id)
+		}
+	}
 	sort.Strings(out)
+	return out
+}
+
+// profileVariants — варианты профилей во вложенных каталогах:
+// <профили>/<базовый>/<вариант>/profile.yaml (например org/dev с id org-dev
+// и extends: org) — так вариант живёт в одном репозитории с базовым и
+// едет на другую машину вместе с ним. id → каталог; первый найденный.
+func profileVariants(root string) map[string]string {
+	out := map[string]string{}
+	bases, err := os.ReadDir(root)
+	if err != nil {
+		return out
+	}
+	for _, b := range bases {
+		subs, err := os.ReadDir(filepath.Join(root, b.Name())) // симлинк на каталог — тоже
+		if err != nil {
+			continue
+		}
+		for _, s := range subs {
+			dir := filepath.Join(root, b.Name(), s.Name())
+			raw, err := os.ReadFile(filepath.Join(dir, "profile.yaml"))
+			if err != nil {
+				continue
+			}
+			var head struct {
+				ID string `yaml:"id"`
+			}
+			if yaml.Unmarshal(raw, &head) != nil || !ValidID(head.ID) {
+				continue
+			}
+			if _, dup := out[head.ID]; !dup {
+				out[head.ID] = dir
+			}
+		}
+	}
 	return out
 }
 

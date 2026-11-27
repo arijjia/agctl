@@ -279,13 +279,19 @@ func (s *Store) writeFile(all map[string]string) error {
 	return os.Rename(tmp, path)
 }
 
-// ContainerEnv собирает KEY=VALUE для контейнера: несекретные значения из
-// config.yaml + секреты из хранилища + производные имена для штатных
-// инструментов (glab, jira-cli, MCP GitLab/Jira, тулкиты доменов). Ключи
-// моделей (IsModelKeyEnv: основной, доп. провайдеров профиля, личных
-// провайдеров) в env контейнера не попадают — их получает сервер.
-func ContainerEnv(cfg *Config, store *Store) ([]string, []string) {
+// ContainerEnv собирает KEY=VALUE для контейнера: несекретные значения
+// профиля по умолчанию (defaults, env профиля) и поверх них — из config.yaml,
+// секреты из хранилища, производные имена для штатных инструментов (glab,
+// jira-cli, MCP GitLab/Jira, тулкиты доменов). Ключи моделей (IsModelKeyEnv:
+// основной, доп. провайдеров профиля, личных провайдеров) в env контейнера
+// не попадают — их получает сервер.
+func ContainerEnv(cfg *Config, store *Store, defaults map[string]string) ([]string, []string) {
 	vals := map[string]string{}
+	for k, v := range defaults {
+		if ValidEnvName(k) && !IsModelKeyEnv(k) && strings.TrimSpace(v) != "" {
+			vals[k] = strings.TrimSpace(v)
+		}
+	}
 	for k, v := range cfg.Env {
 		if IsModelKeyEnv(k) {
 			continue
