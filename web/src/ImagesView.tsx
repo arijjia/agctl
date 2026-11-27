@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { imagesApi, type ImagePlan, type ImageStage, type ImageTask, type ImageView } from "./api";
+import { Code } from "./highlight";
 import { Panel } from "./Shell";
 
 // ImagesView — раздел «Образы» лаунчера: каталог образов (что внутри, какие
@@ -211,7 +212,7 @@ function StageCard({ st, n, total }: { st: ImageStage; n: number; total: number 
       {list("загрузки", st.downloads)}
       <details style={{ marginTop: 6 }}>
         <summary className="small">Dockerfile целиком</summary>
-        <pre className="logs mono small">{st.dockerfile}</pre>
+        <Code text={st.dockerfile} lang="dockerfile" />
       </details>
     </div>
   );

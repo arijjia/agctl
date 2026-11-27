@@ -35,6 +35,13 @@
   --primary: rgba(207, 160, 26, 0.12);
   --primary-text: #cfa01a;
   --error-text: #ff9b96;
+  /* подсветка кода (Dockerfile, shell): ключевые слова, комментарии, строки, переменные, флаги, операторы */
+  --hl-kw: #d9a521;
+  --hl-com: #7d8794;
+  --hl-str: #8fbf6a;
+  --hl-var: #3cc4b6;
+  --hl-flag: #79a8d6;
+  --hl-op: #d0805a;
   --radius: 2px;
   --sans: "Exo 2", "Segoe UI", Arial, Helvetica, sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
@@ -64,6 +71,12 @@
   --primary: rgba(207, 160, 26, 0.18);
   --primary-text: #6b5209;
   --error-text: #b3261e;
+  --hl-kw: #8a5a00;
+  --hl-com: #6b7178;
+  --hl-str: #2e7d32;
+  --hl-var: #0f766e;
+  --hl-flag: #2f5f8f;
+  --hl-op: #b0451f;
 }
 * { box-sizing: border-box; }
 body {
@@ -620,6 +633,14 @@ button.small { padding: 4px 10px; font-size: 10px; }
 .code-editor { width: 100%; min-height: 62vh; resize: vertical; font: 12.5px/1.55 var(--mono); background: var(--log-bg); color: var(--text); border-radius: var(--radius); padding: 12px 14px; tab-size: 2; white-space: pre; overflow: auto; }
 .tree, .cmd pre, .layout-map { font: 12.5px/1.6 var(--mono); background: var(--log-bg); border: 1px solid var(--border-subtle); border-radius: var(--radius); padding: 10px 14px; margin: 0 0 10px; overflow-x: auto; white-space: pre; }
 .layout-map { margin: 0 0 18px; border-left: 3px solid var(--data); }
+/* Код с подсветкой (web/src/highlight.tsx): Dockerfile ступеней, файлы контекста сборки */
+.code-view { font: 12px/1.5 var(--mono); background: var(--log-bg); color: var(--text); border: 1px solid var(--border-subtle); border-radius: var(--radius); padding: 10px 12px; margin: 6px 0 0; max-height: 520px; overflow: auto; white-space: pre; tab-size: 4; }
+.hl-kw { color: var(--hl-kw); font-weight: 600; }
+.hl-com { color: var(--hl-com); font-style: italic; }
+.hl-str { color: var(--hl-str); }
+.hl-var { color: var(--hl-var); }
+.hl-flag { color: var(--hl-flag); }
+.hl-op { color: var(--hl-op); font-weight: 600; }
 .layout-map-extra { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-subtle); }
 .cmd { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 12px; }
 .cmd pre { flex: 1; margin: 0; white-space: pre-wrap; word-break: break-all; }
