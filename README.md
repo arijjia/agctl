@@ -549,15 +549,17 @@ make k8s_status
 
 ```bash
 git clone https://github.com/arijjia/agctl && cd agctl
-make install
+make install link
 ```
 
 `make install` собирает интерфейс и бинари и ставит `agctl` и
 `agctl-server` в `~/.agctl/bin`, оба варианта guest —
 `agctl-guest-linux-<arch>` и `agctl-guest-server-linux-<arch>` — в
-`~/.agctl/bin/guest` и автодополнение fish (`agctl.fish`,
-`agctl-server.fish`). `AGCTL_ROOT=…` меняет корень; `~/.agctl/bin` должен
-быть в `PATH`. Повторяйте после
+`~/.agctl/bin/guest`. `make link` делает относительные симлинки:
+`~/.local/bin/agctl{,-server}` → `~/.agctl/bin` и автодополнение fish
+`~/.config/fish/completions/agctl{,-server}.fish` → `completions/` репозитория
+(файлы комплишенов коммитятся: `make completions`, тест следит за
+расхождением). `AGCTL_ROOT=…` меняет корень. Повторяйте `make install` после
 каждого `git pull`: старый бинарь в `PATH` — частая причина ошибки
 «неизвестная команда».
 
