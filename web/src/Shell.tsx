@@ -1,9 +1,9 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { applyTheme, currentTheme, toggleTheme, type Theme } from "./theme";
 
 // Shell — единая оболочка веб-приложения для обоих режимов и всех ролей:
-// верхняя панель на всю ширину (бренд организации, разделы, состояние,
-// пользователь) и содержимое раздела под ней. Набор разделов задаёт
+// боковая панель слева (бренд организации, разделы, состояние,
+// пользователь) и содержимое раздела справа на всю оставшуюся ширину. Набор разделов задаёт
 // вызывающий экран по роли и режиму; выбранный раздел живёт в адресе
 // (#/раздел), поэтому на него можно дать ссылку и он переживает обновление.
 
@@ -38,6 +38,59 @@ export function useSection(items: NavItem[], fallback?: string): [string, (id: s
     setSection(id);
   };
   return [section, go];
+}
+
+// Ширина боковой панели: тянется за правый край, двойной щелчок — по
+// умолчанию; запоминается в браузере (только удобство, без него всё работает).
+const SIDE_KEY = "agctl-side-width";
+const SIDE_DEFAULT = 228;
+const SIDE_MIN = 170;
+const SIDE_MAX = 440;
+const clampSide = (w: number) => Math.min(SIDE_MAX, Math.max(SIDE_MIN, Math.round(w)));
+function readSide(): number {
+  try {
+    const v = Number(localStorage.getItem(SIDE_KEY));
+    return v ? clampSide(v) : SIDE_DEFAULT;
+  } catch {
+    return SIDE_DEFAULT;
+  }
+}
+function saveSide(w: number) {
+  try {
+    localStorage.setItem(SIDE_KEY, String(w));
+  } catch {
+    /* хранилище недоступно — ширина живёт до перезагрузки */
+  }
+}
+
+function useSideWidth(): [number, (e: ReactPointerEvent) => void, () => void, boolean] {
+  const [width, setWidth] = useState(readSide);
+  const [dragging, setDragging] = useState(false);
+  const last = useRef(width);
+  const start = (e: ReactPointerEvent) => {
+    e.preventDefault();
+    const x0 = e.clientX;
+    const w0 = width;
+    setDragging(true);
+    const move = (ev: PointerEvent) => {
+      last.current = clampSide(w0 + ev.clientX - x0);
+      setWidth(last.current);
+    };
+    const up = () => {
+      setDragging(false);
+      saveSide(last.current);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  const reset = () => {
+    last.current = SIDE_DEFAULT;
+    setWidth(SIDE_DEFAULT);
+    saveSide(SIDE_DEFAULT);
+  };
+  return [width, start, reset, dragging];
 }
 
 function BrandMark() {
@@ -83,12 +136,15 @@ export default function Shell({
 }) {
   const [theme, setTheme] = useState<Theme>(currentTheme);
   useEffect(() => applyTheme(theme), [theme]);
+  const [sideWidth, startResize, resetSide, resizing] = useSideWidth();
   let lastGroup = "";
   return (
-    <div className="shell">
-      <header className="shell-topbar">
+    <div
+      className={resizing ? "shell resizing" : "shell"}
+      style={{ ["--side-w" as any]: sideWidth + "px" }}
+    >
+      <aside className="shell-side">
         <BrandMark />
-        <div className="shell-divider" />
         <nav className="shell-nav">
           {items.map((it) => {
             const group = it.group && it.group !== lastGroup ? it.group : "";
@@ -112,26 +168,41 @@ export default function Shell({
           })}
         </nav>
         <div className="shell-actions">
-          {pills.map((p) => (
-            <span key={p.label} className="shell-pill" title={p.title}>
-              <span className={`shell-pill-dot ${p.tone || "muted"}`} />
-              {p.label}
-            </span>
-          ))}
-          <button className="shell-btn" onClick={() => setTheme(toggleTheme(theme))} title="Светлая / тёмная тема">
-            {theme === "dark" ? "Светлая" : "Тёмная"}
-          </button>
+          {pills.length > 0 && (
+            <div className="shell-pills">
+              {pills.map((p) => (
+                <span key={p.label} className="shell-pill" title={p.title}>
+                  <span className={`shell-pill-dot ${p.tone || "muted"}`} />
+                  {p.label}
+                </span>
+              ))}
+            </div>
+          )}
           <span className="shell-user">
             <span className="shell-user-dot" />
             {user}
           </span>
-          {onLogout && (
-            <button className="shell-btn" onClick={onLogout}>
-              Выйти
+          <div className="shell-buttons">
+            <button className="shell-btn" onClick={() => setTheme(toggleTheme(theme))} title="Светлая / тёмная тема">
+              {theme === "dark" ? "Светлая" : "Тёмная"}
             </button>
-          )}
+            {onLogout && (
+              <button className="shell-btn" onClick={onLogout}>
+                Выйти
+              </button>
+            )}
+          </div>
         </div>
-      </header>
+        <div
+          className="shell-resize"
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuenow={sideWidth}
+          title="Потяните, чтобы изменить ширину; двойной щелчок — по умолчанию"
+          onPointerDown={startResize}
+          onDoubleClick={resetSide}
+        />
+      </aside>
       <main className="shell-page">
         {(title || actions) && (
           <div className="page-head">

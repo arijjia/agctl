@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { local, onLocalEvents, runtimeApi, type LocalUI, type User } from "./api";
 import Shell, { Panel, useSection, type NavItem } from "./Shell";
-import ProfilePage from "./ProfilePage";
 import PathsPage from "./PathsPage";
 import DownloadPage from "./DownloadPage";
 import PlacesView from "./PlacesView";
@@ -29,7 +28,6 @@ const SUBTITLE: Record<string, string> = {
   images: "Из чего собраны образы рабочих мест и чем отличаются; скачать, пересобрать, удалить.",
   presets: "Наборы инструментов агента: MCP-серверы и скиллы. Пресет выбирается в чате у поля ввода.",
   secrets: "Провайдеры моделей и доступы рабочего места. Значения хранятся в хранилище секретов.",
-  profile: "Настройки организации: бренд, модели, инструменты. Тот же файл, что лежит в каталоге профиля.",
   paths: "Всё, что agctl держит на этой машине: файлы, порты, контейнеры.",
   download: "Установка agctl на компьютер разработчика.",
 };
@@ -49,7 +47,6 @@ export default function LocalLauncher({ user, initial, embed }: { user: User; in
     { id: "images", label: "Образы" },
     { id: "presets", label: "Пресеты" },
     { id: "secrets", label: "Доступ", warn: !ui.llmKeySet },
-    { id: "profile", label: "Профиль", group: "Организация" },
     { id: "paths", label: "Где что лежит", group: "Система" },
     { id: "download", label: "Скачать", group: "Система" },
   ];
@@ -136,7 +133,6 @@ export default function LocalLauncher({ user, initial, embed }: { user: User; in
       title={NAV.find((n) => n.id === section)?.label}
       subtitle={SUBTITLE[section]}
     >
-      {section === "profile" && <ProfilePage />}
       {section === "paths" && <PathsPage />}
       {section === "download" && <DownloadPage />}
       {(section === "places" || section === "images" || section === "presets" || section === "secrets") && (
