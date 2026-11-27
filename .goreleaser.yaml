@@ -94,8 +94,8 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
-# Заметки к релизу пишутся руками: docs/releases/<тег>.md (CI передаёт их
-# goreleaser через --release-notes). Автоматический список из заголовков
-# коммитов выключен — в нём вся история целиком.
+# Заметки к релизу пишутся руками: docs/releases/<тег>.md — CI передаёт их
+# goreleaser через --release-notes и без файла релиз не собирает.
+# (changelog.disable не ставим: он выключает и заметки из файла.)
 changelog:
-  disable: true
+  sort: asc
