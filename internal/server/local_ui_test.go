@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io/fs"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -32,6 +35,22 @@ func (f *fakeHooks) ImagePlan(ref string) (LocalImagePlan, error) {
 		{Ref: "agctl-dsh:0.2.2", Kind: "base", Dockerfile: "FROM node:22-bookworm-slim\n"},
 		{Ref: ref, Kind: "profile", Dockerfile: "ARG BASE\nFROM ${BASE}\n", Args: map[string]string{"BASE": "agctl-dsh:0.2.2"}},
 	}}, nil
+}
+
+// ImageFile — контекст сборки в памяти: скрипт, каталог скелета, guest-бинарь.
+func (f *fakeHooks) ImageFile(ref string, stage int, rel string) (LocalImageFile, error) {
+	if stage != 1 {
+		return LocalImageFile{}, fmt.Errorf("у образа %s одна ступень: %w", ref, fs.ErrNotExist)
+	}
+	switch rel {
+	case "entrypoint.sh":
+		return LocalImageFile{Path: rel, Size: 18, Text: "#!/bin/sh\necho hi\n"}, nil
+	case "skel":
+		return LocalImageFile{Path: rel, Dir: true, Size: 3, Files: []LocalImageFileItem{{Path: "skel/cordis.patch.yml", Size: 3}}}, nil
+	case "agctl":
+		return LocalImageFile{}, errors.New("agctl — двоичный файл, 41.0 МБ: показываются только текстовые")
+	}
+	return LocalImageFile{}, fmt.Errorf("%s: нет в контексте сборки: %w", rel, fs.ErrNotExist)
 }
 
 func (f *fakeHooks) RemoveImage(ctx context.Context, ref string) error {

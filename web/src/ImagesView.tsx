@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
-import { imagesApi, type ImagePlan, type ImageStage, type ImageTask, type ImageView } from "./api";
-import { Code } from "./highlight";
+import { Fragment, useCallback, useEffect, useState } from "react";
+import { imagesApi, type ImageContext, type ImageFile, type ImagePlan, type ImageStage, type ImageTask, type ImageView } from "./api";
+import { Code, langOf } from "./highlight";
 import { Panel } from "./Shell";
 
 // ImagesView — раздел «Образы» лаунчера: каталог образов (что внутри, какие
 // места их используют, чем отличаются), как каждый собирается (ступени,
-// Dockerfile, аргументы, что качается из сети) и действия: скачать или
-// собрать, пересобрать, удалить. Операции идут фоном на сервере; все копии
-// лаунчера видят их журнал (поток событий перечитывает список).
+// Dockerfile, аргументы, файлы контекста сборки — каждый открывается, что
+// качается из сети) и действия: скачать или собрать, пересобрать, удалить.
+// Операции идут фоном на сервере; все копии лаунчера видят их журнал
+// (поток событий перечитывает список).
 
 const KIND: Record<string, string> = {
   full: "полный",
@@ -18,6 +19,16 @@ const KIND: Record<string, string> = {
 const kindOf = (im: ImageView) => KIND[im.variant || im.flavor || "full"] || im.variant || im.flavor || "полный";
 
 const gb = (mb?: number) => (mb ? `${(mb / 1024).toFixed(1)} ГБ` : "—");
+
+const bytes = (n: number) =>
+  n < 1024 ? `${n} Б` : n < 1 << 20 ? `${(n / 1024).toFixed(1)} КБ` : n < 1 << 30 ? `${(n / (1 << 20)).toFixed(1)} МБ` : `${(n / (1 << 30)).toFixed(1)} ГБ`;
+
+// nFiles — «1 файл», «3 файла», «12 файлов».
+const nFiles = (n: number) => {
+  const d = n % 10;
+  const dd = n % 100;
+  return `${n} ${d === 1 && dd !== 11 ? "файл" : d >= 2 && d <= 4 && (dd < 12 || dd > 14) ? "файла" : "файлов"}`;
+};
 
 export default function ImagesView({ note, refreshKey }: { note: (m: string, err?: boolean) => void; refreshKey: number }) {
   const [list, setList] = useState<ImageView[] | null>(null);
@@ -75,8 +86,11 @@ export default function ImagesView({ note, refreshKey }: { note: (m: string, err
         Образ рабочего места — цепочка ступеней: базовый (Debian и Node, инструменты, прогретые MCP, dsh, guest agctl) →
         вкус (web — с браузером) → надстройка профиля. При запуске места agctl сначала пробует <code>docker pull</code>, а
         если образа в реестре нет — собирает недостающие ступени на этой машине; готовые ступени и слои Docker берутся из
-        кэша, поэтому новая версия dsh — это пересборка только верхних слоёв. «Как собирается» показывает Dockerfile
-        каждой ступени, аргументы и всё, что качается из сети.
+        кэша, поэтому новая версия dsh — это пересборка только верхних слоёв. Всё для сборки уже на машине: Dockerfile
+        ступеней, entrypoint и скелет dsh-home встроены в бинарь agctl, а linux-сборку guest install.sh кладёт в{" "}
+        <code>~/.agctl/bin/guest</code> — поэтому пересборка работает на любой машине с установленным agctl, в том числе
+        без исходников. «Как собирается» показывает Dockerfile каждой ступени, аргументы, файлы контекста сборки (каждый
+        открывается) и всё, что качается из сети.
       </p>
       {task && (task.state === "building" || task.state === "error" || task.log.length > 0) && (
         <Panel label={`Операция с образом ${task.image}`} aside={<span className={`badge ${busy ? "state-created" : task.state === "error" ? "state-removed" : "state-running"}`}>{busy ? "идёт" : task.state === "error" ? "ошибка" : "готово"}</span>}>
@@ -165,7 +179,7 @@ export default function ImagesView({ note, refreshKey }: { note: (m: string, err
             <>
               <p className="small">{plan.pull}</p>
               {plan.stages.map((st, i) => (
-                <StageCard key={st.ref} st={st} n={i + 1} total={plan.stages.length} />
+                <StageCard key={st.ref} image={plan.ref} st={st} n={i + 1} total={plan.stages.length} />
               ))}
             </>
           )}
@@ -175,7 +189,7 @@ export default function ImagesView({ note, refreshKey }: { note: (m: string, err
   );
 }
 
-function StageCard({ st, n, total }: { st: ImageStage; n: number; total: number }) {
+function StageCard({ image, st, n, total }: { image: string; st: ImageStage; n: number; total: number }) {
   const args = Object.entries(st.args || {});
   const list = (label: string, items?: string[]) =>
     items && items.length > 0 ? (
@@ -205,7 +219,7 @@ function StageCard({ st, n, total }: { st: ImageStage; n: number; total: number 
           <span className="mono">{args.map(([k, v]) => `${k}=${v}`).join("  ")}</span>
         </div>
       )}
-      {list("контекст сборки", st.context)}
+      <ContextTable image={image} stage={n} items={st.context} />
       {list("базовые образы", st.from)}
       {list("пакеты apt", st.apt)}
       {list("пакеты npm", st.npm)}
@@ -214,6 +228,98 @@ function StageCard({ st, n, total }: { st: ImageStage; n: number; total: number 
         <summary className="small">Dockerfile целиком</summary>
         <Code text={st.dockerfile} lang="dockerfile" />
       </details>
+    </div>
+  );
+}
+
+// ContextTable — контекст сборки ступени, кроме Dockerfile: что за файл,
+// откуда он (встроен в бинарь agctl, скелет dsh-home, guest-бинарь на
+// диске, файл профиля), размер; строка раскрывается — текст файла с
+// подсветкой или файлы каталога.
+function ContextTable({ image, stage, items }: { image: string; stage: number; items?: ImageContext[] }) {
+  const [open, setOpen] = useState("");
+  if (!items || items.length === 0) return null;
+  return (
+    <div className="ctx">
+      <div className="small muted">контекст сборки, кроме Dockerfile (строка открывает файл):</div>
+      <table className="data-table ctx-table">
+        <tbody>
+          {items.map((it) => {
+            const key = it.name.replace(/\/$/, "");
+            const isOpen = open === key;
+            return (
+              <Fragment key={it.name}>
+                <tr className="ctx-row" onClick={() => setOpen(isOpen ? "" : key)}>
+                  <td className="mono ctx-name">
+                    <span className="ctx-caret">{isOpen ? "▾" : "▸"}</span> {it.name}
+                  </td>
+                  <td>
+                    {it.from}
+                    {it.path && <div className="muted mono ctx-path">{it.path}</div>}
+                  </td>
+                  <td className="ctx-size">
+                    {it.missing ? <span className="badge state-removed">нет на диске</span> : bytes(it.size)}
+                    {it.dir && <div className="muted">{nFiles(it.files || 0)}</div>}
+                    {it.modified && <div className="muted">{it.modified}</div>}
+                  </td>
+                </tr>
+                {isOpen && (
+                  <tr className="ctx-open">
+                    <td colSpan={3}>
+                      {it.missing ? <div className="error small">{it.note || "файла нет на диске"}</div> : <ContextPath image={image} stage={stage} path={key} />}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ContextPath — файл контекста (текст с подсветкой: Dockerfile, shell — по
+// расширению .sh или shebang) или каталог (файлы, каждый раскрывается).
+function ContextPath({ image, stage, path }: { image: string; stage: number; path: string }) {
+  const [data, setData] = useState<ImageFile | null>(null);
+  const [err, setErr] = useState("");
+  const [open, setOpen] = useState("");
+  useEffect(() => {
+    let live = true;
+    setData(null);
+    setErr("");
+    imagesApi
+      .file(image, stage, path)
+      .then((d) => {
+        if (live) setData(d);
+      })
+      .catch((e) => {
+        if (live) setErr(e.message);
+      });
+    return () => {
+      live = false;
+    };
+  }, [image, stage, path]);
+  if (err) return <div className="error small">{err}</div>;
+  if (!data) return <p className="muted small">Загрузка…</p>;
+  if (!data.dir) {
+    const text = data.text || "";
+    return <Code text={text} lang={langOf(path, text)} />;
+  }
+  const files = data.files || [];
+  return (
+    <div className="ctx-files">
+      {files.length === 0 && <p className="muted small">Каталог пуст.</p>}
+      {files.map((f) => (
+        <div key={f.path}>
+          <button type="button" className="link-btn" onClick={() => setOpen(open === f.path ? "" : f.path)}>
+            {open === f.path ? "▾" : "▸"} {f.path.startsWith(path + "/") ? f.path.slice(path.length + 1) : f.path}
+          </button>{" "}
+          <span className="muted small">{bytes(f.size)}</span>
+          {open === f.path && <ContextPath image={image} stage={stage} path={f.path} />}
+        </div>
+      ))}
     </div>
   );
 }

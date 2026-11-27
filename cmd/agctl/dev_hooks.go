@@ -11,6 +11,7 @@ import (
 	"github.com/arijjia/agctl/internal/assets"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/arijjia/agctl/internal/cli"
 	"github.com/arijjia/agctl/internal/localmode"
@@ -206,15 +207,44 @@ func (h *devHooks) SetImage(ref string) error {
 	return localmode.SetImage(h.home, ref, devFlavorOf(&localmode.Config{}, h.prof, ref))
 }
 
-// ImagePlan — как образ ref попадает на машину: docker pull, при «нет
-// такого» — ступени сборки с Dockerfile, аргументами и тем, что качается
-// из сети (раздел «Образы» лаунчера).
-func (h *devHooks) ImagePlan(ref string) (server.LocalImagePlan, error) {
+// devPlanBuild — что и из чего собирается для образа ref (план и файлы
+// контекста в разделе «Образы»): ошибка — образ не из семейства agctl-dsh
+// этого профиля. guest-бинарь — под архитектуру демона Docker.
+func (h *devHooks) devPlanBuild(ref string) (dockerrt.DevBuild, error) {
 	local := dockerrt.LocalImageName(ref)
 	b := devBuildSpec(h.prof, local, devFlavorOf(&localmode.Config{}, h.prof, ref))
 	if plan := dockerrt.DevBuildPlan(b); plan[len(plan)-1] != local {
-		return server.LocalImagePlan{}, fmt.Errorf("образ %s не из семейства agctl-dsh этого профиля (сборка дала бы %s) — его можно только скачать (docker pull)", ref, plan[len(plan)-1])
+		return b, fmt.Errorf("образ %s не из семейства agctl-dsh этого профиля (сборка дала бы %s) — его можно только скачать (docker pull)", ref, plan[len(plan)-1])
 	}
+	b.Arch = devDaemonArch()
+	return b, nil
+}
+
+// devArch — архитектура демона Docker, узнанная один раз за процесс (на
+// ней и решается, какой guest-бинарь войдёт в образ).
+var devArch struct {
+	sync.Mutex
+	v string
+}
+
+func devDaemonArch() string {
+	devArch.Lock()
+	defer devArch.Unlock()
+	if devArch.v == "" {
+		devArch.v = dockerrt.DaemonArch(context.Background())
+	}
+	return devArch.v
+}
+
+// ImagePlan — как образ ref попадает на машину: docker pull, при «нет
+// такого» — ступени сборки с Dockerfile, аргументами, контекстом и тем, что
+// качается из сети (раздел «Образы» лаунчера).
+func (h *devHooks) ImagePlan(ref string) (server.LocalImagePlan, error) {
+	b, err := h.devPlanBuild(ref)
+	if err != nil {
+		return server.LocalImagePlan{}, err
+	}
+	local := b.Target
 	stages, err := dockerrt.DevBuildStages(b)
 	if err != nil {
 		return server.LocalImagePlan{}, err
@@ -226,10 +256,36 @@ func (h *devHooks) ImagePlan(ref string) (server.LocalImagePlan, error) {
 		out.Pull = "docker pull " + ref + " (локальное имя: в Docker Hub его обычно нет) — затем сборка ступеней ниже; готовые ступени не пересобираются"
 	}
 	for _, st := range stages {
+		var ctxItems []server.LocalImageContext
+		for _, c := range st.Context {
+			ctxItems = append(ctxItems, server.LocalImageContext{
+				Name: c.Name, Dir: c.Dir, Origin: c.Origin, From: c.From, Path: c.Path, Size: c.Size,
+				Files: c.Files, Missing: c.Missing, Modified: c.Modified, Note: c.Note,
+			})
+		}
 		out.Stages = append(out.Stages, server.LocalImageStage{
 			Ref: st.Ref, Kind: st.Kind, Title: st.Title, Source: st.Source, Dockerfile: st.Dockerfile,
-			Args: st.Args, Context: st.Context, From: st.From, Apt: st.Apt, Npm: st.Npm, Downloads: st.Downloads,
+			Args: st.Args, Context: ctxItems, From: st.From, Apt: st.Apt, Npm: st.Npm, Downloads: st.Downloads,
 		})
+	}
+	return out, nil
+}
+
+// ImageFile — файл или каталог контекста сборки ступени stage (с 1) образа
+// ref: встроенные в бинарь файлы, скелет dsh-home, guest-бинарь на диске
+// (двоичный — ошибка с размером), файлы профиля.
+func (h *devHooks) ImageFile(ref string, stage int, rel string) (server.LocalImageFile, error) {
+	b, err := h.devPlanBuild(ref)
+	if err != nil {
+		return server.LocalImageFile{}, err
+	}
+	f, err := dockerrt.DevContextFile(b, stage, rel)
+	if err != nil {
+		return server.LocalImageFile{}, err
+	}
+	out := server.LocalImageFile{Path: f.Path, Size: f.Size, Dir: f.Dir, Text: f.Text}
+	for _, e := range f.Files {
+		out.Files = append(out.Files, server.LocalImageFileItem{Path: e.Path, Size: e.Size})
 	}
 	return out, nil
 }

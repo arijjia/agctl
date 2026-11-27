@@ -37,6 +37,23 @@ func PingDaemon(ctx context.Context) (string, error) {
 	return ping.APIVersion, nil
 }
 
+// DaemonArch — архитектура демона Docker (arm64|amd64; "" — не узнали):
+// под неё сборка берёт guest-бинарь.
+func DaemonArch(ctx context.Context) string {
+	cli, err := localClient()
+	if err != nil {
+		return ""
+	}
+	defer cli.Close()
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	res, err := cli.Info(ctx, client.InfoOptions{})
+	if err != nil {
+		return ""
+	}
+	return goArch(res.Info.Architecture)
+}
+
 // ImageID — id локального образа ref ("" и ошибка, если его нет).
 func ImageID(ctx context.Context, ref string) (string, error) {
 	cli, err := localClient()

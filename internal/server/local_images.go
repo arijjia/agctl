@@ -11,8 +11,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -20,18 +22,50 @@ import (
 // LocalImageStage — ступень сборки образа: что добавляет, откуда Dockerfile,
 // аргументы сборки, контекст и что качается из сети.
 type LocalImageStage struct {
-	Ref        string            `json:"ref"`
-	Present    bool              `json:"present"`
-	Kind       string            `json:"kind"`
-	Title      string            `json:"title"`
-	Source     string            `json:"source"`
-	Dockerfile string            `json:"dockerfile"`
-	Args       map[string]string `json:"args,omitempty"`
-	Context    []string          `json:"context,omitempty"`
-	From       []string          `json:"from,omitempty"`
-	Apt        []string          `json:"apt,omitempty"`
-	Npm        []string          `json:"npm,omitempty"`
-	Downloads  []string          `json:"downloads,omitempty"`
+	Ref        string              `json:"ref"`
+	Present    bool                `json:"present"`
+	Kind       string              `json:"kind"`
+	Title      string              `json:"title"`
+	Source     string              `json:"source"`
+	Dockerfile string              `json:"dockerfile"`
+	Args       map[string]string   `json:"args,omitempty"`
+	Context    []LocalImageContext `json:"context,omitempty"`
+	From       []string            `json:"from,omitempty"`
+	Apt        []string            `json:"apt,omitempty"`
+	Npm        []string            `json:"npm,omitempty"`
+	Downloads  []string            `json:"downloads,omitempty"`
+}
+
+// LocalImageContext — файл или каталог контекста сборки ступени, кроме
+// Dockerfile: откуда берётся (встроен в бинарь agctl, скелет dsh-home,
+// guest-бинарь на диске, файл профиля), размер, у каталога — число файлов.
+type LocalImageContext struct {
+	Name     string `json:"name"`              // путь в контексте: entrypoint.sh, skel/, agctl
+	Dir      bool   `json:"dir,omitempty"`     // каталог
+	Origin   string `json:"origin"`            // embedded | skel | guest | profile
+	From     string `json:"from"`              // откуда — для человека
+	Path     string `json:"path,omitempty"`    // в исходниках agctl, в профиле или на диске
+	Size     int64  `json:"size"`              // байт; у каталога — всех файлов
+	Files    int    `json:"files,omitempty"`   // число файлов каталога
+	Missing  bool   `json:"missing,omitempty"` // guest-бинаря нет на диске
+	Modified string `json:"modified,omitempty"`
+	Note     string `json:"note,omitempty"`
+}
+
+// LocalImageFile — файл контекста сборки (текст) или каталог (все файлы с
+// путями от корня контекста).
+type LocalImageFile struct {
+	Path  string               `json:"path"`
+	Size  int64                `json:"size"`
+	Dir   bool                 `json:"dir,omitempty"`
+	Files []LocalImageFileItem `json:"files,omitempty"`
+	Text  string               `json:"text,omitempty"`
+}
+
+// LocalImageFileItem — файл каталога контекста.
+type LocalImageFileItem struct {
+	Path string `json:"path"`
+	Size int64  `json:"size"`
 }
 
 // LocalImagePlan — как образ попадает на машину: сначала docker pull, при
@@ -42,9 +76,14 @@ type LocalImagePlan struct {
 	Stages []LocalImageStage `json:"stages"`
 }
 
-// LocalImagesHooks — хост для раздела «Образы»: план сборки и удаление.
+// LocalImagesHooks — хост для раздела «Образы»: план сборки, файлы
+// контекста и удаление.
 type LocalImagesHooks interface {
 	ImagePlan(ref string) (LocalImagePlan, error)
+	// ImageFile — файл или каталог rel контекста сборки ступени stage (с 1,
+	// как в плане): текст до 256 КБ или список файлов. Нет такого пути —
+	// ошибка с fs.ErrNotExist; двоичный или большой файл — ошибка с размером.
+	ImageFile(ref string, stage int, rel string) (LocalImageFile, error)
 	RemoveImage(ctx context.Context, ref string) error
 }
 
@@ -66,6 +105,7 @@ func (s *Server) imageTask() *localTask {
 func (s *Server) registerLocalImageRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/local/ui/images", s.requireLocalOwner(s.handleImagesList))
 	mux.HandleFunc("GET /api/local/ui/images/plan", s.requireLocalOwner(s.handleImagePlan))
+	mux.HandleFunc("GET /api/local/ui/images/file", s.requireLocalOwner(s.handleImageFile))
 	mux.HandleFunc("POST /api/local/ui/images/{action}", s.requireLocalOwner(s.handleImageAction))
 }
 
@@ -151,6 +191,42 @@ func (s *Server) handleImagePlan(w http.ResponseWriter, r *http.Request, id iden
 		}
 	}
 	writeJSON(w, http.StatusOK, plan)
+}
+
+// handleImageFile — GET /api/local/ui/images/file?ref=&stage=&path=: файл
+// контекста сборки ступени (текст) или каталог (список файлов).
+func (s *Server) handleImageFile(w http.ResponseWriter, r *http.Request, id identity) {
+	h, ok := s.imagesHooks()
+	if !ok {
+		writeErr(w, http.StatusNotImplemented, "файлы контекста недоступны в этой сборке")
+		return
+	}
+	q := r.URL.Query()
+	ref := strings.TrimSpace(q.Get("ref"))
+	if err := s.validImageRef(ref); err != nil || ref == "" {
+		writeErr(w, http.StatusBadRequest, "нужен образ: ?ref=<образ>")
+		return
+	}
+	stage, err := strconv.Atoi(q.Get("stage"))
+	if err != nil || stage < 1 {
+		writeErr(w, http.StatusBadRequest, "нужна ступень: ?stage=<номер с 1, как в плане>")
+		return
+	}
+	rel := strings.TrimSuffix(strings.TrimSpace(q.Get("path")), "/")
+	if rel == "" || rel == "." || !fs.ValidPath(rel) || strings.Contains(rel, "\\") {
+		writeErr(w, http.StatusBadRequest, "нужен путь внутри контекста сборки: ?path=<файл или каталог>, без «..»")
+		return
+	}
+	f, err := h.ImageFile(ref, stage, rel)
+	if err != nil {
+		code := http.StatusUnprocessableEntity
+		if errors.Is(err, fs.ErrNotExist) {
+			code = http.StatusNotFound
+		}
+		writeErr(w, code, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, f)
 }
 
 type imageActionReq struct {

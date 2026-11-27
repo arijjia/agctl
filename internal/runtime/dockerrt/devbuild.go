@@ -33,7 +33,12 @@ type DevBuild struct {
 	ProfileID         string
 	Overlay           fs.FS  // контекст надстройки профиля (nil — нет)
 	OverlayDockerfile string // имя Dockerfile в Overlay
+	OverlayDir        string // каталог Overlay внутри профиля (подписи файлов в плане)
 	ProfileFS         fs.FS  // корень профиля (image/flavors/<вкус>/Dockerfile)
+
+	// Arch — архитектура демона Docker для плана (какой guest-бинарь войдёт в
+	// образ); "" — как у этой машины. Сборка спрашивает демон сама.
+	Arch string
 
 	// Сборка agctl — в метки образа (io.agctl.guest.*, created).
 	Version, Commit, BuildDate string

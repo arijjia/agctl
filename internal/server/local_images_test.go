@@ -73,3 +73,40 @@ func TestLocalImages(t *testing.T) {
 		t.Fatalf("неизвестное действие: %d", code)
 	}
 }
+
+// Файлы контекста сборки: текст файла, список файлов каталога; двоичный —
+// 422 с размером, нет такого — 404, путь с «..» и ступень не с 1 — 400.
+func TestLocalImageFile(t *testing.T) {
+	env, _ := newLocalUIEnv(t)
+	c := loginOwner(t, env)
+	base := "/api/local/ui/images/file?ref=agctl-dsh-org:0.2.2&stage=1&path="
+	code, body := env.do(c, "GET", base+"entrypoint.sh", nil)
+	if code != 200 || !strings.Contains(body, `"text":"#!/bin/sh\necho hi\n"`) {
+		t.Fatalf("файл: %d %s", code, body)
+	}
+	code, body = env.do(c, "GET", base+"skel/", nil)
+	if code != 200 || !strings.Contains(body, `"dir":true`) || !strings.Contains(body, `"path":"skel/cordis.patch.yml"`) {
+		t.Fatalf("каталог: %d %s", code, body)
+	}
+	if code, body := env.do(c, "GET", base+"agctl", nil); code != http.StatusUnprocessableEntity || !strings.Contains(body, "41.0 МБ") {
+		t.Fatalf("двоичный: %d %s", code, body)
+	}
+	if code, _ := env.do(c, "GET", base+"nope.txt", nil); code != http.StatusNotFound {
+		t.Fatalf("нет такого файла: %d", code)
+	}
+	if code, _ := env.do(c, "GET", "/api/local/ui/images/file?ref=agctl-dsh-org:0.2.2&stage=2&path=entrypoint.sh", nil); code != http.StatusNotFound {
+		t.Fatalf("нет такой ступени: %d", code)
+	}
+	for _, bad := range []string{
+		base + "../etc/passwd",
+		base + "/etc/passwd",
+		base,
+		"/api/local/ui/images/file?ref=agctl-dsh-org:0.2.2&stage=0&path=entrypoint.sh",
+		"/api/local/ui/images/file?ref=agctl-dsh-org:0.2.2&path=entrypoint.sh",
+		"/api/local/ui/images/file?stage=1&path=entrypoint.sh",
+	} {
+		if code, _ := env.do(c, "GET", bad, nil); code != http.StatusBadRequest {
+			t.Fatalf("%s: ждали 400, получили %d", bad, code)
+		}
+	}
+}

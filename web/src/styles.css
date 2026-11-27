@@ -641,6 +641,19 @@ button.small { padding: 4px 10px; font-size: 10px; }
 .hl-var { color: var(--hl-var); }
 .hl-flag { color: var(--hl-flag); }
 .hl-op { color: var(--hl-op); font-weight: 600; }
+/* Контекст сборки ступени («Образы» → «Как собирается»): строка раскрывает файл или каталог */
+.ctx { margin-top: 8px; }
+.ctx-table { margin-top: 4px; table-layout: fixed; }
+.ctx-row { cursor: pointer; }
+.ctx-name { width: 32%; overflow-wrap: anywhere; }
+.ctx-caret { color: var(--muted); display: inline-block; width: 12px; }
+.ctx-path { font-size: 11px; word-break: break-all; }
+.ctx-size { width: 140px; white-space: nowrap; text-align: right; }
+.ctx-open > td { background: var(--raised); }
+.ctx-files { display: flex; flex-direction: column; gap: 2px; }
+.ctx-files .link-btn { font: 12px/1.5 var(--mono); letter-spacing: 0; text-transform: none; padding: 1px 0; color: var(--text-2); text-align: left; }
+.ctx-files .link-btn:hover { color: var(--accent); }
+.ctx-files .ctx-files, .ctx-files .code-view, .ctx-files .error { margin-left: 16px; }
 .layout-map-extra { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-subtle); }
 .cmd { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 12px; }
 .cmd pre { flex: 1; margin: 0; white-space: pre-wrap; word-break: break-all; }

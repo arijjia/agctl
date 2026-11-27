@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -475,6 +476,7 @@ func devBuildSpec(p *profile.Data, target, flavor string) dockerrt.DevBuild {
 		b.ProfileFS = v.FS
 		if ov, df, ok := v.ImageContext(); ok {
 			b.Overlay, b.OverlayDockerfile = ov, df
+			b.OverlayDir = path.Dir(v.ImageDockerfile)
 		}
 	}
 	return b
