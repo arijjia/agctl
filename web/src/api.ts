@@ -144,6 +144,34 @@ export const local = {
   restart: () => req<any>("POST", "/api/local/ui/restart"),
 };
 
+// images — раздел «Образы»: каталог с местами, которые используют образ,
+// план сборки (ступени, Dockerfile, аргументы, что качается из сети) и
+// действия фоном (одна операция за раз, журнал — в task).
+export type ImageUse = { id: string; name: string; running: boolean };
+export type ImageView = LocalImage & { current: boolean; usedBy: ImageUse[] };
+export type ImageTask = { state: string; image: string; log: string[]; error: string };
+export type ImageStage = {
+  ref: string;
+  present: boolean;
+  kind: string;
+  title: string;
+  source: string;
+  dockerfile: string;
+  args?: Record<string, string>;
+  context?: string[];
+  from?: string[];
+  apt?: string[];
+  npm?: string[];
+  downloads?: string[];
+};
+export type ImagePlan = { ref: string; pull: string; stages: ImageStage[] };
+export const imagesApi = {
+  list: () => req<{ images: ImageView[]; task: ImageTask; actions: boolean }>("GET", "/api/local/ui/images"),
+  plan: (ref: string) => req<ImagePlan>("GET", `/api/local/ui/images/plan?ref=${encodeURIComponent(ref)}`),
+  action: (action: "ensure" | "rebuild" | "remove", ref: string) =>
+    req<{ task: ImageTask }>("POST", `/api/local/ui/images/${action}`, { ref }),
+};
+
 // places — рабочие места локального режима (лаунчер v2). Изменения передают
 // ревизию: устаревшая отклоняется сервером (409), интерфейс перечитывает.
 export type PlaceMount = { host: string; name: string };
