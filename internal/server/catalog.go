@@ -48,7 +48,7 @@ func (s *Server) handleCatalogList(w http.ResponseWriter, r *http.Request, _ ide
 // handleProjectCatalogGet — GET /api/projects/{name}/catalog: пакеты со
 // флагом installed для этого воркспейса (консоль воркспейсов).
 func (s *Server) handleProjectCatalogGet(w http.ResponseWriter, r *http.Request, id identity) {
-	dir, code, msg := s.resolveProjectDir(id.ID, r.PathValue("name"))
+	dir, code, msg := s.resolveProjectDir(r, id.ID, r.PathValue("name"))
 	if code != 0 {
 		writeErr(w, code, msg)
 		return
@@ -67,7 +67,7 @@ func (s *Server) handleProjectCatalogGet(w http.ResponseWriter, r *http.Request,
 // handleProjectCatalogInstall — POST /api/projects/{name}/catalog/{id}/install:
 // поставить пакет в воркспейс (файлы 1:1; переустановка = обновление).
 func (s *Server) handleProjectCatalogInstall(w http.ResponseWriter, r *http.Request, id identity) {
-	dir, code, msg := s.resolveProjectDir(id.ID, r.PathValue("name"))
+	dir, code, msg := s.resolveProjectDir(r, id.ID, r.PathValue("name"))
 	if code != 0 {
 		writeErr(w, code, msg)
 		return
@@ -88,7 +88,7 @@ func (s *Server) handleProjectCatalogInstall(w http.ResponseWriter, r *http.Requ
 // handleProjectCatalogDelete — DELETE /api/projects/{name}/catalog/{id}:
 // убрать пакет из воркспейса (изменённые пользователем файлы не трогаем).
 func (s *Server) handleProjectCatalogDelete(w http.ResponseWriter, r *http.Request, id identity) {
-	dir, code, msg := s.resolveProjectDir(id.ID, r.PathValue("name"))
+	dir, code, msg := s.resolveProjectDir(r, id.ID, r.PathValue("name"))
 	if code != 0 {
 		writeErr(w, code, msg)
 		return
@@ -109,7 +109,7 @@ func (s *Server) handleProjectCatalogDelete(w http.ResponseWriter, r *http.Reque
 // handleProjectPromptGet — GET /api/projects/{name}/prompt: текст AGENTS.md
 // воркспейса (один системный промт на воркспейс; пусто = файла нет).
 func (s *Server) handleProjectPromptGet(w http.ResponseWriter, r *http.Request, id identity) {
-	dir, code, msg := s.resolveProjectDir(id.ID, r.PathValue("name"))
+	dir, code, msg := s.resolveProjectDir(r, id.ID, r.PathValue("name"))
 	if code != 0 {
 		writeErr(w, code, msg)
 		return
@@ -134,7 +134,7 @@ type promptPutReq struct {
 // handleProjectPromptPut — PUT /api/projects/{name}/prompt: записать
 // AGENTS.md воркспейса. Пустой промт удаляет файл (воркспейс без промта).
 func (s *Server) handleProjectPromptPut(w http.ResponseWriter, r *http.Request, id identity) {
-	dir, code, msg := s.resolveProjectDir(id.ID, r.PathValue("name"))
+	dir, code, msg := s.resolveProjectDir(r, id.ID, r.PathValue("name"))
 	if code != 0 {
 		writeErr(w, code, msg)
 		return

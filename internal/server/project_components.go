@@ -25,12 +25,22 @@ func componentsSettingKey(userID int64, project string) string {
 	return "project-components-u" + strconv.FormatInt(userID, 10) + "-" + project
 }
 
-// resolveProjectDir — безопасное разрешение каталога проекта для API-обработчиков.
-func (s *Server) resolveProjectDir(userID int64, name string) (string, int, string) {
+// resolveProjectDir — безопасное разрешение каталога проекта для
+// API-обработчиков; в локальном режиме — в папке рабочего места запроса.
+func (s *Server) resolveProjectDir(r *http.Request, userID int64, name string) (string, int, string) {
 	if !provision.ValidProjectName(name) {
 		return "", http.StatusBadRequest, "некорректное имя проекта"
 	}
-	dir, err := provision.ProjectDirectory(s.cfg.Home, userID, name)
+	var dir string
+	var err error
+	if host, _, local, rerr := s.localProjectRoot(r, userID); local {
+		if rerr != nil {
+			return "", http.StatusBadRequest, rerr.Error()
+		}
+		dir, err = provision.ProjectDirectoryAt(host, name)
+	} else {
+		dir, err = provision.ProjectDirectory(s.cfg.Home, userID, name)
+	}
 	if err != nil {
 		if errors.Is(err, provision.ErrInvalidProject) {
 			return "", http.StatusBadRequest, "некорректное имя проекта"
@@ -63,7 +73,7 @@ func (s *Server) requireDeveloper(next func(http.ResponseWriter, *http.Request, 
 
 // handleProjectComponentsGet — GET /api/projects/{name}/components.
 func (s *Server) handleProjectComponentsGet(w http.ResponseWriter, r *http.Request, id identity) {
-	dir, code, msg := s.resolveProjectDir(id.ID, r.PathValue("name"))
+	dir, code, msg := s.resolveProjectDir(r, id.ID, r.PathValue("name"))
 	if code != 0 {
 		writeErr(w, code, msg)
 		return
@@ -75,7 +85,7 @@ func (s *Server) handleProjectComponentsGet(w http.ResponseWriter, r *http.Reque
 // {"disabled":[...]}. Приводит рабочее дерево к выбору и запоминает его.
 func (s *Server) handleProjectComponentsPut(w http.ResponseWriter, r *http.Request, id identity) {
 	name := r.PathValue("name")
-	dir, code, msg := s.resolveProjectDir(id.ID, name)
+	dir, code, msg := s.resolveProjectDir(r, id.ID, name)
 	if code != 0 {
 		writeErr(w, code, msg)
 		return

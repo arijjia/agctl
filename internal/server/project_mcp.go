@@ -48,7 +48,7 @@ func (s *Server) dshHomeFor(key chatKey) string {
 // текущий выбор + флаг «ключ задан». Значение ключа не возвращается.
 func (s *Server) handleProjectMcpGet(w http.ResponseWriter, r *http.Request, id identity) {
 	name := r.PathValue("name")
-	if _, code, msg := s.resolveProjectDir(id.ID, name); code != 0 {
+	if _, code, msg := s.resolveProjectDir(r, id.ID, name); code != 0 {
 		writeErr(w, code, msg)
 		return
 	}

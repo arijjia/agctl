@@ -27,7 +27,7 @@ func (s *Server) handleProjectDelete(w http.ResponseWriter, r *http.Request, id 
 		return
 	}
 	name := r.PathValue("name")
-	if _, code, msg := s.resolveProjectDir(id.ID, name); code != 0 && code != http.StatusNotFound {
+	if _, code, msg := s.resolveProjectDir(r, id.ID, name); code != 0 && code != http.StatusNotFound {
 		writeErr(w, code, msg)
 		return
 	}
@@ -107,11 +107,26 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request, id 
 		project provision.Project
 		err     error
 	)
-	if clone {
-		if id.Role != "developer" && id.Role != "admin" {
-			writeErr(w, http.StatusForbidden, "клонирование репозитория по URL доступно роли developer")
+	if clone && id.Role != "developer" && id.Role != "admin" {
+		writeErr(w, http.StatusForbidden, "клонирование репозитория по URL доступно роли developer")
+		return
+	}
+	// Локальный режим: воркспейс — в папке рабочего места запроса, путь —
+	// такой, каким его видит dsh этого места.
+	if host, inContainer, local, rerr := s.localProjectRoot(r, id.ID); local {
+		if rerr != nil {
+			writeErr(w, http.StatusBadRequest, rerr.Error())
 			return
 		}
+		if clone {
+			project, err = provision.CloneProjectIn(host, req.Name, req.CloneUrl)
+		} else {
+			project, err = provision.CreateProjectIn(host, req.Name)
+		}
+		if err == nil {
+			project.Directory = localProjectPath(inContainer, project.Name)
+		}
+	} else if clone {
 		project, err = provision.CloneProject(s.cfg.Home, id.ID, req.Name, req.CloneUrl)
 	} else {
 		project, err = provision.CreateProject(s.cfg.Home, id.ID, req.Name)

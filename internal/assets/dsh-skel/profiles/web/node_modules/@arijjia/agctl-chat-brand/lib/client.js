@@ -190,6 +190,77 @@ window.__ModuleLoader__.load({
 		let stuckPickTicks = 0;
 
 
+		// placeId — рабочее место локального режима из адреса /p/<id>/ ("" —
+		// основное). agctl создаёт воркспейсы и ищет «Возможности» в папке
+		// этого места, а не основного.
+		function placeId() {
+			const m = /^\/p\/([a-z0-9][a-z0-9-]{0,31})\//.exec(window.location.pathname || "");
+			return m ? m[1] : "";
+		}
+		function placeHeaders(extra) {
+			const headers = Object.assign({ Accept: 'application/json' }, extra || {});
+			const id = placeId();
+			if (id) headers['X-Agctl-Place'] = id;
+			return headers;
+		}
+		const errorColor = 'var(--dsw-alias-label-danger,#e5484d)';
+		const mutedColor = 'var(--dsw-alias-label-tertiary,#888)';
+
+		// fetchWorkspaceFolders — git-репозитории папки места (до третьего
+		// уровня): воркспейс открывают прямо в репозитории, а не только в
+		// папке первого уровня. null — не локальный режим или ошибка.
+		async function fetchWorkspaceFolders() {
+			try {
+				const res = await fetch('/api/local/ui/workspace-folders', { credentials: 'include', headers: placeHeaders() });
+				if (!res.ok) return null;
+				const data = await res.json();
+				return data && typeof data.root === 'string' && Array.isArray(data.folders) ? data : null;
+			} catch (e) { return null; }
+		}
+
+		// existingFolderRow — «Открыть репозиторий»: список с поиском по
+		// репозиториям места; выбор регистрирует воркспейс по его пути (папку
+		// не создаёт и не трогает).
+		function existingFolderRow(folders, onPick) {
+			const wrap = document.createElement('div');
+			wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:600';
+			wrap.appendChild(document.createTextNode('Открыть репозиторий из папки места'));
+			const list = document.createElement('input');
+			list.setAttribute('list', 'agctl-workspace-folders');
+			list.placeholder = folders.folders.length ? 'начните вводить: bin/agctl' : 'репозиториев не найдено';
+			list.style.cssText = 'box-sizing:border-box;width:100%;min-height:38px;padding:8px 11px;border:1px solid var(--dsw-alias-border-l1,#bbb);border-radius:8px;background:transparent;color:inherit;font:inherit;font-weight:400';
+			const options = document.createElement('datalist');
+			options.id = 'agctl-workspace-folders';
+			for (const f of folders.folders) {
+				const o = document.createElement('option');
+				o.value = f;
+				options.appendChild(o);
+			}
+			const row = document.createElement('div');
+			row.style.cssText = 'display:flex;gap:8px';
+			const open = document.createElement('button');
+			open.type = 'button';
+			open.textContent = 'Открыть';
+			open.style.cssText = 'padding:8px 12px;border:1px solid var(--dsw-alias-border-l1,#bbb);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font:inherit;font-size:13px;line-height:18px';
+			const pick = () => {
+				const rel = list.value.trim().replace(/^\/+|\/+$/g, '');
+				if (!rel) return;
+				onPick(folders.root.replace(/\/+$/, '') + '/' + rel, rel);
+			};
+			open.addEventListener('click', pick);
+			list.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); pick(); } });
+			row.append(list, open);
+			list.style.flex = '1';
+			wrap.append(row, options);
+			if (folders.truncated) {
+				const note = document.createElement('span');
+				note.textContent = 'Показаны не все репозитории — введите путь целиком.';
+				note.style.cssText = 'font-weight:400;color:' + mutedColor;
+				wrap.appendChild(note);
+			}
+			return wrap;
+		}
+
 		function workspaceSvc() {
 			try { return (brandCtx && brandCtx.get && brandCtx.get("workspaces")) || null; }
 			catch (e) { return null; }
@@ -325,6 +396,7 @@ window.__ModuleLoader__.load({
 			const canClone = !!(meData && meData.user && ['developer', 'admin'].includes(meData.user.role));
 			const presets = canClone ? await fetchScenarioPresets() : [];
 			const packages = await fetchCatalogPackages();
+			const folders = meData && meData.localMode ? await fetchWorkspaceFolders() : null;
 			const overlay = document.createElement('div');
 			overlay.dataset.agctlWorkspaceCreate = '1';
 			overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.46);display:flex;align-items:center;justify-content:center;padding:20px';
@@ -336,7 +408,11 @@ window.__ModuleLoader__.load({
 			const name = labeled('Имя', input('Имя воркспейса'));
 			const git = canClone ? labeled('Публичный GitHub HTTPS URL (необязательно)', input('https://github.com/user/repo.git')) : null;
 			const status = document.createElement('p');
-			status.style.cssText = 'margin:0;min-height:18px;font-size:12px;color:var(--dsw-alias-label-tertiary,#888)';
+			status.style.cssText = 'margin:0;min-height:18px;font-size:12px;color:' + mutedColor;
+			const setStatus = (text, isError) => {
+				status.textContent = text;
+				status.style.color = isError ? errorColor : mutedColor;
+			};
 			const actions = document.createElement('div');
 			actions.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
 			const cancel = document.createElement('button');
@@ -349,6 +425,23 @@ window.__ModuleLoader__.load({
 			submit.style.cssText = 'padding:8px 14px;border:1px solid #1459b8;border-radius:8px;background:#1769d2;color:#fff;cursor:pointer;font:inherit;font-size:13px;line-height:18px;font-weight:600';
 			actions.append(cancel, submit);
 			card.append(heading);
+			if (folders) {
+				card.appendChild(existingFolderRow(folders, async (dir, rel) => {
+					try {
+						const workspaces = workspaceSvc();
+						if (!workspaces || typeof workspaces.create !== 'function') throw new Error('DSH Workspace service недоступен');
+						setStatus('Открываем ' + rel + '…');
+						await workspaces.create({ path: dir });
+						close();
+					} catch (error) {
+						setStatus(String(error.message || error), true);
+					}
+				}));
+				const or = document.createElement('p');
+				or.textContent = 'или создайте новую папку:';
+				or.style.cssText = 'margin:0;font-size:12px;color:' + mutedColor;
+				card.appendChild(or);
+			}
 			// Готовые сценарии — по одной кнопке на пресет: без россыпи настроек
 			// при создании (сценарий настраивается потом, в консоли воркспейсов).
 			if (presets.length) card.appendChild(presetsRow(presets, card, name, git));
@@ -394,9 +487,9 @@ window.__ModuleLoader__.load({
 				const cloneUrl = git ? git.querySelector('input').value.trim() : "";
 				// Имя можно оставить пустым при клонировании: agctl выведет его из URL.
 				const projectName = nameInput.value.trim();
-				if (!projectName && !cloneUrl) { status.textContent = 'Укажите имя воркспейса или GitHub-URL.'; return; }
+				if (!projectName && !cloneUrl) { setStatus('Укажите имя воркспейса или GitHub-URL.', true); return; }
 				submit.disabled = true;
-				status.textContent = 'Создаём…';
+				setStatus('Создаём…');
 				try {
 					const body = { name: projectName };
 					if (cloneUrl) body.cloneUrl = cloneUrl;
@@ -404,7 +497,7 @@ window.__ModuleLoader__.load({
 					if (wanted.length) body.packages = wanted;
 					const res = await fetch('/api/projects', {
 						method: 'POST', credentials: 'include',
-						headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+						headers: placeHeaders({ 'Content-Type': 'application/json' }),
 						body: JSON.stringify(body),
 					});
 					const data = await res.json().catch(() => ({}));
@@ -420,7 +513,7 @@ window.__ModuleLoader__.load({
 						window.alert('Воркспейс создан, но пакеты не установились: ' + failed.join(', ') + '. Установите их позже через «Возможности».');
 					}
 				} catch (error) {
-					status.textContent = String(error.message || error);
+					setStatus(String(error.message || error), true);
 					submit.disabled = false;
 				}
 			});
@@ -626,9 +719,11 @@ window.__ModuleLoader__.load({
 				const name = projectNameFromWorkspacePath(path);
 				if (name) {
 					const res = await fetch("/api/projects/" + encodeURIComponent(name), {
-						method: "DELETE", credentials: "include", headers: { Accept: "application/json" },
+						method: "DELETE", credentials: "include", headers: placeHeaders(),
 					});
-					if (!res.ok) {
+					// 409 — локальный режим: папки разработчика с диска не
+					// удаляем, воркспейс только убираем из списка.
+					if (!res.ok && res.status !== 409) {
 						let msg = "HTTP " + res.status;
 						try {
 							const data = await res.json();

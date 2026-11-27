@@ -313,3 +313,17 @@ test("перехват кнопки добавления воркспейса п
 		"матч перехвата обязан принимать и EN, и RU aria-label",
 	);
 });
+
+test("локальный режим: место из /p/<id>/, вложенные репозитории и красная ошибка", async () => {
+	const src = await readFile(clientPath, "utf8");
+	// Воркспейс создаётся в папке места, а не основного (ws1 уезжал в ~/src).
+	assert.match(src, /'X-Agctl-Place'/, "запросы /api/projects несут место");
+	assert.match(src, /headers: placeHeaders\(\{ 'Content-Type': 'application\/json' \}\)/);
+	// Репозитории глубже первого уровня открываются из списка места.
+	assert.match(src, /\/api\/local\/ui\/workspace-folders/);
+	// Ошибка создания — цветом ошибки, не серым.
+	assert.match(src, /setStatus\(String\(error\.message \|\| error\), true\)/);
+	assert.match(src, /--dsw-alias-label-danger/);
+	// Локальный режим: 409 на DELETE — только убрать из списка.
+	assert.match(src, /res\.status !== 409/);
+});

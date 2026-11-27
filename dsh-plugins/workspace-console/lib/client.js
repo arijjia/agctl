@@ -83,11 +83,22 @@ window.__ModuleLoader__.load({
 			return node;
 		}
 
+		function placeHeader() {
+			const m = /^\/p\/([a-z0-9][a-z0-9-]{0,31})\//.exec((window.location && window.location.pathname) || "");
+			return m ? { "X-Agctl-Place": m[1] } : {};
+		}
+
 		function apiFactory() {
 			return async (path, method = "GET", body) => {
 				const res = await fetch(path, {
 					credentials: "include", method,
-					headers: { Accept: "application/json", ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
+					headers: {
+						Accept: "application/json",
+						...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+						// Рабочее место локального режима (/p/<id>/): проекты ищутся
+						// в его папке, а не в папке основного места.
+						...placeHeader(),
+					},
 					body: body === undefined ? undefined : JSON.stringify(body),
 				});
 				let data;

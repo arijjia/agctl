@@ -95,7 +95,7 @@ func (s *Server) handleProjectFilesList(w http.ResponseWriter, r *http.Request, 
 		writeErr(w, http.StatusNotFound, "локальный режим: файлы проекта — в папке проектов на вашей машине")
 		return
 	}
-	dir, code, msg := s.resolveProjectDir(id.ID, r.PathValue("name"))
+	dir, code, msg := s.resolveProjectDir(r, id.ID, r.PathValue("name"))
 	if code != 0 {
 		writeErr(w, code, msg)
 		return
@@ -113,7 +113,7 @@ func (s *Server) handleProjectFileDownload(w http.ResponseWriter, r *http.Reques
 		writeErr(w, http.StatusNotFound, "локальный режим: файлы проекта — в папке проектов на вашей машине")
 		return
 	}
-	dir, code, msg := s.resolveProjectDir(id.ID, r.PathValue("name"))
+	dir, code, msg := s.resolveProjectDir(r, id.ID, r.PathValue("name"))
 	if code != 0 {
 		writeErr(w, code, msg)
 		return

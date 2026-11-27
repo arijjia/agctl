@@ -162,6 +162,19 @@ func ProjectDirectory(home string, userID int64, name string) (string, error) {
 	return ProjectDirectoryIn(home, fmt.Sprintf("u%d", userID), name)
 }
 
+// ProjectDirectoryAt — каталог проекта name в заданном корне (локальный
+// режим: папка рабочего места); те же проверки, что у ProjectDirectoryIn.
+func ProjectDirectoryAt(root, name string) (string, error) {
+	if !ValidProjectName(name) {
+		return "", ErrInvalidProject
+	}
+	path := filepath.Join(root, name)
+	if err := projectDirectory(path, false); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
 // ProjectDirectoryIn — проект в томе конкретного StorageID (активный слот
 // мульти-рантайма).
 func ProjectDirectoryIn(home, storageID, name string) (string, error) {
@@ -257,14 +270,23 @@ func ListProjects(home string, userID int64) ([]Project, error) {
 // CreateProject creates a directory, local repository and initial commit. No
 // remote is configured. Existing directories are never overwritten or adopted.
 func CreateProject(home string, userID int64, name string) (Project, error) {
-	projectMu.Lock()
-	defer projectMu.Unlock()
 	if !ValidProjectName(name) {
 		return Project{}, ErrInvalidProject
 	}
 	root, err := ProjectWorkRoot(home, userID, true)
 	if err != nil {
 		return Project{}, err
+	}
+	return CreateProjectIn(root, name)
+}
+
+// CreateProjectIn — то же, что CreateProject, в заданном корне проектов
+// (локальный режим: папка рабочего места, из которого создают воркспейс).
+func CreateProjectIn(root, name string) (Project, error) {
+	projectMu.Lock()
+	defer projectMu.Unlock()
+	if !ValidProjectName(name) {
+		return Project{}, ErrInvalidProject
 	}
 	path := filepath.Join(root, name)
 	if err := os.Mkdir(path, 0o700); err != nil {
@@ -383,6 +405,22 @@ func CloneProject(home string, userID int64, name, cloneURL string) (Project, er
 	root, err := ProjectWorkRoot(home, userID, true)
 	if err != nil {
 		return Project{}, err
+	}
+	return CloneProjectIn(root, name, cloneURL)
+}
+
+// CloneProjectIn — то же, что CloneProject, в заданном корне проектов.
+func CloneProjectIn(root, name, cloneURL string) (Project, error) {
+	cloneURL = strings.TrimSpace(cloneURL)
+	if name == "" {
+		derived, err := ProjectNameFromCloneURL(cloneURL)
+		if err != nil {
+			return Project{}, ErrInvalidProject
+		}
+		name = derived
+	}
+	if !ValidProjectName(name) || !ValidCloneURL(cloneURL) {
+		return Project{}, ErrInvalidProject
 	}
 	dest := filepath.Join(root, name)
 	if _, err := os.Lstat(dest); err == nil {
