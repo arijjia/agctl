@@ -34,15 +34,15 @@ function __agctl_server_in
 end
 
 # ── подкоманды верхнего уровня ───────────────────────────────────────────────
-complete -c agctl-server -n '__fish_use_subcommand' -x -a serve -d 'поднять UI+API+provision платформы'
-complete -c agctl-server -n '__fish_use_subcommand' -x -a migrate -d 'накатить миграции SQLite вручную'
-complete -c agctl-server -n '__fish_use_subcommand' -x -a seed-demo-users -d 'локальные тестовые роли user/developer/admin'
-complete -c agctl-server -n '__fish_use_subcommand' -x -a connect -d 'SSH в персональный контейнер (роль developer)'
+complete -c agctl-server -n '__fish_use_subcommand' -x -a serve -d '⚠️ поднять UI+API+provision платформы'
+complete -c agctl-server -n '__fish_use_subcommand' -x -a migrate -d '✏️ накатить миграции SQLite вручную'
+complete -c agctl-server -n '__fish_use_subcommand' -x -a seed-demo-users -d '✏️ локальные тестовые роли user/developer/admin'
+complete -c agctl-server -n '__fish_use_subcommand' -x -a connect -d '⚠️ SSH в персональный контейнер (роль developer)'
 complete -c agctl-server -n '__fish_use_subcommand' -x -a sync -d 'Mutagen-синхронизация папки с /workspace'
-complete -c agctl-server -n '__fish_use_subcommand' -x -a config -d 'эффективный config.yaml'
-complete -c agctl-server -n '__fish_use_subcommand' -x -a version -d 'версия и сборка'
-complete -c agctl-server -n '__fish_use_subcommand' -x -a completion -d 'скрипт автодополнения (fish)'
-complete -c agctl-server -n '__fish_use_subcommand' -x -a help -d 'справка'
+complete -c agctl-server -n '__fish_use_subcommand' -x -a config -d '🔍 эффективный config.yaml'
+complete -c agctl-server -n '__fish_use_subcommand' -x -a version -d '🔍 версия и сборка'
+complete -c agctl-server -n '__fish_use_subcommand' -x -a completion -d '🔍 скрипт автодополнения (fish)'
+complete -c agctl-server -n '__fish_use_subcommand' -x -a help -d '🔍 справка'
 
 # ── serve ────────────────────────────────────────────────────────────────────
 complete -c agctl-server -n '__fish_seen_subcommand_from serve' -l home -x -a '(__fish_complete_directories)' -d 'каталог данных платформы'
@@ -76,12 +76,12 @@ complete -c agctl-server -n '__fish_seen_subcommand_from connect' -l identity -x
 complete -c agctl-server -n '__fish_seen_subcommand_from connect' -l print -d 'только напечатать ssh-команду'
 
 # ── sync: подкоманды и флаги ─────────────────────────────────────────────────
-complete -c agctl-server -n '__agctl_server_sync_needs_sub' -x -a create -d 'создать Mutagen-сессию'
-complete -c agctl-server -n '__agctl_server_sync_needs_sub' -x -a list -d 'список сессий'
-complete -c agctl-server -n '__agctl_server_sync_needs_sub' -x -a pause -d 'пауза сессии'
-complete -c agctl-server -n '__agctl_server_sync_needs_sub' -x -a resume -d 'возобновить сессию'
-complete -c agctl-server -n '__agctl_server_sync_needs_sub' -x -a flush -d 'сброс буферов на диск'
-complete -c agctl-server -n '__agctl_server_sync_needs_sub' -x -a terminate -d 'удалить сессию'
+complete -c agctl-server -n '__agctl_server_sync_needs_sub' -x -a create -d '✏️ создать Mutagen-сессию'
+complete -c agctl-server -n '__agctl_server_sync_needs_sub' -x -a list -d '🔍 список сессий'
+complete -c agctl-server -n '__agctl_server_sync_needs_sub' -x -a pause -d '⚠️ пауза сессии'
+complete -c agctl-server -n '__agctl_server_sync_needs_sub' -x -a resume -d '⚠️ возобновить сессию'
+complete -c agctl-server -n '__agctl_server_sync_needs_sub' -x -a flush -d '✏️ сброс буферов на диск'
+complete -c agctl-server -n '__agctl_server_sync_needs_sub' -x -a terminate -d '✏️ удалить сессию'
 complete -c agctl-server -n '__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from create' -l name -x -d 'уникальное имя Mutagen-сессии'
 complete -c agctl-server -n '__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from create' -l local -x -a '(__fish_complete_directories)' -d 'локальная директория проекта'
 complete -c agctl-server -n '__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from create' -l host -x -d 'SSH-хост'
@@ -90,7 +90,7 @@ complete -c agctl-server -n '__fish_seen_subcommand_from sync; and __fish_seen_s
 complete -c agctl-server -n '__fish_seen_subcommand_from sync; and __fish_seen_subcommand_from create' -l print -d 'только вывести mutagen-команду'
 
 # ── completion ───────────────────────────────────────────────────────────────
-complete -c agctl-server -n '__agctl_server_at completion' -x -a fish -d 'скрипт для fish'
+complete -c agctl-server -n '__agctl_server_at completion' -x -a fish -d '🔍 скрипт для fish'
 
 # ── serve: бэкенды рантаймов ──────────────────────────────────────────────────
 complete -c agctl-server -n '__fish_seen_subcommand_from serve' -l runtime -x -a 'docker k8s ax' -d 'бэкенд персональных рантаймов'

@@ -14,34 +14,34 @@ var help = cli.Usage{
 			Title: "Управление платформой",
 			Rows: []cli.UsageRow{
 				{Name: "serve", Desc: []string{
-					"поднять платформу: UI + API + личные runtime пользователей",
+					"⚠️ поднять платформу: UI + API + личные runtime пользователей",
 					"--home DIR · --addr H:P · --image T · --bin-dir D · --profile NAME · --llm-*",
 					"--runtime docker|k8s|ax · --k8s-* · --ax-* (agctl-hq/docs/kubernetes.md)",
 				}},
-				{Name: "migrate", Desc: []string{"накатить миграции SQLite вручную"}},
-				{Name: "seed-demo-users", Desc: []string{"локальные тестовые роли user/developer/admin (после первого admin)"}},
-				{Name: "config", Desc: []string{"показать эффективный ~/.config/agctl/config.yaml"}},
+				{Name: "migrate", Desc: []string{"✏️ накатить миграции SQLite вручную"}},
+				{Name: "seed-demo-users", Desc: []string{"✏️ локальные тестовые роли user/developer/admin (после первого admin)"}},
+				{Name: "config", Desc: []string{"🔍 показать эффективный ~/.config/agctl/config.yaml"}},
 			},
 		},
 		{
 			Title: "Работа developer'а",
 			Rows: []cli.UsageRow{
 				{Name: "connect", Desc: []string{
-					"SSH в персональный контейнер (роль developer)",
+					"⚠️ SSH в персональный контейнер (роль developer)",
 					"--port SSH_PORT · --host HOST · --user root · --identity KEY · --print",
 				}},
 				{Name: "sync", Desc: []string{
 					"Mutagen-синхронизация локальной папки с /workspace контейнера",
-					"sync create --name N --local DIR --port P · list|pause|resume|flush|terminate",
+					"✏️ sync create --name N --local DIR --port P · 🔍 list · ⚠️ pause · ⚠️ resume · ✏️ flush · ✏️ terminate",
 				}},
 			},
 		},
 		{
 			Title: "Служебные",
 			Rows: []cli.UsageRow{
-				{Name: "completion fish", Desc: []string{"скрипт автодополнения для fish"}},
-				{Name: "version", Desc: []string{"версия и сборка"}},
-				{Name: "help", Desc: []string{"эта справка"}},
+				{Name: "completion fish", Desc: []string{"🔍 скрипт автодополнения для fish"}},
+				{Name: "version", Desc: []string{"🔍 версия и сборка"}},
+				{Name: "help", Desc: []string{"🔍 эта справка"}},
 			},
 		},
 	},
@@ -52,5 +52,5 @@ var help = cli.Usage{
 		{Name: "AGCTL_CONFIG", Desc: []string{"путь к config.yaml (по умолчанию ~/.config/agctl/config.yaml)"}},
 		{Name: "AGCTL_RUNTIME", Desc: []string{"бэкенд рантаймов: docker (по умолчанию) | k8s | ax; детали — AGCTL_K8S_*, AGCTL_AX_*"}},
 	},
-	Footer: "Секреты — только через env (например AGCTL_LLM_API_KEY), в config.yaml их не пишут.",
+	Footer: cli.MarksLegend + " Секреты — только через env (например AGCTL_LLM_API_KEY), в config.yaml их не пишут.",
 }

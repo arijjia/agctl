@@ -27,6 +27,11 @@ SQLite, DeepSeek Harness в контейнере рабочего места. П
 - Перед финалом: `go vet ./... && go test ./...`, SPA собирается
   (`make web_build`), при изменении образа — `make img_build` и e2e-смоук.
 - Тулинг бэклога — `gitctl backlog ...`; карточки задач — `backlog/open/`.
+- CLI по стандарту cli-std (скилл): метки 🔍/✏️/⚠️ у каждой листовой
+  подкоманды в справке и fish-комплишенах — канон меток в
+  `cmd/agctl/marks_test.go` и `cmd/agctl-server/marks_test.go` (тест сверяет
+  справку и комплишены); комплишены коммитятся в `completions/`
+  (`make completions`), установка — `make install link`.
 
 <!-- backlog: begin (managed by ~/.agents/skills/backlog) -->
 ## End-of-tour backlog reflection
