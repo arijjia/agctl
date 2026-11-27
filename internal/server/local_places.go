@@ -202,7 +202,6 @@ func (s *Server) registerLocalPlaceRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/local/ui/fs/dialog", s.requireLocalOwner(s.handleLocalFSDialog))
 	mux.HandleFunc("POST /api/local/ui/reveal", s.requireLocalOwner(s.handleLocalReveal))
 	mux.HandleFunc("GET /api/local/ui/events", s.requireLocalOwner(s.handleLocalEvents))
-	mux.HandleFunc("GET /api/local/ui/workspace-folders", s.requireLocalOwner(s.handleLocalWorkspaceFolders))
 	// Страницы лаунчера в локальном режиме (серверный модуль launcher здесь не
 	// подключён): полный лаунчер и встроенный режим для табов правой панели dsh.
 	mux.HandleFunc("GET /launcher", s.adminPageHandler(s.webFS))

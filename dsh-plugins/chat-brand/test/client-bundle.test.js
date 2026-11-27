@@ -319,8 +319,11 @@ test("локальный режим: место из /p/<id>/, вложенны�
 	// Воркспейс создаётся в папке места, а не основного (ws1 уезжал в ~/src).
 	assert.match(src, /'X-Agctl-Place'/, "запросы /api/projects несут место");
 	assert.match(src, /headers: placeHeaders\(\{ 'Content-Type': 'application\/json' \}\)/);
-	// Репозитории глубже первого уровня открываются из списка места.
-	assert.match(src, /\/api\/local\/ui\/workspace-folders/);
+	// Локальный режим: кнопка «Добавить рабочую область» скрыта — папку
+	// выбирают штатным выбором при создании сессии.
+	assert.match(src, /hideLocalWorkspaceButton/);
+	assert.match(src, /button\[aria-label="Добавить рабочую область" i\]/);
+	assert.doesNotMatch(src, /workspace-folders/, "список репозиториев в диалоге убран");
 	// Ошибка создания — цветом ошибки, не серым.
 	assert.match(src, /setStatus\(String\(error\.message \|\| error\), true\)/);
 	assert.match(src, /--dsw-alias-label-danger/);

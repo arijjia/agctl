@@ -12,11 +12,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
-	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 )
 
@@ -79,66 +76,4 @@ func (s *Server) localProjectRoot(r *http.Request, uid int64) (host, inContainer
 // localProjectPath — путь проекта name в контейнере места запроса.
 func localProjectPath(inContainer, name string) string {
 	return path.Join(inContainer, name)
-}
-
-// Пределы обхода папки места для списка репозиториев.
-const (
-	folderScanDepth   = 3
-	folderScanMaxDirs = 20000
-	folderScanMaxRepo = 500
-)
-
-// skipScanDir — каталоги, в которых репозитории проектов не ищем.
-func skipScanDir(name string) bool {
-	if strings.HasPrefix(name, ".") {
-		return true
-	}
-	switch name {
-	case "node_modules", "vendor", "dist", "build", "target", "__pycache__":
-		return true
-	}
-	return false
-}
-
-// handleLocalWorkspaceFolders — GET /api/local/ui/workspace-folders: папки
-// рабочего места запроса, в которых открывают воркспейс, — git-репозитории до
-// третьего уровня (пути от корня места), и путь корня в контейнере dsh. Так
-// сессия работает прямо в репозитории, а не только в папках первого уровня.
-func (s *Server) handleLocalWorkspaceFolders(w http.ResponseWriter, r *http.Request, id identity) {
-	host, inContainer, local, err := s.localProjectRoot(r, id.ID)
-	if !local {
-		writeErr(w, http.StatusNotFound, "только в локальном режиме")
-		return
-	}
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	folders := []string{}
-	visited := 0
-	var walk func(dir, rel string, depth int)
-	walk = func(dir, rel string, depth int) {
-		if depth > folderScanDepth || visited >= folderScanMaxDirs || len(folders) >= folderScanMaxRepo {
-			return
-		}
-		ents, err := os.ReadDir(dir)
-		if err != nil {
-			return
-		}
-		for _, e := range ents {
-			if !e.IsDir() || skipScanDir(e.Name()) {
-				continue
-			}
-			visited++
-			sub, subRel := filepath.Join(dir, e.Name()), path.Join(rel, e.Name())
-			if fi, err := os.Stat(filepath.Join(sub, ".git")); err == nil && fi.IsDir() {
-				folders = append(folders, subRel)
-				continue // внутрь репозитория не спускаемся
-			}
-			walk(sub, subRel, depth+1)
-		}
-	}
-	walk(host, "", 1)
-	sort.Strings(folders)
-	writeJSON(w, http.StatusOK, map[string]any{"root": inContainer, "folders": folders, "truncated": len(folders) >= folderScanMaxRepo})
 }

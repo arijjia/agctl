@@ -206,64 +206,31 @@ window.__ModuleLoader__.load({
 		const errorColor = 'var(--dsw-alias-label-danger,#e5484d)';
 		const mutedColor = 'var(--dsw-alias-label-tertiary,#888)';
 
-		// fetchWorkspaceFolders — git-репозитории папки места (до третьего
-		// уровня): воркспейс открывают прямо в репозитории, а не только в
-		// папке первого уровня. null — не локальный режим или ошибка.
-		async function fetchWorkspaceFolders() {
-			try {
-				const res = await fetch('/api/local/ui/workspace-folders', { credentials: 'include', headers: placeHeaders() });
-				if (!res.ok) return null;
-				const data = await res.json();
-				return data && typeof data.root === 'string' && Array.isArray(data.folders) ? data : null;
-			} catch (e) { return null; }
-		}
-
-		// existingFolderRow — «Открыть репозиторий»: список с поиском по
-		// репозиториям места; выбор регистрирует воркспейс по его пути (папку
-		// не создаёт и не трогает).
-		function existingFolderRow(folders, onPick) {
-			const wrap = document.createElement('div');
-			wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:600';
-			wrap.appendChild(document.createTextNode('Открыть репозиторий из папки места'));
-			const list = document.createElement('input');
-			list.setAttribute('list', 'agctl-workspace-folders');
-			list.placeholder = folders.folders.length ? 'начните вводить: bin/agctl' : 'репозиториев не найдено';
-			list.style.cssText = 'box-sizing:border-box;width:100%;min-height:38px;padding:8px 11px;border:1px solid var(--dsw-alias-border-l1,#bbb);border-radius:8px;background:transparent;color:inherit;font:inherit;font-weight:400';
-			const options = document.createElement('datalist');
-			options.id = 'agctl-workspace-folders';
-			for (const f of folders.folders) {
-				const o = document.createElement('option');
-				o.value = f;
-				options.appendChild(o);
-			}
-			const row = document.createElement('div');
-			row.style.cssText = 'display:flex;gap:8px';
-			const open = document.createElement('button');
-			open.type = 'button';
-			open.textContent = 'Открыть';
-			open.style.cssText = 'padding:8px 12px;border:1px solid var(--dsw-alias-border-l1,#bbb);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font:inherit;font-size:13px;line-height:18px';
-			const pick = () => {
-				const rel = list.value.trim().replace(/^\/+|\/+$/g, '');
-				if (!rel) return;
-				onPick(folders.root.replace(/\/+$/, '') + '/' + rel, rel);
-			};
-			open.addEventListener('click', pick);
-			list.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); pick(); } });
-			row.append(list, open);
-			list.style.flex = '1';
-			wrap.append(row, options);
-			if (folders.truncated) {
-				const note = document.createElement('span');
-				note.textContent = 'Показаны не все репозитории — введите путь целиком.';
-				note.style.cssText = 'font-weight:400;color:' + mutedColor;
-				wrap.appendChild(note);
-			}
-			return wrap;
-		}
-
 		function workspaceSvc() {
 			try { return (brandCtx && brandCtx.get && brandCtx.get("workspaces")) || null; }
 			catch (e) { return null; }
+		}
+
+		// hideLocalWorkspaceButton — локальный режим: кнопка «Добавить рабочую
+		// область» в шапке сайдбара не нужна — папку выбирают штатным выбором при
+		// создании сессии (он видит вложенные репозитории), а диалог agctl
+		// (клон, сценарии) — для серверного режима.
+		async function hideLocalWorkspaceButton() {
+			if (typeof document === "undefined") return;
+			let local = false;
+			try {
+				const res = await fetch('/api/me', { credentials: 'include', headers: { Accept: 'application/json' } });
+				local = res.ok && !!((await res.json()) || {}).localMode;
+			} catch (e) { local = false; }
+			window.__agctlLocalMode = local;
+			const id = 'agctl-local-workspace-button';
+			const old = document.getElementById(id);
+			if (!local) { if (old) old.remove(); return; }
+			if (old) return;
+			const style = document.createElement('style');
+			style.id = id;
+			style.textContent = 'button[aria-label="Добавить рабочую область" i], button[aria-label="Add workspace" i] { display: none !important; }';
+			document.head.appendChild(style);
 		}
 
 		function bindWorkspaceCreate() {
@@ -279,6 +246,7 @@ window.__ModuleLoader__.load({
 				// встроенный DirectoryPicker контейнерных каталогов вместо
 				// диалога agctl. Матчим оба варианта локализации.
 				if (!labels.some((label) => /^(add workspace|добавить рабочую область)$/i.test(label.trim()))) return;
+				if (window.__agctlLocalMode) return; // локальный режим: кнопка скрыта, диалог не нужен
 				ev.preventDefault();
 				ev.stopImmediatePropagation();
 				void openWorkspaceCreateDialog().catch((error) => window.alert("Не удалось открыть создание воркспейса: " + error.message));
@@ -396,7 +364,6 @@ window.__ModuleLoader__.load({
 			const canClone = !!(meData && meData.user && ['developer', 'admin'].includes(meData.user.role));
 			const presets = canClone ? await fetchScenarioPresets() : [];
 			const packages = await fetchCatalogPackages();
-			const folders = meData && meData.localMode ? await fetchWorkspaceFolders() : null;
 			const overlay = document.createElement('div');
 			overlay.dataset.agctlWorkspaceCreate = '1';
 			overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.46);display:flex;align-items:center;justify-content:center;padding:20px';
@@ -425,23 +392,6 @@ window.__ModuleLoader__.load({
 			submit.style.cssText = 'padding:8px 14px;border:1px solid #1459b8;border-radius:8px;background:#1769d2;color:#fff;cursor:pointer;font:inherit;font-size:13px;line-height:18px;font-weight:600';
 			actions.append(cancel, submit);
 			card.append(heading);
-			if (folders) {
-				card.appendChild(existingFolderRow(folders, async (dir, rel) => {
-					try {
-						const workspaces = workspaceSvc();
-						if (!workspaces || typeof workspaces.create !== 'function') throw new Error('DSH Workspace service недоступен');
-						setStatus('Открываем ' + rel + '…');
-						await workspaces.create({ path: dir });
-						close();
-					} catch (error) {
-						setStatus(String(error.message || error), true);
-					}
-				}));
-				const or = document.createElement('p');
-				or.textContent = 'или создайте новую папку:';
-				or.style.cssText = 'margin:0;font-size:12px;color:' + mutedColor;
-				card.appendChild(or);
-			}
 			// Готовые сценарии — по одной кнопке на пресет: без россыпи настроек
 			// при создании (сценарий настраивается потом, в консоли воркспейсов).
 			if (presets.length) card.appendChild(presetsRow(presets, card, name, git));
@@ -788,6 +738,7 @@ window.__ModuleLoader__.load({
 		function apply(ctx) {
 			brandCtx = ctx;
 			bindWorkspaceCreate();
+			void hideLocalWorkspaceButton();
 			// Удаление воркспейса = удаление каталога (agctl-семантика).
 			try { installWorkspaceDeleteHook(ctx); } catch (e) { console.warn("[agctl] delete hook:", e); }
 			try { installWorkspaceDeleteLocale(ctx); } catch (e) { console.warn("[agctl] delete locale:", e); }

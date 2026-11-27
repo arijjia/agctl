@@ -86,34 +86,3 @@ func TestLocalProjectsFollowPlace(t *testing.T) {
 		t.Fatalf("чужое место: %d %s", code, body)
 	}
 }
-
-// Список папок для воркспейса: git-репозитории до третьего уровня, без
-// скрытых и зависимостей; внутрь репозитория не спускаемся.
-func TestLocalWorkspaceFolders(t *testing.T) {
-	env, _ := newLocalUIEnv(t)
-	c := loginOwner(t, env)
-	root := t.TempDir()
-	for _, d := range []string{"app/.git", "bin/agctl/.git", "bin/agctl/sub/.git", "bin/notes", "kb/dsh/.git",
-		"node_modules/x/.git", ".hidden/y/.git", "a/b/c/d/.git"} {
-		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(d)), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if code, body := env.do(c, "POST", "/api/local/ui/places", map[string]any{
-		"name": "Исходники", "id": "src2", "mounts": []map[string]string{{"host": root}},
-	}); code != http.StatusCreated {
-		t.Fatalf("место: %d %s", code, body)
-	}
-	code, body := env.doWith(c, "GET", "/api/local/ui/workspace-folders", nil, map[string]string{placeHeader: "src2"})
-	if code != http.StatusOK {
-		t.Fatalf("%d %s", code, body)
-	}
-	var out struct {
-		Root    string   `json:"root"`
-		Folders []string `json:"folders"`
-	}
-	_ = json.Unmarshal([]byte(body), &out)
-	if out.Root != "/workspace" || strings.Join(out.Folders, ",") != "app,bin/agctl,kb/dsh" {
-		t.Fatalf("папки: %+v", out)
-	}
-}
