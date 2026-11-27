@@ -2,8 +2,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { applyTheme, currentTheme, toggleTheme, type Theme } from "./theme";
 
 // Shell — единая оболочка веб-приложения для обоих режимов и всех ролей:
-// верхняя панель на всю ширину (бренд организации, разделы, состояние,
-// пользователь) и содержимое раздела под ней. Набор разделов задаёт
+// боковая панель слева (бренд организации, разделы, состояние,
+// пользователь) и содержимое раздела справа на всю оставшуюся ширину. Набор разделов задаёт
 // вызывающий экран по роли и режиму; выбранный раздел живёт в адресе
 // (#/раздел), поэтому на него можно дать ссылку и он переживает обновление.
 
@@ -86,9 +86,8 @@ export default function Shell({
   let lastGroup = "";
   return (
     <div className="shell">
-      <header className="shell-topbar">
+      <aside className="shell-side">
         <BrandMark />
-        <div className="shell-divider" />
         <nav className="shell-nav">
           {items.map((it) => {
             const group = it.group && it.group !== lastGroup ? it.group : "";
@@ -112,26 +111,32 @@ export default function Shell({
           })}
         </nav>
         <div className="shell-actions">
-          {pills.map((p) => (
-            <span key={p.label} className="shell-pill" title={p.title}>
-              <span className={`shell-pill-dot ${p.tone || "muted"}`} />
-              {p.label}
-            </span>
-          ))}
-          <button className="shell-btn" onClick={() => setTheme(toggleTheme(theme))} title="Светлая / тёмная тема">
-            {theme === "dark" ? "Светлая" : "Тёмная"}
-          </button>
+          {pills.length > 0 && (
+            <div className="shell-pills">
+              {pills.map((p) => (
+                <span key={p.label} className="shell-pill" title={p.title}>
+                  <span className={`shell-pill-dot ${p.tone || "muted"}`} />
+                  {p.label}
+                </span>
+              ))}
+            </div>
+          )}
           <span className="shell-user">
             <span className="shell-user-dot" />
             {user}
           </span>
-          {onLogout && (
-            <button className="shell-btn" onClick={onLogout}>
-              Выйти
+          <div className="shell-buttons">
+            <button className="shell-btn" onClick={() => setTheme(toggleTheme(theme))} title="Светлая / тёмная тема">
+              {theme === "dark" ? "Светлая" : "Тёмная"}
             </button>
-          )}
+            {onLogout && (
+              <button className="shell-btn" onClick={onLogout}>
+                Выйти
+              </button>
+            )}
+          </div>
         </div>
-      </header>
+      </aside>
       <main className="shell-page">
         {(title || actions) && (
           <div className="page-head">
