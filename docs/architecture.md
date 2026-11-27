@@ -1812,6 +1812,16 @@ Governance: sbx можно удалить и запустить агента б�
 основной и единственный обязательный, `sbx` — опция для машин, где вход в
 Docker допустим, после живого спайка.
 
+**«Docker-совместимый» — это класс, а не обещание.** Код один
+(`client.FromEnv`, Engine API), отдельный адаптер под движок не пишется,
+но поддерживаемым движок становится только после прогона
+`bin/e2e-local-mode.sh` на нём. Проверен только Docker Desktop. Риски
+для остальных: egress-allowlist ставит правила в `DOCKER-USER` (есть
+только у dockerd; у Podman — netavark/nftables, адрес хоста
+`host.containers.internal`), поэтому Podman потребует доработки egress и
+моста, а Colima и Rancher Desktop в режиме moby — скорее только поиска
+сокета.
+
 **Почему не containerd отдельным рантаймом.** containerd уже работает под
 Kubernetes (k8s-рантайм пользуется им через kubelet) и под Docker Engine.
 На macOS и Windows своего containerd нет — только внутри одной общей
@@ -1819,16 +1829,14 @@ Kubernetes (k8s-рантайм пользуется им через kubelet) и 
 Docker Desktop, а API другой (нет Engine API, нужен CNI). Нового свойства
 он не даёт. Что даёт containerd — выбор OCI-рантайма (runc, runsc, kata);
 это у нас уже ось «граница изоляции» через `--docker-runtime` и
-RuntimeClass. Решение: **поддерживаем «Docker-совместимый движок» как
-класс** (Docker Desktop, Docker Engine, Colima, Rancher Desktop в режиме
-moby, Podman с Docker API — проверить и описать в `doctor`), а не отдельный
-адаптер containerd.
+RuntimeClass. Решение: **один адаптер Docker Engine API и явный список
+проверенных движков** (выше), а не отдельный адаптер containerd.
 
 **Итоговая матрица:**
 
 | Режим | По умолчанию | Сильнее | Кандидаты |
 |---|---|---|---|
-| локальный | `docker` на любом Docker-совместимом движке | `sbx` (opt-in) | Apple `container` на macOS 26 — microVM на место без учётной записи Docker, открытый код; адаптер по образцу `sbxrt` |
+| локальный | `docker`: проверен Docker Desktop; цель — Docker Engine (Linux, WSL 2), Colima, Rancher Desktop (moby) | `sbx` (opt-in) | Apple `container` на macOS 26 — microVM на место без учётной записи Docker, открытый код; адаптер по образцу `sbxrt` |
 | сервер на Docker-хосте | `docker` runc + упрочнение | `--docker-runtime runsc` или `kata` | — |
 | кластер | `k8s` + RuntimeClass gVisor/Kata | `ax` | — |
 
