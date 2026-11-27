@@ -35,6 +35,10 @@ type LocalImage struct {
 	// нужного или меток нет): часть возможностей лаунчера в нём не работает.
 	Outdated bool   `json:"outdated,omitempty"`
 	Note     string `json:"note,omitempty"`
+	// PullFrom — откуда «Скачать из реестра» тянет образ: <реестр>/<имя>:<тег>
+	// для семейства agctl-dsh* с локальным именем, сама ссылка — для образа
+	// с реестром; пусто — реестр выключен в профиле (images.registry: none).
+	PullFrom string `json:"pullFrom,omitempty"`
 }
 
 // LocalHooks — операции на хосте для лаунчера локального режима.

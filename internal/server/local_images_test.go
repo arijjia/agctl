@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -58,11 +59,13 @@ func TestLocalImages(t *testing.T) {
 	if snap := waitImageTask(t, env); snap["state"] != "idle" || !strings.Contains(strings.Join(snap["log"].([]string), "\n"), "готов") {
 		t.Fatalf("ensure: %v", snap)
 	}
-	// пересобрать не используемый работающим местом
+	// пересобрать не используемый работающим местом — на этой машине, без реестра
 	if code, body := env.do(c, "POST", "/api/local/ui/images/rebuild", map[string]string{"ref": "agctl-dsh-org-1c:0.2.2"}); code != http.StatusAccepted {
 		t.Fatalf("rebuild: %d %s", code, body)
 	}
-	waitImageTask(t, env)
+	if snap := waitImageTask(t, env); !strings.Contains(strings.Join(snap["log"].([]string), "\n"), "собираю на машине agctl-dsh-org-1c:0.2.2") {
+		t.Fatalf("rebuild не через сборку на машине: %v", snap)
+	}
 	h.mu.Lock()
 	removed, built := strings.Join(h.removed, ","), strings.Join(h.built, ",")
 	h.mu.Unlock()
@@ -71,6 +74,64 @@ func TestLocalImages(t *testing.T) {
 	}
 	if code, _ := env.do(c, "POST", "/api/local/ui/images/explode", map[string]string{"ref": "x:1"}); code != http.StatusNotFound {
 		t.Fatalf("неизвестное действие: %d", code)
+	}
+	// чужой образ не собрать — ошибка до удаления, образ цел
+	if code, _ := env.do(c, "POST", "/api/local/ui/images/rebuild", map[string]string{"ref": "ubuntu:24.04"}); code != http.StatusAccepted {
+		t.Fatal("rebuild чужого образа")
+	}
+	if snap := waitImageTask(t, env); snap["state"] != "error" || !strings.Contains(snap["error"].(string), "не собрать") {
+		t.Fatalf("rebuild чужого образа: %v", snap)
+	}
+	h.mu.Lock()
+	removed = strings.Join(h.removed, ",")
+	h.mu.Unlock()
+	if removed != "agctl-dsh-org-1c:0.2.2" {
+		t.Fatalf("после отказа пересборки удалено лишнее: %q", removed)
+	}
+}
+
+// «Скачать из реестра»: можно и для образа работающего места — новое
+// применится при перезапуске (журнал и «нужен перезапуск»); не скачался —
+// ошибка операции, без сборки.
+func TestLocalImagePull(t *testing.T) {
+	env, h := newLocalUIEnv(t)
+	c := loginOwner(t, env)
+	if code, _ := env.do(c, "POST", "/api/local/ui/start", nil); code != http.StatusAccepted {
+		t.Fatal("старт основного")
+	}
+	env.waitTask("idle")
+	code, body := env.do(c, "POST", "/api/local/ui/images/pull", map[string]string{"ref": "agctl-dsh-org:0.2.2"})
+	if code != http.StatusAccepted {
+		t.Fatalf("pull образа работающего места: %d %s", code, body)
+	}
+	snap := waitImageTask(t, env)
+	logText := strings.Join(snap["log"].([]string), "\n")
+	if snap["state"] != "idle" || !strings.Contains(logText, "docker pull registry.test/agctl-dsh-org:0.2.2") ||
+		!strings.Contains(logText, "«Основное»") || !strings.Contains(logText, "применится при перезапуске") {
+		t.Fatalf("pull: %v", snap)
+	}
+	if main := env.srv.local.task.snapshot(); main["restartNeeded"] != true {
+		t.Fatalf("работающее место не помечено «нужен перезапуск»: %v", main)
+	}
+	h.mu.Lock()
+	pulled, built := strings.Join(h.pulled, ","), len(h.built)
+	h.pullErr = errors.New("agctl-dsh-org-1c:0.2.2 из registry.test/agctl-dsh-org-1c:0.2.2 не скачался: в реестре нет такого образа")
+	h.mu.Unlock()
+	if pulled != "agctl-dsh-org:0.2.2" || built != 0 {
+		t.Fatalf("pull: скачаны %q, собрано %d", pulled, built)
+	}
+	// реестр не отдал — ошибка операции, сборки нет
+	if code, _ := env.do(c, "POST", "/api/local/ui/images/pull", map[string]string{"ref": "agctl-dsh-org-1c:0.2.2"}); code != http.StatusAccepted {
+		t.Fatalf("pull: %d", code)
+	}
+	if snap := waitImageTask(t, env); snap["state"] != "error" || !strings.Contains(snap["error"].(string), "не скачался") {
+		t.Fatalf("ошибка pull: %v", snap)
+	}
+	h.mu.Lock()
+	built = len(h.built)
+	h.mu.Unlock()
+	if built != 0 {
+		t.Fatal("после ошибки pull началась сборка")
 	}
 }
 

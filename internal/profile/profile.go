@@ -70,6 +70,12 @@ type images struct {
 	Dockerfile string `yaml:"dockerfile"`
 	// Dev — каталог образов лаунчера developer'а (теги или реестр Nexus).
 	Dev []string `yaml:"dev"`
+	// Registry — откуда тянуть образы семейства agctl-dsh* с локальными
+	// именами: agctl-dsh:0.2.2 → <реестр>/agctl-dsh:0.2.2 и тег обратно в
+	// локальное имя. Пусто — реестр ядра (dockerrt.DefaultRegistry), "none" —
+	// в реестр не ходить, только сборка на машине. Ссылки с реестром в Dev
+	// тянутся как есть.
+	Registry string `yaml:"registry"`
 }
 
 type llm struct {
@@ -461,6 +467,10 @@ func (d *Data) finalize(source string) error {
 	if p := d.Images.Dockerfile; p != "" && (strings.HasPrefix(p, "/") || strings.Contains(p, "..")) {
 		return fmt.Errorf("images.dockerfile: путь внутри профиля, без .. и абсолютных путей: %q", p)
 	}
+	d.Images.Registry = strings.TrimSuffix(strings.TrimSpace(d.Images.Registry), "/")
+	if r := d.Images.Registry; r != "" && r != "none" && !registryRe.MatchString(r) {
+		return fmt.Errorf("images.registry: адрес реестра без схемы и тега, строчными буквами, например ghcr.io/org (или none — без реестра): %q", r)
+	}
 	for k, v := range d.Env {
 		if !envNameRe.MatchString(k) {
 			return fmt.Errorf("env: имя %q — только A-Z, 0-9 и _, с буквы", k)
@@ -487,7 +497,10 @@ func (d *Data) finalize(source string) error {
 }
 
 var (
-	envNameRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
+	// registryRe — реестр образов: хост[:порт][/пространство…], как в
+	// ссылках Docker (строчные буквы, без схемы и тега).
+	registryRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]+([._-]+[a-z0-9]+)*)*$`)
+	envNameRe  = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 	// secretNameRe — имена, под которыми обычно лежат секреты.
 	secretNameRe = regexp.MustCompile(`(KEY|TOKEN|SECRET|PASSWORD|PASSWD)$`)
 )

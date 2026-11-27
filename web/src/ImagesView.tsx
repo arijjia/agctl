@@ -1,12 +1,13 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { imagesApi, type ImageContext, type ImageFile, type ImagePlan, type ImageStage, type ImageTask, type ImageView } from "./api";
+import { imagesApi, type ImageAction, type ImageContext, type ImageFile, type ImagePlan, type ImageStage, type ImageTask, type ImageView } from "./api";
 import { Code, langOf } from "./highlight";
 import { Panel } from "./Shell";
 
 // ImagesView — раздел «Образы» лаунчера: каталог образов (что внутри, какие
 // места их используют, чем отличаются), как каждый собирается (ступени,
 // Dockerfile, аргументы, файлы контекста сборки — каждый открывается, что
-// качается из сети) и действия: скачать или собрать, пересобрать, удалить.
+// качается из сети) и действия: скачать или собрать, скачать из реестра,
+// пересобрать на этой машине, удалить.
 // Операции идут фоном на сервере; все копии лаунчера видят их журнал
 // (поток событий перечитывает список).
 
@@ -66,14 +67,19 @@ export default function ImagesView({ note, refreshKey }: { note: (m: string, err
     }
   };
 
-  const act = async (action: "ensure" | "rebuild" | "remove", im: ImageView) => {
+  const act = async (action: ImageAction, im: ImageView) => {
     const users = im.usedBy.map((u) => `«${u.name}»`).join(", ");
     if (action === "remove" && !confirm(`Удалить образ ${im.ref} с этой машины?${users ? `\nЕго используют места ${users} — при запуске он скачается или соберётся снова.` : ""}`)) return;
-    if (action === "rebuild" && !confirm(`Пересобрать ${im.ref}? Прежний образ удаляется, новый берётся из реестра или собирается на этой машине (из кэша Docker — быстро).`)) return;
+    if (
+      action === "rebuild" &&
+      !confirm(`Пересобрать ${im.ref} на этой машине? Прежний образ удаляется, новый собирается из контекста, встроенного в agctl (готовые нижние ступени и слои — из кэша Docker, быстро). Готовый образ из реестра — кнопка «Скачать из реестра».`)
+    )
+      return;
     try {
       const r = await imagesApi.action(action, im.ref);
       setTask(r.task);
-      note(`${im.ref}: ${action === "remove" ? "удаляю" : action === "rebuild" ? "пересобираю" : "скачиваю или собираю"} — журнал ниже`);
+      const what = { remove: "удаляю", rebuild: "пересобираю на этой машине", pull: `скачиваю из ${im.pullFrom}`, ensure: "скачиваю или собираю" }[action];
+      note(`${im.ref}: ${what} — журнал ниже`);
     } catch (e: any) {
       note(e.message, true);
     }
@@ -84,9 +90,12 @@ export default function ImagesView({ note, refreshKey }: { note: (m: string, err
     <>
       <p className="muted small">
         Образ рабочего места — цепочка ступеней: базовый (Debian и Node, инструменты, прогретые MCP, dsh, guest agctl) →
-        вкус (web — с браузером) → надстройка профиля. При запуске места agctl сначала пробует <code>docker pull</code>, а
-        если образа в реестре нет — собирает недостающие ступени на этой машине; готовые ступени и слои Docker берутся из
-        кэша, поэтому новая версия dsh — это пересборка только верхних слоёв. Всё для сборки уже на машине: Dockerfile
+        вкус (web — с браузером) → надстройка профиля. При запуске места agctl сначала скачивает образ из реестра образов
+        agctl (<code>images.registry</code> профиля, по умолчанию <code>ghcr.io/arijjia</code> — там опубликованы{" "}
+        <code>agctl-dsh</code> и <code>agctl-dsh-min</code>), а если там его нет — собирает недостающие ступени на этой
+        машине; готовые ступени и слои Docker берутся из кэша, поэтому новая версия dsh — это пересборка только верхних
+        слоёв. «Скачать из реестра» обновляет образ и у работающего места — новое применится при его перезапуске;
+        «Пересобрать» собирает на этой машине, без реестра. Всё для сборки уже на машине: Dockerfile
         ступеней, entrypoint и скелет dsh-home встроены в бинарь agctl, а linux-сборку guest install.sh кладёт в{" "}
         <code>~/.agctl/bin/guest</code> — поэтому пересборка работает на любой машине с установленным agctl, в том числе
         без исходников. «Как собирается» показывает Dockerfile каждой ступени, аргументы, файлы контекста сборки (каждый
@@ -151,6 +160,20 @@ export default function ImagesView({ note, refreshKey }: { note: (m: string, err
                       {!im.present && (
                         <button className="primary small" disabled={busy} onClick={() => act("ensure", im)}>
                           Скачать или собрать
+                        </button>
+                      )}
+                      {actions && (
+                        <button
+                          className="ghost small"
+                          disabled={busy || !im.pullFrom}
+                          title={
+                            im.pullFrom
+                              ? `docker pull ${im.pullFrom}${im.usedBy.some((u) => u.running) ? " — работающие места получат новую версию при перезапуске" : ""}`
+                              : "реестр образов выключен в профиле (images.registry: none) — образ только собирается на этой машине"
+                          }
+                          onClick={() => act("pull", im)}
+                        >
+                          Скачать из реестра
                         </button>
                       )}
                       {im.present && actions && (

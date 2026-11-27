@@ -68,22 +68,33 @@ type LocalImageFileItem struct {
 	Size int64  `json:"size"`
 }
 
-// LocalImagePlan — как образ попадает на машину: сначала docker pull, при
-// ответе реестра «нет такого» — сборка ступеней на этой машине.
+// LocalImagePlan — как образ попадает на машину: сначала docker pull из
+// реестра (Pull — откуда именно и что дальше, PullRef — что тянется), не
+// вышло — сборка ступеней на этой машине.
 type LocalImagePlan struct {
-	Ref    string            `json:"ref"`
-	Pull   string            `json:"pull"`
-	Stages []LocalImageStage `json:"stages"`
+	Ref     string            `json:"ref"`
+	Pull    string            `json:"pull"`
+	PullRef string            `json:"pullRef,omitempty"`
+	Stages  []LocalImageStage `json:"stages"`
 }
 
 // LocalImagesHooks — хост для раздела «Образы»: план сборки, файлы
-// контекста и удаление.
+// контекста, скачать из реестра, пересобрать и удалить.
 type LocalImagesHooks interface {
 	ImagePlan(ref string) (LocalImagePlan, error)
 	// ImageFile — файл или каталог rel контекста сборки ступени stage (с 1,
 	// как в плане): текст до 256 КБ или список файлов. Нет такого пути —
 	// ошибка с fs.ErrNotExist; двоичный или большой файл — ошибка с размером.
 	ImageFile(ref string, stage int, rel string) (LocalImageFile, error)
+	// PullFrom — откуда «Скачать из реестра» тянет ref ("" — реестр
+	// выключен в профиле); у образов каталога — уже в LocalImage.PullFrom.
+	PullFrom(ref string) string
+	// PullImage — «Скачать из реестра»: docker pull (семейство agctl-dsh* —
+	// из реестра образов agctl под локальное имя), без сборки. updated —
+	// образ на машине сменился (новая версия или его не было).
+	PullImage(ctx context.Context, ref string, logf func(string)) (updated bool, err error)
+	// BuildImage — «Пересобрать»: сборка на этой машине, без реестра.
+	BuildImage(ctx context.Context, ref string, logf func(string)) error
 	RemoveImage(ctx context.Context, ref string) error
 }
 
@@ -114,6 +125,7 @@ type imageUse struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Running bool   `json:"running"`
+	slot    int
 }
 
 // localImageView — образ каталога для раздела «Образы».
@@ -131,7 +143,7 @@ func (s *Server) imageUsers(owner int64) map[string][]imageUse {
 		return out
 	}
 	for _, v := range views {
-		out[v.Image] = append(out[v.Image], imageUse{ID: v.ID, Name: v.Name, Running: v.State == "running" || v.State == "starting"})
+		out[v.Image] = append(out[v.Image], imageUse{ID: v.ID, Name: v.Name, Running: v.State == "running" || v.State == "starting", slot: v.Slot})
 	}
 	return out
 }
@@ -158,10 +170,14 @@ func (s *Server) handleImagesList(w http.ResponseWriter, r *http.Request, id ide
 		}
 	}
 	sort.Strings(extra)
+	ih, planOK := s.imagesHooks()
 	for _, ref := range extra {
-		out = append(out, localImageView{LocalImage: LocalImage{Ref: ref, Note: "не из каталога профиля"}, UsedBy: users[ref]})
+		im := LocalImage{Ref: ref, Note: "не из каталога профиля"}
+		if planOK {
+			im.PullFrom = ih.PullFrom(ref)
+		}
+		out = append(out, localImageView{LocalImage: im, UsedBy: users[ref]})
 	}
-	_, planOK := s.imagesHooks()
 	writeJSON(w, http.StatusOK, map[string]any{"images": out, "task": s.imageTask().snapshot(), "actions": planOK})
 }
 
@@ -233,10 +249,12 @@ type imageActionReq struct {
 	Ref string `json:"ref"`
 }
 
-// handleImageAction — POST /api/local/ui/images/{ensure|rebuild|remove}
-// {ref}: скачать или собрать недостающий; пересобрать (удалить тег и
-// получить заново: из реестра или сборкой из кэша Docker); удалить.
-// Образ работающего места не пересобирается и не удаляется.
+// handleImageAction — POST /api/local/ui/images/{ensure|pull|rebuild|remove}
+// {ref}: скачать или собрать недостающий; скачать из реестра (и образ
+// работающего места — новое применится при его перезапуске); пересобрать
+// на этой машине (удалить тег и собрать: готовые нижние ступени и слои — из
+// кэша Docker); удалить. Образ работающего места не пересобирается и не
+// удаляется.
 func (s *Server) handleImageAction(w http.ResponseWriter, r *http.Request, id identity) {
 	action := r.PathValue("action")
 	var req imageActionReq
@@ -255,17 +273,12 @@ func (s *Server) handleImageAction(w http.ResponseWriter, r *http.Request, id id
 		writeErr(w, http.StatusNotImplemented, "действие недоступно в этой сборке")
 		return
 	}
-	if action != "ensure" && action != "rebuild" && action != "remove" {
-		writeErr(w, http.StatusNotFound, "действия: ensure, rebuild, remove")
+	if action != "ensure" && action != "pull" && action != "rebuild" && action != "remove" {
+		writeErr(w, http.StatusNotFound, "действия: ensure, pull, rebuild, remove")
 		return
 	}
-	var running []string
-	for _, u := range s.imageUsers(id.ID)[ref] {
-		if u.Running {
-			running = append(running, "«"+u.Name+"»")
-		}
-	}
-	if action != "ensure" && len(running) > 0 {
+	running := runningNames(s.imageUsers(id.ID)[ref])
+	if (action == "rebuild" || action == "remove") && len(running) > 0 {
 		writeErr(w, http.StatusConflict, "образ используют работающие места "+strings.Join(running, ", ")+" — сначала остановите их")
 		return
 	}
@@ -283,7 +296,7 @@ func (s *Server) handleImageAction(w http.ResponseWriter, r *http.Request, id id
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Minute)
 		defer cancel()
-		err := s.runImageAction(ctx, action, ref, hooks, ih, t.logf)
+		err := s.runImageAction(ctx, action, ref, id.ID, hooks, ih, t.logf)
 		t.mu.Lock()
 		if err != nil {
 			t.state, t.err = "error", err.Error()
@@ -300,12 +313,40 @@ func (s *Server) handleImageAction(w http.ResponseWriter, r *http.Request, id id
 	writeJSON(w, http.StatusAccepted, map[string]any{"task": t.snapshot()})
 }
 
-func (s *Server) runImageAction(ctx context.Context, action, ref string, hooks LocalHooks, ih LocalImagesHooks, logf func(string)) error {
+// runningNames — «имена» работающих мест из списка.
+func runningNames(uses []imageUse) []string {
+	var out []string
+	for _, u := range uses {
+		if u.Running {
+			out = append(out, "«"+u.Name+"»")
+		}
+	}
+	return out
+}
+
+func (s *Server) runImageAction(ctx context.Context, action, ref string, owner int64, hooks LocalHooks, ih LocalImagesHooks, logf func(string)) error {
 	present := false
 	for _, im := range hooks.Images() {
 		present = present || (im.Ref == ref && im.Present)
 	}
 	switch action {
+	case "pull":
+		updated, err := ih.PullImage(ctx, ref, logf)
+		if err != nil {
+			return err
+		}
+		// Контейнер работающего места остаётся на прежнем образе: новый тег
+		// подхватит следующий старт — место помечается «нужен перезапуск».
+		uses := s.imageUsers(owner)[ref]
+		if names := runningNames(uses); updated && len(names) > 0 {
+			logf("места " + strings.Join(names, ", ") + " работают на прежней версии образа — новая применится при перезапуске места")
+			for _, u := range uses {
+				if u.Running {
+					s.markPlacePending(chatKey{uid: owner, slot: u.slot})
+				}
+			}
+		}
+		return nil
 	case "remove":
 		if !present {
 			logf("образа " + ref + " на машине нет — удалять нечего")
@@ -317,12 +358,22 @@ func (s *Server) runImageAction(ctx context.Context, action, ref string, hooks L
 		logf("✓ " + ref + " удалён (слои, общие с другими образами, остались)")
 		return nil
 	case "rebuild":
+		// Собрать можно только образ семейства agctl-dsh этого профиля:
+		// проверка до удаления, иначе прежний образ пропадёт зря.
+		if _, err := ih.ImagePlan(ref); err != nil {
+			return fmt.Errorf("на этой машине %s не собрать: %w", ref, err)
+		}
 		if present {
 			if err := ih.RemoveImage(ctx, ref); err != nil {
 				return fmt.Errorf("пересборка: удаление прежнего %s: %w", ref, err)
 			}
-			logf("прежний " + ref + " удалён — получаю заново (реестр или сборка из кэша Docker)")
+			logf("прежний " + ref + " удалён — собираю на этой машине (готовые нижние ступени и слои — из кэша Docker)")
 		}
+		if err := ih.BuildImage(ctx, ref, logf); err != nil {
+			return err
+		}
+		logf("✓ " + ref + " готов")
+		return nil
 	case "ensure":
 		if present {
 			logf(ref + " уже есть на машине")

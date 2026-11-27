@@ -7,11 +7,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/arijjia/agctl/internal/assets"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/arijjia/agctl/internal/cli"
 	"github.com/arijjia/agctl/internal/localmode"
@@ -158,7 +160,7 @@ func (h *devHooks) Images() []server.LocalImage {
 	add(h.CurrentImage())
 	out := make([]server.LocalImage, 0, len(refs))
 	for _, r := range refs {
-		im := server.LocalImage{Ref: r, Flavor: devFlavorOf(&localmode.Config{}, h.prof, r)}
+		im := server.LocalImage{Ref: r, Flavor: devFlavorOf(&localmode.Config{}, h.prof, r), PullFrom: devPullFrom(h.prof, r)}
 		if meta, err := dockerrt.ImageInfo(context.Background(), r); err == nil {
 			im.Present = true
 			devDescribeImage(&im, meta)
@@ -249,11 +251,24 @@ func (h *devHooks) ImagePlan(ref string) (server.LocalImagePlan, error) {
 	if err != nil {
 		return server.LocalImagePlan{}, err
 	}
-	out := server.LocalImagePlan{Ref: ref}
-	if local != ref {
-		out.Pull = "docker pull " + ref + "; реестр ответил «нет такого» или пакет закрыт — сборка ступеней ниже как " + local + " с тегом " + ref + "; при сбое связи — ошибка, без сборки"
-	} else {
-		out.Pull = "docker pull " + ref + " (локальное имя: в Docker Hub его обычно нет) — затем сборка ступеней ниже; готовые ступени не пересобираются"
+	out := server.LocalImagePlan{Ref: ref, PullRef: devPullFrom(h.prof, ref)}
+	registry := devRegistry(h.prof)
+	lower := "; недостающие ступени ниже — сначала тоже из " + registry + ", готовые не пересобираются"
+	if registry == "" {
+		lower = "; готовые ступени не пересобираются"
+	}
+	switch {
+	case local != ref:
+		out.Pull = "docker pull " + ref + "; реестр ответил «нет такого» или пакет закрыт — сборка ступеней ниже как " + local + " с тегом " + ref + lower + "; при сбое связи — ошибка, без сборки"
+	case out.PullRef == "":
+		out.Pull = "реестр образов выключен в профиле (images.registry: none) — сборка ступеней ниже на этой машине" + lower
+	default:
+		src := "images.registry профиля"
+		if h.prof == nil || h.prof.Images.Registry == "" {
+			src = "реестр образов agctl по умолчанию: images.registry в профиле не задан"
+		}
+		out.Pull = "docker pull " + out.PullRef + " (" + src + ") и тег " + ref + "; не скачался — сборка ступеней ниже на этой машине" + lower +
+			". В " + dockerrt.DefaultRegistry + " публикуются только agctl-dsh и agctl-dsh-min: вкусов (-web) и надстроек профиля там нет — они собираются"
 	}
 	for _, st := range stages {
 		var ctxItems []server.LocalImageContext
@@ -293,6 +308,68 @@ func (h *devHooks) ImageFile(ref string, stage int, rel string) (server.LocalIma
 // RemoveImage — удалить тег образа из Docker этой машины.
 func (h *devHooks) RemoveImage(ctx context.Context, ref string) error {
 	return dockerrt.RemoveImage(ctx, ref)
+}
+
+// devPullFrom — откуда «Скачать из реестра» тянет образ ref: семейство
+// agctl-dsh* — из реестра образов agctl, остальное — как есть; "" — реестр
+// выключен в профиле.
+func devPullFrom(p *profile.Data, ref string) string {
+	if remote := dockerrt.RegistryRef(ref, devRegistry(p)); remote != "" {
+		return remote
+	}
+	if dockerrt.LocalFamily(ref) {
+		return ""
+	}
+	return ref
+}
+
+// PullFrom — откуда «Скачать из реестра» тянет образ ref ("" — реестр
+// выключен в профиле).
+func (h *devHooks) PullFrom(ref string) string { return devPullFrom(h.prof, ref) }
+
+// PullImage — «Скачать из реестра»: образ семейства agctl-dsh* — из
+// реестра образов agctl под локальное имя, ссылка с реестром — как есть.
+// Без сборки: не скачался — ошибка. updated — образ на машине сменился
+// (новая версия или его не было).
+func (h *devHooks) PullImage(ctx context.Context, ref string, logf func(string)) (bool, error) {
+	before, _ := dockerrt.ImageID(ctx, ref)
+	if from := devPullFrom(h.prof, ref); from != "" {
+		logf("… docker pull " + from)
+	}
+	pctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
+	defer cancel()
+	from, err := devRegistryPull(pctx, h.prof, ref)
+	if errors.Is(err, errRegistryOff) {
+		return false, err
+	}
+	if err != nil {
+		return false, fmt.Errorf("%s из %s не скачался: %s", ref, from, devPullReason(err, from))
+	}
+	after, _ := dockerrt.ImageID(ctx, ref)
+	switch {
+	case before == "":
+		logf(fmt.Sprintf("✓ %s скачан из %s", ref, from))
+	case before == after:
+		logf(fmt.Sprintf("✓ %s уже последней версии: в %s тот же образ", ref, from))
+		return false, nil
+	default:
+		logf(fmt.Sprintf("✓ %s обновлён из %s", ref, from))
+	}
+	return true, nil
+}
+
+// BuildImage — «Пересобрать»: сборка ref на этой машине из встроенного
+// контекста, без реестра; готовые нижние ступени и слои — из кэша Docker.
+func (h *devHooks) BuildImage(ctx context.Context, ref string, logf func(string)) error {
+	// Образ реестра собирается под локальным именем и получает имя реестра
+	// тегом: прежний локальный образ убираем, иначе «сборка» лишь вернёт
+	// его тег (работающий контейнер удалить его не даст — тогда так).
+	if local := dockerrt.LocalImageName(ref); local != ref {
+		if err := dockerrt.RemoveImage(ctx, local); err == nil {
+			logf("прежний " + local + " удалён")
+		}
+	}
+	return devBuildImage(ctx, h.prof, ref, devFlavorOf(&localmode.Config{}, h.prof, ref), "", logf)
 }
 
 func (h *devHooks) EnsureImage(ctx context.Context, ref string, logf func(string)) error {

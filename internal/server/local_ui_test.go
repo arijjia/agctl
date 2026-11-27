@@ -28,9 +28,14 @@ type fakeHooks struct {
 	// mainDshHome — config.yaml dsh_home (своя папка основного места).
 	mainDshHome string
 	removed     []string // RemoveImage
+	pulled      []string // PullImage
+	pullErr     error    // ответ реестра на PullImage
 }
 
 func (f *fakeHooks) ImagePlan(ref string) (LocalImagePlan, error) {
+	if !strings.HasPrefix(ref, "agctl-dsh") {
+		return LocalImagePlan{}, errors.New("образ " + ref + " не из семейства agctl-dsh — его можно только скачать")
+	}
 	return LocalImagePlan{Ref: ref, Pull: "docker pull " + ref, Stages: []LocalImageStage{
 		{Ref: "agctl-dsh:0.2.2", Kind: "base", Dockerfile: "FROM node:22-bookworm-slim\n"},
 		{Ref: ref, Kind: "profile", Dockerfile: "ARG BASE\nFROM ${BASE}\n", Args: map[string]string{"BASE": "agctl-dsh:0.2.2"}},
@@ -51,6 +56,31 @@ func (f *fakeHooks) ImageFile(ref string, stage int, rel string) (LocalImageFile
 		return LocalImageFile{}, errors.New("agctl — двоичный файл, 41.0 МБ: показываются только текстовые")
 	}
 	return LocalImageFile{}, fmt.Errorf("%s: нет в контексте сборки: %w", rel, fs.ErrNotExist)
+}
+
+func (f *fakeHooks) PullFrom(ref string) string { return "registry.test/" + ref }
+
+// PullImage — «реестр»: образ появляется или обновляется (updated — всегда).
+func (f *fakeHooks) PullImage(ctx context.Context, ref string, logf func(string)) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.pullErr != nil {
+		return false, f.pullErr
+	}
+	logf("docker pull registry.test/" + ref)
+	f.pulled = append(f.pulled, ref)
+	f.present[ref] = true
+	return true, nil
+}
+
+// BuildImage — «сборка на машине» (пересборка).
+func (f *fakeHooks) BuildImage(ctx context.Context, ref string, logf func(string)) error {
+	logf("собираю на машине " + ref)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.built = append(f.built, ref)
+	f.present[ref] = true
+	return nil
 }
 
 func (f *fakeHooks) RemoveImage(ctx context.Context, ref string) error {

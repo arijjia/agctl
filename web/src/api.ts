@@ -115,6 +115,9 @@ export type LocalImage = {
   sizeMb?: number;
   outdated?: boolean;
   note?: string;
+  // pullFrom — откуда «Скачать из реестра» тянет образ; пусто — реестр
+  // выключен в профиле (images.registry: none).
+  pullFrom?: string;
 };
 export type LocalUI = {
   profile: string;
@@ -182,14 +185,17 @@ export type ImageStage = {
   npm?: string[];
   downloads?: string[];
 };
-export type ImagePlan = { ref: string; pull: string; stages: ImageStage[] };
+export type ImagePlan = { ref: string; pull: string; pullRef?: string; stages: ImageStage[] };
+// ImageAction — ensure: скачать или собрать недостающий; pull: скачать из
+// реестра (без сборки); rebuild: собрать на этой машине; remove: удалить.
+export type ImageAction = "ensure" | "pull" | "rebuild" | "remove";
 export const imagesApi = {
   list: () => req<{ images: ImageView[]; task: ImageTask; actions: boolean }>("GET", "/api/local/ui/images"),
   plan: (ref: string) => req<ImagePlan>("GET", `/api/local/ui/images/plan?ref=${encodeURIComponent(ref)}`),
   // file — файл или каталог контекста сборки ступени stage (с 1, как в плане).
   file: (ref: string, stage: number, path: string) =>
     req<ImageFile>("GET", `/api/local/ui/images/file?ref=${encodeURIComponent(ref)}&stage=${stage}&path=${encodeURIComponent(path)}`),
-  action: (action: "ensure" | "rebuild" | "remove", ref: string) =>
+  action: (action: ImageAction, ref: string) =>
     req<{ task: ImageTask }>("POST", `/api/local/ui/images/${action}`, { ref }),
 };
 
