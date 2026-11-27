@@ -89,18 +89,31 @@ export default function ImagesView({ note, refreshKey }: { note: (m: string, err
   return (
     <>
       <p className="muted small">
-        Образ рабочего места — цепочка ступеней: базовый (Debian и Node, инструменты, прогретые MCP, dsh, guest agctl) →
-        вкус (web — с браузером) → надстройка профиля. При запуске места agctl сначала скачивает образ из реестра образов
-        agctl (<code>images.registry</code> профиля, по умолчанию <code>ghcr.io/arijjia</code> — там опубликованы{" "}
-        <code>agctl-dsh</code> и <code>agctl-dsh-min</code>), а если там его нет — собирает недостающие ступени на этой
-        машине; готовые ступени и слои Docker берутся из кэша, поэтому новая версия dsh — это пересборка только верхних
-        слоёв. «Скачать из реестра» обновляет образ и у работающего места — новое применится при его перезапуске;
-        «Пересобрать» собирает на этой машине, без реестра. Всё для сборки уже на машине: Dockerfile
-        ступеней, entrypoint и скелет dsh-home встроены в бинарь agctl, а linux-сборку guest install.sh кладёт в{" "}
-        <code>~/.agctl/bin/guest</code> — поэтому пересборка работает на любой машине с установленным agctl, в том числе
-        без исходников. «Как собирается» показывает Dockerfile каждой ступени, аргументы, файлы контекста сборки (каждый
-        открывается) и всё, что качается из сети.
+        Образ собирается ступенями: базовый → вкус (web — с браузером) → надстройка профиля. agctl сначала ищет его в
+        реестре образов, а если не находит — собирает на этой машине.
       </p>
+      <details className="explain">
+        <summary>Как это устроено</summary>
+        <ul>
+          <li>
+            <b>Откуда.</b> Реестр — <code>images.registry</code> профиля, по умолчанию <code>ghcr.io/arijjia</code> (там{" "}
+            <code>agctl-dsh</code> и <code>agctl-dsh-min</code>). Чего в реестре нет, собирается здесь; готовые слои берутся
+            из кэша Docker, поэтому новая версия dsh пересобирает только верхние слои.
+          </li>
+          <li>
+            <b>Скачать из реестра</b> — свежий образ, в том числе для работающего места: новое применится при его
+            перезапуске.
+          </li>
+          <li>
+            <b>Пересобрать</b> — сборка на этой машине без реестра. Исходники не нужны: Dockerfile ступеней, entrypoint и
+            скелет dsh-home встроены в бинарь agctl, guest лежит в <code>~/.agctl/bin/guest</code>.
+          </li>
+          <li>
+            <b>Как собирается</b> — Dockerfile каждой ступени, аргументы, файлы контекста сборки и всё, что качается из
+            сети.
+          </li>
+        </ul>
+      </details>
       {task && (task.state === "building" || task.state === "error" || task.log.length > 0) && (
         <Panel label={`Операция с образом ${task.image}`} aside={<span className={`badge ${busy ? "state-created" : task.state === "error" ? "state-removed" : "state-running"}`}>{busy ? "идёт" : task.state === "error" ? "ошибка" : "готово"}</span>}>
           {task.error && <div className="error">{task.error}</div>}
@@ -138,10 +151,10 @@ export default function ImagesView({ note, refreshKey }: { note: (m: string, err
                     )}
                   </td>
                   <td>{kindOf(im)}</td>
-                  <td className="mono">{im.dshVersion || "—"}</td>
-                  <td className="mono">{im.guestRevision || "—"}</td>
-                  <td>{im.built || "—"}</td>
-                  <td>{gb(im.sizeMb)}</td>
+                  <td className="mono nowrap">{im.dshVersion || "—"}</td>
+                  <td className="mono nowrap">{im.guestRevision || "—"}</td>
+                  <td className="nowrap">{im.built || "—"}</td>
+                  <td className="nowrap">{gb(im.sizeMb)}</td>
                   <td>
                     {im.usedBy.length === 0
                       ? "—"
