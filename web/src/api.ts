@@ -115,6 +115,9 @@ export type LocalImage = {
   sizeMb?: number;
   outdated?: boolean;
   note?: string;
+  // pullFrom — откуда «Скачать из реестра» тянет образ; пусто — реестр
+  // выключен в профиле (images.registry: none).
+  pullFrom?: string;
 };
 export type LocalUI = {
   profile: string;
@@ -150,6 +153,24 @@ export const local = {
 export type ImageUse = { id: string; name: string; running: boolean };
 export type ImageView = LocalImage & { current: boolean; usedBy: ImageUse[] };
 export type ImageTask = { state: string; image: string; log: string[]; error: string };
+// ImageContext — файл или каталог контекста сборки ступени (кроме
+// Dockerfile): откуда берётся (embedded — встроен в бинарь agctl, skel —
+// скелет dsh-home, guest — guest-бинарь на диске, profile — файл профиля),
+// где именно (path), размер, у каталога — число файлов.
+export type ImageContext = {
+  name: string;
+  dir?: boolean;
+  origin: string;
+  from: string;
+  path?: string;
+  size: number;
+  files?: number;
+  missing?: boolean;
+  modified?: string;
+  note?: string;
+};
+// ImageFile — файл контекста (текст) или каталог (файлы с путями от корня контекста).
+export type ImageFile = { path: string; size: number; dir?: boolean; files?: { path: string; size: number }[]; text?: string };
 export type ImageStage = {
   ref: string;
   present: boolean;
@@ -158,17 +179,23 @@ export type ImageStage = {
   source: string;
   dockerfile: string;
   args?: Record<string, string>;
-  context?: string[];
+  context?: ImageContext[];
   from?: string[];
   apt?: string[];
   npm?: string[];
   downloads?: string[];
 };
-export type ImagePlan = { ref: string; pull: string; stages: ImageStage[] };
+export type ImagePlan = { ref: string; pull: string; pullRef?: string; stages: ImageStage[] };
+// ImageAction — ensure: скачать или собрать недостающий; pull: скачать из
+// реестра (без сборки); rebuild: собрать на этой машине; remove: удалить.
+export type ImageAction = "ensure" | "pull" | "rebuild" | "remove";
 export const imagesApi = {
   list: () => req<{ images: ImageView[]; task: ImageTask; actions: boolean }>("GET", "/api/local/ui/images"),
   plan: (ref: string) => req<ImagePlan>("GET", `/api/local/ui/images/plan?ref=${encodeURIComponent(ref)}`),
-  action: (action: "ensure" | "rebuild" | "remove", ref: string) =>
+  // file — файл или каталог контекста сборки ступени stage (с 1, как в плане).
+  file: (ref: string, stage: number, path: string) =>
+    req<ImageFile>("GET", `/api/local/ui/images/file?ref=${encodeURIComponent(ref)}&stage=${stage}&path=${encodeURIComponent(path)}`),
+  action: (action: ImageAction, ref: string) =>
     req<{ task: ImageTask }>("POST", `/api/local/ui/images/${action}`, { ref }),
 };
 

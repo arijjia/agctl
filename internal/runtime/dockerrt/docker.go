@@ -356,14 +356,19 @@ func (rt *Runtime) daemonArch(ctx context.Context) string {
 	if err != nil {
 		return ""
 	}
-	switch a := strings.ToLower(res.Info.Architecture); a {
+	return goArch(res.Info.Architecture)
+}
+
+// goArch — архитектура в терминах Go и образов (arm64|amd64; "" — другая):
+// x86_64 → amd64, aarch64 → arm64.
+func goArch(a string) string {
+	switch strings.ToLower(a) {
 	case "x86_64", "amd64":
 		return "amd64"
 	case "aarch64", "arm64":
 		return "arm64"
-	default:
-		return ""
 	}
+	return ""
 }
 
 // extractFS распаковывает поддерево embed-FS (префикс prefix) в каталог dst:

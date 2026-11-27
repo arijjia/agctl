@@ -11,8 +11,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -20,31 +22,79 @@ import (
 // LocalImageStage — ступень сборки образа: что добавляет, откуда Dockerfile,
 // аргументы сборки, контекст и что качается из сети.
 type LocalImageStage struct {
-	Ref        string            `json:"ref"`
-	Present    bool              `json:"present"`
-	Kind       string            `json:"kind"`
-	Title      string            `json:"title"`
-	Source     string            `json:"source"`
-	Dockerfile string            `json:"dockerfile"`
-	Args       map[string]string `json:"args,omitempty"`
-	Context    []string          `json:"context,omitempty"`
-	From       []string          `json:"from,omitempty"`
-	Apt        []string          `json:"apt,omitempty"`
-	Npm        []string          `json:"npm,omitempty"`
-	Downloads  []string          `json:"downloads,omitempty"`
+	Ref        string              `json:"ref"`
+	Present    bool                `json:"present"`
+	Kind       string              `json:"kind"`
+	Title      string              `json:"title"`
+	Source     string              `json:"source"`
+	Dockerfile string              `json:"dockerfile"`
+	Args       map[string]string   `json:"args,omitempty"`
+	Context    []LocalImageContext `json:"context,omitempty"`
+	From       []string            `json:"from,omitempty"`
+	Apt        []string            `json:"apt,omitempty"`
+	Npm        []string            `json:"npm,omitempty"`
+	Downloads  []string            `json:"downloads,omitempty"`
 }
 
-// LocalImagePlan — как образ попадает на машину: сначала docker pull, при
-// ответе реестра «нет такого» — сборка ступеней на этой машине.
+// LocalImageContext — файл или каталог контекста сборки ступени, кроме
+// Dockerfile: откуда берётся (встроен в бинарь agctl, скелет dsh-home,
+// guest-бинарь на диске, файл профиля), размер, у каталога — число файлов.
+type LocalImageContext struct {
+	Name     string `json:"name"`              // путь в контексте: entrypoint.sh, skel/, agctl
+	Dir      bool   `json:"dir,omitempty"`     // каталог
+	Origin   string `json:"origin"`            // embedded | skel | guest | profile
+	From     string `json:"from"`              // откуда — для человека
+	Path     string `json:"path,omitempty"`    // в исходниках agctl, в профиле или на диске
+	Size     int64  `json:"size"`              // байт; у каталога — всех файлов
+	Files    int    `json:"files,omitempty"`   // число файлов каталога
+	Missing  bool   `json:"missing,omitempty"` // guest-бинаря нет на диске
+	Modified string `json:"modified,omitempty"`
+	Note     string `json:"note,omitempty"`
+}
+
+// LocalImageFile — файл контекста сборки (текст) или каталог (все файлы с
+// путями от корня контекста).
+type LocalImageFile struct {
+	Path  string               `json:"path"`
+	Size  int64                `json:"size"`
+	Dir   bool                 `json:"dir,omitempty"`
+	Files []LocalImageFileItem `json:"files,omitempty"`
+	Text  string               `json:"text,omitempty"`
+}
+
+// LocalImageFileItem — файл каталога контекста.
+type LocalImageFileItem struct {
+	Path string `json:"path"`
+	Size int64  `json:"size"`
+}
+
+// LocalImagePlan — как образ попадает на машину: сначала docker pull из
+// реестра (Pull — откуда именно и что дальше, PullRef — что тянется), не
+// вышло — сборка ступеней на этой машине.
 type LocalImagePlan struct {
-	Ref    string            `json:"ref"`
-	Pull   string            `json:"pull"`
-	Stages []LocalImageStage `json:"stages"`
+	Ref     string            `json:"ref"`
+	Pull    string            `json:"pull"`
+	PullRef string            `json:"pullRef,omitempty"`
+	Stages  []LocalImageStage `json:"stages"`
 }
 
-// LocalImagesHooks — хост для раздела «Образы»: план сборки и удаление.
+// LocalImagesHooks — хост для раздела «Образы»: план сборки, файлы
+// контекста, скачать из реестра, пересобрать и удалить.
 type LocalImagesHooks interface {
 	ImagePlan(ref string) (LocalImagePlan, error)
+	// ImageFile — файл или каталог rel контекста сборки ступени stage (с 1,
+	// как в плане): текст до 256 КБ или список файлов. Нет такого пути —
+	// ошибка с fs.ErrNotExist; двоичный или большой файл — ошибка с размером.
+	ImageFile(ref string, stage int, rel string) (LocalImageFile, error)
+	// PullFrom — откуда «Скачать из реестра» тянет ref ("" — реестр
+	// выключен в профиле); у образов каталога — уже в LocalImage.PullFrom.
+	PullFrom(ref string) string
+	// PullImage — «Скачать из реестра»: docker pull (семейство agctl-dsh* —
+	// из реестра образов agctl под локальное имя), без сборки. updated —
+	// образ на машине сменился (новая версия или его не было).
+	PullImage(ctx context.Context, ref string, logf func(string)) (updated bool, err error)
+	// BuildImage — «Пересобрать»: сборка на этой машине, без реестра.
+	BuildImage(ctx context.Context, ref string, logf func(string)) error
 	RemoveImage(ctx context.Context, ref string) error
 }
 
@@ -66,6 +116,7 @@ func (s *Server) imageTask() *localTask {
 func (s *Server) registerLocalImageRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/local/ui/images", s.requireLocalOwner(s.handleImagesList))
 	mux.HandleFunc("GET /api/local/ui/images/plan", s.requireLocalOwner(s.handleImagePlan))
+	mux.HandleFunc("GET /api/local/ui/images/file", s.requireLocalOwner(s.handleImageFile))
 	mux.HandleFunc("POST /api/local/ui/images/{action}", s.requireLocalOwner(s.handleImageAction))
 }
 
@@ -74,6 +125,7 @@ type imageUse struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Running bool   `json:"running"`
+	slot    int
 }
 
 // localImageView — образ каталога для раздела «Образы».
@@ -91,7 +143,7 @@ func (s *Server) imageUsers(owner int64) map[string][]imageUse {
 		return out
 	}
 	for _, v := range views {
-		out[v.Image] = append(out[v.Image], imageUse{ID: v.ID, Name: v.Name, Running: v.State == "running" || v.State == "starting"})
+		out[v.Image] = append(out[v.Image], imageUse{ID: v.ID, Name: v.Name, Running: v.State == "running" || v.State == "starting", slot: v.Slot})
 	}
 	return out
 }
@@ -118,10 +170,14 @@ func (s *Server) handleImagesList(w http.ResponseWriter, r *http.Request, id ide
 		}
 	}
 	sort.Strings(extra)
+	ih, planOK := s.imagesHooks()
 	for _, ref := range extra {
-		out = append(out, localImageView{LocalImage: LocalImage{Ref: ref, Note: "не из каталога профиля"}, UsedBy: users[ref]})
+		im := LocalImage{Ref: ref, Note: "не из каталога профиля"}
+		if planOK {
+			im.PullFrom = ih.PullFrom(ref)
+		}
+		out = append(out, localImageView{LocalImage: im, UsedBy: users[ref]})
 	}
-	_, planOK := s.imagesHooks()
 	writeJSON(w, http.StatusOK, map[string]any{"images": out, "task": s.imageTask().snapshot(), "actions": planOK})
 }
 
@@ -153,14 +209,52 @@ func (s *Server) handleImagePlan(w http.ResponseWriter, r *http.Request, id iden
 	writeJSON(w, http.StatusOK, plan)
 }
 
+// handleImageFile — GET /api/local/ui/images/file?ref=&stage=&path=: файл
+// контекста сборки ступени (текст) или каталог (список файлов).
+func (s *Server) handleImageFile(w http.ResponseWriter, r *http.Request, id identity) {
+	h, ok := s.imagesHooks()
+	if !ok {
+		writeErr(w, http.StatusNotImplemented, "файлы контекста недоступны в этой сборке")
+		return
+	}
+	q := r.URL.Query()
+	ref := strings.TrimSpace(q.Get("ref"))
+	if err := s.validImageRef(ref); err != nil || ref == "" {
+		writeErr(w, http.StatusBadRequest, "нужен образ: ?ref=<образ>")
+		return
+	}
+	stage, err := strconv.Atoi(q.Get("stage"))
+	if err != nil || stage < 1 {
+		writeErr(w, http.StatusBadRequest, "нужна ступень: ?stage=<номер с 1, как в плане>")
+		return
+	}
+	rel := strings.TrimSuffix(strings.TrimSpace(q.Get("path")), "/")
+	if rel == "" || rel == "." || !fs.ValidPath(rel) || strings.Contains(rel, "\\") {
+		writeErr(w, http.StatusBadRequest, "нужен путь внутри контекста сборки: ?path=<файл или каталог>, без «..»")
+		return
+	}
+	f, err := h.ImageFile(ref, stage, rel)
+	if err != nil {
+		code := http.StatusUnprocessableEntity
+		if errors.Is(err, fs.ErrNotExist) {
+			code = http.StatusNotFound
+		}
+		writeErr(w, code, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, f)
+}
+
 type imageActionReq struct {
 	Ref string `json:"ref"`
 }
 
-// handleImageAction — POST /api/local/ui/images/{ensure|rebuild|remove}
-// {ref}: скачать или собрать недостающий; пересобрать (удалить тег и
-// получить заново: из реестра или сборкой из кэша Docker); удалить.
-// Образ работающего места не пересобирается и не удаляется.
+// handleImageAction — POST /api/local/ui/images/{ensure|pull|rebuild|remove}
+// {ref}: скачать или собрать недостающий; скачать из реестра (и образ
+// работающего места — новое применится при его перезапуске); пересобрать
+// на этой машине (удалить тег и собрать: готовые нижние ступени и слои — из
+// кэша Docker); удалить. Образ работающего места не пересобирается и не
+// удаляется.
 func (s *Server) handleImageAction(w http.ResponseWriter, r *http.Request, id identity) {
 	action := r.PathValue("action")
 	var req imageActionReq
@@ -179,17 +273,12 @@ func (s *Server) handleImageAction(w http.ResponseWriter, r *http.Request, id id
 		writeErr(w, http.StatusNotImplemented, "действие недоступно в этой сборке")
 		return
 	}
-	if action != "ensure" && action != "rebuild" && action != "remove" {
-		writeErr(w, http.StatusNotFound, "действия: ensure, rebuild, remove")
+	if action != "ensure" && action != "pull" && action != "rebuild" && action != "remove" {
+		writeErr(w, http.StatusNotFound, "действия: ensure, pull, rebuild, remove")
 		return
 	}
-	var running []string
-	for _, u := range s.imageUsers(id.ID)[ref] {
-		if u.Running {
-			running = append(running, "«"+u.Name+"»")
-		}
-	}
-	if action != "ensure" && len(running) > 0 {
+	running := runningNames(s.imageUsers(id.ID)[ref])
+	if (action == "rebuild" || action == "remove") && len(running) > 0 {
 		writeErr(w, http.StatusConflict, "образ используют работающие места "+strings.Join(running, ", ")+" — сначала остановите их")
 		return
 	}
@@ -207,7 +296,7 @@ func (s *Server) handleImageAction(w http.ResponseWriter, r *http.Request, id id
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Minute)
 		defer cancel()
-		err := s.runImageAction(ctx, action, ref, hooks, ih, t.logf)
+		err := s.runImageAction(ctx, action, ref, id.ID, hooks, ih, t.logf)
 		t.mu.Lock()
 		if err != nil {
 			t.state, t.err = "error", err.Error()
@@ -224,12 +313,40 @@ func (s *Server) handleImageAction(w http.ResponseWriter, r *http.Request, id id
 	writeJSON(w, http.StatusAccepted, map[string]any{"task": t.snapshot()})
 }
 
-func (s *Server) runImageAction(ctx context.Context, action, ref string, hooks LocalHooks, ih LocalImagesHooks, logf func(string)) error {
+// runningNames — «имена» работающих мест из списка.
+func runningNames(uses []imageUse) []string {
+	var out []string
+	for _, u := range uses {
+		if u.Running {
+			out = append(out, "«"+u.Name+"»")
+		}
+	}
+	return out
+}
+
+func (s *Server) runImageAction(ctx context.Context, action, ref string, owner int64, hooks LocalHooks, ih LocalImagesHooks, logf func(string)) error {
 	present := false
 	for _, im := range hooks.Images() {
 		present = present || (im.Ref == ref && im.Present)
 	}
 	switch action {
+	case "pull":
+		updated, err := ih.PullImage(ctx, ref, logf)
+		if err != nil {
+			return err
+		}
+		// Контейнер работающего места остаётся на прежнем образе: новый тег
+		// подхватит следующий старт — место помечается «нужен перезапуск».
+		uses := s.imageUsers(owner)[ref]
+		if names := runningNames(uses); updated && len(names) > 0 {
+			logf("места " + strings.Join(names, ", ") + " работают на прежней версии образа — новая применится при перезапуске места")
+			for _, u := range uses {
+				if u.Running {
+					s.markPlacePending(chatKey{uid: owner, slot: u.slot})
+				}
+			}
+		}
+		return nil
 	case "remove":
 		if !present {
 			logf("образа " + ref + " на машине нет — удалять нечего")
@@ -241,12 +358,22 @@ func (s *Server) runImageAction(ctx context.Context, action, ref string, hooks L
 		logf("✓ " + ref + " удалён (слои, общие с другими образами, остались)")
 		return nil
 	case "rebuild":
+		// Собрать можно только образ семейства agctl-dsh этого профиля:
+		// проверка до удаления, иначе прежний образ пропадёт зря.
+		if _, err := ih.ImagePlan(ref); err != nil {
+			return fmt.Errorf("на этой машине %s не собрать: %w", ref, err)
+		}
 		if present {
 			if err := ih.RemoveImage(ctx, ref); err != nil {
 				return fmt.Errorf("пересборка: удаление прежнего %s: %w", ref, err)
 			}
-			logf("прежний " + ref + " удалён — получаю заново (реестр или сборка из кэша Docker)")
+			logf("прежний " + ref + " удалён — собираю на этой машине (готовые нижние ступени и слои — из кэша Docker)")
 		}
+		if err := ih.BuildImage(ctx, ref, logf); err != nil {
+			return err
+		}
+		logf("✓ " + ref + " готов")
+		return nil
 	case "ensure":
 		if present {
 			logf(ref + " уже есть на машине")

@@ -293,6 +293,7 @@ workspace:
 images:
   dockerfile: image/Dockerfile
   dev: [agctl-dsh-org:1, agctl-dsh-nossh-org:1]
+  registry: " registry.example.org:5000/team/agctl/ "
 `)
 	write("image/Dockerfile", "ARG BASE\nFROM ${BASE}\n")
 	write("catalog/pkg/manifest.json", `{"id":"pkg"}`)
@@ -306,6 +307,9 @@ images:
 	}
 	if len(v.DevImages) != 2 || v.DevImages[1] != "agctl-dsh-nossh-org:1" {
 		t.Fatalf("dev images: %+v", v.DevImages)
+	}
+	if d.Images.Registry != "registry.example.org:5000/team/agctl" {
+		t.Fatalf("images.registry без пробелов и «/» в конце: %q", d.Images.Registry)
 	}
 	ctx, file, ok := v.ImageContext()
 	if !ok || file != "Dockerfile" {
@@ -333,6 +337,9 @@ func TestProfileRejectsBadWorkspace(t *testing.T) {
 		"сценарий без clone_url": "workspace:\n  scenarios:\n    - id: a\n      title: A\n",
 		"повтор id":              "workspace:\n  scenarios:\n    - {id: a, title: A, clone_url: u}\n    - {id: a, title: B, clone_url: u}\n",
 		"dockerfile вне профиля": "images:\n  dockerfile: ../x/Dockerfile\n",
+		"реестр со схемой":       "images:\n  registry: https://ghcr.io/org\n",
+		"реестр с тегом":         "images:\n  registry: ghcr.io/org/agctl-dsh:0.2.2\n",
+		"реестр заглавными":      "images:\n  registry: ghcr.io/Org\n",
 	} {
 		dir := t.TempDir()
 		raw := "schema: 1\nid: org\nbrand:\n  name: Org\n" + body
@@ -342,5 +349,21 @@ func TestProfileRejectsBadWorkspace(t *testing.T) {
 		if _, err := LoadDir(dir); err == nil {
 			t.Errorf("%s: ждём ошибку", name)
 		}
+	}
+}
+
+// images.registry: none — в реестр не ходить; значение сохраняется как есть.
+func TestProfileImagesRegistryNone(t *testing.T) {
+	dir := t.TempDir()
+	raw := "schema: 1\nid: org\nbrand:\n  name: Org\nimages:\n  registry: none\n"
+	if err := os.WriteFile(filepath.Join(dir, "profile.yaml"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d, err := LoadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Images.Registry != "none" {
+		t.Fatalf("images.registry: %q", d.Images.Registry)
 	}
 }

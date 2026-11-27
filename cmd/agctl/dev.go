@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -357,7 +358,7 @@ func devInit(h localmode.Home, args []string) error {
 	devImportHostEnv(home, cfg)
 
 	if ref := cli.FirstNonEmpty(cfg.Image, devDefaultImage(p, cfg.Flavor)); *cliWizard && !*noPull && ref != "" {
-		if err := devPull(ref); err != nil {
+		if err := devPull(p, ref); err != nil {
 			fmt.Printf("  ⚠ образ %s: %v\n    Если образа нет в реестре, его соберёт лаунчер (agctl dev up → «Запустить») — или выполните docker login в реестр организации и повторите agctl dev update.\n", ref, err)
 		}
 	}
@@ -478,32 +479,66 @@ func devBuildSpec(p *profile.Data, target, flavor string) dockerrt.DevBuild {
 		b.ProfileFS = v.FS
 		if ov, df, ok := v.ImageContext(); ok {
 			b.Overlay, b.OverlayDockerfile = ov, df
+			b.OverlayDir = path.Dir(v.ImageDockerfile)
 		}
 	}
 	return b
 }
 
+// devPrepareImage — образа target на машине нет: скачать или собрать.
+// Образ семейства agctl-dsh* с локальным именем тянется из реестра образов
+// agctl (images.registry профиля, по умолчанию dockerrt.DefaultRegistry) и
+// получает локальное имя тегом; не вышло (в реестре его нет — так бывает с
+// вкусами и надстройками профиля, — нет связи) — сборка на этой машине,
+// недостающие ступени ниже сначала тоже из реестра. Ссылка с реестром —
+// docker pull как есть, сборка — только если реестр ответил «нет такого».
 func devPrepareImage(ctx context.Context, p *profile.Data, target, flavor string, logf func(string)) error {
 	pctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
-	logf(fmt.Sprintf("… образа %s нет локально — пробую docker pull", target))
-	pullErr := dockerrt.PullImage(pctx, target)
-	if pullErr == nil {
-		logf(fmt.Sprintf("✓ образ %s скачан", target))
-		return nil
+	registry := devRegistry(p)
+	switch remote := dockerrt.RegistryRef(target, registry); {
+	case remote != "":
+		logf(fmt.Sprintf("… образа %s нет локально — docker pull %s", target, remote))
+		err := dockerrt.PullTagged(pctx, remote, target)
+		if err == nil {
+			logf(fmt.Sprintf("✓ %s скачан из %s", target, remote))
+			return nil
+		}
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
+		}
+		logf(fmt.Sprintf("  из %s не скачался: %s — собираю на этой машине", remote, devPullReason(err, remote)))
+	case dockerrt.LocalFamily(target):
+		logf(fmt.Sprintf("… образа %s нет локально; реестр выключен в профиле (images.registry: none) — собираю на этой машине", target))
+	default:
+		logf(fmt.Sprintf("… образа %s нет локально — пробую docker pull", target))
+		pullErr := dockerrt.PullImage(pctx, target)
+		if pullErr == nil {
+			logf(fmt.Sprintf("✓ образ %s скачан", target))
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// Образ реестра собирается на месте, только когда реестр сказал «нет
+		// такого» (или пакет закрыт); сбой связи — ошибка: иначе 10–20 минут
+		// сборки, и образ под именем реестра уже не скачается.
+		if dockerrt.LocalImageName(target) != target && !dockerrt.PullMissing(pullErr) {
+			return fmt.Errorf("образ %s не скачан: %v — похоже на сбой связи с реестром (сеть, VPN, прокси, docker login); повторите, когда связь будет, или выберите локальный образ (agctl dev images)", target, pullErr)
+		}
+		logf("… в реестре его тоже нет — собираю на этой машине")
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	// Образ реестра собирается на месте, только когда реестр сказал «нет
-	// такого» (или пакет закрыт); сбой связи — ошибка: иначе 10–20 минут
-	// сборки, и образ под именем реестра уже не скачается.
-	if dockerrt.LocalImageName(target) != target && !dockerrt.PullMissing(pullErr) {
-		return fmt.Errorf("образ %s не скачан: %v — похоже на сбой связи с реестром (сеть, VPN, прокси, docker login); повторите, когда связь будет, или выберите локальный образ (agctl dev images)", target, pullErr)
-	}
+	return devBuildImage(ctx, p, target, flavor, registry, logf)
+}
+
+// devBuildImage — сборка target на этой машине из встроенного контекста:
+// готовые ступени не пересобираются, недостающие ступени ниже целевой
+// сначала тянутся из registry ("" — всё собирается).
+func devBuildImage(ctx context.Context, p *profile.Data, target, flavor, registry string, logf func(string)) error {
 	b := devBuildSpec(p, target, flavor)
+	b.Registry = registry
 	b.Log = func(m string) { logf("  " + m) }
-	logf(fmt.Sprintf("… в реестре его тоже нет — собираю на этой машине: %s (первый раз 10–20 минут: npm, apt, браузеры; дальше — из кэша Docker)",
+	logf(fmt.Sprintf("… ступени: %s (сборка с нуля — 10–20 минут: npm, apt, браузеры; дальше — из кэша Docker)",
 		strings.Join(dockerrt.DevBuildPlan(b), " → ")))
 	bctx, bcancel := context.WithTimeout(ctx, 90*time.Minute)
 	defer bcancel()
@@ -511,6 +546,42 @@ func devPrepareImage(ctx context.Context, p *profile.Data, target, flavor string
 		return fmt.Errorf("сборка образа: %w", err)
 	}
 	return nil
+}
+
+// devRegistry — реестр образов agctl профиля: images.registry, пусто —
+// dockerrt.DefaultRegistry, "none" — "" (в реестр не ходить).
+func devRegistry(p *profile.Data) string {
+	if p == nil {
+		return dockerrt.DefaultRegistry
+	}
+	return dockerrt.ResolveRegistry(p.Images.Registry)
+}
+
+// errRegistryOff — образ семейства agctl-dsh*, а реестр выключен профилем.
+var errRegistryOff = errors.New("реестр образов выключен в профиле (images.registry: none) — образ можно только собрать на этой машине")
+
+// devRegistryPull — docker pull образа ref по правилам images.registry:
+// семейство agctl-dsh* с локальным именем — <реестр>/<имя>:<тег> и тег в
+// локальное имя, ссылка с реестром и чужие имена — как есть. from — откуда
+// тянули ("" и errRegistryOff — реестр выключен).
+func devRegistryPull(ctx context.Context, p *profile.Data, ref string) (from string, err error) {
+	if remote := dockerrt.RegistryRef(ref, devRegistry(p)); remote != "" {
+		return remote, dockerrt.PullTagged(ctx, remote, ref)
+	}
+	if dockerrt.LocalFamily(ref) {
+		return "", errRegistryOff
+	}
+	return ref, dockerrt.PullImage(ctx, ref)
+}
+
+// devPullReason — почему образ не скачался из реестра from, для журнала:
+// нет такого или закрыт, иначе — связь; с ответом Docker в скобках.
+func devPullReason(err error, from string) string {
+	msg := strings.TrimPrefix(err.Error(), "pull "+from+": ")
+	if dockerrt.PullMissing(err) {
+		return "в реестре нет такого образа или доступ к нему закрыт (" + msg + ")"
+	}
+	return "реестр недоступен — сеть, VPN, прокси или docker login (" + msg + ")"
 }
 
 // devFlavorOf — вкус образа: из config.yaml, иначе по имени образа (-web, -<вкус профиля>).
@@ -555,15 +626,23 @@ func devDefaultImage(p *profile.Data, flavor string) string {
 	return "agctl-dsh:0.2.2"
 }
 
-func devPull(ref string) error {
+func devPull(p *profile.Data, ref string) error {
 	if _, err := dockerrt.ImageID(context.Background(), ref); err == nil {
 		fmt.Printf("✓ образ %s уже есть локально\n", ref)
 		return nil
 	}
-	fmt.Printf("… скачиваю образ %s (первый раз — несколько минут)\n", ref)
+	switch from := devPullFrom(p, ref); from {
+	case "":
+		fmt.Printf("… образа %s нет локально; реестр образов выключен в профиле (images.registry: none) — его соберёт лаунчер при первом запуске места\n", ref)
+		return nil
+	case ref:
+		fmt.Printf("… скачиваю образ %s (первый раз — несколько минут)\n", ref)
+	default:
+		fmt.Printf("… скачиваю образ %s из %s (первый раз — несколько минут)\n", ref, from)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
 	defer cancel()
-	if err := dockerrt.PullImage(ctx, ref); err != nil {
+	if _, err := devRegistryPull(ctx, p, ref); err != nil {
 		return err
 	}
 	fmt.Printf("✓ образ %s скачан\n", ref)
@@ -1327,13 +1406,8 @@ func devUpdate(home string, args []string) error {
 
 	fmt.Printf("1/5 проверка: текущий %s → целевой %s\n", current, target)
 	fmt.Println("2/5 скачивание образа")
-	if err := dockerrt.PullImage(ctx, target); err != nil {
-		// Образ, собранный локально (make img_build) или подтянутый раньше,
-		// реестру может быть неизвестен — тогда берём локальный, честно.
-		if _, lerr := dockerrt.ImageID(ctx, target); lerr != nil {
-			return fmt.Errorf("%w (ничего не изменено)", err)
-		}
-		fmt.Printf("    ⚠ реестр не отдал %s (%v) — беру локальный образ\n", target, err)
+	if err := devUpdateFetch(ctx, p, target, func(m string) { fmt.Println("    " + m) }); err != nil {
+		return fmt.Errorf("%w (ничего не изменено)", err)
 	}
 	newID, _ := dockerrt.ImageID(ctx, target)
 	if target == current && newID == oldID && oldID != "" {
@@ -1381,6 +1455,32 @@ func devUpdate(home string, args []string) error {
 		return devDown(home)
 	}
 	return nil
+}
+
+// devUpdateFetch — шаг «скачивание» agctl dev update. Образ из реестра
+// (семейство agctl-dsh* — из реестра образов agctl под локальное имя, ссылка
+// с реестром — как есть); не вышло — локальный образ, если он есть (собран
+// make img_build или подтянут раньше — реестру он может быть неизвестен), а
+// образ семейства без локального — сборка на этой машине.
+func devUpdateFetch(ctx context.Context, p *profile.Data, target string, logf func(string)) error {
+	from, err := devRegistryPull(ctx, p, target)
+	switch {
+	case err == nil:
+		logf(fmt.Sprintf("✓ %s скачан из %s", target, from))
+		return nil
+	case errors.Is(err, errRegistryOff):
+		logf("реестр образов выключен в профиле (images.registry: none)")
+	default:
+		logf(fmt.Sprintf("⚠ из %s не скачался: %s", from, devPullReason(err, from)))
+	}
+	if _, lerr := dockerrt.ImageID(ctx, target); lerr == nil {
+		logf("беру локальный образ " + target)
+		return nil
+	}
+	if !dockerrt.LocalFamily(target) {
+		return err
+	}
+	return devBuildImage(ctx, p, target, devFlavorOf(&localmode.Config{}, p, target), devRegistry(p), logf)
 }
 
 // devVerify — рабочее место поднимается на новом образе (не просто «процесс

@@ -10,7 +10,8 @@ package dockerrt
 //	agctl-dsh[-web]-<профиль>:<tag>       надстройка профиля (images.dockerfile)
 //	agctl-dsh-<профиль>-<вкус>:<tag>      вкус профиля (image/flavors/<вкус>)
 //
-// Готовые ступени не пересобираются.
+// Готовые ступени не пересобираются; недостающие ступени ниже целевой
+// сначала тянутся из реестра образов agctl (Registry), если он задан.
 
 import (
 	"context"
@@ -33,7 +34,18 @@ type DevBuild struct {
 	ProfileID         string
 	Overlay           fs.FS  // контекст надстройки профиля (nil — нет)
 	OverlayDockerfile string // имя Dockerfile в Overlay
+	OverlayDir        string // каталог Overlay внутри профиля (подписи файлов в плане)
 	ProfileFS         fs.FS  // корень профиля (image/flavors/<вкус>/Dockerfile)
+
+	// Arch — архитектура демона Docker для плана (какой guest-бинарь войдёт в
+	// образ); "" — как у этой машины. Сборка спрашивает демон сама.
+	Arch string
+
+	// Registry — реестр образов agctl (ResolveRegistry): недостающие
+	// ступени ниже целевой сначала тянутся оттуда (docker pull
+	// <реестр>/<ступень> и тег в локальное имя), не вышло — собираются.
+	// "" — всё собирается на машине (пересборка, images.registry: none).
+	Registry string
 
 	// Сборка agctl — в метки образа (io.agctl.guest.*, created).
 	Version, Commit, BuildDate string
@@ -148,6 +160,21 @@ func BuildDevImage(ctx context.Context, b DevBuild) error {
 			log(fmt.Sprintf("✓ %s уже есть", ref))
 			prev = ref
 			continue
+		}
+		// Ступень ниже целевой — сначала из реестра (сам целевой образ
+		// вызывающий уже пробовал скачать).
+		if remote := RegistryRef(ref, b.Registry); remote != "" && ref != b.Target {
+			log(fmt.Sprintf("… [%d/%d] %s нет — docker pull %s", i+1, len(plan), ref, remote))
+			err := PullTagged(ctx, remote, ref)
+			if err == nil {
+				log(fmt.Sprintf("✓ %s скачан из %s", ref, remote))
+				prev = ref
+				continue
+			}
+			if cerr := ctx.Err(); cerr != nil {
+				return cerr
+			}
+			log(fmt.Sprintf("  из %s не скачался (%v) — собираю", remote, err))
 		}
 		log(fmt.Sprintf("… [%d/%d] собираю %s", i+1, len(plan), ref))
 		var err error
