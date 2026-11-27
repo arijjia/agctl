@@ -214,7 +214,7 @@ function OverviewTab() {
           <BarChart
             title="Регистрации — 14 дней"
             hint="новые учётки платформы"
-            color="#7cb4ff"
+            color="#a371f7"
             valueName="регистраций"
             data={(act.registrations || []).map((r) => ({ label: bucketLabel(r.t, "day"), value: r.count, extra: bucketTip(r.t) }))}
           />

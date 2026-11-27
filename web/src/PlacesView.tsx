@@ -454,49 +454,19 @@ function PlaceCard({
   );
   return (
     <section className={`card place-card state-${p.state}`}>
-      <div className="place-row">
-        <div className="place-head">
+      <div className="place-head">
+        <div>
           <h3>
-            {p.name}{" "}
-            <span className={`badge ${running ? "state-running" : p.state === "error" ? "state-removed" : "state-exited"}`}>
-              {stateTitle[p.state]}
-            </span>{" "}
-            {p.main && <span className="badge">основное</span>}
+            {p.name} {p.main && <span className="badge">основное</span>}
           </h3>
           <div className="mono muted small">
             слот {p.slot} · {p.image}
           </div>
           {imageFacts(img) && <div className="muted small">{imageFacts(img)}</div>}
         </div>
-        <div className="mounts">
-          {p.layout.map((m) => (
-            <div key={m.host} className="mount-row">
-              <span className="mono small grow" title={m.host}>
-                {m.host}
-              </span>
-              <span className="mono small muted">→ {m.container}</span>
-              <RevealButtons path={m.host} note={note} />
-            </div>
-          ))}
-          {!compact && (
-            <div className="mount-row">
-              <span className="small muted grow" title={p.dshHome}>
-                dsh-home (сессии, скиллы, настройки){p.dshHomeCustom ? <>: <span className="mono">{p.dshHome}</span></> : ":"}{" "}
-                {p.dshHomeGit?.repo && <span className="badge">git{p.dshHomeGit.branch ? ` · ${p.dshHomeGit.branch}` : ""}</span>}{" "}
-                {p.dshHomeGit?.repo && p.dshHomeGit.dirty && <span className="badge state-exited">есть изменения</span>}
-              </span>
-              <RevealButtons path={p.dshHome} note={note} />
-            </div>
-          )}
-          {!compact && p.dshHomeGit?.repo && p.dshHomeGit.commits && !p.dshHomeGit.remote && (
-            <div className="notice small">
-              dsh-home — git-репозиторий без удалённого: залейте его на свой Git, чтобы подключать к другим местам:{" "}
-              <span className="mono">
-                git -C {p.dshHome} remote add origin &lt;url&gt; &amp;&amp; git -C {p.dshHome} push -u origin main
-              </span>
-            </div>
-          )}
-        </div>
+        <span className={`badge ${running ? "state-running" : p.state === "error" ? "state-removed" : "state-exited"}`}>
+          {stateTitle[p.state]}
+        </span>
       </div>
       {img?.outdated && img.present && <div className="notice small">Образ: {img.note}</div>}
       {!compact && newer && (
@@ -513,7 +483,36 @@ function PlaceCard({
           </button>
         </div>
       )}
-      <div className="toolbar place-actions">
+      <div className="mounts">
+        {p.layout.map((m) => (
+          <div key={m.host} className="mount-row">
+            <span className="mono small grow" title={m.host}>
+              {m.host}
+            </span>
+            <span className="mono small muted">→ {m.container}</span>
+            <RevealButtons path={m.host} note={note} />
+          </div>
+        ))}
+        {!compact && (
+          <div className="mount-row">
+            <span className="small muted grow" title={p.dshHome}>
+              dsh-home (сессии, скиллы, настройки){p.dshHomeCustom ? <>: <span className="mono">{p.dshHome}</span></> : ":"}{" "}
+              {p.dshHomeGit?.repo && <span className="badge">git{p.dshHomeGit.branch ? ` · ${p.dshHomeGit.branch}` : ""}</span>}{" "}
+              {p.dshHomeGit?.repo && p.dshHomeGit.dirty && <span className="badge state-exited">есть изменения</span>}
+            </span>
+            <RevealButtons path={p.dshHome} note={note} />
+          </div>
+        )}
+        {!compact && p.dshHomeGit?.repo && p.dshHomeGit.commits && !p.dshHomeGit.remote && (
+          <div className="notice small">
+            dsh-home — git-репозиторий без удалённого: залейте его на свой Git, чтобы подключать к другим местам:{" "}
+            <span className="mono">
+              git -C {p.dshHome} remote add origin &lt;url&gt; &amp;&amp; git -C {p.dshHome} push -u origin main
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="toolbar">
         <a className="button primary" href={p.url} target="_blank" rel="noreferrer" aria-disabled={!running}>
           Открыть чат →
         </a>
@@ -612,7 +611,7 @@ export default function PlacesView({
           <button className="card place-new" onClick={() => setEditing("new")}>
             <span className="plus">＋</span>
             <span>Новое рабочее место</span>
-            <span className="muted small">— папки на этой машине и образ</span>
+            <span className="muted small">папки на этой машине, образ</span>
           </button>
         )}
       </div>
