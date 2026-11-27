@@ -446,7 +446,7 @@ button.small { padding: 4px 10px; font-size: 12.5px; }
 /* Внутри строки: слева имя, состояние и образ, справа папки; ниже — действия */
 .place-row { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 2.2fr); gap: 8px 28px; align-items: start; }
 @media (max-width: 900px) { .place-row { grid-template-columns: minmax(0, 1fr); } }
-.place-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.place-head { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
 .place-head h3 { margin: 0 0 2px; font-size: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .place-head .mono { overflow-wrap: anywhere; }
 .place-actions { margin: 0; padding-top: 10px; border-top: 1px solid var(--border-subtle); flex-wrap: wrap; }
@@ -695,3 +695,23 @@ button.small { padding: 4px 10px; font-size: 10px; }
 .explain ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; max-width: 900px; }
 .explain b { color: var(--text); font-weight: 600; }
 .nowrap { white-space: nowrap; }
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   Одно поле — одна строка. Во всех разделах поля, варианты выбора и блоки
+   стоят строго друг под другом и тянутся на всю ширину страницы; кнопки
+   действий — отдельной строкой под полем. Слой последний и перекрывает
+   прежние сетки (split, field-grid, choice-row, model-grid, place-row).
+   ═════════════════════════════════════════════════════════════════════════ */
+.split, .field-grid, .model-grid, .chart-grid, .place-row { display: grid; grid-template-columns: minmax(0, 1fr); }
+.split { gap: 16px; }
+.place-row { gap: 10px; }
+.choice-row { display: flex; flex-direction: column; gap: 8px; }
+.choice-row .choice { width: 100%; min-width: 0; }
+.kv-strip { flex-direction: column; gap: 4px; }
+/* формы доступа и переменных: каждое поле — своя строка, кнопки — под ним */
+.secret-form { flex-wrap: wrap; max-width: none; }
+.secret-form input[type="password"], .secret-form input[type="text"], .secret-form input:not([type]), .secret-form select, .secret-form textarea { flex: 1 1 100%; width: 100%; min-width: 0; }
+.secret-form input[type="checkbox"] { flex: 0 0 auto; width: auto; }
+/* папки в редакторе места: путь — на всю строку, кнопки — под ним */
+.mount-edit-row input.grow, .mount-edit-row input.mount-name { flex: 1 1 100%; width: 100%; min-width: 0; }
+.modal { width: min(1100px, 100%); }
