@@ -58,8 +58,14 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.27"
+      # Заметки к релизу — docs/releases/<тег>.md, если есть.
+      - name: заметки к релизу
+        id: notes
+        run: |
+          f="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$f" ]; then echo "args=--release-notes $f" >> "$GITHUB_OUTPUT"; fi
       - uses: goreleaser/goreleaser-action@v7
         with:
-          args: release --clean
+          args: release --clean ${{ steps.notes.outputs.args }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
