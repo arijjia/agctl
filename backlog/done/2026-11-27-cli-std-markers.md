@@ -2,7 +2,7 @@
 schema: 1.0.0
 id: cli-std-markers
 title: "cli-std: метки инвазивности 🔍/✏️/⚠️ в комплишенах и справке agctl, agctl-server"
-status: open
+status: done
 priority: P3
 size: M
 area: cli
@@ -22,3 +22,11 @@ rollback), ⚠️ с побочным эффектом (up, down, open, llm-chec
 Группы с единогласными листьями поднимают метку; тест обхода дерева команд
 против дрейфа (прецедент gitctl CliStdMarkersTests). Затем `cli-std:` в
 шапке repo.md.
+
+## Журнал
+
+- 2026-11-27: сделано — метки во всех справках (agctl, dev, dev certs,
+  backlog; agctl-server, sync) и комплишенах; канон меток и тест
+  TestCliStdMarks в обоих бинарях (проверены подменой метки); llm-check
+  больше не переносит доступы из окружения — только читает и ходит в сеть.
+  repo.md: cli-std 1.0.0.
