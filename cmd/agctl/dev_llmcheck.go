@@ -11,6 +11,7 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -100,6 +101,16 @@ func devLLMCheck(home string, args []string) error {
 	}
 	store := localmode.OpenStore(home)
 	client := &http.Client{Timeout: *timeout}
+	// Доверие — как у рабочего места: машина + набор сертификатов agctl.
+	if plan := localmode.PlanCABundle(home, cfg, prof); plan.Enabled && !*insecure {
+		pool, err := x509.SystemCertPool()
+		if err != nil || pool == nil {
+			pool = x509.NewCertPool()
+		}
+		pool.AppendCertsFromPEM(plan.PEM())
+		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}
+		fmt.Printf("сертификаты: доверие машины + набор agctl (%d серт., agctl dev certs list)\n", localmode.CountCerts(plan.PEM()))
+	}
 	if *insecure {
 		// #nosec G402 -- явный флаг диагностики, по умолчанию TLS проверяется
 		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
