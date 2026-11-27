@@ -19,13 +19,17 @@ type Entry struct {
 	Set    bool   `json:"set"`
 	Value  string `json:"value,omitempty"` // только у несекретных (URL, логин)
 	Known  bool   `json:"known"`           // из манифеста (не удаляется из списка)
+	// Source — откуда значение, если не из дома: profile — значение по
+	// умолчанию из профиля (env), своё в доме его перекрывает.
+	Source string `json:"source,omitempty"`
 }
 
 // editMu — правки config.yaml из лаунчера и CLI в одном процессе не пересекаются.
 var editMu sync.Mutex
 
-// Entries — манифест + всё, что задано в config.yaml/хранилище, по группам.
-func Entries(cfg *Config, store *Store) []Entry {
+// Entries — манифест + всё, что задано в config.yaml/хранилище, по группам;
+// defaults — несекретные значения профиля по умолчанию (env профиля).
+func Entries(cfg *Config, store *Store, defaults map[string]string) []Entry {
 	seen := map[string]bool{}
 	var out []Entry
 	add := func(name string) {
@@ -38,6 +42,8 @@ func Entries(cfg *Config, store *Store) []Entry {
 			e.Title, e.Hint, e.Group, e.Secret, e.Known = v.Title, v.Hint, v.Group, v.Secret, true
 		} else if _, plain := cfg.Env[name]; plain {
 			e.Secret = false
+		} else if _, plain := defaults[name]; plain {
+			e.Secret = false
 		}
 		if e.Secret {
 			if v, err := store.Get(name); err == nil && v != "" {
@@ -45,6 +51,8 @@ func Entries(cfg *Config, store *Store) []Entry {
 			}
 		} else if v := strings.TrimSpace(cfg.Env[name]); v != "" {
 			e.Set, e.Value = true, v
+		} else if v := strings.TrimSpace(defaults[name]); v != "" {
+			e.Set, e.Value, e.Source = true, v, "profile"
 		}
 		out = append(out, e)
 	}
@@ -54,6 +62,11 @@ func Entries(cfg *Config, store *Store) []Entry {
 	extra := append([]string{}, cfg.Secrets...)
 	for n := range cfg.Env {
 		extra = append(extra, n)
+	}
+	for n := range defaults {
+		if ValidEnvName(n) {
+			extra = append(extra, n)
+		}
 	}
 	sort.Strings(extra)
 	for _, n := range extra {

@@ -66,7 +66,13 @@ type Config struct {
 	DshHome string `yaml:"dsh_home,omitempty"`
 	// PreviousImage — образ до последнего update (для rollback).
 	PreviousImage string `yaml:"previous_image,omitempty"`
+	// EnvImport — agctl dev up подхватывает пустые доступы из окружения хоста
+	// (hostenv.go); nil — включено.
+	EnvImport *bool `yaml:"env_import,omitempty"`
 }
+
+// EnvImportOn — подхватывать ли доступы из окружения хоста.
+func (c *Config) EnvImportOn() bool { return c.EnvImport == nil || *c.EnvImport }
 
 // Path — путь config.yaml в доме (сюда пишет Save).
 func Path(home string) string { return filepath.Join(home, ConfigName) }
@@ -105,6 +111,9 @@ func (c *Config) defaults() {
 	}
 	if c.Addr == "" {
 		c.Addr = DefaultAddr
+	}
+	if c.EnvImport != nil && *c.EnvImport {
+		c.EnvImport = nil // «env_import: true» в файле и отсутствие поля — одно и то же
 	}
 	if c.Profile == "" && c.ProfileDir == "" {
 		c.Profile = "agctl"
@@ -199,6 +208,9 @@ var configDocs = []fieldDoc{
 	{"secrets", "ИМЕНА секретов; значения — в хранилище ОС (сервис agctl:<id дома>), в этом файле их нет",
 		"лаунчер («Доступ»), agctl dev secrets set ИМЯ",
 		"вы через лаунчер или CLI"},
+	{"env_import", "true — agctl dev up берёт пустые доступы из переменных окружения хоста (токены — в хранилище, адреса и логины — сюда); заданное в agctl не перезаписывается, удалённое берётся снова; какие имена — agctl dev secrets list",
+		"по умолчанию true",
+		"вы (правка файла)"},
 	{"providers", "ваши личные провайдеры моделей поверх провайдеров профиля: имя, адрес API и модели; ключ каждого — в хранилище секретов под именем AGCTL_PROVIDER_<ИМЯ>_API_KEY",
 		"лаунчер («Доступ» → «Добавить провайдера») или настройки моделей в харнессе — правки оттуда переносятся сюда",
 		"вы через лаунчер или харнесс"},
@@ -235,7 +247,7 @@ func (c *Config) values() map[string]any {
 		"image": c.Image, "flavor": c.Flavor, "previous_image": c.PreviousImage,
 		"workdir": c.WorkDir, "dsh_home": c.DshHome, "host_paths": c.HostPaths, "addr": c.Addr, "mem_gb": c.MemGB, "cpus": c.CPUs,
 		"egress_allowlist": c.EgressAllowlist, "egress_allow": allow,
-		"env": env, "secrets": secrets,
+		"env": env, "secrets": secrets, "env_import": c.EnvImportOn(),
 		"runtime": c.Runtime, "providers": providers,
 		"bridge": map[string]any{"tools": tools},
 	}

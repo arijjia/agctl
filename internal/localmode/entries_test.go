@@ -35,7 +35,7 @@ func TestEntriesSetDelete(t *testing.T) {
 		t.Fatal("секрет попал в dev.yaml")
 	}
 	by := map[string]Entry{}
-	for _, e := range Entries(cfg, store) {
+	for _, e := range Entries(cfg, store, nil) {
 		by[e.Name] = e
 	}
 	if !by["GITLAB_TOKEN"].Set || by["GITLAB_TOKEN"].Value != "" || !by["GITLAB_TOKEN"].Secret {
@@ -47,7 +47,7 @@ func TestEntriesSetDelete(t *testing.T) {
 	if by["JIRA_API_TOKEN"].Set || !by["JIRA_API_TOKEN"].Known {
 		t.Fatalf("незаданный из манифеста: %+v", by["JIRA_API_TOKEN"])
 	}
-	env, _ := ContainerEnv(cfg, store)
+	env, _ := ContainerEnv(cfg, store, nil)
 	if !strings.Contains(strings.Join(env, ","), "GITLAB_TOKEN=glpat-1") {
 		t.Fatalf("env: %v", env)
 	}
@@ -55,7 +55,7 @@ func TestEntriesSetDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg, _ = Load(home)
-	for _, e := range Entries(cfg, store) {
+	for _, e := range Entries(cfg, store, nil) {
 		if e.Name == "GITLAB_TOKEN" && e.Set {
 			t.Fatal("не удалён")
 		}

@@ -62,7 +62,7 @@ func TestContainerEnvAliasesAndNoLLMKey(t *testing.T) {
 		Env:     map[string]string{"GITLAB_URL": "https://gitlab.example.org/", "JIRA_URL": "https://jira.example.org", "JIRA_USER": "ivanov"},
 		Secrets: []string{"GITLAB_TOKEN", "JIRA_API_TOKEN", "CONFLUENCE_TOKEN", "AGCTL_LLM_API_KEY", "TAVILY_API_KEY"},
 	}
-	env, missing := ContainerEnv(cfg, s)
+	env, missing := ContainerEnv(cfg, s, nil)
 	got := strings.Join(env, "\n")
 	for _, want := range []string{
 		"GITLAB_TOKEN=gl-tok", "GITLAB_HOST=gitlab.example.org", "GITLAB_API_URL=https://gitlab.example.org/api/v4",

@@ -38,7 +38,7 @@ func (h *devHooks) cfg() *localmode.Config {
 // + ключ» — каждый разработчик вводит свой токен, значение не покидает
 // хранилище ОС.
 func (h *devHooks) Entries() []localmode.Entry {
-	entries := localmode.Entries(h.cfg(), h.store)
+	entries := localmode.Entries(h.cfg(), h.store, h.profileEnv())
 	if h.prof == nil {
 		return entries
 	}
@@ -70,6 +70,14 @@ func (h *devHooks) Entries() []localmode.Entry {
 	return entries
 }
 
+// profileEnv — несекретные значения профиля по умолчанию (env профиля).
+func (h *devHooks) profileEnv() map[string]string {
+	if h.prof == nil {
+		return nil
+	}
+	return h.prof.View().Env
+}
+
 func (h *devHooks) SetValue(name, value string, plain bool) error {
 	return localmode.SetValue(h.home, h.store, name, value, plain)
 }
@@ -82,7 +90,7 @@ func (h *devHooks) DeleteValue(name string) error {
 // соглашению (localmode.IsModelKeyEnv) отсекаются api_key_env провайдеров
 // профиля с произвольными именами.
 func (h *devHooks) ContainerEnv() []string {
-	env, _ := localmode.ContainerEnv(h.cfg(), h.store)
+	env, _ := localmode.ContainerEnv(h.cfg(), h.store, h.profileEnv())
 	skip := map[string]bool{}
 	if h.prof != nil {
 		for _, p := range h.prof.LLM.ExtraProviders {
