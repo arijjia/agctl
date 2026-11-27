@@ -17,7 +17,8 @@ import (
 
 // devHostEnvSources — имена в agctl и их источники в окружении: встроенные
 // синонимы, секреты и личные провайдеры дома, ключи доп. провайдеров
-// профиля, секреты MCP-каталога, env_from профиля.
+// профиля, переменные MCP-серверов каталога платформы и пакетов профиля,
+// env_from профиля.
 func devHostEnvSources(cfg *localmode.Config, prof *profile.Data) map[string][]string {
 	var envFrom map[string][]string
 	var extra []string
@@ -27,6 +28,15 @@ func devHostEnvSources(cfg *localmode.Config, prof *profile.Data) map[string][]s
 		for _, p := range v.LLMExtraProviders {
 			if n := strings.TrimSpace(p.APIKeyEnv); n != "" {
 				extra = append(extra, n)
+			}
+		}
+		if v.FS != nil {
+			if pkgs, err := provision.CatalogPackages(v.FS); err == nil {
+				for _, pkg := range pkgs {
+					if pkg.Mcp != nil {
+						extra = append(extra, pkg.Mcp.Env...)
+					}
+				}
 			}
 		}
 	}
