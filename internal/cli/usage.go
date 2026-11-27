@@ -33,8 +33,13 @@ type Usage struct {
 	Footer   string // приглушённая строка в конце; пусто — нет
 }
 
-// Print печатает справку в stderr: цвета — только если поток терминальный.
+// Print печатает справку в stderr (подсказка при ошибке): цвета — только если
+// поток терминальный.
 func (u Usage) Print() { u.Render(os.Stderr, UseColor(os.Stderr)) }
+
+// PrintHelp — справка по запросу (help, -h, --help): в stdout, как принято
+// для явной справки (cli-std: --help — exit 0 и метки в выводе).
+func (u Usage) PrintHelp() { u.Render(os.Stdout, UseColor(os.Stdout)) }
 
 // Render рендерит справку: заголовок с версией, секции команд и
 // переменных окружения выровненной таблицей. color включает ANSI-коды

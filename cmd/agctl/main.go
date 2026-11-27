@@ -43,7 +43,7 @@ func main() {
 	case "version":
 		fmt.Println(cli.VersionLine())
 	case "help", "-h", "--help":
-		help.Print()
+		help.PrintHelp()
 	default:
 		fmt.Fprintf(os.Stderr, "неизвестная команда %q\n\n", os.Args[1])
 		help.Print()

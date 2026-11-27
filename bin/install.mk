@@ -35,22 +35,22 @@ install: web_build go_build go_linux go_linux_server
 	install -m 0755 dist/agctl-guest-linux-$(GOARCH_DOCKER) "$(INSTALL_GUEST)/agctl-guest-linux-$(GOARCH_DOCKER)"
 	install -m 0755 dist/agctl-guest-server-linux-$(GOARCH_DOCKER) "$(INSTALL_GUEST)/agctl-guest-server-linux-$(GOARCH_DOCKER)"
 	@echo "✓ $$("$(INSTALL_DIR)/agctl" version) → $(INSTALL_DIR)/agctl"
-	@w=$$(command -v agctl 2>/dev/null); \
+	@w=$$(command -v agctl 2>/dev/null); r=$$($(realpath_py) "$$w" 2>/dev/null); \
 	  if [ -z "$$w" ]; then echo "ℹ agctl нет в PATH — make link (симлинк в ~/.local/bin) или fish_add_path $(INSTALL_DIR)"; \
-	  elif [ "$$($(realpath_py) "$$w")" != "$$($(realpath_py) "$(INSTALL_DIR)/agctl")" ]; then \
-	  echo "⚠ в PATH первым находится $$w, а не $(INSTALL_DIR)/agctl — make link или поправьте PATH"; fi
+	  elif [ "$$r" != "$$($(realpath_py) "$(INSTALL_DIR)/agctl")" ] && [ "$$r" != "$$($(realpath_py) "$(CURDIR)/dist/agctl")" ]; then \
+	  echo "⚠ в PATH первым находится $$w, а не эта сборка — make link или поправьте PATH"; fi
 
 ## completions: перегенерировать fish-комплишены в completions/ (коммитятся; на них смотрят симлинки make link)
 completions:
 	go run ./cmd/agctl completion fish > completions/agctl.fish
 	go run ./cmd/agctl-server completion fish > completions/agctl-server.fish
 
-## link: глобально по cli-std — относительные симлинки ~/.local/bin/agctl{,-server} → $(AGCTL_ROOT)/bin (ставит make install) и ~/.config/fish/completions/agctl{,-server}.fish → completions/ репо
+## link: глобально по cli-std — относительные симлинки ~/.local/bin/agctl{,-server} → артефакты репо dist/ (собирает make install; guest-бинари agctl найдёт рядом в dist/ и в $(AGCTL_ROOT)/bin/guest) и ~/.config/fish/completions/agctl{,-server}.fish → completions/ репо
 link:
-	@test -x "$(INSTALL_DIR)/agctl" || { echo "✗ нет $(INSTALL_DIR)/agctl — сначала make install"; exit 1; }
+	@test -x "$(CURDIR)/dist/agctl" || { echo "✗ нет dist/agctl — сначала make install"; exit 1; }
 	@mkdir -p "$(LOCAL_BIN)" "$(FISH_COMPLETIONS)"
-	ln -sfn "$(call relpath,$(INSTALL_DIR)/agctl,$(LOCAL_BIN))" "$(LOCAL_BIN)/agctl"
-	ln -sfn "$(call relpath,$(INSTALL_DIR)/agctl-server,$(LOCAL_BIN))" "$(LOCAL_BIN)/agctl-server"
+	ln -sfn "$(call relpath,$(CURDIR)/dist/agctl,$(LOCAL_BIN))" "$(LOCAL_BIN)/agctl"
+	ln -sfn "$(call relpath,$(CURDIR)/dist/agctl-server,$(LOCAL_BIN))" "$(LOCAL_BIN)/agctl-server"
 	ln -sfn "$(call relpath,$(CURDIR)/completions/agctl.fish,$(FISH_COMPLETIONS))" "$(FISH_COMPLETIONS)/agctl.fish"
 	ln -sfn "$(call relpath,$(CURDIR)/completions/agctl-server.fish,$(FISH_COMPLETIONS))" "$(FISH_COMPLETIONS)/agctl-server.fish"
 	@echo "✓ $(LOCAL_BIN)/agctl → $$(readlink "$(LOCAL_BIN)/agctl"); fish → $$(readlink "$(FISH_COMPLETIONS)/agctl.fish")"

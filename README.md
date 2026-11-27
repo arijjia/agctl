@@ -601,7 +601,7 @@ make install link
 `agctl-server` в `~/.agctl/bin`, оба варианта guest —
 `agctl-guest-linux-<arch>` и `agctl-guest-server-linux-<arch>` — в
 `~/.agctl/bin/guest`. `make link` делает относительные симлинки:
-`~/.local/bin/agctl{,-server}` → `~/.agctl/bin` и автодополнение fish
+`~/.local/bin/agctl{,-server}` → `dist/` репозитория и автодополнение fish
 `~/.config/fish/completions/agctl{,-server}.fish` → `completions/` репозитория
 (файлы комплишенов коммитятся: `make completions`, тест следит за
 расхождением). `AGCTL_ROOT=…` меняет корень. Повторяйте `make install` после
