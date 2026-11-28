@@ -257,6 +257,14 @@ type imageActionReq struct {
 // удаляется.
 func (s *Server) handleImageAction(w http.ResponseWriter, r *http.Request, id identity) {
 	action := r.PathValue("action")
+	if action == "cancel" {
+		if !s.imageTask().cancelRun() {
+			writeErr(w, http.StatusConflict, "отменять нечего: операции с образом нет")
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{"status": "canceling"})
+		return
+	}
 	var req imageActionReq
 	if err := decodeJSONBody(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "неверный JSON")
@@ -296,7 +304,15 @@ func (s *Server) handleImageAction(w http.ResponseWriter, r *http.Request, id id
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Minute)
 		defer cancel()
+		t.setCancel(cancel)
 		err := s.runImageAction(ctx, action, ref, id.ID, hooks, ih, t.logf)
+		t.setCancel(nil)
+		if errors.Is(ctx.Err(), context.Canceled) {
+			t.canceled()
+			s.local.events.publish("images")
+			s.local.events.publish("places")
+			return
+		}
 		t.mu.Lock()
 		if err != nil {
 			t.state, t.err = "error", err.Error()

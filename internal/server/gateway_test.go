@@ -465,7 +465,7 @@ func TestGatewayWarmupPage(t *testing.T) {
 		t.Fatalf("warmup page without meta refresh: %q", body)
 	}
 
-	// не-браузерный клиент получает JSON-ошибку как раньше
+	// не-браузерный клиент получает JSON с причиной сбоя старта
 	req, _ = http.NewRequest("GET", e.api.URL+"/chat/", nil)
 	resp2, err := owner.Do(req)
 	if err != nil {
@@ -473,7 +473,7 @@ func TestGatewayWarmupPage(t *testing.T) {
 	}
 	defer resp2.Body.Close()
 	jsonBody := readAll(t, resp2)
-	if resp2.StatusCode != http.StatusServiceUnavailable || !strings.Contains(jsonBody, "прогревается") {
+	if resp2.StatusCode != http.StatusServiceUnavailable || !strings.Contains(jsonBody, "старт рабочего места") {
 		t.Fatalf("api client: %d %q", resp2.StatusCode, jsonBody)
 	}
 }

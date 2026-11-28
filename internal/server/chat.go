@@ -22,7 +22,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/arijjia/agctl/internal/provision"
@@ -639,20 +638,8 @@ func (s *Server) ensureChat(userID int64, slot int) (*chatRuntime, error) {
 		s.chats = make(map[chatKey]*chatRuntime)
 		s.chatMu.Unlock()
 	}
-	if s.chatLocks == nil {
-		s.chatMu.Lock()
-		s.chatLocks = make(map[chatKey]*sync.Mutex)
-		s.chatMu.Unlock()
-	}
 	key := chatKey{userID, slot}
-	s.chatMu.Lock()
-	lock := s.chatLocks[key]
-	if lock == nil {
-		lock = &sync.Mutex{}
-		s.chatLocks[key] = lock
-	}
-	s.chatMu.Unlock()
-
+	lock := s.chatKeyLock(key)
 	lock.Lock()
 	defer lock.Unlock()
 	s.chatMu.Lock()
@@ -662,7 +649,14 @@ func (s *Server) ensureChat(userID int64, slot int) (*chatRuntime, error) {
 		s.warmHits.Add(1)
 		return rt, nil
 	}
+	// Остановлено владельцем, пока этот вызов ждал мьютекс (или раньше):
+	// поднимает только явный старт (startChat снимает флаг).
+	if s.chatStopped[key] {
+		s.chatMu.Unlock()
+		return nil, errChatStopped
+	}
 	s.chatMu.Unlock()
+	log.Printf("[chat] пользователь %d слот %d: запуск рабочего места (образ %q)", userID, slot, s.developerChatImage(userID, slot))
 	if s.chatProvider == nil {
 		return nil, fmt.Errorf("chat runtime provider is not configured")
 	}
@@ -722,7 +716,7 @@ func (s *Server) ensureChat(userID int64, slot int) (*chatRuntime, error) {
 	s.chatMu.Unlock()
 	s.coldStarts.Add(1)
 	s.coldTotalMS.Add(time.Since(started).Milliseconds())
-	log.Printf("[chat] пользователь %d слот %d: личный runtime поднят (%s)", userID, slot, handle.Endpoint)
+	log.Printf("[chat] пользователь %d слот %d: личный runtime поднят (%s) за %s", userID, slot, handle.Endpoint, time.Since(started).Round(time.Millisecond))
 	return rt, nil
 }
 
@@ -971,14 +965,12 @@ func (s *Server) chatProxy(w http.ResponseWriter, r *http.Request, id identity) 
 // chatProxyAt — шлюз к слоту slot под префиксом prefix: "/chat" — активный
 // слот, "/p/<место>" — рабочие места лаунчера в локальном режиме.
 func (s *Server) chatProxyAt(w http.ResponseWriter, r *http.Request, id identity, slot int, prefix string) {
-	rt, err := s.ensureChat(id.ID, slot)
+	rt, err := s.ensureChatForProxy(r.Context(), id.ID, slot, chatProxyStartWait)
 	if err != nil {
-		log.Printf("[chat] ensure user %d slot %d: %v", id.ID, slot, err)
-		if strings.Contains(r.Header.Get("Accept"), "text/html") {
-			writeWarmChatPageAt(w, prefix)
-			return
+		if r.Context().Err() != nil {
+			return // клиент ушёл, пока ждал старт
 		}
-		writeErr(w, http.StatusServiceUnavailable, "чат ещё прогревается, обнови страницу через пару секунд")
+		writeChatUnavailable(w, r, prefix, err)
 		return
 	}
 	s.chatMu.Lock()

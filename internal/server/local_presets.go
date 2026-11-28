@@ -215,7 +215,7 @@ func (s *Server) ensureChatWithPresets(owner int64, slot int, logf func(string))
 	if seeded {
 		s.applyAllPresetsAt(owner, slot)
 	}
-	if _, err := s.ensureChat(owner, slot); err != nil {
+	if _, err := s.startChat(owner, slot); err != nil {
 		return err
 	}
 	if seeded {

@@ -204,7 +204,7 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	go func() {
-		if _, err := s.ensureChat(s.local.ownerID, 0); err != nil {
+		if _, err := s.startChat(s.local.ownerID, 0); err != nil {
 			log.Printf("[local] старт рабочего места: %v", err)
 		}
 	}()

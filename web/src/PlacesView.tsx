@@ -416,10 +416,16 @@ function PlaceCard({
   const img = ui.images.find((i) => i.ref === p.image);
   const present = img?.present;
   const newer = newerImage(ui.images, img);
-  const act = async (a: "start" | "restart" | "stop") => {
+  const act = async (a: "start" | "restart" | "stop" | "cancel") => {
     try {
       await places.action(p.id, a);
-      note(a === "stop" ? `«${p.name}» остановлено, данные сохранены` : `«${p.name}»: готовлю…`);
+      note(
+        a === "stop"
+          ? `«${p.name}» остановлено, данные сохранены; само не поднимется — только «Запустить»`
+          : a === "cancel"
+            ? `«${p.name}»: подготовка образа отменена`
+            : `«${p.name}»: готовлю…`,
+      );
     } catch (e: any) {
       note(e.message, true);
     }
@@ -523,6 +529,11 @@ function PlaceCard({
         ) : (
           <button disabled={busy} onClick={() => act("restart")}>
             Перезапустить
+          </button>
+        )}
+        {p.task.cancelable && (
+          <button className="ghost" onClick={() => act("cancel")}>
+            Отменить подготовку
           </button>
         )}
         <button className="ghost" disabled={busy || !running} onClick={() => act("stop")}>

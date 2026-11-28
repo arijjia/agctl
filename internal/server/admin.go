@@ -236,7 +236,7 @@ func (s *Server) handleAdminContainerStart(w http.ResponseWriter, r *http.Reques
 		writeErr(w, http.StatusBadRequest, "не удалось определить пользователя контейнера")
 		return
 	}
-	if _, err := s.ensureChat(c.UserID, c.Slot); err != nil {
+	if _, err := s.startChat(c.UserID, c.Slot); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -261,7 +261,7 @@ func (s *Server) handleAdminContainerRestart(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	s.evictChatByUser(c.UserID, c.Slot)
-	if _, err := s.ensureChat(c.UserID, c.Slot); err != nil {
+	if _, err := s.startChat(c.UserID, c.Slot); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

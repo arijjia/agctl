@@ -128,6 +128,9 @@ type Server struct {
 	chatMu        sync.Mutex                   // персональные per-user runtime: ленивое создание и TTL
 	chats         map[chatKey]*chatRuntime     // (userID, слот) → живой runtime handle
 	chatLocks     map[chatKey]*sync.Mutex      // сериализация первого старта per (user, slot)
+	chatStopped   map[chatKey]bool             // остановлены владельцем: сами не поднимаются (chat_lifecycle.go)
+	chatFlights   map[chatKey]*chatFlight      // фоновые старты для прокси
+	chatFails     map[chatKey]chatFail         // последний сбой старта: пауза перед повтором
 	chatProvider  agctlrt.ChatProvider         // Docker now; K8s adapter can return a Service DNS endpoint
 	requestMu     sync.Mutex                   // не допускать двойной approve одной заявки
 	autosaveMu    sync.Mutex                   // серия неудач autosave: backoff + repair-pass

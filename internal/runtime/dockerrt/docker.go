@@ -147,6 +147,11 @@ func (rt *Runtime) EnsureImage(ctx context.Context) error {
 	if _, err := rt.cli.ImageInspect(ctx, rt.cfg.Image); err == nil {
 		return nil
 	}
+	started := time.Now()
+	log.Printf("[dockerrt] образа %s нет на машине — собираю (это надолго)", rt.cfg.Image)
+	defer func() {
+		log.Printf("[dockerrt] сборка %s завершена за %s", rt.cfg.Image, time.Since(started).Round(time.Second))
+	}()
 	if rt.cfg.Overlay == nil || rt.cfg.BaseImage == "" || rt.cfg.BaseImage == rt.cfg.Image {
 		return rt.buildBase(ctx, rt.cfg.Image)
 	}
@@ -572,6 +577,7 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 				NanoCPUs: rt.cfg.NanoCPUs,
 			},
 			RestartPolicy: container.RestartPolicy{Name: "no"},
+			Init:          containerInit(),
 		},
 	}
 	rt.applyHardening(cfg.HostConfig)
@@ -593,26 +599,58 @@ func (rt *Runtime) Start(ctx context.Context, ws provision.Layout, wsID string, 
 		}
 		cfg.HostConfig.NetworkMode = container.NetworkMode(netName)
 	}
-	res, err := rt.cli.ContainerCreate(ctx, cfg)
-	if err != nil {
-		// контейнер с таким именем мог остаться от прошлого прогона — уберём и повторим
-		if strings.Contains(err.Error(), "already in use") {
-			_ = rt.removeByName(ctx, name)
-			res, err = rt.cli.ContainerCreate(ctx, cfg)
-		}
-		if err != nil {
-			return StartResult{}, fmt.Errorf("docker: create: %w", err)
-		}
+	id, err := rt.createAndStart(ctx, cfg)
+	if err != nil && initUnsupported(err) && cfg.HostConfig.Init != nil && *cfg.HostConfig.Init {
+		// В Docker нет docker-init (бывает в сборках дистрибутивов) — без
+		// него место работает, как раньше: остановка ждёт таймаут docker stop.
+		log.Printf("[dockerrt] %s: docker-init недоступен (%v) — контейнер без init", wsID, err)
+		no := false
+		cfg.HostConfig.Init = &no
+		id, err = rt.createAndStart(ctx, cfg)
 	}
-	if _, err := rt.cli.ContainerStart(ctx, res.ID, client.ContainerStartOptions{}); err != nil {
-		_, _ = rt.cli.ContainerRemove(ctx, res.ID, client.ContainerRemoveOptions{Force: true})
-		return StartResult{}, fmt.Errorf("docker: start: %w", err)
+	if err != nil {
+		return StartResult{}, err
 	}
 	sshPort := 0
 	if opts.SSHPubKey != "" && opts.SSHHostPort > 0 && !noSSHD {
 		sshPort = opts.SSHHostPort
 	}
-	return StartResult{ContainerID: res.ID, HostPort: opts.HostPort, SSHPort: sshPort}, nil
+	return StartResult{ContainerID: id, HostPort: opts.HostPort, SSHPort: sshPort}, nil
+}
+
+// createAndStart создаёт и запускает контейнер; неудачный старт убирает.
+func (rt *Runtime) createAndStart(ctx context.Context, cfg client.ContainerCreateOptions) (string, error) {
+	res, err := rt.cli.ContainerCreate(ctx, cfg)
+	if err != nil {
+		// контейнер с таким именем мог остаться от прошлого прогона — уберём и повторим
+		if strings.Contains(err.Error(), "already in use") {
+			_ = rt.removeByName(ctx, cfg.Name)
+			res, err = rt.cli.ContainerCreate(ctx, cfg)
+		}
+		if err != nil {
+			return "", fmt.Errorf("docker: create: %w", err)
+		}
+	}
+	if _, err := rt.cli.ContainerStart(ctx, res.ID, client.ContainerStartOptions{}); err != nil {
+		_, _ = rt.cli.ContainerRemove(ctx, res.ID, client.ContainerRemoveOptions{Force: true})
+		return "", fmt.Errorf("docker: start: %w", err)
+	}
+	return res.ID, nil
+}
+
+// containerInit — init-процесс Docker (docker-init, он же tini) первым
+// процессом контейнера: пересылает SIGTERM в dsh и подбирает осиротевшие
+// процессы агента. Без него первым процессом был node, а он SIGTERM
+// игнорирует: docker stop ждал 10 с и убивал контейнер по SIGKILL.
+// AGCTL_CONTAINER_INIT=0 — прежнее поведение.
+func containerInit() *bool {
+	on := os.Getenv("AGCTL_CONTAINER_INIT") != "0"
+	return &on
+}
+
+// initUnsupported — ошибка создания или старта из-за отсутствия docker-init.
+func initUnsupported(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "docker-init")
 }
 
 // Resume запускает существующий (остановленный) контейнер.
@@ -666,6 +704,11 @@ func (rt *Runtime) ensureImageRef(ctx context.Context, ref string) error {
 	if _, err := rt.cli.ImageInspect(ctx, ref); err == nil {
 		return nil
 	}
+	started := time.Now()
+	log.Printf("[dockerrt] образа %s нет на машине — скачиваю из реестра", ref)
+	defer func() {
+		log.Printf("[dockerrt] скачивание %s: %s", ref, time.Since(started).Round(time.Second))
+	}()
 	pr, err := rt.cli.ImagePull(ctx, ref, client.ImagePullOptions{})
 	if err != nil {
 		return fmt.Errorf("pull: %w", err)

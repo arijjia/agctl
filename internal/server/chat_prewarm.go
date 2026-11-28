@@ -10,6 +10,7 @@ package server
 // «все зашли одновременно» не разгоняет пул сверх лимита.
 
 import (
+	"errors"
 	"log"
 	"time"
 )
@@ -87,7 +88,9 @@ func (s *Server) prewarmOnce(extra []int64) {
 			continue
 		}
 		started := time.Now()
-		if _, err := s.ensureChat(uid, 0); err != nil {
+		if _, err := s.ensureChat(uid, 0); errors.Is(err, errChatStopped) {
+			continue
+		} else if err != nil {
 			log.Printf("[chat-prewarm] пользователь %d: подогрев не удался: %v", uid, err)
 			continue
 		}

@@ -627,17 +627,7 @@ func (s *Server) archiveSlotStorage(key chatKey) string {
 
 // stopPlace — остановить контейнер места (данные остаются на маунтах).
 func (s *Server) stopPlace(key chatKey) error {
-	s.chatMu.Lock()
-	rt := s.chats[key]
-	s.chatMu.Unlock()
-	if rt == nil {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	s.forgetToken(chatTokenCacheKey(rt.handle))
-	err := s.chatProvider.StopChat(ctx, rt.handle)
-	s.evictChatByUser(key.uid, key.slot)
+	_, err := s.stopChatKey(key, false, "перезапуск")
 	return err
 }
 
@@ -660,8 +650,14 @@ func (s *Server) handlePlaceAction(w http.ResponseWriter, r *http.Request, id id
 		}
 		s.local.events.publish("places")
 		writeJSON(w, http.StatusAccepted, map[string]any{"status": "starting"})
+	case "cancel":
+		if !s.placeTask(slot).cancelRun() {
+			writeErr(w, http.StatusConflict, "отменять нечего: образ не скачивается и не собирается")
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{"status": "canceling"})
 	case "stop":
-		if err := s.stopPlace(chatKey{uid: id.ID, slot: slot}); err != nil {
+		if _, err := s.stopChatKey(chatKey{uid: id.ID, slot: slot}, true, "владельцем"); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -720,8 +716,16 @@ func (s *Server) startPlaceRuntime(owner int64, slot int, restart bool) bool {
 			t.mu.Unlock()
 			s.local.events.publish("places")
 			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Minute)
+			t.setCancel(cancel)
+			s.local.events.publish("places")
 			err := s.localHooks().EnsureImage(ctx, ref, t.logf)
+			t.setCancel(nil)
+			canceled := errors.Is(ctx.Err(), context.Canceled) // до своего cancel()
 			cancel()
+			if canceled {
+				t.canceled()
+				return
+			}
 			if err != nil {
 				fail(err)
 				return

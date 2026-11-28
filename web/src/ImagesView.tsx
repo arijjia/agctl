@@ -104,6 +104,21 @@ export default function ImagesView({ note, refreshKey }: { note: (m: string, err
       {task && (task.state === "building" || task.state === "error" || task.log.length > 0) && (
         <Panel label={`Операция с образом ${task.image}`} aside={<span className={`badge ${busy ? "state-created" : task.state === "error" ? "state-removed" : "state-running"}`}>{busy ? "идёт" : task.state === "error" ? "ошибка" : "готово"}</span>}>
           {task.error && <div className="error">{task.error}</div>}
+          {busy && task.cancelable && (
+            <div className="toolbar">
+              <button
+                className="ghost"
+                onClick={() =>
+                  imagesApi.cancel().then(
+                    () => note(`${task.image}: операция отменена`),
+                    (e: any) => note(e.message, true),
+                  )
+                }
+              >
+                Отменить
+              </button>
+            </div>
+          )}
           <pre className="logs mono small">{task.log.join("\n") || "…"}</pre>
         </Panel>
       )}

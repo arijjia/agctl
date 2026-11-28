@@ -152,7 +152,7 @@ export const local = {
 // действия фоном (одна операция за раз, журнал — в task).
 export type ImageUse = { id: string; name: string; running: boolean };
 export type ImageView = LocalImage & { current: boolean; usedBy: ImageUse[] };
-export type ImageTask = { state: string; image: string; log: string[]; error: string };
+export type ImageTask = { state: string; image: string; log: string[]; error: string; cancelable?: boolean };
 // ImageContext — файл или каталог контекста сборки ступени (кроме
 // Dockerfile): откуда берётся (embedded — встроен в бинарь agctl, skel —
 // скелет dsh-home, guest — guest-бинарь на диске, profile — файл профиля),
@@ -197,12 +197,14 @@ export const imagesApi = {
     req<ImageFile>("GET", `/api/local/ui/images/file?ref=${encodeURIComponent(ref)}&stage=${stage}&path=${encodeURIComponent(path)}`),
   action: (action: ImageAction, ref: string) =>
     req<{ task: ImageTask }>("POST", `/api/local/ui/images/${action}`, { ref }),
+  // cancel — оборвать идущее скачивание или сборку.
+  cancel: () => req<{ status: string }>("POST", "/api/local/ui/images/cancel", {}),
 };
 
 // places — рабочие места локального режима (лаунчер v2). Изменения передают
 // ревизию: устаревшая отклоняется сервером (409), интерфейс перечитывает.
 export type PlaceMount = { host: string; name: string };
-export type PlaceTask = { state: string; image: string; log: string[]; error: string; restartNeeded: boolean };
+export type PlaceTask = { state: string; image: string; log: string[]; error: string; restartNeeded: boolean; cancelable?: boolean };
 export type Place = {
   id: string;
   slot: number; // слот лаунчера: 0 — основное место
@@ -239,7 +241,7 @@ export const places = {
   clone: (id: string, p: { name?: string; start?: boolean }) =>
     req<Place>("POST", `/api/local/ui/places/${encodeURIComponent(id)}/clone`, p),
   remove: (id: string) => req<{ archived: string }>("DELETE", `/api/local/ui/places/${encodeURIComponent(id)}`),
-  action: (id: string, action: "start" | "restart" | "stop") =>
+  action: (id: string, action: "start" | "restart" | "stop" | "cancel") =>
     req<any>("POST", `/api/local/ui/places/${encodeURIComponent(id)}/${action}`),
   logs: (id: string, tail = 300) =>
     req<{ logs: string; running: boolean }>("GET", `/api/local/ui/places/${encodeURIComponent(id)}/logs?tail=${tail}`),

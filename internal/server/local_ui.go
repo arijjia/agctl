@@ -10,6 +10,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -68,6 +69,34 @@ type localTask struct {
 	log     []string
 	err     string
 	pending bool // доступы/образ изменены, рабочее место ещё на старых
+	cancel  context.CancelFunc
+}
+
+// setCancel — отмена текущей долгой операции задачи (скачивание, сборка).
+func (t *localTask) setCancel(c context.CancelFunc) {
+	t.mu.Lock()
+	t.cancel = c
+	t.mu.Unlock()
+}
+
+// canceled — операция отменена владельцем: задача свободна, в журнале — отметка.
+func (t *localTask) canceled() {
+	t.logf("✗ отменено")
+	t.mu.Lock()
+	t.state, t.err = "idle", ""
+	t.mu.Unlock()
+}
+
+// cancelRun — отменить текущую операцию; false — отменять нечего.
+func (t *localTask) cancelRun() bool {
+	t.mu.Lock()
+	c := t.cancel
+	t.mu.Unlock()
+	if c == nil {
+		return false
+	}
+	c()
+	return true
 }
 
 func (t *localTask) snapshot() map[string]any {
@@ -77,7 +106,7 @@ func (t *localTask) snapshot() map[string]any {
 	if len(lines) > 40 {
 		lines = lines[len(lines)-40:]
 	}
-	return map[string]any{"state": t.state, "image": t.image, "log": lines, "error": t.err, "restartNeeded": t.pending}
+	return map[string]any{"state": t.state, "image": t.image, "log": lines, "error": t.err, "restartNeeded": t.pending, "cancelable": t.cancel != nil}
 }
 
 func (t *localTask) logf(m string) {
@@ -332,19 +361,10 @@ func (s *Server) startLocalRuntime(restart bool) bool {
 			log.Printf("[local] рабочее место: %v", err)
 		}
 		if restart {
-			s.chatMu.Lock()
-			rt := s.chats[chatKey{uid: owner, slot: 0}]
-			s.chatMu.Unlock()
-			if rt != nil {
-				t.logf("останавливаю рабочее место")
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-				err := s.chatProvider.StopChat(ctx, rt.handle)
-				cancel()
-				if err != nil {
-					fail(err)
-					return
-				}
-				s.evictChatByUser(owner, 0)
+			t.logf("останавливаю рабочее место")
+			if _, err := s.stopChatKey(chatKey{uid: owner, slot: 0}, false, "перезапуск"); err != nil {
+				fail(err)
+				return
 			}
 		}
 		present := false
@@ -356,8 +376,16 @@ func (s *Server) startLocalRuntime(restart bool) bool {
 			t.state = "building"
 			t.mu.Unlock()
 			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Minute)
+			t.setCancel(cancel)
+			s.local.events.publish("places")
 			err := s.localHooks().EnsureImage(ctx, ref, t.logf)
+			t.setCancel(nil)
+			canceled := errors.Is(ctx.Err(), context.Canceled) // до своего cancel()
 			cancel()
+			if canceled {
+				t.canceled()
+				return
+			}
 			if err != nil {
 				fail(err)
 				return

@@ -153,7 +153,7 @@ func (s *Server) handleMeRuntimeStart(w http.ResponseWriter, r *http.Request, id
 		writeErr(w, http.StatusForbidden, "личный runtime админу не выдаётся")
 		return
 	}
-	rt, err := s.ensureChat(id.ID, 0)
+	rt, err := s.startChat(id.ID, 0)
 	if err != nil {
 		writeErr(w, http.StatusServiceUnavailable, "старт рантайма: "+err.Error())
 		return
@@ -170,19 +170,18 @@ func (s *Server) handleMeRuntimeStop(w http.ResponseWriter, r *http.Request, id 
 		writeErr(w, http.StatusForbidden, "личный runtime админу не выдаётся")
 		return
 	}
-	s.chatMu.Lock()
-	rt := s.chats[chatKey{id.ID, 0}]
-	s.chatMu.Unlock()
-	if rt == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"status": "sleeping"})
-		return
-	}
-	if err := s.chatProvider.StopChat(r.Context(), rt.handle); err != nil {
+	// Флаг «остановлено владельцем» — только у кого есть лаунчер, чтобы
+	// запустить место снова; роль user будит рантайм открытием чата.
+	had, err := s.stopChatKey(chatKey{id.ID, 0}, id.Role == "developer", "владельцем")
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.evictChatByUser(id.ID, 0)
-	_ = s.db.Audit(id.Login, "launcher.runtime.stop", rt.handle.RuntimeID, "том сохранён")
+	if !had {
+		writeJSON(w, http.StatusOK, map[string]any{"status": "sleeping"})
+		return
+	}
+	_ = s.db.Audit(id.Login, "launcher.runtime.stop", s.chatRuntimeID(id.ID, 0), "том сохранён")
 	writeJSON(w, http.StatusOK, map[string]any{"status": "sleeping"})
 }
 
@@ -322,7 +321,7 @@ func (s *Server) handleMeSlotStart(w http.ResponseWriter, r *http.Request, id id
 		writeErr(w, http.StatusConflict, fmt.Sprintf("лимит живых слотов (%d) исчерпан — усыпите один из них", s.slotLimit()))
 		return
 	}
-	rt, err := s.ensureChat(id.ID, slot)
+	rt, err := s.startChat(id.ID, slot)
 	if err != nil {
 		writeErr(w, http.StatusServiceUnavailable, "старт рантайма: "+err.Error())
 		return
@@ -341,19 +340,16 @@ func (s *Server) handleMeSlotStop(w http.ResponseWriter, r *http.Request, id ide
 		writeErr(w, http.StatusForbidden, "слот недоступен этой роли")
 		return
 	}
-	s.chatMu.Lock()
-	rt := s.chats[chatKey{id.ID, slot}]
-	s.chatMu.Unlock()
-	if rt == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"slot": slot, "status": "sleeping"})
-		return
-	}
-	if err := s.chatProvider.StopChat(r.Context(), rt.handle); err != nil {
+	had, err := s.stopChatKey(chatKey{id.ID, slot}, true, "владельцем")
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.evictChatByUser(id.ID, slot)
-	_ = s.db.Audit(id.Login, "launcher.slot.stop", strconv.Itoa(slot), rt.handle.RuntimeID)
+	if !had {
+		writeJSON(w, http.StatusOK, map[string]any{"slot": slot, "status": "sleeping"})
+		return
+	}
+	_ = s.db.Audit(id.Login, "launcher.slot.stop", strconv.Itoa(slot), s.chatRuntimeID(id.ID, slot))
 	writeJSON(w, http.StatusOK, map[string]any{"slot": slot, "status": "sleeping"})
 }
 
