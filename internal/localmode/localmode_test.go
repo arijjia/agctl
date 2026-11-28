@@ -3,6 +3,7 @@ package localmode
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -132,13 +133,13 @@ func TestValidateWorkDir(t *testing.T) {
 
 func TestBackupRestoreAndPrune(t *testing.T) {
 	home := t.TempDir()
-	if p, err := Backup(home, "x"); err != nil || p != "" {
+	if p, _, err := Backup(home, "x"); err != nil || p != "" {
 		t.Fatalf("без dsh-home бэкап пуст: %q %v", p, err)
 	}
 	dsh := DshHome(home)
 	_ = os.MkdirAll(filepath.Join(dsh, "sessions"), 0o755)
 	_ = os.WriteFile(filepath.Join(dsh, "sessions", "a.json"), []byte("v1"), 0o644)
-	arch, err := Backup(home, "before-agctl-dsh:0.2.3")
+	arch, _, err := Backup(home, "before-agctl-dsh:0.2.3")
 	if err != nil || arch == "" {
 		t.Fatal(err)
 	}
@@ -160,7 +161,7 @@ func TestBackupRestoreAndPrune(t *testing.T) {
 	for i := 0; i < KeepBackups+2; i++ {
 		_ = os.WriteFile(filepath.Join(BackupsDir(home), "dsh-home-2000010"+string(rune('0'+i))+"-000000-x.tar.gz"), []byte("x"), 0o600)
 	}
-	_, _ = Backup(home, "y")
+	_, _, _ = Backup(home, "y")
 	if n := len(Backups(home)); n != KeepBackups {
 		t.Fatalf("хранится %d бэкапов, ожидалось %d", n, KeepBackups)
 	}
@@ -194,5 +195,39 @@ func TestClearOwnStateKeepsForeign(t *testing.T) {
 	ClearOwnState(home, 111)
 	if st, _ := ReadState(home); st != nil {
 		t.Fatal("свой файл состояния убирается")
+	}
+}
+
+// TestBackupSkipsUnreadable — файлы без доступа на чтение (наследие
+// контейнера под root) пропускаются, бэкап не срывается и распаковывается.
+func TestBackupSkipsUnreadable(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("права POSIX от непривилегированного пользователя")
+	}
+	home := t.TempDir()
+	dsh := DshHome(home)
+	_ = os.MkdirAll(filepath.Join(dsh, "profiles", "web"), 0o755)
+	_ = os.WriteFile(filepath.Join(dsh, "ok.json"), []byte("ok"), 0o644)
+	locked := filepath.Join(dsh, "profiles", "web", "cordis.patch.yml")
+	_ = os.WriteFile(locked, []byte("secret"), 0o600)
+	_ = os.Chmod(locked, 0)
+	lockedDir := filepath.Join(dsh, "root-only")
+	_ = os.MkdirAll(lockedDir, 0o755)
+	_ = os.Chmod(lockedDir, 0)
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o600); _ = os.Chmod(lockedDir, 0o755) })
+	arch, skipped, err := Backup(home, "x")
+	if err != nil || arch == "" {
+		t.Fatalf("бэкап: %q %v", arch, err)
+	}
+	if skipped != 2 {
+		t.Fatalf("пропущено %d, ждали 2", skipped)
+	}
+	_ = os.Chmod(locked, 0o600)
+	_ = os.Chmod(lockedDir, 0o755)
+	if err := Restore(home, arch); err != nil {
+		t.Fatalf("архив читается: %v", err)
+	}
+	if raw, _ := os.ReadFile(filepath.Join(dsh, "ok.json")); string(raw) != "ok" {
+		t.Fatalf("ok.json: %q", raw)
 	}
 }

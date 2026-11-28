@@ -1434,12 +1434,15 @@ func devUpdate(home string, args []string) error {
 		}
 	}
 	fmt.Println("3/5 бэкап сессий и настроек dsh")
-	backup, err := localmode.Backup(home, "before-"+target)
+	backup, skipped, err := localmode.Backup(home, "before-"+target)
 	if err != nil {
 		return err
 	}
 	if backup != "" {
 		fmt.Printf("    %s\n", backup)
+	}
+	if skipped > 0 {
+		fmt.Printf("    ⚠ пропущено без доступа на чтение: %d (файлы прежнего контейнера под root; место вернёт их владельцу при старте)\n", skipped)
 	}
 	// В config.yaml — только явный выбор: обновление «того же тега по
 	// профилю» оставляет image пустым (образ и дальше следует профилю).

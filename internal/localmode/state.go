@@ -119,25 +119,35 @@ func BackupsDir(home string) string { return filepath.Join(home, "backups") }
 const KeepBackups = 3
 
 // Backup архивирует dsh-home владельца в backups/dsh-home-<время>-<метка>.tar.gz
-// и чистит старые. Пустой/отсутствующий dsh-home — ("", nil).
-func Backup(home, label string) (string, error) {
+// и чистит старые. Пустой/отсутствующий dsh-home — ("", 0, nil). Файлы и
+// каталоги без доступа на чтение (оставшиеся от контейнера под root)
+// пропускаются: skipped — их число; бэкап из-за них не срывается.
+func Backup(home, label string) (string, int, error) {
 	src := DshHome(home)
 	if _, err := os.Stat(src); os.IsNotExist(err) {
-		return "", nil
+		return "", 0, nil
 	}
 	if err := os.MkdirAll(BackupsDir(home), 0o700); err != nil {
-		return "", err
+		return "", 0, err
 	}
+	skipped := 0
 	name := fmt.Sprintf("dsh-home-%s-%s.tar.gz", time.Now().Format("20060102-150405"), sanitizeLabel(label))
 	dst := filepath.Join(BackupsDir(home), name)
 	f, err := os.OpenFile(dst+".tmp", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	gz := gzip.NewWriter(f)
 	tw := tar.NewWriter(gz)
 	walkErr := filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
+			if os.IsPermission(err) && path != src {
+				skipped++
+				if info != nil && info.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
 			return err
 		}
 		rel, err := filepath.Rel(src, path)
@@ -156,6 +166,19 @@ func Backup(home, label string) (string, error) {
 			hdr.Name = filepath.ToSlash(rel)
 			return tw.WriteHeader(hdr)
 		}
+		// Файл открывается до заголовка: нечитаемый пропускаем целиком,
+		// а не оставляем в архиве заголовок без содержимого.
+		var in *os.File
+		if info.Mode().IsRegular() {
+			if in, err = os.Open(path); err != nil {
+				if os.IsPermission(err) {
+					skipped++
+					return nil
+				}
+				return err
+			}
+			defer in.Close()
+		}
 		hdr, err := tar.FileInfoHeader(info, "")
 		if err != nil {
 			return err
@@ -164,27 +187,22 @@ func Backup(home, label string) (string, error) {
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err
 		}
-		if !info.Mode().IsRegular() {
+		if in == nil {
 			return nil
 		}
-		in, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer in.Close()
 		_, err = io.Copy(tw, in)
 		return err
 	})
 	closeErr := firstErr(tw.Close(), gz.Close(), f.Close())
 	if err := firstErr(walkErr, closeErr); err != nil {
 		_ = os.Remove(dst + ".tmp")
-		return "", fmt.Errorf("бэкап dsh-home: %w", err)
+		return "", skipped, fmt.Errorf("бэкап dsh-home: %w", err)
 	}
 	if err := os.Rename(dst+".tmp", dst); err != nil {
-		return "", err
+		return "", skipped, err
 	}
 	pruneBackups(home)
-	return dst, nil
+	return dst, skipped, nil
 }
 
 // Backups — бэкапы, новые первыми.
